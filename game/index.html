@@ -355,7 +355,7 @@ const ET = {
   eel:     {r:13, hp:55,  spd:118, dmg:12, xp:5,  score:50,  col:C.EEL},
   squid:   {r:15, hp:26,  spd:95,  dmg:8,  xp:3,  score:30,  col:C.SQUID},
   crab:    {r:22, hp:120, spd:44,  dmg:18, xp:6,  score:60,  col:C.CRAB},
-  boss1:   {r:56, hp:2300,spd:150, dmg:22, xp:90, score:5000, col:C.CYAN, boss:1, name:'МОРОК-УДИЛЬЩИК'},
+  boss1:   {r:56, hp:2300,spd:150, dmg:18, xp:90, score:5000, col:C.CYAN, boss:1, name:'МОРОК-УДИЛЬЩИК'},
   boss2:   {r:64, hp:5200,spd:70,  dmg:20, xp:140,score:10000,col:C.PURP, boss:1, name:'МАТЕРЬ ГЛУБИН'},
   boss3:   {r:58, hp:7600,spd:60,  dmg:24, xp:200,score:20000,col:C.CRAB, boss:1, name:'СЕРДЦЕ БЕЗДНЫ'},
   crystal: {r:12, hp:70,  spd:0,   dmg:12, xp:2,  score:100,  col:C.GOLD},
@@ -1089,6 +1089,8 @@ function startBoss(type, cyc) {
   if (!e) return;
   e.spawnT = 0; e.state = 0; e.st = 3.5; e.p1 = 0.8;
   G.boss = e;
+  dropPick(P.x + rand(-40, 40), P.y + 60, 4, 30); // QA: перед боссом — капля лечения, чтобы бой начинался честно
+
   if (type === 'boss3') { e.state = 3; e.st = 1.5; e.p1 = 0; e.p3 = 1; }
   banner(ET[type].name, 'ВЛАДЫКА БЕЗДНЫ · ' + (G.zone * 100) + ' м', '#ff4f8f', 3.4);
   sfx.warn(); vibrate([80, 60, 80]); shake(10);
@@ -1475,17 +1477,17 @@ function updateBoss1(e, dt, d, ux, uy) {
     steer(e, vx / l * s, vy / l * s, 2, dt); e.ang += angDiff(e.ang, face) * Math.min(1, dt * 4);
     e.p1 -= dt;
     if (e.p1 <= 0) { e.p1 = enr ? 0.09 : 0.14; e.p2 += 0.33; const n = enr ? 3 : 2;
-      for (let k = 0; k < n; k++) eShoot(e.x, e.y, e.p2 + k * TAU / n, 165, 6, 11 * G.dmgScale, C.CYAN, enr ? 0.25 : 0); }
+      for (let k = 0; k < n; k++) eShoot(e.x, e.y, e.p2 + k * TAU / n, 165, 6, 9 * G.dmgScale, C.CYAN, enr ? 0.25 : 0); }
     if (e.st <= 0) { e.phase = (e.phase | 0) + 1; const ph = e.phase % 3; e.state = ph === 1 ? 1 : ph === 2 ? 2 : 3; e.st = e.state === 1 ? 3.0 : e.state === 2 ? (enr ? 4.2 : 2.9) : 1.0; e.p1 = 0; e.p3 = 0; }
   } else if (e.state === 1) { // приманка
     steer(e, 0, 0, 3, dt); e.ang += angDiff(e.ang, face) * Math.min(1, dt * 3);
     if (e.st < 1.9) { G.pullT = 0.1; G.pullX = e.x + Math.cos(e.ang) * 80; G.pullY = e.y + Math.sin(e.ang) * 80;
-      e.p1 -= dt; if (e.p1 <= 0) { e.p1 = enr ? 0.35 : 0.5; for (let k = -2; k <= 2; k++) eShoot(e.x, e.y, face + k * 0.2, 210, 6, 11 * G.dmgScale, C.GOLD, 0); sfx.shot2(); } }
+      e.p1 -= dt; if (e.p1 <= 0) { e.p1 = enr ? 0.35 : 0.5; for (let k = -2; k <= 2; k++) eShoot(e.x, e.y, face + k * 0.2, 210, 6, 9 * G.dmgScale, C.GOLD, 0); sfx.shot2(); } }
     if (e.st <= 0) { e.state = 0; e.st = 3.5; e.p1 = 0.5; }
   } else if (e.state === 2) { // серия бросков (0.7 с прицеливание, 0.6 с бросок)
-    e.p3 += dt; const cyc = e.p3 % 1.4;
-    if (cyc < 0.75) { steer(e, -ux * 60, -uy * 60, 4, dt); e.ang += angDiff(e.ang, face) * Math.min(1, dt * 8); e.p1 = 0; }
-    else { if (e.p1 === 0) { e.p1 = 1; e.vx = Math.cos(e.ang) * 820; e.vy = Math.sin(e.ang) * 820; shake(6); sfx.dash(); }
+    e.p3 += dt; const cyc = e.p3 % 1.6; // QA: прицеливание 0.75→0.95 с — бросок легче прочитать
+    if (cyc < 0.95) { steer(e, -ux * 60, -uy * 60, 4, dt); e.ang += angDiff(e.ang, face) * Math.min(1, dt * 8); e.p1 = 0; }
+    else { if (e.p1 === 0) { e.p1 = 1; e.vx = Math.cos(e.ang) * 760; e.vy = Math.sin(e.ang) * 760; shake(6); sfx.dash(); }
       if (Math.random() < 0.6) part(e.x, e.y, 0, 0, 0.4, 20, C.CYAN, 0); }
     if (e.st <= 0) { e.state = 0; e.st = 3.5; e.p1 = 0.4; }
   } else { // призыв планктона
@@ -1801,7 +1803,7 @@ function renderWorld() {
   for (let i = 0; i < enemies.n; i++) { const e = it[i]; if (e.dead || !inView(e.x, e.y, 300)) continue;
     if (e.type === 'dart' && e.state === 1) { setXf(e.x, e.y, e.ang, 1); ctx.globalAlpha = 0.2 + 0.6 * (1 - e.st / 0.7);
       ctx.strokeStyle = PAL[C.DART]; ctx.lineWidth = 2; ctx.setLineDash && ctx.setLineDash([10, 8]); ctx.beginPath(); ctx.moveTo(e.r, 0); ctx.lineTo(330, 0); ctx.stroke(); ctx.setLineDash && ctx.setLineDash([]); }
-    else if (e.type === 'boss1' && e.state === 2 && (e.p3 % 1.4) < 0.75) { setXf(e.x, e.y, e.ang, 1); ctx.globalAlpha = 0.12 + 0.25 * ((e.p3 % 1.4) / 0.75);
+    else if (e.type === 'boss1' && e.state === 2 && (e.p3 % 1.6) < 0.95) { setXf(e.x, e.y, e.ang, 1); ctx.globalAlpha = 0.12 + 0.3 * ((e.p3 % 1.6) / 0.95);
       ctx.fillStyle = '#ff3b6b'; ctx.fillRect(e.r * 0.5, -e.r * 0.8, 560, e.r * 1.6); }
   }
   ctx.globalAlpha = 1;
