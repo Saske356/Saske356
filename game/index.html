@@ -182,7 +182,11 @@ body.menu #toasts{top:calc(10px + var(--sat));bottom:auto}
   .tStats{margin:4px 0 2px} .titleBtns{margin-bottom:0}
   .stats{grid-template-columns:repeat(3,1fr);max-width:520px}
   #cards{flex-direction:row;max-width:760px} .card{flex:1;flex-direction:column;text-align:center;gap:6px}
-  #scrSet.on{flex-direction:row;flex-wrap:wrap;justify-content:center;align-content:center;gap:0 10px}
+  .how{columns:2;column-gap:22px;max-width:780px;font-size:13px;line-height:1.3} .how p{break-inside:avoid;margin-bottom:6px}
+  .bigScore{font-size:34px;margin:0} .rec{margin:2px auto 4px} .stats{margin:4px auto 6px} .stats b{font-size:15px} .stats div{padding:3px}
+  .screen h2{font-size:21px;margin-bottom:4px} .btn.big{min-height:48px;font-size:20px} .row .btn{min-height:42px}
+  #scrSet.on{flex-direction:row;
+flex-wrap:wrap;justify-content:center;align-content:center;gap:0 10px}
   #scrSet h2{width:100%} #scrSet .btn{width:45%;margin:4px 0} #scrSet>*{margin-top:0!important;margin-bottom:0!important}
 }
 
@@ -493,7 +497,9 @@ function loadSave() {
   if (!CHARS[d.char]) d.char = 'lumen';
   if (!SKINS[d.skin]) d.skin = 'azure';
   if (!['auto', 'high', 'low'].includes(d.set.quality)) d.set.quality = 'auto';
-  for (const k in d.shop) { const v = +d.shop[k]; d.shop[k] = isFinite(v) && v > 0 ? Math.floor(v) : 0; }
+  for (const k in d.shop) { const it = SHOP.find(s => s.id === k), v = +d.shop[k]; d.shop[k] = it && isFinite(v) && v > 0 ? Math.min(it.max, Math.floor(v)) : 0; }
+  for (const k of ['sound', 'music', 'vibro', 'nums', 'shake']) d.set[k] = d.set[k] === 0 || d.set[k] === '0' || d.set[k] === false ? 0 : 1;
+
   d.chars.lumen = 1; d.skins.azure = 1; d.set.qv = 1;
   return d;
 }
@@ -1055,9 +1061,10 @@ function updateDirector(dt) {
     G.zoneT += dt; if (G.zoneT >= CFG.ZONE_TIME) nextZone();
   }
   const z = G.zone;
-  let rate = (1.5 + 0.55 * (z - 1)) * (1 + G.zoneT / CFG.ZONE_TIME * 0.5);
+  let rate = (1.5 + 0.45 * (z - 1)) * (1 + G.zoneT / CFG.ZONE_TIME * 0.4); // QA: рост внутри зоны мягче (зоны стали длиннее)
   if (G.boss) rate *= 0.22;
-  const maxAlive = Math.min(CFG.MAX_ENEMIES - 20, 60 + z * 8); // QA: сложность больше не зависит от графики
+  const maxAlive = Math.min(CFG.MAX_ENEMIES - 20, 46 + z * 8); // QA: меньше «каши» на 300–400 м
+ // QA: сложность больше не зависит от графики
   G.spawnAcc += rate * dt;
   while (G.spawnAcc >= 1) {
     G.spawnAcc -= 1; if (enemies.n >= maxAlive) continue;
@@ -1316,7 +1323,8 @@ function explode(x, y, R, dmg, freeze) {
 function hurtPlayer(dmg) {
   if (P.inv > 0 || P.dashT > 0 || G.state !== 'play' || G.dying > 0 || G.god) return;
   dmg = Math.max(1, Math.round(dmg - ST.armor));
-  P.hp -= dmg; P.inv = 1.0; G.noHit = false; G.hurtFlash = 1; shake(13); G.hitStop = 0.06;
+  P.hp -= dmg; P.inv = 1.2; // QA: чуть дольше неуязвимость после удара — смерти «пачкой» реже
+ G.noHit = false; G.hurtFlash = 1; shake(13); G.hitStop = 0.06;
   if (G.combo >= 10) text(P.x, P.y - 30, 'комбо потеряно', '#ff8a8a', false, false);
   G.combo = 0; G.mult = 1; G.comboMilestone = 0;
   sfx.hurt(); vibrate(55);
@@ -2097,7 +2105,8 @@ function renderCards() {
     setTimeout(() => d.classList.add('in'), 60 + i * 90);
   });
   // защита от случайного тапа пальцем, который только что вёл Люмена
-  setTimeout(() => { for (const c of box.children) c.classList.remove('locked'); }, 480);
+  clearTimeout(renderCards.tm); // QA: быстрый «Перебор» не должен разблокировать новые карты раньше времени
+  renderCards.tm = setTimeout(() => { for (const c of box.children) c.classList.remove('locked'); }, 480);
   const rb = $('btnReroll'); rb.style.display = G.rerolls > 0 ? 'inline-block' : 'none'; rb.textContent = 'Перебор (' + G.rerolls + ')';
   $('lvSub').textContent = G.levelPending > 0 ? 'Выбери улучшение · ещё ' + G.levelPending : 'Выбери одно улучшение';
 }
@@ -2287,7 +2296,10 @@ for (const [id, k] of [['setSound', 'sound'], ['setMusic', 'music'], ['setVibro'
 
 /* ============================ 11. MAIN LOOP ============================ */
 function resize() {
+  const wasLand = W > H;
   W = Math.max(1, window.innerWidth); H = Math.max(1, window.innerHeight);
+  if (wasLand !== (W > H) && G.state === 'play') pauseGame(); // QA: поворот экрана посреди забега — пауза, чтобы не умереть вслепую
+
   DPR = Math.min(window.devicePixelRatio || 1, QDPR[QL]);
   cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
   VS = clamp(Math.min(W, H) / 450, 0.8, 1.8); VW = W / 2 / VS; VH = H / 2 / VS;
