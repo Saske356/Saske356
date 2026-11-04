@@ -972,12 +972,13 @@ function offscreenPoint(out) {
   const a = Math.random() * TAU, rr = CFG.ARENA_R - 60; out.x = Math.cos(a) * rr; out.y = Math.sin(a) * rr;
 }
 const TMP = {x: 0, y: 0};
+const PT_N = ['drifter', 'dart', 'jelly', 'urchin', 'squid', 'eel', 'crab'], PT_W = new Float32Array(7);
 function pickType() {
-  const z = G.zone;
-  const w = [['drifter', 10], ['dart', z >= 1 ? 2 + z * 0.8 : 0], ['jelly', z >= 2 ? 2 + z * 0.4 : 0], ['urchin', z >= 3 ? 2 : 0],
-    ['squid', z >= 3 ? 1.5 + z * 0.3 : 0], ['eel', z >= 4 ? 1.4 + z * 0.15 : 0], ['crab', z >= 6 ? 1.2 + z * 0.2 : 0]];
-  let tot = 0; for (const p of w) tot += p[1];
-  let r = Math.random() * tot; for (const p of w) { r -= p[1]; if (r <= 0) return p[0]; }
+  const z = G.zone, w = PT_W; // веса без аллокаций
+  w[0] = 10; w[1] = 2 + z * 0.8; w[2] = z >= 2 ? 2 + z * 0.4 : 0; w[3] = z >= 3 ? 2 : 0;
+  w[4] = z >= 3 ? 1.5 + z * 0.3 : 0; w[5] = z >= 4 ? 1.4 + z * 0.15 : 0; w[6] = z >= 6 ? 1.2 + z * 0.2 : 0;
+  let tot = 0; for (let i = 0; i < 7; i++) tot += w[i];
+  let r = Math.random() * tot; for (let i = 0; i < 7; i++) { r -= w[i]; if (r <= 0) return PT_N[i]; }
   return 'drifter';
 }
 function spawnPack() {
