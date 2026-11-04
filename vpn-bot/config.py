@@ -55,5 +55,21 @@ PLANS = {
     "m12": ("Год", 365, 899),
 }
 
+# Устройства в подписке: число -> во сколько раз дороже базовой цены тарифа
+DEVICE_OPTIONS = {1: 1.0, 2: 1.5, 3: 2.0, 5: 3.0}
+
+# Автопродление: Telegram Stars умеет списывать оплату раз в 30 дней, поэтому только для тарифа на месяц
+AUTO_RENEW = os.environ.get("AUTO_RENEW", "1") == "1"
+
+# Новостной канал (например @aurora_news). Бот должен быть в нём админом, чтобы проверять подписку.
+CHANNEL = os.environ.get("CHANNEL", "").strip()
+CHANNEL_BONUS_DAYS = int(os.environ.get("CHANNEL_BONUS_DAYS", "1"))
+
 # Скрытый тариф для проверки оплаты и возврата. Доступен только админам: /testpay
 TEST_PLAN = ("Тестовая оплата", 1, int(os.environ.get("TEST_PLAN_STARS", "5")))
+
+
+def plan_price(plan_key: str, devices: int) -> int:
+    """Цена тарифа с учётом числа устройств."""
+    base = TEST_PLAN[2] if plan_key == "test" else PLANS[plan_key][2]
+    return max(1, round(base * DEVICE_OPTIONS.get(devices, 1.0)))

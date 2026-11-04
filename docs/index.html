@@ -117,8 +117,8 @@
   .key { font-family: ui-monospace, "JetBrains Mono", Menlo, monospace; font-size: 12px; color: var(--gold-hi);
          background: #0d0b09; border: 1px dashed var(--line); border-radius: 12px; padding: 12px;
          word-break: break-all; user-select: all; max-height: 92px; overflow: auto; }
-  #qr { display: grid; place-items: center; padding: 14px; background: #f6efe0; border-radius: 14px; margin-top: 12px; }
-  #qr img, #qr canvas { max-width: 100%; height: auto; }
+  .qrbox { display: grid; place-items: center; padding: 14px; background: #f6efe0; border-radius: 14px; margin-top: 12px; }
+  .qrbox img, .qrbox canvas { max-width: 100%; height: auto; }
   .demo { font-size: 12px; color: #e0b36a; margin-top: 10px; }
 
   /* подключение */
@@ -195,21 +195,13 @@
     <h2 class="gold-text">Выберите срок</h2>
     <p class="sub">Чем дольше, тем выгоднее. Продление добавляется к текущему сроку.</p>
     <div class="plans" id="plans" style="margin-top:14px"></div>
-    <p class="note">Оплата звёздами Telegram ⭐. Ключ придёт сразу после оплаты.</p>
+    <p class="note">Число устройств и автопродление выбираются на следующем шаге. Оплата звёздами Telegram ⭐.</p>
   </section>
 
   <section class="appear" id="keySec" hidden>
-    <div class="eyebrow">Персональный ключ</div>
-    <h2 class="gold-text">Ваш ключ</h2>
-    <div class="card" style="margin-top:12px">
-      <div class="key" id="key"></div>
-      <div class="row" style="margin-top:12px">
-        <button class="btn gold" id="copyKey" type="button">Скопировать</button>
-        <button class="btn ghost" id="qrBtn" type="button">QR-код</button>
-      </div>
-      <div id="qr" hidden></div>
-      <div class="demo" id="demoNote" hidden>Демо-режим: сервер ещё не подключён, ключ пока не работает.</div>
-    </div>
+    <div class="eyebrow">Персональные ключи</div>
+    <h2 class="gold-text">Мои подписки</h2>
+    <div id="subsList" style="display:flex;flex-direction:column;gap:12px;margin-top:12px"></div>
   </section>
 
   <section class="appear">
@@ -280,16 +272,23 @@
     if (a >= 2 && a <= 4 && (b < 12 || b > 14)) return n + " дня";
     return n + " дней";
   };
+  const devWord = n => {
+    const a = n % 10, b = n % 100;
+    if (a === 1 && b !== 11) return n + " устройство";
+    if (a >= 2 && a <= 4 && (b < 12 || b > 14)) return n + " устройства";
+    return n + " устройств";
+  };
   const fmtDate = ts => new Date(ts * 1000).toLocaleDateString("ru-RU");
 
   function toast(msg) {
     const t = $("toast"); t.textContent = msg; t.classList.add("show");
     clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 1800);
   }
-  async function copy(text, okMsg) {
+  async function copy(text, okMsg, el) {
     try { await navigator.clipboard.writeText(text); toast(okMsg); success(); }
     catch {
-      const r = document.createRange(); const el = $("key");
+      if (!el) { toast("Скопируйте вручную"); return; }
+      const r = document.createRange();
       r.selectNodeContents(el); const s = getSelection(); s.removeAllRanges(); s.addRange(r);
       toast("Выделено: скопируйте вручную");
     }
@@ -352,40 +351,59 @@
     const perMonth = Math.round(p.price / (p.days / 30));
     const badge = i === plans.length - 1 && plans.length > 1 ? `<span class="badge">Лучшая цена</span>`
                 : (i === 1 && plans.length > 2 ? `<span class="badge soft">Популярный</span>` : "");
-    b.innerHTML = `${badge}<span class="nm"></span><span class="pr gold-text">${p.price} <span>⭐</span></span>
-      <span class="pm">${perMonth} ⭐ в месяц</span><span class="save">${p.disc >= 3 ? "выгода " + p.disc + "%" : ""}</span>`;
+    b.innerHTML = `${badge}<span class="nm"></span><span class="pr gold-text"><span>от</span> ${p.price} <span>⭐</span></span>
+      <span class="pm">${perMonth} ⭐ в месяц за 1 устройство</span><span class="save">${p.disc >= 3 ? "выгода " + p.disc + "%" : ""}</span>`;
     b.querySelector(".nm").textContent = p.name;
     b.onclick = () => buy(p);
     plansEl.appendChild(b);
   });
   if (!plans.length) plansEl.innerHTML = `<p class="sub">Тарифы появятся, когда вы откроете приложение из чата с ботом.</p>`;
 
+  // Покупка идёт в боте: там выбираются устройства, продление и автопродление
   function buy(p) {
     haptic("medium");
-    if (!p.link || !tg || !tg.openInvoice) { toast("Откройте приложение из чата с ботом"); return; }
-    tg.openInvoice(p.link, status => {
-      if (status === "paid") { success(); $("paidOverlay").hidden = false; }
-      else if (status === "failed") toast("Оплата не прошла. Попробуйте ещё раз");
-    });
+    if (!D.bu) { toast("Откройте приложение из чата с ботом"); return; }
+    openTg(`https://t.me/${D.bu}?start=buy_${p.id}`);
+    try { tg.close(); } catch {}
   }
   $("closeApp").onclick = () => { try { tg.close(); } catch { $("paidOverlay").hidden = true; } };
 
-  // ---- ключ ----
-  if (active && D.k) {
+  // ---- подписки и ключи ----
+  const subs = (D.subs || []).filter(s => s.e && s.k);
+  if (subs.length) {
     $("keySec").hidden = false;
-    $("key").textContent = D.k;
-    $("demoNote").hidden = !D.dm;
-    $("copyKey").onclick = () => copy(D.k, "Ключ скопирован");
-    let qrMade = false;
-    $("qrBtn").onclick = () => {
-      haptic();
-      const box = $("qr"); box.hidden = !box.hidden;
-      if (!qrMade && window.QRCode) {
-        new QRCode(box, { text: D.k, width: 220, height: 220, colorDark: "#0a0908", colorLight: "#f6efe0" });
-        qrMade = true;
-      }
-      $("qrBtn").textContent = box.hidden ? "QR-код" : "Скрыть QR";
-    };
+    const list = $("subsList");
+    subs.forEach(s => {
+      const c = document.createElement("div");
+      c.className = "card";
+      const left = Math.ceil((s.e - now) / 86400);
+      c.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+          <b class="gold-text" style="font-family:var(--serif);font-size:22px" data-f="name"></b>
+          <span class="pill on">${s.a ? "🔁 авто" : "активна"}</span></div>
+        <div class="until" style="margin:2px 0 10px">${devWord(s.d)} · до ${fmtDate(s.e)} · ещё ${plural(left)}</div>
+        <div class="key" data-f="key"></div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn gold" type="button" data-f="copy">Скопировать</button>
+          <button class="btn ghost" type="button" data-f="qrb">QR-код</button>
+        </div>
+        <div data-f="qr" class="qrbox" hidden></div>
+        ${D.dm ? '<div class="demo">Демо-режим: сервер ещё не подключён, ключ пока не работает.</div>' : ""}`;
+      const f = n => c.querySelector(`[data-f="${n}"]`);
+      f("name").textContent = s.n;
+      f("key").textContent = s.k;
+      f("copy").onclick = () => copy(s.k, "Ключ скопирован", f("key"));
+      let made = false;
+      f("qrb").onclick = () => {
+        haptic();
+        const box = f("qr"); box.hidden = !box.hidden;
+        if (!made && window.QRCode) {
+          new QRCode(box, { text: s.k, width: 220, height: 220, colorDark: "#0a0908", colorLight: "#f6efe0" });
+          made = true;
+        }
+        f("qrb").textContent = box.hidden ? "QR-код" : "Скрыть QR";
+      };
+      list.appendChild(c);
+    });
   }
 
   // ---- инструкции ----
