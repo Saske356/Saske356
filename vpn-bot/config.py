@@ -28,7 +28,9 @@ SUPPORT = os.environ.get("SUPPORT_USERNAME", "").lstrip("@")
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot.db"))
 
 TRIAL_DAYS = int(os.environ.get("TRIAL_DAYS", "1"))
-REF_BONUS_DAYS = int(os.environ.get("REF_BONUS_DAYS", "7"))
+REF_BONUS_DAYS = int(os.environ.get("REF_BONUS_DAYS", "3"))
+# 1 — бонус сразу, как друг запустил бота по ссылке; 0 — только после его первой оплаты
+REF_ON_JOIN = os.environ.get("REF_ON_JOIN", "1") == "1"
 REFUND_DAYS = int(os.environ.get("REFUND_DAYS", "3"))
 
 # Преимущества на главной. Пиши только то, что правда про твой сервер.

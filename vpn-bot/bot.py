@@ -91,6 +91,10 @@ def demo_note() -> str:
             if vpn.is_demo else "")
 
 
+def ref_condition() -> str:
+    return "запустит бота по вашей ссылке" if config.REF_ON_JOIN else "оформит доступ"
+
+
 def can_trial(row) -> bool:
     return (config.TRIAL_DAYS > 0 and not row["trial_used"] and row["paid_stars"] == 0
             and not is_active(row))
@@ -116,7 +120,8 @@ def miniapp_url(row) -> str:
         "tr": can_trial(row), "td": config.TRIAL_DAYS, "dm": vpn.is_demo,
         "bu": STATE["username"], "s": config.SUPPORT,
         "rf": f"https://t.me/{STATE['username']}?start=ref_{row['id']}" if STATE["username"] else "",
-        "rb": config.REF_BONUS_DAYS, "rc": db.referral_count(row["id"]), "p": plans,
+        "rb": config.REF_BONUS_DAYS, "rj": config.REF_ON_JOIN,
+        "rc": db.referral_count(row["id"]), "p": plans,
     }
     raw = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode()
     return config.MINIAPP_URL + "#d=" + base64.urlsafe_b64encode(raw).decode().rstrip("=")
@@ -144,7 +149,7 @@ def main_kb(row) -> InlineKeyboardMarkup:
         rows.append([B(f"✦ {plural_days(config.TRIAL_DAYS).capitalize()} бесплатно", "trial")])
     rows += [
         [B("🗝 Мой ключ", "key"), B("📲 Подключение", "howto")],
-        [B("👤 Профиль", "profile"), B(f"🎁 +{config.REF_BONUS_DAYS} дней за друга", "ref")],
+        [B("👤 Профиль", "profile"), B(f"🎁 +{plural_days(config.REF_BONUS_DAYS)} за друга", "ref")],
         [B("🎟 Промокод", "promo"), B("🛎 Консьерж", "support")],
     ]
     return InlineKeyboardMarkup(rows)
@@ -305,11 +310,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             ref = None
     row, is_new = db.touch_user(u.id, u.username, u.first_name, ref)
     if is_new and row["referrer_id"]:
+        if config.REF_ON_JOIN:
+            ref_row = await grant(row["referrer_id"], config.REF_BONUS_DAYS)
+            await refresh_menu(context, ref_row["id"])
+            note = (f"🎁 По вашей ссылке присоединился друг. Вам начислено "
+                    f"<b>+{plural_days(config.REF_BONUS_DAYS)}</b>.\n"
+                    f"◆ Доступ действует до <b>{fmt_date(ref_row['expires_at'])}</b>.")
+        else:
+            note = (f"🎁 По вашей ссылке присоединился друг. Когда он оформит доступ, "
+                    f"вы получите <b>+{plural_days(config.REF_BONUS_DAYS)}</b>.")
         try:
-            await context.bot.send_message(
-                row["referrer_id"],
-                f"🎁 По вашей ссылке присоединился новый гость. Когда он оформит доступ, "
-                f"вы получите <b>+{plural_days(config.REF_BONUS_DAYS)}</b>.")
+            await context.bot.send_message(row["referrer_id"], note)
         except TelegramError:
             pass
     context.user_data.clear()
@@ -486,7 +497,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                  + "&text=" + f"Приглашаю в {config.BRAND}: быстрый приватный VPN".replace(" ", "%20"))
         await show(update, context,
                    "<b>Привилегия для друзей</b>\n\n"
-                   f"За каждого друга, который оформит доступ, вы получаете "
+                   f"За каждого друга, который {ref_condition()}, вы получаете "
                    f"<b>+{plural_days(config.REF_BONUS_DAYS)}</b>. Без ограничений.\n\n"
                    f"◆ Ваша ссылка:\n<code>{link}</code>\n\n"
                    f"◆ Приглашено: <b>{db.referral_count(uid)}</b>",
@@ -541,7 +552,7 @@ async def paid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     row = await grant(u.id, days)
     await refresh_menu(context, u.id)
 
-    if first_payment and row["referrer_id"]:
+    if first_payment and row["referrer_id"] and not config.REF_ON_JOIN:
         ref_row = await grant(row["referrer_id"], config.REF_BONUS_DAYS)
         await refresh_menu(context, ref_row["id"])
         try:

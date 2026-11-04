@@ -229,7 +229,7 @@
   <section class="card ref appear" id="refCard">
     <div class="eyebrow">Привилегия</div>
     <div class="big gold-text" id="refBonus">+7 дней</div>
-    <p id="refText">за каждого друга, который оформит доступ. Без ограничений.</p>
+    <p id="refText">за каждого друга, который запустит бота по вашей ссылке.</p>
     <div class="row">
       <button class="btn gold" id="shareRef" type="button">Пригласить</button>
       <button class="btn ghost" id="copyRef" type="button">Ссылка</button>
@@ -405,7 +405,8 @@
   // ---- друзья ----
   if (D.rf) {
     $("refBonus").textContent = "+" + plural(D.rb || 7);
-    $("refText").textContent = `за каждого друга, который оформит доступ. Приглашено: ${D.rc || 0}.`;
+    const cond = D.rj ? "запустит бота по вашей ссылке" : "оформит доступ";
+    $("refText").textContent = `за каждого друга, который ${cond}. Приглашено: ${D.rc || 0}.`;
     const text = `Приглашаю в ${D.b}: быстрый приватный VPN`;
     $("shareRef").onclick = () => { haptic(); openTg(`https://t.me/share/url?url=${encodeURIComponent(D.rf)}&text=${encodeURIComponent(text)}`); };
     $("copyRef").onclick = () => copy(D.rf, "Ссылка скопирована");
