@@ -7,7 +7,7 @@
 спускаешься всё глубже — к владыкам бездны.
 
 ![Титульный экран](screenshots/1_title.jpg) ![Игра](screenshots/2_gameplay.jpg)
-![Выбор улучшения](screenshots/3_upgrade.jpg) ![Босс](screenshots/4_boss.jpg) ![Финал](screenshots/5_ending.jpg)
+![Выбор улучшения](screenshots/3_upgrade.jpg) ![Босс](screenshots/4_boss.jpg) ![Финал](screenshots/5_ending.jpg) ![Итоги победы](screenshots/6_ending_screen.jpg)
 
 ## Как открыть
 
