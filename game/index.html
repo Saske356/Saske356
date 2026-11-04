@@ -152,6 +152,40 @@ h2{font-size:28px;font-weight:900;letter-spacing:2px;margin-bottom:14px;color:#f
 .toast b{color:var(--gold);display:block;font-size:11px;letter-spacing:2px}
 @keyframes toastIn{from{transform:translateY(-30px) scale(.8);opacity:0}to{transform:none;opacity:1}}
 .set .btn{font-size:17px}
+/* ---------- QA: маленькие и альбомные экраны ---------- */
+/* экран прокручивается, если содержимое не влезает (центрирование через auto-поля, чтобы верх не обрезался) */
+.screen{overflow-y:auto;overflow-x:hidden;touch-action:pan-y;overscroll-behavior:contain;justify-content:flex-start;}
+.screen>:first-child{margin-top:auto}
+.screen>:last-child{margin-bottom:auto}
+#scrTitle{justify-content:space-between;}
+#scrTitle>:first-child,#scrTitle>:last-child{margin-top:0;margin-bottom:0}
+#scrShop>:first-child,#scrAch>:first-child{margin-top:0}
+#scrShop>:last-child,#scrAch>:last-child{margin-bottom:0}
+.row .btn{flex:1 1 0;min-width:0;letter-spacing:0;font-size:clamp(12px,3.9vw,15px);}
+.item .info,.card>div{overflow-wrap:break-word;hyphens:auto;-webkit-hyphens:auto;}
+body.menu #toasts{top:calc(10px + var(--sat));bottom:auto}
+@media (max-width:350px){
+  .item{padding:9px 9px;gap:8px} .item .btn{min-width:76px;font-size:14px;padding:6px 6px}
+  .logo .l1{font-size:54px} .logo .l2{font-size:43px;letter-spacing:6px}
+}
+@media (max-height:640px){
+  h2{font-size:24px;margin-bottom:8px} .sub{margin-bottom:8px}
+  .btn{min-height:48px;margin:5px auto;font-size:18px} .btn.big{min-height:56px;font-size:22px}
+  .row .btn{min-height:46px;margin:5px 0}
+  .logoWrap{margin-top:2vh} .logo .l1{font-size:50px} .logo .l2{font-size:40px} .hook{font-size:13.5px;margin-top:10px}
+  .how{font-size:13.5px;line-height:1.35} .how p{margin-bottom:7px}
+  .bigScore{font-size:44px} .stats{gap:6px;margin:6px auto 8px} .stats div{padding:5px 4px} .stats b{font-size:17px}
+  .card{padding:9px 12px} .card .ds{font-size:12.5px} #cards{gap:9px}
+}
+@media (max-height:460px){ /* альбомная ориентация телефона */
+  .hook{display:none} .logoWrap{margin-top:0} .logo .l1{font-size:40px} .logo .l2{font-size:32px}
+  .tStats{margin:4px 0 2px} .titleBtns{margin-bottom:0}
+  .stats{grid-template-columns:repeat(3,1fr);max-width:520px}
+  #cards{flex-direction:row;max-width:760px} .card{flex:1;flex-direction:column;text-align:center;gap:6px}
+  #scrSet.on{flex-direction:row;flex-wrap:wrap;justify-content:center;align-content:center;gap:0 10px}
+  #scrSet h2{width:100%} #scrSet .btn{width:45%;margin:4px 0} #scrSet>*{margin-top:0!important;margin-bottom:0!important}
+}
+
 </style>
 </head>
 <body>
@@ -296,7 +330,7 @@ const CFG = {
   MAX_RING: 48,
   MAX_BOLT: 40,
   MAX_MINE: 40,
-  ZONE_TIME: 40,          // секунд на одну зону (100 м глубины)
+  ZONE_TIME: 60,          // секунд на одну зону (100 м глубины); QA: 40→60, босс 1 на ~4-й минуте
   CELL: 96,               // размер ячейки пространственной сетки
   JOY_R: 58,              // радиус плавающего джойстика (css px)
 };
@@ -434,9 +468,9 @@ const numStr = n => { n = n | 0; if (n < 3000) return NUMS[n] || (NUMS[n] = Stri
 /* ============================ 3. SAVE ============================ */
 const SAVE_KEY = 'svet_bezdny_save_v1';
 function defaultSave() {
-  return {pearls:0, best:0, bestDepth:0, totalKills:0, totalPearls:0, runs:0, flares:0,
+  return {pearls:0, best:0, bestDepth:0, totalKills:0, totalPearls:0, runs:0, flares:0, qAuto:2,
     shop:{}, chars:{lumen:1}, char:'lumen', skins:{azure:1}, skin:'azure', ach:{}, seenHow:0,
-    set:{sound:1, music:1, vibro:1, quality:'high', nums:1, shake:1}};
+    set:{sound:1, music:1, vibro:1, quality:'auto', nums:1, shake:1, qv:1}};
 }
 function loadSave() {
   const d = defaultSave();
@@ -444,17 +478,23 @@ function loadSave() {
     const raw = localStorage.getItem(SAVE_KEY);
     if (raw) {
       const o = JSON.parse(raw);
-      if (o && typeof o === 'object') {
+      if (o && typeof o === 'object' && !Array.isArray(o)) {
         for (const k in d) {
           if (!(k in o)) continue;
-          if (d[k] && typeof d[k] === 'object') Object.assign(d[k], o[k] || {});
-          else d[k] = o[k];
+          // QA: типы проверяются — повреждённое сохранение не должно ломать игру (NaN, строки вместо объектов)
+          if (d[k] && typeof d[k] === 'object') { if (o[k] && typeof o[k] === 'object' && !Array.isArray(o[k])) Object.assign(d[k], o[k]); }
+          else if (typeof d[k] === 'number') { const v = +o[k]; if (isFinite(v) && v >= 0) d[k] = Math.floor(v); }
+          else if (typeof o[k] === typeof d[k]) d[k] = o[k];
         }
+        if (!(o.set && o.set.qv)) d.set.quality = 'auto'; // старые сохранения переводим на авто-качество
       }
     }
   } catch (e) { /* без сохранений — тоже играем */ }
   if (!CHARS[d.char]) d.char = 'lumen';
   if (!SKINS[d.skin]) d.skin = 'azure';
+  if (!['auto', 'high', 'low'].includes(d.set.quality)) d.set.quality = 'auto';
+  for (const k in d.shop) { const v = +d.shop[k]; d.shop[k] = isFinite(v) && v > 0 ? Math.floor(v) : 0; }
+  d.chars.lumen = 1; d.skins.azure = 1; d.set.qv = 1;
   return d;
 }
 const S = loadSave();
@@ -788,6 +828,12 @@ const ctx = cv.getContext('2d', {alpha: false});
 let W = 390, H = 844, DPR = 1, VS = 1, VW = 200, VH = 400; // экран (css px), масштаб мира, полуразмеры видимой области
 const SAFE = {t: 0, b: 0, l: 0, r: 0};
 let MAX_PART = CFG.MAX_PART_HI;
+/* ---- Качество графики (QA): 0 — эконом, 1 — среднее, 2 — высокое.
+   «Авто» снижает уровень, если скользящее среднее кадра > 22 мс, и осторожно повышает обратно. ---- */
+const QDPR = [1, 1.5, 2];
+const QAUTO = {lvl: 2, acc: 0, n: 0, bad: 0, good: 0, fail: [0, 0, 0], cool: 0};
+let QL = 2, FRAME_CAP = false;
+function qLevel() { return S.set.quality === 'low' ? 0 : S.set.quality === 'high' ? 2 : QAUTO.lvl; }
 
 const G = {
   state: 'title', t: 0, runT: 0, zone: 1, zoneT: 0, score: 0, combo: 0, comboT: 0, maxCombo: 0, mult: 1,
@@ -883,7 +929,8 @@ window.addEventListener('blur', () => { Input.keys = {}; if (G.state === 'play')
 document.addEventListener('contextmenu', e => e.preventDefault());
 document.addEventListener('gesturestart', e => e.preventDefault());
 document.addEventListener('dblclick', e => e.preventDefault());
-document.addEventListener('touchmove', e => { if (!e.target.closest || !e.target.closest('.scroll')) e.preventDefault(); }, {passive: false});
+document.addEventListener('touchmove', e => { if (!e.target.closest || !e.target.closest('.scroll,.screen.on')) e.preventDefault(); }, {passive: false}); // QA: экраны меню прокручиваются на маленьких телефонах
+
 function hudBtn(id, fn) {
   const b = $(id);
   b.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); Snd.resume(); fn(); }, {passive: false});
@@ -928,7 +975,7 @@ function part(x, y, vx, vy, life, size, col, drag) {
   const p = parts.spawn(); p.x = x; p.y = y; p.vx = vx; p.vy = vy; p.life = p.max = life; p.size = size; p.col = col; p.drag = drag || 0;
 }
 function burst(x, y, n, col, spd, size, life) {
-  if (S.set.quality !== 'high') n = Math.ceil(n * 0.45);
+  if (QL === 0) n = Math.ceil(n * 0.45);
   for (let i = 0; i < n; i++) { const a = Math.random() * TAU, s = spd * (0.25 + Math.random() * 0.85);
     part(x, y, Math.cos(a) * s, Math.sin(a) * s, life * (0.6 + Math.random() * 0.6), size * (0.6 + Math.random() * 0.7), col, 3); }
 }
@@ -936,6 +983,7 @@ function ring(x, y, r0, r1, life, col, w) { const r = rings.spawn(); if (!r) ret
 function text(x, y, str, col, crit, big) {
   if (texts.n >= texts.cap) texts.kill(0);
   const t = texts.spawn(); t.x = x + rand(-6, 6); t.y = y; t.vy = big ? -40 : -70; t.life = t.max = big ? 1.6 : 0.75; t.str = str; t.col = col; t.crit = crit; t.big = !!big;
+  t.owner = 0; return t;
 }
 function bolt(x0, y0, x1, y1, col) {
   const b = bolts.spawn(); if (!b) return; b.n = 8; b.life = 0.18; b.col = col;
@@ -1009,7 +1057,7 @@ function updateDirector(dt) {
   const z = G.zone;
   let rate = (1.5 + 0.55 * (z - 1)) * (1 + G.zoneT / CFG.ZONE_TIME * 0.5);
   if (G.boss) rate *= 0.22;
-  const maxAlive = Math.min(CFG.MAX_ENEMIES - 20, 60 + z * 8) * (S.set.quality === 'high' ? 1 : 0.7);
+  const maxAlive = Math.min(CFG.MAX_ENEMIES - 20, 60 + z * 8); // QA: сложность больше не зависит от графики
   G.spawnAcc += rate * dt;
   while (G.spawnAcc >= 1) {
     G.spawnAcc -= 1; if (enemies.n >= maxAlive) continue;
@@ -1181,9 +1229,20 @@ function damageEnemy(e, dmg, crit, fromAng, kx, ky, src) {
   const isBoss = !!ET[e.type].boss;
   if (!isBoss) { const kb = e.elite ? 0.3 : 1; e.vx += kx * kb; e.vy += ky * kb; }
   if (ST.frost && src !== 'chain') e.slow = 0.6 + 0.5 * ST.frost;
-  if (S.set.nums) text(e.x, e.y - e.r * e.scale - 4, numStr(dmg), crit ? '#ffd54f' : '#ffffff', crit, false);
+  if (S.set.nums) dmgText(e, dmg, crit);
   sfx.hit();
   if (e.hp <= 0) killEnemy(e, src);
+}
+/** QA: цифры урона по одному врагу сливаются в одну растущую цифру (меньше мусора от спор и молний) */
+function dmgText(e, dmg, crit) {
+  const t = e.txt;
+  if (t && t.owner === e.uid && t.life > t.max * 0.35) {
+    t.val += dmg; t.str = numStr(t.val); t.life = Math.max(t.life, t.max * 0.7);
+    if (crit && !t.crit) { t.crit = true; t.col = '#ffd54f'; } return;
+  }
+  if (!crit && texts.n >= 26) return; // ограничение одновременно видимых цифр
+  const n = text(e.x, e.y - e.r * e.scale - 4, numStr(dmg), crit ? '#ffd54f' : '#ffffff', crit, false);
+  n.owner = e.uid; n.val = dmg; e.txt = n;
 }
 function chainFrom(e0, dmg, n) {
   let cx = e0.x, cy = e0.y; const id = ++G.chainId; e0.chainMark = id;
@@ -1312,7 +1371,7 @@ function collect(p) {
 function addXP(v) {
   P.xp += v * ST.xpMul;
   while (P.xp >= P.xpNext) {
-    P.xp -= P.xpNext; P.level++; P.xpNext = xpNeed(P.level); G.levelPending++; G.levelDelay = 0.3;
+    P.xp -= P.xpNext; P.level++; P.xpNext = xpNeed(P.level); G.levelPending++; G.levelDelay = Math.max(G.levelDelay, 0.3); // не сбрасывать паузу после босса
     ring(P.x, P.y, 10, 140, 0.5, C.GOLD, 5); burst(P.x, P.y, 20, C.GOLD, 260, 8, 0.6);
     if (P.level >= 20) unlock('lvl20');
   }
@@ -1343,7 +1402,7 @@ function updateEnemies(dt) {
           if (d < 320 && e.st <= 0 && !fz) { e.state = 1; e.st = 0.7; } }
         else if (e.state === 1) { steer(e, 0, 0, 6, dt); if (e.st > 0.25) e.ang += angDiff(e.ang, Math.atan2(dy, dx)) * Math.min(1, dt * 10);
           e.st -= dt; if (e.st <= 0) { e.state = 2; e.st = 0.5; e.vx = Math.cos(e.ang) * 640; e.vy = Math.sin(e.ang) * 640; } }
-        else if (e.state === 2) { e.st -= dt; if (S.set.quality === 'high' && Math.random() < 0.5) part(e.x, e.y, 0, 0, 0.25, 7, C.DART, 0);
+        else if (e.state === 2) { e.st -= dt; if (QL > 0 && Math.random() < 0.5) part(e.x, e.y, 0, 0, 0.25, 7, C.DART, 0);
           if (e.st <= 0) { e.state = 3; e.st = 0.9; } }
         else { steer(e, 0, 0, 2.5, dt); e.st -= dt; if (e.st <= 0) { e.state = 0; e.st = 0.6; } }
         break;
@@ -1595,13 +1654,19 @@ function updateRun(dt, realDt) {
   // камера плавно следует за игроком, слегка опережая движение
   const tx = P.x + P.vx * 0.12, ty = P.y + P.vy * 0.12, a = 1 - Math.exp(-realDt * 6);
   G.camX += (tx - G.camX) * a; G.camY += (ty - G.camY) * a;
-  if (G.levelPending > 0 && !P.dead) { G.levelDelay -= realDt; if (G.levelDelay <= 0) openLevelUp(); }
+  // QA: окно улучшений не открывается поверх крупного баннера (босс, победа над боссом, смена зоны)
+  if (G.levelPending > 0 && !P.dead && G.dying <= 0) { G.levelDelay -= realDt; const bn = G.banner, busy = bn.text && bn.t < bn.dur - 0.5 && G.levelDelay > -2.5;
+    if (G.levelDelay <= 0 && !busy) openLevelUp(); }
+
 }
 
 /* ============================ 9. RENDER ============================ */
 const FONT = 'system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans",Arial,sans-serif';
 let WS = 1, OX = 0, OY = 0;           // мировая трансформация текущего кадра
 let BGGRAD = null, VIGN = null, RAYGRAD = null, HURTV = null;
+// QA: фон (цвет зоны + градиент + лучи [+ виньетка]) рисуется в маленький холст 1/3 разрешения и растягивается
+// одним проходом — вместо 3–4 полноэкранных заливок за кадр.
+let BGS = null, BGX = null; const BG_K = 3;
 const RAYS = [[0.1, 70, 0], [0.32, 110, 1.3], [0.55, 60, 2.1], [0.74, 130, 3.7], [0.92, 80, 5.2]];
 const ZONE_COLS = ['#04203a', '#051a36', '#071733', '#08122e', '#0a0d2a', '#0c0a26', '#0f0822', '#0a0a24', '#0c061c', '#090416'];
 const DEMO = [];
@@ -1623,7 +1688,8 @@ function buildScreenCaches() {
   HURTV = mkCanvas(256, 256); g = HURTV.getContext('2d');
   gr = g.createRadialGradient(128, 128, 70, 128, 128, 182);
   gr.addColorStop(0, 'rgba(255,0,40,0)'); gr.addColorStop(1, 'rgba(255,20,60,0.85)'); g.fillStyle = gr; g.fillRect(0, 0, 256, 256);
-  RAYGRAD = ctx.createLinearGradient(0, 0, 0, H * 0.9);
+  BGS = mkCanvas(W / BG_K, H / BG_K); BGX = BGS.getContext('2d', {alpha: false});
+  RAYGRAD = BGX.createLinearGradient(0, 0, 0, H * 0.9);
   RAYGRAD.addColorStop(0, 'rgba(170,240,255,0.13)'); RAYGRAD.addColorStop(1, 'rgba(170,240,255,0)');
 }
 function initBackground() {
@@ -1637,21 +1703,28 @@ function initBackground() {
 }
 
 function renderBackground(dt) {
-  const hi = S.set.quality === 'high';
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  const hi = QL >= 1;
+  // 1) низкое разрешение: заливка, градиент, лучи, (виньетка на эконом/среднем)
+  const g = BGX; g.setTransform(1 / BG_K, 0, 0, 1 / BG_K, 0, 0); g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
   const zi = Math.min(ZONE_COLS.length - 1, G.state === 'title' ? 0 : G.zone - 1);
-  ctx.fillStyle = G.boss ? '#14061a' : ZONE_COLS[zi]; ctx.fillRect(0, 0, W, H);
-  ctx.drawImage(BGGRAD, 0, 0, W, H);
+  g.fillStyle = G.boss ? '#14061a' : ZONE_COLS[zi]; g.fillRect(0, 0, W, H);
+  g.drawImage(BGGRAD, 0, 0, W, H);
   // лучи света с поверхности (тускнеют с глубиной)
-  ctx.globalCompositeOperation = 'lighter';
+  g.globalCompositeOperation = 'lighter';
   const rayA = G.state === 'title' ? 1 : Math.max(0.2, 1 - (G.zone - 1) * 0.09) * (G.boss ? 0.4 : 1);
-  ctx.globalAlpha = rayA; ctx.fillStyle = RAYGRAD;
+  g.globalAlpha = rayA; g.fillStyle = RAYGRAD;
   const TWr = W * 1.6;
   for (let i = 0; i < (hi ? 5 : 3); i++) {
     const R = RAYS[i], x = mod(R[0] * TWr - G.camX * 0.05 * VS, TWr) - W * 0.3, sw = Math.sin(G.t * 0.3 + R[2]) * 40, w = R[1];
-    ctx.beginPath(); ctx.moveTo(x - w * 0.3, 0); ctx.lineTo(x + w * 0.3, 0); ctx.lineTo(x + w + sw + 60, H * 0.9); ctx.lineTo(x - w + sw + 60, H * 0.9); ctx.fill();
+    g.beginPath(); g.moveTo(x - w * 0.3, 0); g.lineTo(x + w * 0.3, 0); g.lineTo(x + w + sw + 60, H * 0.9); g.lineTo(x - w + sw + 60, H * 0.9); g.fill();
   }
+  g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+  if (QL < 2) g.drawImage(VIGN, 0, 0, W, H);
+  // 2) один полноэкранный проход
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  ctx.drawImage(BGS, 0, 0, W, H);
+  ctx.globalCompositeOperation = 'lighter';
   // морской снег — три слоя параллакса
   const TW = W + 60, TH = H + 60;
   for (let l = 0; l < 3; l++) {
@@ -1668,7 +1741,7 @@ function renderBackground(dt) {
 }
 
 function renderWorld() {
-  const hi = S.set.quality === 'high';
+  const hi = QL >= 1;
   const x0 = G.camX - VW - 80, x1 = G.camX + VW + 80, y0 = G.camY - VH - 80, y1 = G.camY + VH + 80;
   const inView = (x, y, m) => x > x0 - m && x < x1 + m && y > y0 - m && y < y1 + m;
   setWorld();
@@ -1867,7 +1940,7 @@ function renderTitleDemo(dt) {
 function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 function renderHUD() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
-  ctx.drawImage(VIGN, 0, 0, W, H);
+  if (QL >= 2) ctx.drawImage(VIGN, 0, 0, W, H); // на эконом/среднем виньетка уже запечена в фон
   if (G.hurtFlash > 0 || P.hp < P.maxHp * 0.3) { ctx.globalAlpha = Math.max(G.hurtFlash, P.hp < P.maxHp * 0.3 && !P.dead ? 0.35 + 0.25 * Math.sin(G.t * 6) : 0); ctx.drawImage(HURTV, 0, 0, W, H); ctx.globalAlpha = 1; }
   if (G.state === 'title' || G.state === 'over' && G.dying <= 0 && false) return;
   if (G.state !== 'play' && G.state !== 'pause' && G.state !== 'levelup') return;
@@ -1949,7 +2022,7 @@ function render(dt) {
 /* ============================ 10. UI ============================ */
 const SCREENS = ['scrTitle', 'scrHow', 'scrLevel', 'scrPause', 'scrOver', 'scrShop', 'scrAch', 'scrSet'];
 let backTo = 'scrTitle';
-function show(id) { for (const s of SCREENS) $(s).classList.toggle('on', s === id); }
+function show(id) { for (const s of SCREENS) $(s).classList.toggle('on', s === id); document.body.classList.toggle('menu', !!id); }
 function click(id, fn) { $(id).addEventListener('click', e => { Snd.init(); Snd.resume(); Snd.mStart(); sfx.click(); fn(e); }); }
 
 function updateTitle() {
@@ -2146,14 +2219,30 @@ function renderSet() {
   $('setSound').textContent = 'Звуки: ' + on(S.set.sound);
   $('setMusic').textContent = 'Музыка: ' + on(S.set.music);
   $('setVibro').textContent = 'Вибрация: ' + on(S.set.vibro);
-  $('setQuality').textContent = 'Графика: ' + (S.set.quality === 'high' ? 'ВЫСОКАЯ' : 'ЭКОНОМ');
+  $('setQuality').textContent = 'Графика: ' + (S.set.quality === 'high' ? 'ВЫСОКАЯ' : S.set.quality === 'low' ? 'ЭКОНОМ' : 'АВТО');
   $('setNums').textContent = 'Цифры урона: ' + on(S.set.nums);
   $('setShake').textContent = 'Тряска экрана: ' + on(S.set.shake);
 }
-function toggleSet(k) { if (k === 'quality') S.set.quality = S.set.quality === 'high' ? 'low' : 'high'; else S.set[k] = S.set[k] ? 0 : 1;
+function toggleSet(k) { if (k === 'quality') S.set.quality = S.set.quality === 'auto' ? 'high' : S.set.quality === 'high' ? 'low' : 'auto'; else S.set[k] = S.set[k] ? 0 : 1;
   persist(); Snd.apply(); if (k === 'quality') applyQuality(); if (k === 'vibro' && S.set.vibro) vibrate(30); renderSet(); }
 function openSet(from) { backTo = from; renderSet(); show('scrSet'); }
-function applyQuality() { MAX_PART = S.set.quality === 'high' ? CFG.MAX_PART_HI : CFG.MAX_PART_LO; resize(); }
+function applyQuality() { QL = qLevel(); MAX_PART = QL === 2 ? CFG.MAX_PART_HI : QL === 1 ? 420 : CFG.MAX_PART_LO; resize(); }
+/** Автоподстройка качества по скользящему среднему длительности кадра (окна по ~1 с). */
+function qualityTick(ms) {
+  if (S.set.quality !== 'auto' || G.state !== 'play' || document.hidden) { QAUTO.acc = QAUTO.n = 0; return; }
+  if (ms > 150) return; // смена вкладки, сборка мусора — не показатель
+  QAUTO.acc += ms; QAUTO.n++;
+  if (QAUTO.acc < 1000) return;
+  const avg = QAUTO.acc / QAUTO.n; QAUTO.acc = QAUTO.n = 0;
+  if (QAUTO.cool > 0) { QAUTO.cool--; return; }
+  const L = QAUTO.lvl;
+  if (avg > 22 && L > 0) { // хуже ~45 к/с
+    QAUTO.good = 0; QAUTO.bad += avg > 33 ? 2 : 1;
+    if (QAUTO.bad >= 2) { QAUTO.fail[L]++; QAUTO.lvl--; QAUTO.bad = 0; QAUTO.cool = 1; applyQuality(); S.qAuto = QAUTO.lvl; persist(); }
+  } else if (avg < 18 && L < 2 && QAUTO.fail[L + 1] < 2) { // стабильные 60 к/с — пробуем вернуть качество
+    QAUTO.bad = 0; if (++QAUTO.good >= 12) { QAUTO.lvl++; QAUTO.good = 0; QAUTO.cool = 2; applyQuality(); S.qAuto = QAUTO.lvl; persist(); }
+  } else { QAUTO.bad = 0; if (avg >= 18) QAUTO.good = 0; }
+}
 
 /* ---------- конец забега ---------- */
 function gameOver() {
@@ -2199,20 +2288,27 @@ for (const [id, k] of [['setSound', 'sound'], ['setMusic', 'music'], ['setVibro'
 /* ============================ 11. MAIN LOOP ============================ */
 function resize() {
   W = Math.max(1, window.innerWidth); H = Math.max(1, window.innerHeight);
-  DPR = Math.min(window.devicePixelRatio || 1, S.set.quality === 'high' ? 2 : 1);
+  DPR = Math.min(window.devicePixelRatio || 1, QDPR[QL]);
   cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
   VS = clamp(Math.min(W, H) / 450, 0.8, 1.8); VW = W / 2 / VS; VH = H / 2 / VS;
   try { const cs = getComputedStyle($('safeProbe')); SAFE.t = parseFloat(cs.paddingTop) || 0; SAFE.r = parseFloat(cs.paddingRight) || 0; SAFE.b = parseFloat(cs.paddingBottom) || 0; SAFE.l = parseFloat(cs.paddingLeft) || 0; } catch (e) {}
   buildScreenCaches();
+  G.redraw = 2;
 }
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 200));
 document.addEventListener('visibilitychange', () => { if (document.hidden) { if (G.state === 'play') pauseGame(); Snd.suspend(); } else if (G.state !== 'title' || Snd.ready) Snd.resume(); });
 
 const PERF = {frames: 0, sum: 0, max: 0, cpuSum: 0, cpuMax: 0, slow: 0, reset() { this.frames = this.sum = this.max = this.cpuSum = this.cpuMax = this.slow = 0; }};
-let lastT = performance.now(), lastP = -1, lastCd = -1, lastReady = false;
+let lastT = performance.now(), lastP = -1, lastCd = -1, lastReady = false, prevState = '', rafAvg = 16.7, lastRaf = 0;
 function frame(now) {
   requestAnimationFrame(frame);
+  // QA: на экранах 120 Гц рисуем каждый второй кадр (60 к/с) — меньше нагрев и расход батареи
+  const ri = now - lastRaf; lastRaf = now; if (ri > 0 && ri < 100) rafAvg += (ri - rafAvg) * 0.05;
+  FRAME_CAP = rafAvg < 9.6;
+  if (now < lastT) lastT = now;
+  if (FRAME_CAP && now - lastT < 12.5) return;
+
   let rdt = (now - lastT) / 1000; lastT = now;
   const raw = rdt; if (rdt > 0.05) rdt = 0.05; if (rdt < 0) rdt = 0;
   const c0 = performance.now();
@@ -2235,7 +2331,10 @@ function frame(now) {
   if (G.shake > 0) { G.shake *= Math.exp(-rdt * 9); if (G.shake < 0.3) G.shake = 0; }
   if (G.flash > 0) G.flash -= rdt * 2.4;
   if (G.hurtFlash > 0) G.hurtFlash -= rdt * 2.5;
-  render(rdt);
+  qualityTick(raw * 1000);
+  // QA: на паузе и выборе улучшения мир заморожен — не перерисовываем его каждый кадр
+  if (G.state !== prevState) { prevState = G.state; G.redraw = 2; }
+  if ((G.state !== 'pause' && G.state !== 'levelup') || G.redraw > 0) { render(rdt); if (G.redraw > 0) G.redraw--; }
   const cpu = performance.now() - c0;
   PERF.frames++; PERF.sum += raw * 1000; if (raw * 1000 > PERF.max) PERF.max = raw * 1000; if (raw > 1 / 45) PERF.slow++;
   PERF.cpuSum += cpu; if (cpu > PERF.cpuMax) PERF.cpuMax = cpu;
@@ -2243,14 +2342,16 @@ function frame(now) {
 
 /* ---- запуск ---- */
 buildGlows(); buildSprites(); initBackground();
-MAX_PART = S.set.quality === 'high' ? CFG.MAX_PART_HI : CFG.MAX_PART_LO;
-resize(); toTitle();
+QAUTO.lvl = Math.min(2, S.qAuto); // начинаем с уровня, который подошёл этому телефону в прошлый раз
+applyQuality(); toTitle();
 requestAnimationFrame(t => { lastT = t; frame(t); });
 
 // Хук для автотестов и отладки (QA): window.__SB
 window.__SB = {G, P, S, ST, PERF, enemies, ebul, pbul, parts, picks, startRun, pauseGame, resumeGame, gameOver,
   jumpZone(z) { G.zone = z - 1; G.zoneT = CFG.ZONE_TIME; }, giveXP(n) { addXP(n); }, god(on) { G.god = !!on; },
-  up(id, n) { P.up[id] = (P.up[id] || 0) + (n || 1); computeStats(); }, killBoss() { if (G.boss) killEnemy(G.boss, null); }};
+  up(id, n) { P.up[id] = (P.up[id] || 0) + (n || 1); computeStats(); }, killBoss() { if (G.boss) killEnemy(G.boss, null); },
+  qLevel: () => QL, QAUTO, setQuality(q) { S.set.quality = q; applyQuality(); }, Input, UPG, texts};
+
 })();
 </script>
 </body>
