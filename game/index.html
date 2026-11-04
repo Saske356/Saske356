@@ -875,7 +875,7 @@ const lv = id => P.up[id] || 0;
 function computeStats() {
   const ch = CHARS[S.char], sh = S.shop;
   ST.dmg = 10 * (1 + 0.25 * lv('dmg')) * (1 + 0.06 * (sh.dmg || 0)) * (lv('hunter') ? 1.4 : 1) * ch.dmg;
-  ST.rate = 3.0 * (1 + 0.18 * lv('rate')) * ch.rate;
+  ST.rate = 3.4 * (1 + 0.18 * lv('rate')) * ch.rate;
   ST.multi = 1 + lv('multi');
   ST.pierce = lv('pierce') + ch.pierce;
   ST.bounce = lv('bounce');
@@ -898,7 +898,7 @@ function computeStats() {
   if (P.maxHp > oldMax && G.state !== 'title') P.hp += P.maxHp - oldMax;
   P.hp = Math.min(P.hp, P.maxHp);
 }
-const xpNeed = l => Math.floor(5 + l * 4 + l * l * 0.6);
+const xpNeed = l => Math.floor(4 + l * 3.2 + l * l * 0.55);
 
 /* ---------- эффекты ---------- */
 function part(x, y, vx, vy, life, size, col, drag) {
@@ -928,7 +928,7 @@ function banner(text, sub, col, dur) { const b = G.banner; b.t = 0; b.dur = dur 
 function spawnEnemy(type, x, y, elite) {
   const e = enemies.spawn(); if (!e) return null;
   const d = ET[type];
-  const z = G.zone - 1, hpMul = (1 + 0.3 * z + 0.025 * z * z) * (d.boss ? G.hpScale : 1);
+  const z = G.zone - 1, hpMul = (1 + 0.24 * z + 0.025 * z * z) * (d.boss ? G.hpScale : 1);
   e.type = type; e.x = x; e.y = y; e.vx = 0; e.vy = 0; e.r = d.r; e.maxHp = e.hp = d.boss ? d.hp * G.hpScale : d.hp * hpMul;
   e.spd = d.spd * (d.boss ? 1 : 1 + Math.min(0.35, z * 0.03)); e.dmg = d.dmg * G.dmgScale; e.xp = d.xp; e.score = d.score; e.col = d.col;
   e.ang = Math.atan2(P.y - y, P.x - x); e.t = Math.random() * 2; e.st = 0; e.state = 0; e.flash = 0; e.slow = 0; e.freeze = 0;
@@ -984,9 +984,9 @@ function updateDirector(dt) {
     G.zoneT += dt; if (G.zoneT >= CFG.ZONE_TIME) nextZone();
   }
   const z = G.zone;
-  let rate = (2.6 + 0.7 * (z - 1)) * (1 + G.zoneT / CFG.ZONE_TIME * 0.7);
+  let rate = (1.5 + 0.55 * (z - 1)) * (1 + G.zoneT / CFG.ZONE_TIME * 0.5);
   if (G.boss) rate *= 0.22;
-  const maxAlive = Math.min(CFG.MAX_ENEMIES - 20, 70 + z * 8) * (S.set.quality === 'high' ? 1 : 0.7);
+  const maxAlive = Math.min(CFG.MAX_ENEMIES - 20, 60 + z * 8) * (S.set.quality === 'high' ? 1 : 0.7);
   G.spawnAcc += rate * dt;
   while (G.spawnAcc >= 1) {
     G.spawnAcc -= 1; if (enemies.n >= maxAlive) continue;
@@ -1871,7 +1871,7 @@ function render(dt) {
 const SCREENS = ['scrTitle', 'scrHow', 'scrLevel', 'scrPause', 'scrOver', 'scrShop', 'scrAch', 'scrSet'];
 let backTo = 'scrTitle';
 function show(id) { for (const s of SCREENS) $(s).classList.toggle('on', s === id); }
-function click(id, fn) { $(id).addEventListener('click', e => { Snd.init(); Snd.resume(); sfx.click(); fn(e); }); }
+function click(id, fn) { $(id).addEventListener('click', e => { Snd.init(); Snd.resume(); Snd.mStart(); sfx.click(); fn(e); }); }
 
 function updateTitle() {
   $('tStats').innerHTML = 'Рекорд: <b>' + fmt(S.best) + '</b> · Глубина: <b>' + S.bestDepth + ' м</b><br><span class="pearl"></span><b>' + S.pearls +
@@ -2169,7 +2169,7 @@ resize(); toTitle();
 requestAnimationFrame(t => { lastT = t; frame(t); });
 
 // Хук для автотестов и отладки (QA): window.__SB
-window.__SB = {G, P, S, ST, PERF, enemies, ebul, pbul, parts, startRun, pauseGame, resumeGame, gameOver,
+window.__SB = {G, P, S, ST, PERF, enemies, ebul, pbul, parts, picks, startRun, pauseGame, resumeGame, gameOver,
   jumpZone(z) { G.zone = z - 1; G.zoneT = CFG.ZONE_TIME; }, giveXP(n) { addXP(n); }, god(on) { G.god = !!on; },
   up(id, n) { P.up[id] = (P.up[id] || 0) + (n || 1); computeStats(); }};
 })();
