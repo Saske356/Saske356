@@ -1,4 +1,4 @@
-"""Генерация картинок. По умолчанию — Pollinations (FLUX), бесплатно и без ключа."""
+"""Генерация картинок: OpenRouter (Nano Banana), Gemini или бесплатный Pollinations (FLUX)."""
 import random
 from urllib.parse import quote
 
@@ -36,6 +36,8 @@ async def pollinations(prompt: str, aspect: str = "1:1") -> bytes:
 
 
 async def generate_image(prompt: str, aspect: str = "1:1") -> bytes:
+    if config.IMAGE_PROVIDER == "openrouter" and config.OPENROUTER_API_KEY:
+        return await ai.openrouter_image(prompt, aspect)  # платно — без тихого отката на худшее качество
     if config.IMAGE_PROVIDER == "gemini" and config.GEMINI_API_KEY:
         try:
             return await ai.gemini_image(prompt, aspect)

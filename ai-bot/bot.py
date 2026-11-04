@@ -90,17 +90,22 @@ async def set_mode(update: Update, context: ContextTypes.DEFAULT_TYPE, mode: str
     }
     if mode == "video" and not config.VIDEO_ENABLED:
         texts["video"] += (
-            "\n\n⚠️ Видео сейчас выключено: генерация видео в высоком качестве (Google Veo) "
-            "работает только на платном тарифе Gemini API. Владелец бота может включить её в .env."
+            "\n\n⚠️ Видео сейчас выключено: качественное видео (Google Veo) работает "
+            "только с платным ключом Gemini API. Владелец бота может включить его в .env."
         )
     await update.message.reply_text(texts[mode], reply_markup=MENU)
 
 
 # ---------- чат ----------
 
-async def do_chat(update: Update, context: ContextTypes.DEFAULT_TYPE, parts: list) -> None:
+async def do_chat(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, image_b64: str | None = None) -> None:
+    if not ai.has_chat():
+        return await update.effective_message.reply_text("⚠️ Владелец не указал ключ ИИ в .env.")
     history = context.user_data.setdefault("history", [])
-    history.append({"role": "user", "parts": parts})
+    msg = {"role": "user", "text": text}
+    if image_b64:
+        msg["image_b64"] = image_b64
+    history.append(msg)
     del history[:-config.HISTORY_LIMIT]
     await update.effective_chat.send_action(ChatAction.TYPING)
     try:
@@ -108,10 +113,14 @@ async def do_chat(update: Update, context: ContextTypes.DEFAULT_TYPE, parts: lis
     except ai.AIError as e:
         history.pop()
         return await update.effective_message.reply_text(f"⚠️ {e}")
-    history.append({"role": "model", "parts": [{"text": answer}]})
+    except Exception:
+        history.pop()
+        log.exception("chat error")
+        return await update.effective_message.reply_text("⚠️ ИИ не ответил, попробуйте ещё раз.")
+    history.append({"role": "assistant", "text": answer})
     # Картинки в истории много весят — после ответа оставляем только текст.
-    for msg in history:
-        msg["parts"] = [p for p in msg["parts"] if "text" in p] or [{"text": "(фото)"}]
+    for m in history:
+        m.pop("image_b64", None)
     await send_long(update, answer)
 
 
@@ -207,7 +216,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     elif mode == "video":
         await do_video(update, context, text)
     else:
-        await do_chat(update, context, [{"text": text}])
+        await do_chat(update, context, text)
 
 
 async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -216,11 +225,8 @@ async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return await deny(update)
     file = await update.message.photo[-1].get_file()
     raw = await file.download_as_bytearray()
-    parts = [
-        {"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(bytes(raw)).decode()}},
-        {"text": update.message.caption or "Что на этом фото?"},
-    ]
-    await do_chat(update, context, parts)
+    await do_chat(update, context, update.message.caption or "Что на этом фото?",
+                  base64.b64encode(bytes(raw)).decode())
 
 
 async def cmd_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -248,8 +254,12 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
 def main() -> None:
     if not config.TELEGRAM_TOKEN:
         raise SystemExit("Нет TELEGRAM_TOKEN. Скопируйте .env.example в .env и впишите токен от @BotFather.")
-    if not config.GEMINI_API_KEY:
-        log.warning("Нет GEMINI_API_KEY — чат работать не будет (картинки будут, но без улучшения промпта).")
+    if not ai.has_chat():
+        log.warning("Нет ключа ИИ (OPENROUTER_API_KEY или GEMINI_API_KEY) — чат работать не будет.")
+    if not config.ALLOWED_USERS:
+        log.warning("ALLOWED_USERS пуст — ботом может пользоваться кто угодно и тратить ваш баланс!")
+    log.info("Чат: %s (%s), фото: %s, видео: %s", config.AI_PROVIDER, config.CHAT_MODEL,
+             config.IMAGE_PROVIDER, "вкл" if config.VIDEO_ENABLED else "выкл")
 
     app = Application.builder().token(config.TELEGRAM_TOKEN).concurrent_updates(True).build()
     app.add_handler(CommandHandler(["start", "help"], start))

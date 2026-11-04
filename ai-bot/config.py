@@ -22,14 +22,20 @@ def _bool(name: str, default: bool = False) -> bool:
 
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
-# Модель для чата (бесплатная в Google AI Studio)
-CHAT_MODEL = os.getenv("CHAT_MODEL", "gemini-2.5-flash")
+# Кто отвечает в чате: "openrouter" или "gemini"
+AI_PROVIDER = os.getenv("AI_PROVIDER", "openrouter" if OPENROUTER_API_KEY or not GEMINI_API_KEY else "gemini")
+
+# Модель чата. Для OpenRouter — id с сайта openrouter.ai/models, для Gemini — например gemini-2.5-flash
+CHAT_MODEL = os.getenv("CHAT_MODEL", "google/gemini-2.5-flash" if AI_PROVIDER == "openrouter" else "gemini-2.5-flash")
 HISTORY_LIMIT = int(os.getenv("HISTORY_LIMIT", "20"))
 
-# Фото: "pollinations" (бесплатно, без ключа) или "gemini" (нужен платный ключ Gemini)
-IMAGE_PROVIDER = os.getenv("IMAGE_PROVIDER", "pollinations")
+# Фото: "openrouter" (Nano Banana — топ качество, ~$0.04 за картинку),
+#       "pollinations" (бесплатно, качество среднее), "gemini" (ключ Gemini на платном тарифе)
+IMAGE_PROVIDER = os.getenv("IMAGE_PROVIDER", "openrouter" if OPENROUTER_API_KEY else "pollinations")
+IMAGE_MODEL = os.getenv("IMAGE_MODEL", "google/gemini-2.5-flash-image")
 IMAGE_MODEL_GEMINI = os.getenv("IMAGE_MODEL_GEMINI", "gemini-2.5-flash-image")
 POLLINATIONS_MODEL = os.getenv("POLLINATIONS_MODEL", "flux")
 POLLINATIONS_TOKEN = os.getenv("POLLINATIONS_TOKEN", "")  # необязательно: убирает лимиты/логотип
