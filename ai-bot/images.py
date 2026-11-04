@@ -1,4 +1,5 @@
 """Генерация картинок: OpenRouter (Nano Banana), Gemini или бесплатный Pollinations (FLUX)."""
+import asyncio
 import random
 from urllib.parse import quote
 
@@ -21,18 +22,25 @@ async def pollinations(prompt: str, aspect: str = "1:1") -> bytes:
         "height": h,
         "model": config.POLLINATIONS_MODEL,
         "nologo": "true",
-        "enhance": "false",
         "seed": random.randint(1, 2_000_000_000),
     }
     headers = {}
     if config.POLLINATIONS_TOKEN:
         headers["Authorization"] = f"Bearer {config.POLLINATIONS_TOKEN}"
-    url = f"https://image.pollinations.ai/prompt/{quote(prompt[:1500])}"
-    async with httpx.AsyncClient(timeout=180, follow_redirects=True) as client:
-        resp = await client.get(url, params=params, headers=headers)
-    if resp.status_code != 200 or not resp.headers.get("content-type", "").startswith("image"):
-        raise ai.AIError(f"Сервис картинок не ответил ({resp.status_code}). Попробуйте ещё раз через минуту.")
-    return resp.content
+    # Бесплатный сервис плохо переносит длинные промпты и очередь — короче промпт и пара повторов.
+    url = f"https://image.pollinations.ai/prompt/{quote(prompt[:450])}"
+    last = ""
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(timeout=90, follow_redirects=True) as client:
+                resp = await client.get(url, params=params, headers=headers)
+            if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
+                return resp.content
+            last = f"код {resp.status_code}"
+        except httpx.HTTPError as e:
+            last = type(e).__name__
+        await asyncio.sleep(5 * (attempt + 1))
+    raise ai.AIError(f"Бесплатный сервис картинок сейчас недоступен ({last}). Попробуйте позже или смените модель в /model.")
 
 
 async def generate_image(prompt: str, aspect: str = "1:1", model: str | None = None) -> bytes:

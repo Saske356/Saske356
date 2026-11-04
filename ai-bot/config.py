@@ -39,7 +39,7 @@ DAILY_LIMIT_USD = float(os.getenv("DAILY_LIMIT_USD", "1.0"))
 # Фото: "openrouter" (Nano Banana — топ качество, ~$0.04 за картинку),
 #       "pollinations" (бесплатно, качество среднее), "gemini" (ключ Gemini на платном тарифе)
 IMAGE_PROVIDER = os.getenv("IMAGE_PROVIDER", "openrouter" if OPENROUTER_API_KEY else "pollinations")
-IMAGE_MODEL = os.getenv("IMAGE_MODEL", "google/gemini-nano-banana-2.1")
+IMAGE_MODEL = os.getenv("IMAGE_MODEL", "google/gemini-3.1-flash-lite-image")
 IMAGE_MODEL_GEMINI = os.getenv("IMAGE_MODEL_GEMINI", "gemini-2.5-flash-image")
 POLLINATIONS_MODEL = os.getenv("POLLINATIONS_MODEL", "flux")
 POLLINATIONS_TOKEN = os.getenv("POLLINATIONS_TOKEN", "")  # необязательно: убирает лимиты/логотип
@@ -47,7 +47,7 @@ POLLINATIONS_TOKEN = os.getenv("POLLINATIONS_TOKEN", "")  # необязател
 # Видео: "openrouter" (Veo/Kling/Grok через OpenRouter), "gemini" (Veo по ключу Gemini) или "off"
 VIDEO_PROVIDER = os.getenv("VIDEO_PROVIDER", "openrouter" if OPENROUTER_API_KEY else ("gemini" if _bool("VIDEO_ENABLED") else "off"))
 VIDEO_ENABLED = VIDEO_PROVIDER != "off"
-VIDEO_MODEL = os.getenv("VIDEO_MODEL", "google/veo-3.1-lite" if VIDEO_PROVIDER == "openrouter" else "veo-3.0-generate-001")
+VIDEO_MODEL = os.getenv("VIDEO_MODEL", "x-ai/grok-imagine-video-1.5-lite" if VIDEO_PROVIDER == "openrouter" else "veo-3.0-generate-001")
 
 # Видео-модели для /vmodel: id -> (подпись, параметры, примерная цена за ролик $)
 VIDEO_MODELS = {
@@ -75,9 +75,10 @@ SYSTEM_PROMPT = os.getenv(
 
 # Модели картинок для /model: id -> (подпись, примерная цена за картинку $)
 IMAGE_MODELS = {
-    "google/gemini-nano-banana-2.1": ("⭐ Nano Banana 2.1 — новая, ~$0.04", 0.04),
+    "google/gemini-3.1-flash-lite-image": ("⭐ Flash Lite Image — самая дешёвая платная, ~$0.034", 0.034),
+    "google/gemini-nano-banana-2.1": ("Nano Banana 2.1 — новая, ~$0.04", 0.04),
     "google/gemini-2.5-flash-image": ("Nano Banana — классика, ~$0.04", 0.04),
     "openai/gpt-5.4-image-2": ("GPT Image 2 — OpenAI, ~$0.04", 0.05),
     "google/gemini-3-pro-image": ("💎 Nano Banana Pro — максимум, ~$0.14", 0.14),
-    "pollinations": ("🆓 Бесплатная (FLUX) — качество хуже", 0.0),
+    "pollinations": ("🆓 Бесплатная (FLUX) — $0, но хуже и бывает недоступна", 0.0),
 }
