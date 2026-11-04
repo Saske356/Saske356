@@ -9,6 +9,7 @@ import base64
 
 import httpx
 
+import budget
 import config
 
 GEMINI_API = "https://generativelanguage.googleapis.com/v1beta"
@@ -67,6 +68,7 @@ async def _or_request(body: dict, timeout: float = 120) -> dict:
     data = resp.json()
     if data.get("error"):
         raise AIError(f"OpenRouter: {data['error'].get('message', data['error'])}")
+    budget.add(float((data.get("usage") or {}).get("cost") or 0))
     return data
 
 
@@ -92,6 +94,40 @@ async def openrouter_image(prompt: str, aspect: str = "1:1", model: str | None =
             async with httpx.AsyncClient(timeout=120) as client:
                 return (await client.get(url)).content
     raise AIError("Модель не вернула картинку (возможно, промпт заблокирован фильтром).")
+
+
+async def openrouter_video(prompt: str, model: str, params: dict, aspect: str = "16:9",
+                           on_progress=None) -> tuple[bytes, float]:
+    """Видео через OpenRouter: создаём задачу, ждём, скачиваем. Возвращает (mp4, цена $)."""
+    body = {"model": model, "prompt": prompt, "aspect_ratio": aspect, **params}
+    async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+        r = await client.post("https://openrouter.ai/api/v1/videos", headers=_or_headers(), json=body)
+        if r.status_code not in (200, 201, 202):
+            raise AIError(_or_explain(r))
+        job = r.json()
+        poll = job.get("polling_url") or f"https://openrouter.ai/api/v1/videos/{job['id']}"
+        for i in range(90):  # до ~15 минут
+            await asyncio.sleep(10)
+            r = await client.get(poll, headers=_or_headers())
+            if r.status_code != 200:
+                raise AIError(_or_explain(r))
+            job = r.json()
+            status = job.get("status")
+            if status == "failed":
+                err = job.get("error")
+                raise AIError(f"Видео не получилось: {err.get('message', err) if isinstance(err, dict) else err}")
+            if status == "completed":
+                cost = float((job.get("usage") or {}).get("cost") or 0)
+                budget.add(cost)
+                urls = job.get("unsigned_urls") or []
+                url = urls[0] if urls else f"https://openrouter.ai/api/v1/videos/{job['id']}/content?index=0"
+                v = await client.get(url, headers=_or_headers(), timeout=300)
+                if v.status_code != 200:
+                    raise AIError(f"Не удалось скачать видео ({v.status_code}).")
+                return v.content, cost
+            if on_progress and i % 3 == 2:
+                await on_progress((i + 1) * 10)
+    raise AIError("Видео генерировалось слишком долго, попробуйте ещё раз.")
 
 
 # =============================================================
@@ -195,10 +231,10 @@ def has_chat() -> bool:
     return bool(config.OPENROUTER_API_KEY if config.AI_PROVIDER == "openrouter" else config.GEMINI_API_KEY)
 
 
-async def complete(history: list, system: str | None = None, timeout: float = 120) -> str:
+async def complete(history: list, system: str | None = None, timeout: float = 120, model: str | None = None) -> str:
     if config.AI_PROVIDER == "openrouter":
-        return await _or_chat(history, system, config.CHAT_MODEL, timeout)
-    data = await _g_generate(_to_gemini(history), system, config.CHAT_MODEL, timeout=timeout)
+        return await _or_chat(history, system, model or config.CHAT_MODEL, timeout)
+    data = await _g_generate(_to_gemini(history), system, model or config.CHAT_MODEL, timeout=timeout)
     return _g_text(data)
 
 
@@ -222,9 +258,11 @@ ENHANCE_IMAGE = (
     "Output only the prompt, no quotes, no comments."
 )
 ENHANCE_VIDEO = (
-    "Rewrite the user's idea into ONE detailed English prompt for a cinematic text-to-video model. "
-    "Describe the scene, camera movement, lighting, mood, motion and ambience. Keep the intent. "
-    "Output only the prompt, no quotes."
+    "Rewrite the user's idea (often in Russian) into ONE detailed English prompt for a cinematic "
+    "text-to-video model. Keep named characters/franchises exactly (e.g. 'Асуна' = Asuna Yuuki from "
+    "Sword Art Online) with their canonical look and art style. Describe the scene, the main action, "
+    "camera movement, lighting, mood and ambience in under 90 words. Keep the intent, do not water it "
+    "down. Output only the prompt, no quotes."
 )
 
 
@@ -232,9 +270,13 @@ async def enhance_prompt(idea: str, kind: str = "image") -> str:
     """Перевести и расписать промпт — заметно улучшает качество генерации."""
     if not has_chat():
         return idea
-    try:
-        text = await complete([{"role": "user", "text": idea}],
-                              ENHANCE_IMAGE if kind == "image" else ENHANCE_VIDEO, timeout=40)
-        return text or idea
-    except Exception:
-        return idea
+    system = ENHANCE_IMAGE if kind == "image" else ENHANCE_VIDEO
+    # Дешёвая модель, при сбое — ещё раз основной.
+    for model in (config.ENHANCE_MODEL, config.CHAT_MODEL):
+        try:
+            text = await complete([{"role": "user", "text": idea}], system, timeout=60, model=model)
+            if text:
+                return text
+        except Exception:
+            continue
+    return idea
