@@ -193,7 +193,7 @@ h2{font-size:28px;font-weight:900;letter-spacing:2px;margin-bottom:14px;color:#f
     <p><span class="ic">2</span><b>РЫВОК</b> — мгновенный бросок, во время которого тебя нельзя задеть.</p>
     <p><span class="ic">3</span><b>ВСПЫШКА</b> копится от убийств и пуль, пролетевших впритирку. Сжигает всё вокруг.</p>
     <p><span class="ic">4</span>Собирай искры опыта и выбирай <b>1 из 3 улучшений</b>. Пары улучшений рождают золотые <b>синергии</b>.</p>
-    <p><span class="ic">5</span>Каждые 100 м — глубже и опаснее. На 500 м и 1000 м ждут <b>владыки бездны</b>. Жемчуг сохраняется между заплывами.</p>
+    <p><span class="ic">5</span>Каждые 100 м — глубже и опаснее. На 500, 1000 и 1500 м ждут <b>владыки бездны</b>. Жемчуг сохраняется между заплывами.</p>
     <p class="hint" style="padding:0">Клавиатура: WASD / стрелки, Пробел — рывок, E — вспышка, Esc — пауза.</p>
   </div>
   <button class="btn big" id="btnHowOk">ПОГРУЖАЕМСЯ!</button>
@@ -319,11 +319,14 @@ const ET = {
   crab:    {r:22, hp:120, spd:44,  dmg:18, xp:6,  score:60,  col:C.CRAB},
   boss1:   {r:56, hp:2300,spd:150, dmg:22, xp:90, score:5000, col:C.CYAN, boss:1, name:'МОРОК-УДИЛЬЩИК'},
   boss2:   {r:64, hp:5200,spd:70,  dmg:20, xp:140,score:10000,col:C.PURP, boss:1, name:'МАТЕРЬ ГЛУБИН'},
+  boss3:   {r:58, hp:7600,spd:60,  dmg:24, xp:200,score:20000,col:C.CRAB, boss:1, name:'СЕРДЦЕ БЕЗДНЫ'},
+  crystal: {r:12, hp:70,  spd:0,   dmg:12, xp:2,  score:100,  col:C.GOLD},
 };
 
 // Названия зон (каждые 100 м)
 const ZONES = ['Сумеречная толща','Сад медуз','Стеклянный риф','Чёрные течения','Логово Морока',
-  'Костяные поля','Шёпот глубины','Ледяные жерла','Пасть бездны','Престол Матери'];
+  'Костяные поля','Шёпот глубины','Ледяные жерла','Пасть бездны','Престол Матери',
+  'Чертоги эха','Мёртвый свет','Корни мира','Сердцебиение','Сердце Бездны'];
 
 // Улучшения в забеге. syn = [id1, lv1, id2, lv2] — синергия (золотая карта)
 const UPG = [
@@ -396,6 +399,7 @@ const ACH = [
   {id:'depth500',name:'Полкилометра',      d:'Достичь глубины 500 м',            r:30},
   {id:'boss1',   name:'Рассеять Морок',    d:'Победить Морока-Удильщика',        r:50},
   {id:'boss2',   name:'Сердце Матери',     d:'Победить Матерь Глубин',           r:100},
+  {id:'boss3',   name:'Свет вернулся',     d:'Погасить Сердце Бездны на 1500 м', r:150},
   {id:'syn',     name:'Алхимия света',     d:'Получить синергию',                r:20},
   {id:'syn3',    name:'Созвездие',         d:'3 синергии за один заплыв',        r:60},
   {id:'lvl20',   name:'Сияние',            d:'Достичь 20-го уровня в заплыве',   r:40},
@@ -535,6 +539,7 @@ const Snd = (() => {
     ach()   { if (!ok() || !S.set.sound) return; const t = ctx.currentTime;
       [0, 5, 9, 12].forEach((s, i) => tone('square', 660 * Math.pow(2, s / 12), 660 * Math.pow(2, s / 12), 0.18, 0.04, t + i * 0.09)); },
     graze() { if (!ok() || !S.set.sound || !thr('gz', 90)) return; tone('sine', 2200, 2900, 0.04, 0.025); },
+    beat()  { if (!ok() || !S.set.sound) return; tone('sine', 70, 45, 0.16, 0.22); tone('sine', 65, 40, 0.14, 0.16, ctx.currentTime + 0.17); },
     shot2() { if (!ok() || !S.set.sound || !thr('es', 110)) return; tone('sine', 500, 260, 0.1, 0.04); },
   };
 
@@ -746,6 +751,23 @@ function buildSprites() {
     g.shadowColor = '#fff'; g.shadowBlur = 20;
     const eg = g.createRadialGradient(0, 0, 0, 0, 0, r * 0.4); eg.addColorStop(0, '#fff'); eg.addColorStop(0.6, '#ffd0f4'); eg.addColorStop(1, '#ff4fd8');
     g.fillStyle = eg; g.beginPath(); g.ellipse(0, 0, r * 0.42, r * 0.36, 0, 0, TAU); g.fill();
+  });
+  // Сердце Бездны — тёмное ядро с алыми прожилками и короной шипов
+  makeSprite('boss3', 58, 30, (g, r) => {
+    const col = PAL[C.CRAB]; g.shadowColor = col; g.shadowBlur = 24; g.fillStyle = '#2a0008'; g.strokeStyle = col; g.lineWidth = 3;
+    g.beginPath(); for (let i = 0; i < 24; i++) { const a = i / 24 * TAU, q = i % 2 ? r * 0.95 : r * 1.35; g.lineTo(Math.cos(a) * q, Math.sin(a) * q); } g.closePath(); g.fill(); g.stroke();
+    const gr = g.createRadialGradient(0, 0, r * 0.1, 0, 0, r * 0.9); gr.addColorStop(0, '#ffd8a0'); gr.addColorStop(0.25, '#ff4f5f'); gr.addColorStop(0.6, '#5a0018'); gr.addColorStop(1, '#14000a');
+    g.fillStyle = gr; g.beginPath(); g.arc(0, 0, r * 0.88, 0, TAU); g.fill();
+    g.strokeStyle = '#ff8a6a'; g.lineWidth = 2; g.shadowBlur = 10;
+    for (let i = 0; i < 7; i++) { let a = i / 7 * TAU, x = Math.cos(a) * r * 0.2, y = Math.sin(a) * r * 0.2; g.beginPath(); g.moveTo(x, y);
+      for (let k = 1; k <= 4; k++) { a += (k % 2 ? 0.35 : -0.3); x = Math.cos(a) * r * (0.2 + k * 0.17); y = Math.sin(a) * r * (0.2 + k * 0.17); g.lineTo(x, y); } g.stroke(); }
+    g.fillStyle = '#fff'; g.shadowColor = '#ffd54f'; g.shadowBlur = 20; g.beginPath(); g.arc(0, 0, r * 0.16, 0, TAU); g.fill();
+  });
+  makeSprite('crystal', 12, 10, (g, r) => {
+    const col = PAL[C.GOLD]; g.shadowColor = col; g.shadowBlur = 14;
+    const gr = g.createLinearGradient(0, -r * 1.4, 0, r * 1.4); gr.addColorStop(0, '#fff'); gr.addColorStop(0.5, col); gr.addColorStop(1, '#8a5a00');
+    g.fillStyle = gr; g.beginPath(); g.moveTo(0, -r * 1.4); g.lineTo(r * 0.8, 0); g.lineTo(0, r * 1.4); g.lineTo(-r * 0.8, 0); g.closePath(); g.fill();
+    g.strokeStyle = '#fff'; g.lineWidth = 1.2; g.beginPath(); g.moveTo(0, -r * 1.4); g.lineTo(0, r * 1.4); g.stroke();
   });
   // Игрок для каждого облика
   for (const k in SKINS) {
@@ -997,13 +1019,12 @@ function updateDirector(dt) {
 }
 function nextZone() {
   G.zone++; G.zoneT = 0;
-  const cyc = Math.floor((G.zone - 1) / 10);
-  G.dmgScale = 1 + 0.08 * (G.zone - 1);
+    G.dmgScale = 1 + 0.08 * (G.zone - 1);
   const depth = G.zone * 100;
   if (G.zone === 3 && G.noHit) unlock('depth300');
   if (G.zone >= 5) unlock('depth500');
   S.bestDepth = Math.max(S.bestDepth, depth);
-  if (G.zone % 5 === 0) startBoss((G.zone / 5) % 2 === 1 ? 'boss1' : 'boss2', cyc);
+  if (G.zone % 5 === 0) startBoss(['boss1', 'boss2', 'boss3'][(G.zone / 5 - 1) % 3], Math.floor((G.zone - 5) / 15));
   else { banner(depth + ' м', ZONES[(G.zone - 1) % ZONES.length], '#8fd8ff', 2.6); sfx.nova(); Snd.setIntensity(G.zone >= 3 ? 2 : 1); }
 }
 function startBoss(type, cyc) {
@@ -1012,6 +1033,7 @@ function startBoss(type, cyc) {
   if (!e) return;
   e.spawnT = 0; e.state = 0; e.st = 3.5; e.p1 = 0.8;
   G.boss = e;
+  if (type === 'boss3') { e.state = 3; e.st = 1.5; e.p1 = 0; e.p3 = 1; }
   banner(ET[type].name, 'ВЛАДЫКА БЕЗДНЫ · ' + (G.zone * 100) + ' м', '#ff4f8f', 3.4);
   sfx.warn(); vibrate([80, 60, 80]); shake(10);
   Snd.setIntensity(3);
@@ -1033,8 +1055,9 @@ function firePB(x, y, a, dmg, split) {
   return b;
 }
 function eShoot(x, y, a, spd, r, dmg, col, spin) {
-  const b = ebul.spawn(); if (!b) return;
-  b.x = x; b.y = y; b.vx = Math.cos(a) * spd; b.vy = Math.sin(a) * spd; b.r = r; b.dmg = dmg; b.life = 7; b.col = col; b.spin = spin || 0; b.grazed = false;
+  const b = ebul.spawn(); if (!b) return null;
+  b.x = x; b.y = y; b.vx = Math.cos(a) * spd; b.vy = Math.sin(a) * spd; b.r = r; b.dmg = dmg; b.life = 7; b.col = col; b.spin = spin || 0; b.grazed = false; b.acc = 0;
+  return b;
 }
 
 /* ---------- игрок ---------- */
@@ -1078,6 +1101,7 @@ function updatePlayer(dt) {
   if (d > lim) { P.x *= lim / d; P.y *= lim / d; }
   if (P.inv > 0) P.inv -= dt;
   if (P.dashCd > 0) P.dashCd -= dt;
+  if (P.hp < P.maxHp * 0.3) { P.beatT = (P.beatT || 0) - dt; if (P.beatT <= 0) { P.beatT = 0.9; sfx.beat(); } } // сердцебиение на низком здоровье
   if (ST.regen > 0 && P.hp < P.maxHp) P.hp = Math.min(P.maxHp, P.hp + ST.regen * dt);
   // след
   P.trailT -= dt;
@@ -1139,7 +1163,7 @@ function doFlare(free) {
   const it = enemies.items, R = Math.hypot(VW, VH) + 60;
   for (let i = 0; i < enemies.n; i++) { const e = it[i]; if (e.dead) continue; const dx = e.x - P.x, dy = e.y - P.y;
     if (dx * dx + dy * dy < R * R) { const d = Math.sqrt(dx * dx + dy * dy) || 1;
-      damageEnemy(e, e.type === 'boss1' || e.type === 'boss2' ? 180 + ST.dmg * 12 : 90 + ST.dmg * 9, true, NaN, dx / d * 400, dy / d * 400); } }
+      damageEnemy(e, ET[e.type].boss ? 180 + ST.dmg * 12 : 90 + ST.dmg * 9, true, NaN, dx / d * 400, dy / d * 400); } }
   for (let i = 0; i < ebul.n; i++) { const b = ebul.items[i]; part(b.x, b.y, rand(-40, 40), rand(-40, 40), 0.6, 12, C.GOLD, 2); G.score += 3; }
   ebul.clear();
   if (!free) banner('ВСПЫШКА!', '', '#ffd54f', 1.1);
@@ -1151,8 +1175,9 @@ function damageEnemy(e, dmg, crit, fromAng, kx, ky, src) {
   if (e.type === 'crab' && fromAng === fromAng && Math.abs(angDiff(e.ang, fromAng)) < 1.0) { // щит спереди
     dmg *= 0.15; sfx.clink(); part(e.x + Math.cos(e.ang) * e.r, e.y + Math.sin(e.ang) * e.r, rand(-80, 80), rand(-80, 80), 0.25, 7, C.WHITE, 2);
   }
+  if (e.type === 'boss3' && G.crystals > 0) { dmg *= 0.25; if (Math.random() < 0.3) sfx.clink(); } // кристаллы-щиты
   e.hp -= dmg; e.flash = 0.07;
-  const isBoss = e.type === 'boss1' || e.type === 'boss2';
+  const isBoss = !!ET[e.type].boss;
   if (!isBoss) { const kb = e.elite ? 0.3 : 1; e.vx += kx * kb; e.vy += ky * kb; }
   if (ST.frost && src !== 'chain') e.slow = 0.6 + 0.5 * ST.frost;
   if (S.set.nums) text(e.x, e.y - e.r * e.scale - 4, numStr(dmg), crit ? '#ffd54f' : '#ffffff', crit, false);
@@ -1172,7 +1197,7 @@ function chainFrom(e0, dmg, n) {
 }
 function killEnemy(e, src) {
   e.dead = true; G.kills++;
-  const isBoss = e.type === 'boss1' || e.type === 'boss2';
+  const isBoss = !!ET[e.type].boss;
   G.combo++; G.comboT = 2.6; if (G.combo > G.maxCombo) G.maxCombo = G.combo;
   G.mult = 1 + Math.min(9, G.combo * 0.05);
   G.score += Math.round(e.score * G.mult);
@@ -1203,7 +1228,7 @@ function killEnemy(e, src) {
   if (isBoss) bossDeath(e);
 }
 function bossDeath(e) {
-  G.boss = null; G.bossesKilled++; G.bossClearT = 3;
+  G.boss = null; G.bossesKilled++; G.bossClearT = 3; G.levelDelay = Math.max(G.levelDelay, 1.6); // дать насладиться взрывом
   G.hitStop = 0.35; G.flash = 1; shake(34); vibrate([120, 50, 200]);
   sfx.boom(true); setTimeout(() => sfx.boom(true), 250);
   for (let i = 0; i < 4; i++) ring(e.x, e.y, 20, 200 + i * 120, 0.6 + i * 0.2, i % 2 ? C.WHITE : e.col, 8);
@@ -1212,7 +1237,9 @@ function bossDeath(e) {
   dropPick(e.x, e.y, 4, 50); dropPick(e.x + 30, e.y, 5, 0);
   ebul.clear();
   if (e.type === 'boss1') { unlock('boss1'); banner('МОРОК РАССЕЯН', 'Свет возвращается в толщу', '#3ff0ff', 3); }
-  else { unlock('boss2'); G.victory = true; banner('МАТЕРЬ ПОВЕРЖЕНА', 'Но бездна глубже, чем кажется…', '#ff4fd8', 3.5); }
+  else if (e.type === 'boss2') { unlock('boss2'); banner('МАТЕРЬ ПОВЕРЖЕНА', 'Где-то внизу бьётся Сердце Бездны…', '#ff4fd8', 3.5); }
+  else { unlock('boss3'); G.victory = true; banner('СВЕТ ВЕРНУЛСЯ', 'Океан сияет вновь. Но тьма бесконечна…', '#ffd54f', 4.5);
+    for (let i = 0; i < enemies.n; i++) { const o = enemies.items[i]; if (!o.dead && o.type === 'crystal') killEnemy(o, null); } }
   G.score += 0; Snd.setIntensity(2);
 }
 function queueBlast(x, y, r, dmg) { const m = mines.spawn(); if (!m) return; m.x = x; m.y = y; m.t = 99; m.r = r; m.dmg = dmg; m.inst = true; m.freeze = false; }
@@ -1294,6 +1321,7 @@ function addXP(v) {
 function steer(e, dvx, dvy, k, dt) { const a = 1 - Math.exp(-dt * k); e.vx += (dvx - e.vx) * a; e.vy += (dvy - e.vy) * a; }
 function updateEnemies(dt) {
   const it = enemies.items, R2 = (CFG.ARENA_R - 10) * (CFG.ARENA_R - 10);
+  G.crystalsLast = G.crystals || 0; G.crystals = 0;
   for (let i = 0; i < enemies.n; i++) {
     const e = it[i]; if (e.dead) continue;
     if (e.spawnT > 0) e.spawnT -= dt;
@@ -1328,7 +1356,7 @@ function updateEnemies(dt) {
       }
       case 'urchin': steer(e, ux * sp, uy * sp, 1.5, dt); e.ang += dt * 2 * e.p3; break;
       case 'squid': {
-        let rad = d < 240 ? -1 : d > 340 ? 1 : 0; if (e.t > 3 && e.state === 0) { e.p3 = -e.p3; }
+        let rad = d < 240 ? -1 : d > 340 ? 1 : 0; e.p2 += dt; if (e.p2 > 3) { e.p2 = 0; e.p3 = -e.p3; } // смена стороны обхода
         steer(e, (ux * rad - uy * e.p3 * 0.7) * sp, (uy * rad + ux * e.p3 * 0.7) * sp, 2, dt);
         e.ang += angDiff(e.ang, Math.atan2(dy, dx)) * Math.min(1, dt * 6);
         if (e.state === 0) { e.p1 += dt; if (e.p1 > 2.6 && d < 560 && !fz) { e.state = 1; e.st = 0.55; e.p1 = 0; } }
@@ -1358,6 +1386,10 @@ function updateEnemies(dt) {
       }
       case 'boss1': updateBoss1(e, dt, d, ux, uy); break;
       case 'boss2': updateBoss2(e, dt, d, ux, uy); break;
+      case 'boss3': updateBoss3(e, dt, d, ux, uy); break;
+      case 'crystal': { const b = G.boss; if (!b || b.dead || b.type !== 'boss3') { e.dead = true; burst(e.x, e.y, 10, C.GOLD, 150, 7, 0.4); break; }
+        G.crystals++; e.ang += dt * (b.hp < b.maxHp * 0.5 ? 1.6 : 1.1);
+        e.vx = 0; e.vy = 0; e.x = b.x + Math.cos(e.ang) * 115; e.y = b.y + Math.sin(e.ang) * 115; break; }
     }
     e.x += e.vx * dt; e.y += e.vy * dt;
     if (e.x * e.x + e.y * e.y > R2) { const l = Math.sqrt(e.x * e.x + e.y * e.y), f = (CFG.ARENA_R - 10) / l; e.x *= f; e.y *= f; e.vx *= -0.3; e.vy *= -0.3; }
@@ -1431,11 +1463,38 @@ function updateBoss2(e, dt, d, ux, uy) {
   }
   if (e.st <= 0) { e.state = (e.state + 1) % 4; e.st = [4, 3.6, 3, 1.2][e.state]; e.p1 = e.state === 3 ? 0 : 0.3; }
 }
+/** Сердце Бездны: кристаллы-щиты, вращающиеся лучи, затмение с самонаводящимися искрами, телепорт-пульс */
+function updateBoss3(e, dt, d, ux, uy) {
+  const enr = e.hp < e.maxHp * 0.5; e.st -= dt;
+  if (e.state !== 2) { const rad = d < 250 ? -1 : d > 330 ? 1 : 0; steer(e, (ux * rad + uy * 0.3) * e.spd, (uy * rad - ux * 0.3) * e.spd, 1.2, dt); }
+  if (e.state === 0) { // вращающиеся лучи
+    e.p1 -= dt;
+    if (e.p1 <= 0) { e.p1 = 0.07; e.p2 += (enr ? 0.11 : 0.085) * e.p3; const n = enr ? 4 : 3;
+      for (let k = 0; k < n; k++) eShoot(e.x, e.y, e.p2 + k * TAU / n, 250, 6, 12 * G.dmgScale, C.CRAB, 0); }
+  } else if (e.state === 1) { // затмение
+    if (e.st < 2.2 && e.p1 === 0) { e.p1 = 1; const n = enr ? 16 : 12;
+      for (let k = 0; k < n; k++) { const b = eShoot(e.x, e.y, k / n * TAU, 125, 8, 13 * G.dmgScale, C.PURP, 0); if (b) { b.acc = 1.1; b.life = 6; } }
+      ring(e.x, e.y, 20, 260, 0.7, C.PURP, 8); shake(8); sfx.boom(false); }
+  } else if (e.state === 2) { // телепорт + кольца
+    if (e.p1 === 0) { e.p1 = 1; burst(e.x, e.y, 30, C.CRAB, 300, 10, 0.5); const a = rand(0, TAU);
+      e.x = clamp(P.x + Math.cos(a) * 290, -CFG.ARENA_R + 100, CFG.ARENA_R - 100); e.y = clamp(P.y + Math.sin(a) * 290, -CFG.ARENA_R + 100, CFG.ARENA_R - 100);
+      e.vx = e.vy = 0; ring(e.x, e.y, 120, 10, 0.4, C.CRAB, 6); G.flash = Math.max(G.flash, 0.35); sfx.nova(); e.p2 = 0.5; }
+    e.p2 -= dt;
+    if (e.p2 <= 0) { e.p2 = enr ? 0.5 : 0.7; e.p3 = -e.p3; const n = 28, off = Math.random() * TAU;
+      for (let k = 0; k < n; k++) { if (k % 7 === 0) continue; eShoot(e.x, e.y, off + k * TAU / n, 150, 6, 12 * G.dmgScale, C.GOLD, 0); }
+      ring(e.x, e.y, 30, 140, 0.4, C.GOLD, 4); sfx.shot2(); }
+  } else { // восстановление кристаллов
+    if (e.p1 === 0) { e.p1 = 1; const need = (enr ? 6 : 4) - G.crystalsLast;
+      for (let k = 0; k < need; k++) { const c = spawnEnemy('crystal', e.x, e.y, false); if (c) { c.ang = k / Math.max(1, need) * TAU; c.spawnT = 0.4; c.hp = c.maxHp = 70 * G.hpScale * (1 + G.zone * 0.08); } }
+      ring(e.x, e.y, 10, 130, 0.5, C.GOLD, 5); }
+  }
+  if (e.st <= 0) { e.state = (e.state + 1) % 4; e.st = [4, 3.4, 2.6, 1][e.state]; e.p1 = e.state === 0 ? 0.3 : 0; if (e.state === 0) e.p3 = Math.random() < 0.5 ? 1 : -1; }
+}
 /** Раздвигаем врагов, чтобы не слипались в одну точку */
 function separate() {
   const it = enemies.items;
   for (let i = 0; i < enemies.n; i++) {
-    const e = it[i]; if (e.dead || e.type === 'boss1' || e.type === 'boss2') continue;
+    const e = it[i]; if (e.dead || ET[e.type].boss || e.type === 'crystal') continue;
     const n = gridQuery(e.x, e.y, 50, QA); let c = 0;
     for (let k = 0; k < n && c < 6; k++) { const o = it[QA[k]]; if (o === e || o.dead) continue;
       const dx = e.x - o.x, dy = e.y - o.y, rr = (e.r * e.scale + o.r * o.scale) * 0.9, d2 = dx * dx + dy * dy;
@@ -1486,6 +1545,9 @@ function updateEBullets(dt) {
   const R2 = (CFG.ARENA_R + 50) * (CFG.ARENA_R + 50);
   for (let i = ebul.n - 1; i >= 0; i--) {
     const b = ebul.items[i]; b.life -= dt;
+    if (b.acc > 0 && b.life > 3) { // самонаводящиеся «тёмные искры» Сердца Бездны
+      const a = Math.atan2(b.vy, b.vx), ta = Math.atan2(P.y - b.y, P.x - b.x), s = Math.hypot(b.vx, b.vy), na = a + clamp(angDiff(a, ta), -b.acc * dt, b.acc * dt);
+      b.vx = Math.cos(na) * s; b.vy = Math.sin(na) * s; }
     if (b.spin) { const a = b.spin * dt, c = Math.cos(a), s = Math.sin(a), vx = b.vx; b.vx = vx * c - b.vy * s; b.vy = vx * s + b.vy * c; }
     b.x += b.vx * dt; b.y += b.vy * dt;
     if (b.life <= 0 || b.x * b.x + b.y * b.y > R2) { ebul.kill(i); continue; }
@@ -1582,7 +1644,7 @@ function renderBackground(dt) {
   ctx.drawImage(BGGRAD, 0, 0, W, H);
   // лучи света с поверхности (тускнеют с глубиной)
   ctx.globalCompositeOperation = 'lighter';
-  const rayA = Math.max(0.2, 1 - (G.zone - 1) * 0.09) * (G.boss ? 0.4 : 1);
+  const rayA = G.state === 'title' ? 1 : Math.max(0.2, 1 - (G.zone - 1) * 0.09) * (G.boss ? 0.4 : 1);
   ctx.globalAlpha = rayA; ctx.fillStyle = RAYGRAD;
   const TWr = W * 1.6;
   for (let i = 0; i < (hi ? 5 : 3); i++) {
@@ -1680,6 +1742,8 @@ function renderWorld() {
         break;
       case 'boss1': drawBoss1(e, sc, wht); break;
       case 'boss2': drawBoss2(e, sc, wht); break;
+      case 'boss3': drawBoss3(e, sc, wht); break;
+      case 'crystal': setXf(e.x, e.y, G.t * 2, sc); drawSpr(SPR.crystal, wht); break;
       default: setXf(e.x, e.y, e.ang, sc); drawSpr(SPR[e.type], wht);
     }
     if (e.freeze > 0) { setWorld(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.7; glowAt(SOFT[C.ICE], e.x, e.y, e.r * e.scale * 2); ctx.globalCompositeOperation = 'source-over'; }
@@ -1747,6 +1811,20 @@ function drawBoss1(e, sc, wht) {
   glowAt(GLOW[lure ? C.GOLD : C.CYAN], lx, ly, 18 + lt * 50 + Math.sin(G.t * 8) * 3);
   if (lure && e.st < 1.9) { ctx.globalAlpha = 0.25 + 0.15 * Math.sin(G.t * 20); glowAt(SOFT[C.GOLD], lx, ly, 160); ctx.globalAlpha = 1; }
   ctx.globalCompositeOperation = 'source-over';
+}
+function drawBoss3(e, sc, wht) {
+  setWorld();
+  // лучи-связи к кристаллам
+  ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = PAL[C.GOLD]; ctx.lineWidth = 2; ctx.globalAlpha = 0.35 + 0.2 * Math.sin(G.t * 9);
+  ctx.beginPath(); for (let i = 0; i < enemies.n; i++) { const c = enemies.items[i]; if (c.dead || c.type !== 'crystal') continue; ctx.moveTo(e.x, e.y); ctx.lineTo(c.x, c.y); } ctx.stroke();
+  // двойной удар сердца
+  const ph = (G.t * 1.3) % 1, beat = Math.max(0, 1 - ph * 6) + Math.max(0, 1 - Math.abs(ph - 0.22) * 6) * 0.7;
+  ctx.globalAlpha = 0.5 + beat * 0.5; glowAt(SOFT[C.CRAB], e.x, e.y, e.r * (2.6 + beat * 0.8));
+  if (G.crystals > 0) { ctx.globalAlpha = 0.25; ctx.strokeStyle = PAL[C.GOLD]; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(e.x, e.y, e.r * 1.25, 0, TAU); ctx.stroke(); }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  const s = sc * (1 + beat * 0.07);
+  setXf(e.x, e.y, G.t * 0.3, s); drawSpr(SPR.boss3, wht);
+  if (e.state === 1 && e.st > 2.2) { setWorld(); ctx.globalAlpha = Math.min(1, (3.4 - e.st) / 1.2) * 0.6; ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(e.x, e.y, e.r * 0.9, 0, TAU); ctx.fill(); ctx.globalAlpha = 1; }
 }
 function drawBoss2(e, sc, wht) {
   setWorld();
@@ -2171,7 +2249,7 @@ requestAnimationFrame(t => { lastT = t; frame(t); });
 // Хук для автотестов и отладки (QA): window.__SB
 window.__SB = {G, P, S, ST, PERF, enemies, ebul, pbul, parts, picks, startRun, pauseGame, resumeGame, gameOver,
   jumpZone(z) { G.zone = z - 1; G.zoneT = CFG.ZONE_TIME; }, giveXP(n) { addXP(n); }, god(on) { G.god = !!on; },
-  up(id, n) { P.up[id] = (P.up[id] || 0) + (n || 1); computeStats(); }};
+  up(id, n) { P.up[id] = (P.up[id] || 0) + (n || 1); computeStats(); }, killBoss() { if (G.boss) killEnemy(G.boss, null); }};
 })();
 </script>
 </body>
