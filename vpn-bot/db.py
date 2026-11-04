@@ -131,6 +131,27 @@ class DB:
     def get_payment(self, charge_id: str) -> sqlite3.Row | None:
         return self.conn.execute("SELECT * FROM payments WHERE charge_id=?", (charge_id,)).fetchone()
 
+    def get_payment_by_id(self, pid: int) -> sqlite3.Row | None:
+        return self.conn.execute(
+            "SELECT p.*, u.username, u.first_name FROM payments p "
+            "LEFT JOIN users u ON u.id = p.user_id WHERE p.id=?", (pid,)).fetchone()
+
+    def list_payments(self, user_id: int | None = None, limit: int = 10) -> list[sqlite3.Row]:
+        sql = ("SELECT p.*, u.username, u.first_name FROM payments p "
+               "LEFT JOIN users u ON u.id = p.user_id")
+        args: tuple = ()
+        if user_id is not None:
+            sql += " WHERE p.user_id=?"
+            args = (user_id,)
+        return self.conn.execute(sql + " ORDER BY p.id DESC LIMIT ?", args + (limit,)).fetchall()
+
+    def find_user(self, query: str) -> sqlite3.Row | None:
+        """Ищет по ID или @username."""
+        q = query.strip().lstrip("@")
+        if q.isdigit():
+            return self.get_user(int(q))
+        return self.conn.execute("SELECT * FROM users WHERE lower(username)=lower(?)", (q,)).fetchone()
+
     def mark_refunded(self, charge_id: str) -> None:
         p = self.get_payment(charge_id)
         if not p or p["refunded"]:

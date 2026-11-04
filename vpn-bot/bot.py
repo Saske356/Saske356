@@ -338,12 +338,37 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                      caption="📷 Отсканируйте код в приложении VPN." + demo_note())
         return
 
-    if data in ("adm:stats", "adm:bc"):
-        await q.answer("Обновлено" if data == "adm:stats" and uid in config.ADMIN_IDS else None)
+    if data.startswith("adm:"):
         if uid not in config.ADMIN_IDS:
+            await q.answer()
             return
+        if data.startswith("adm:rf:") or data.startswith("adm:rfok:"):
+            ok = data.startswith("adm:rfok:")
+            p = db.get_payment_by_id(int(data.split(":")[2]))
+            if not p:
+                await q.answer("Платёж не найден", show_alert=True)
+                return
+            if not ok:
+                await q.answer()
+                await show(update, context,
+                           f"<b>Вернуть платёж #{p['id']}?</b>\n\n"
+                           f"◆ Гость: {who_paid(p)} (<code>{p['user_id']}</code>)\n"
+                           f"◆ Сумма: <b>{p['stars']} ⭐</b>\n"
+                           f"◆ Дата: {fmt_date(p['created_at'])}\n\n"
+                           "Звёзды вернутся гостю, а оплаченные дни спишутся.",
+                           KB([B("↩️ Да, вернуть", f"adm:rfok:{p['id']}"), B("Отмена", "adm:pays")]))
+                return
+            result = await do_refund(context, p["charge_id"])
+            await q.answer(result[:190], show_alert=True)
+            text, kb = payments_view()
+            await show(update, context, text, kb)
+            return
+        await q.answer("Обновлено" if data in ("adm:stats", "adm:pays") else None)
         if data == "adm:stats":
             await show(update, context, admin_text(), admin_kb())
+        elif data == "adm:pays":
+            text, kb = payments_view()
+            await show(update, context, text, kb)
         else:
             context.user_data["await"] = "broadcast"
             await show(update, context,
@@ -543,12 +568,13 @@ def admin_text() -> str:
             "<b>Команды</b>\n"
             "/give <code>id</code> <code>дней</code>: начислить дни\n"
             "/addpromo <code>КОД</code> <code>дней</code> <code>активаций</code>\n"
-            "/refund <code>charge_id</code>: вернуть звёзды\n"
+            "/payments <code>id</code> или <code>@ник</code>: платежи гостя\n"
             f"/testpay: тестовая оплата на {config.TEST_PLAN[2]} ⭐")
 
 
 def admin_kb() -> InlineKeyboardMarkup:
-    return KB([B("🔄 Обновить", "adm:stats"), B("📢 Рассылка", "adm:bc")], [BACK])
+    return KB([B("💳 Платежи", "adm:pays"), B("📢 Рассылка", "adm:bc")],
+              [B("🔄 Обновить", "adm:stats"), BACK])
 
 
 def admin_only(func):
@@ -605,30 +631,72 @@ async def addpromo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Промокод <code>{esc(code.upper())}</code>: +{plural_days(days)}, активаций: {uses}.")
 
 
-@admin_only
-async def refund(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not context.args:
-        await update.message.reply_text("Формат: /refund <code>charge_id</code> (он есть в уведомлении об оплате)")
-        return
-    charge = context.args[0]
+async def do_refund(context: ContextTypes.DEFAULT_TYPE, charge: str) -> str:
+    """Возвращает звёзды по платежу. Отдаёт текст результата для админа."""
     p = db.get_payment(charge)
     if not p:
-        await update.message.reply_text("Платёж не найден.")
-        return
+        return "Платёж не найден."
     if p["refunded"]:
-        await update.message.reply_text("Этот платёж уже возвращён.")
-        return
+        return "Этот платёж уже возвращён."
     try:
         await context.bot.refund_star_payment(p["user_id"], charge)
     except TelegramError as e:
-        await update.message.reply_text(f"Telegram не принял возврат: {esc(str(e))}")
-        return
+        return f"Telegram не принял возврат: {esc(str(e))}"
     db.mark_refunded(charge)
     row = db.get_user(p["user_id"])
     if not is_active(row) and row["key_active"]:
         await vpn.revoke(row["id"])
         db.set_key(row["id"], row["vpn_key"], False)
-    await update.message.reply_text(f"Возвращено {p['stars']} ⭐, срок доступа уменьшен.")
+    try:
+        await context.bot.send_message(p["user_id"], f"↩️ Вам возвращено {p['stars']} ⭐.")
+    except TelegramError:
+        pass
+    return f"Возвращено {p['stars']} ⭐, срок доступа уменьшен."
+
+
+def who_paid(p) -> str:
+    return f"@{esc(p['username'])}" if p["username"] else esc(p["first_name"] or str(p["user_id"]))
+
+
+def payments_view(user_id: int | None = None) -> tuple[str, InlineKeyboardMarkup]:
+    pays = db.list_payments(user_id, limit=8)
+    title = "<b>Платежи</b>" if user_id is None else f"<b>Платежи гостя</b> <code>{user_id}</code>"
+    if not pays:
+        return title + "\n\nПлатежей пока нет.", KB([B("‹ Админ-панель", "adm:stats")])
+    lines, buttons = [], []
+    for p in pays:
+        name = (find_plan(p["plan"], next(iter(config.ADMIN_IDS), 0)) or (p["plan"],))[0]
+        mark = "↩️ возвращён" if p["refunded"] else "✅"
+        lines.append(f"<b>#{p['id']}</b> · {fmt_date(p['created_at'])} · {who_paid(p)}\n"
+                     f"{esc(name)} · {p['stars']} ⭐ · {mark}")
+        if not p["refunded"]:
+            buttons.append(B(f"↩️ Вернуть #{p['id']}", f"adm:rf:{p['id']}"))
+    rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    rows.append([B("🔄 Обновить", "adm:pays"), B("‹ Админ-панель", "adm:stats")])
+    text = title + "\n\n" + "\n\n".join(lines) + "\n\n<i>Последние 8. Поиск: /payments id или @ник</i>"
+    return text, InlineKeyboardMarkup(rows)
+
+
+@admin_only
+async def payments(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    current_user(update)
+    user_id = None
+    if context.args:
+        row = db.find_user(context.args[0])
+        if not row:
+            await update.message.reply_text("Гость не найден. Укажите ID или @ник.")
+            return
+        user_id = row["id"]
+    text, kb = payments_view(user_id)
+    await show(update, context, text, kb)
+
+
+@admin_only
+async def refund(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not context.args:
+        await update.message.reply_text("Формат: /refund <code>charge_id</code>. Проще через /payments: там кнопка возврата.")
+        return
+    await update.message.reply_text(await do_refund(context, context.args[0]))
 
 
 # ---------------------------------------------------------------- фоновые задачи
@@ -713,6 +781,7 @@ def build_app(token: str) -> Application:
     app.add_handler(CommandHandler("addpromo", addpromo))
     app.add_handler(CommandHandler("refund", refund))
     app.add_handler(CommandHandler("testpay", testpay))
+    app.add_handler(CommandHandler("payments", payments))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(PreCheckoutQueryHandler(precheckout))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, paid))
