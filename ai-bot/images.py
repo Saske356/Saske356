@@ -35,9 +35,9 @@ async def pollinations(prompt: str, aspect: str = "1:1") -> bytes:
     return resp.content
 
 
-async def generate_image(prompt: str, aspect: str = "1:1") -> bytes:
+async def generate_image(prompt: str, aspect: str = "1:1", model: str | None = None) -> bytes:
     if config.IMAGE_PROVIDER == "openrouter" and config.OPENROUTER_API_KEY:
-        return await ai.openrouter_image(prompt, aspect)  # платно — без тихого отката на худшее качество
+        return await ai.openrouter_image(prompt, aspect, model)  # платно — без тихого отката на худшее качество
     if config.IMAGE_PROVIDER == "gemini" and config.GEMINI_API_KEY:
         try:
             return await ai.gemini_image(prompt, aspect)

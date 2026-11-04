@@ -29,7 +29,7 @@ HELP = (
     f"{BTN_PHOTO} — опиши картинку, я нарисую (в высоком качестве, промпт улучшу сам).\n"
     f"{BTN_VIDEO} — опиши сцену, я сделаю видео.\n"
     f"{BTN_RESET} — забыть историю диалога.\n\n"
-    "Команды: /photo текст, /video текст, /reset, /id"
+    "Команды: /photo текст, /video текст, /model — выбор модели картинок, /reset, /id"
 )
 
 
@@ -63,6 +63,16 @@ def image_buttons() -> InlineKeyboardMarkup:
     ])
 
 
+def model_buttons(current: str) -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton(("✅ " if mid == current else "") + label, callback_data=f"model:{mid}")]
+            for mid, label in config.IMAGE_MODELS.items()]
+    return InlineKeyboardMarkup(rows)
+
+
+def user_model(context: ContextTypes.DEFAULT_TYPE) -> str:
+    return context.user_data.get("image_model", config.IMAGE_MODEL)
+
+
 # ---------- команды ----------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -70,6 +80,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return await deny(update)
     context.user_data["mode"] = "chat"
     await update.message.reply_text(HELP, reply_markup=MENU)
+
+
+async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not allowed(update):
+        return await deny(update)
+    await update.message.reply_text("Выбери модель для картинок:", reply_markup=model_buttons(user_model(context)))
+
+
+async def model_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    mid = q.data.removeprefix("model:")
+    if mid in config.IMAGE_MODELS:
+        context.user_data["image_model"] = mid
+    await q.answer("Готово")
+    await q.edit_message_text(f"Модель картинок: {config.IMAGE_MODELS.get(mid, mid)}",
+                              reply_markup=model_buttons(user_model(context)))
 
 
 async def my_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -134,7 +160,7 @@ async def do_photo(update: Update, context: ContextTypes.DEFAULT_TYPE, idea: str
     try:
         await update.effective_chat.send_action(ChatAction.UPLOAD_PHOTO)
         prompt = await ai.enhance_prompt(idea, "image")
-        data = await images.generate_image(prompt, aspect)
+        data = await images.generate_image(prompt, aspect, user_model(context))
         context.user_data["last_image"] = {"idea": idea, "prompt": prompt, "aspect": aspect}
         await update.effective_message.reply_photo(
             photo=io.BytesIO(data), caption=f"🖼 {idea[:900]}", reply_markup=image_buttons(),
@@ -267,7 +293,9 @@ def main() -> None:
     app.add_handler(CommandHandler("reset", reset))
     app.add_handler(CommandHandler("photo", cmd_photo))
     app.add_handler(CommandHandler("video", cmd_video))
+    app.add_handler(CommandHandler("model", cmd_model))
     app.add_handler(CallbackQueryHandler(image_callback, pattern=r"^img:"))
+    app.add_handler(CallbackQueryHandler(model_callback, pattern=r"^model:"))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
     app.add_error_handler(on_error)

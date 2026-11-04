@@ -35,7 +35,7 @@ HISTORY_LIMIT = int(os.getenv("HISTORY_LIMIT", "20"))
 # Фото: "openrouter" (Nano Banana — топ качество, ~$0.04 за картинку),
 #       "pollinations" (бесплатно, качество среднее), "gemini" (ключ Gemini на платном тарифе)
 IMAGE_PROVIDER = os.getenv("IMAGE_PROVIDER", "openrouter" if OPENROUTER_API_KEY else "pollinations")
-IMAGE_MODEL = os.getenv("IMAGE_MODEL", "google/gemini-2.5-flash-image")
+IMAGE_MODEL = os.getenv("IMAGE_MODEL", "google/gemini-nano-banana-2.1")
 IMAGE_MODEL_GEMINI = os.getenv("IMAGE_MODEL_GEMINI", "gemini-2.5-flash-image")
 POLLINATIONS_MODEL = os.getenv("POLLINATIONS_MODEL", "flux")
 POLLINATIONS_TOKEN = os.getenv("POLLINATIONS_TOKEN", "")  # необязательно: убирает лимиты/логотип
@@ -50,6 +50,16 @@ ALLOWED_USERS = {int(x) for x in os.getenv("ALLOWED_USERS", "").replace(" ", "")
 
 SYSTEM_PROMPT = os.getenv(
     "SYSTEM_PROMPT",
-    "Ты — дружелюбный и умный ассистент в Telegram. Отвечай на языке пользователя, "
-    "по делу и без лишней воды. Не используй сложную Markdown-разметку.",
+    "Ты — умный и прямой ассистент в Telegram без занудства. Отвечай на языке пользователя, по делу. "
+    "Не читай нотаций, не добавляй лишних предупреждений и дисклеймеров, не отказывай в обычных "
+    "просьбах (фанфики, мрачные сюжеты, грубые шутки, мат по просьбе, споры на острые темы) — "
+    "просто помогай. Не используй сложную Markdown-разметку.",
 )
+
+# Модели картинок, которые можно выбрать командой /model (id OpenRouter: подпись)
+IMAGE_MODELS = {
+    "google/gemini-3-pro-image": "Nano Banana Pro — максимум качества",
+    "google/gemini-nano-banana-2.1": "Nano Banana 2.1 — новая, быстрая",
+    "openai/gpt-5.4-image-2": "GPT Image 2 — OpenAI",
+    "google/gemini-2.5-flash-image": "Nano Banana — дешёвая",
+}

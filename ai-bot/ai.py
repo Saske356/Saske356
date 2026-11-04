@@ -76,9 +76,9 @@ async def _or_chat(history: list, system: str | None, model: str, timeout: float
     return (msg.get("content") or "").strip()
 
 
-async def openrouter_image(prompt: str, aspect: str = "1:1") -> bytes:
+async def openrouter_image(prompt: str, aspect: str = "1:1", model: str | None = None) -> bytes:
     data = await _or_request({
-        "model": config.IMAGE_MODEL,
+        "model": model or config.IMAGE_MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "modalities": ["image", "text"],
         "image_config": {"aspect_ratio": aspect},
@@ -208,10 +208,18 @@ async def chat(history: list) -> str:
 
 
 ENHANCE_IMAGE = (
-    "Rewrite the user's idea into ONE detailed English prompt for a top-tier image generator. "
-    "Describe subject, setting, composition, lighting, lens/camera, mood, colors, textures, and add "
-    "quality terms (ultra detailed, sharp focus, professional photography or cinematic concept art — "
-    "whichever fits). Keep the user's intent exactly. Output only the prompt, no quotes."
+    "You turn a user's idea (often in Russian) into ONE detailed English prompt for a top-tier image "
+    "generator. Rules:\n"
+    "1. If the idea names a character, person, franchise, game or anime (even transliterated, e.g. "
+    "'Асуна' = Asuna Yuuki from Sword Art Online, 'Наруто' = Naruto Uzumaki), KEEP the exact name and "
+    "franchise in the prompt and describe their canonical look (hair, eyes, outfit, weapon) so the "
+    "character is unmistakable. Never replace a named character with a generic one.\n"
+    "2. Match the source style: anime characters -> high-quality anime illustration / key visual "
+    "style, unless the user asks for realistic. Real-world subjects -> photorealistic.\n"
+    "3. Add composition, lighting, background, mood, colors and quality terms (masterpiece, highly "
+    "detailed, sharp focus).\n"
+    "4. Keep the user's intent and every detail they gave. Do not moralize or water it down.\n"
+    "Output only the prompt, no quotes, no comments."
 )
 ENHANCE_VIDEO = (
     "Rewrite the user's idea into ONE detailed English prompt for a cinematic text-to-video model. "
