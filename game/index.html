@@ -146,7 +146,7 @@ h2{font-size:28px;font-weight:900;letter-spacing:2px;margin-bottom:14px;color:#f
   box-shadow:0 0 8px var(--c1);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900}
 
 /* ---------- тосты достижений ---------- */
-#toasts{position:fixed;left:0;right:0;bottom:calc(140px + var(--sab));z-index:30;display:flex;flex-direction:column;align-items:center;pointer-events:none;gap:6px}
+#toasts{position:fixed;left:0;right:0;bottom:calc(10px + var(--sab));z-index:30;display:flex;flex-direction:column;align-items:center;pointer-events:none;gap:6px}
 .toast{background:linear-gradient(90deg,rgba(80,60,10,.95),rgba(40,15,50,.95));border:2px solid var(--gold);border-radius:14px;
   padding:8px 14px;font-size:14px;box-shadow:0 0 20px rgba(255,213,79,.5);animation:toastIn .4s cubic-bezier(.2,1.4,.4,1)}
 .toast b{color:var(--gold);display:block;font-size:11px;letter-spacing:2px}
@@ -898,7 +898,7 @@ function computeStats() {
   if (P.maxHp > oldMax && G.state !== 'title') P.hp += P.maxHp - oldMax;
   P.hp = Math.min(P.hp, P.maxHp);
 }
-const xpNeed = l => Math.floor(7 + l * 5 + l * l * 0.55);
+const xpNeed = l => Math.floor(5 + l * 4 + l * l * 0.6);
 
 /* ---------- эффекты ---------- */
 function part(x, y, vx, vy, life, size, col, drag) {
@@ -984,9 +984,9 @@ function updateDirector(dt) {
     G.zoneT += dt; if (G.zoneT >= CFG.ZONE_TIME) nextZone();
   }
   const z = G.zone;
-  let rate = (1.4 + 0.55 * (z - 1)) * (1 + G.zoneT / CFG.ZONE_TIME * 0.6);
+  let rate = (2.6 + 0.7 * (z - 1)) * (1 + G.zoneT / CFG.ZONE_TIME * 0.7);
   if (G.boss) rate *= 0.22;
-  const maxAlive = Math.min(CFG.MAX_ENEMIES - 20, 55 + z * 8) * (S.set.quality === 'high' ? 1 : 0.7);
+  const maxAlive = Math.min(CFG.MAX_ENEMIES - 20, 70 + z * 8) * (S.set.quality === 'high' ? 1 : 0.7);
   G.spawnAcc += rate * dt;
   while (G.spawnAcc >= 1) {
     G.spawnAcc -= 1; if (enemies.n >= maxAlive) continue;
@@ -1227,7 +1227,7 @@ function explode(x, y, R, dmg, freeze) {
 
 /* ---------- игрок получает урон ---------- */
 function hurtPlayer(dmg) {
-  if (P.inv > 0 || P.dashT > 0 || G.state !== 'play' || G.dying > 0) return;
+  if (P.inv > 0 || P.dashT > 0 || G.state !== 'play' || G.dying > 0 || G.god) return;
   dmg = Math.max(1, Math.round(dmg - ST.armor));
   P.hp -= dmg; P.inv = 1.0; G.noHit = false; G.hurtFlash = 1; shake(13); G.hitStop = 0.06;
   if (G.combo >= 10) text(P.x, P.y - 30, 'комбо потеряно', '#ff8a8a', false, false);
@@ -1541,7 +1541,8 @@ let WS = 1, OX = 0, OY = 0;           // мировая трансформаци
 let BGGRAD = null, VIGN = null, RAYGRAD = null, HURTV = null;
 const RAYS = [[0.1, 70, 0], [0.32, 110, 1.3], [0.55, 60, 2.1], [0.74, 130, 3.7], [0.92, 80, 5.2]];
 const ZONE_COLS = ['#04203a', '#051a36', '#071733', '#08122e', '#0a0d2a', '#0c0a26', '#0f0822', '#0a0a24', '#0c061c', '#090416'];
-const DEMO = []; // декоративные существа титульного экрана
+const DEMO = [];
+const XPC = [C.ICE, C.EMER, C.GOLD], XPS = [3.6, 5, 6.8]; // цвет и размер искр опыта по тирам // декоративные существа титульного экрана
 
 function setXf(x, y, ang, sc) { const cs = Math.cos(ang) * sc * WS, sn = Math.sin(ang) * sc * WS; ctx.setTransform(cs, sn, -sn, cs, OX + x * WS, OY + y * WS); }
 function setWorld() { ctx.setTransform(WS, 0, 0, WS, OX, OY); }
@@ -1611,7 +1612,7 @@ function renderWorld() {
   // светящееся дно
   ctx.globalCompositeOperation = 'lighter';
   for (let i = 0; i < FLOOR.length; i++) { const f = FLOOR[i]; if (!inView(f.x, f.y, 40)) continue;
-    ctx.globalAlpha = 0.16 + 0.12 * Math.sin(G.t * 1.3 + f.p); glowAt(SOFT[f.c], f.x, f.y, f.s); }
+    ctx.globalAlpha = 0.26 + 0.14 * Math.sin(G.t * 1.3 + f.p); glowAt(SOFT[f.c], f.x, f.y, f.s); }
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
   // за пределами арены — тьма, граница — светящееся кольцо
   const R = CFG.ARENA_R;
@@ -1633,14 +1634,19 @@ function renderWorld() {
   ctx.globalCompositeOperation = 'lighter';
   for (let i = 0; i < picks.n; i++) { const p = picks.items[i]; if (!inView(p.x, p.y, 20)) continue;
     if (p.type >= 3 && p.t > 19 && (G.t * 8 | 0) % 2) continue;
-    if (p.type === 0) glowAt(GLOW[C.ICE], p.x, p.y, 8);
-    else if (p.type === 1) glowAt(GLOW[C.EMER], p.x, p.y, 11);
-    else if (p.type === 2) glowAt(GLOW[C.PURP], p.x, p.y, 15);
+    if (p.type <= 2) glowAt(SOFT[XPC[p.type]], p.x, p.y, XPS[p.type] * 3.2);
     else if (p.type === 3) { glowAt(SOFT[C.CORAL], p.x, p.y, 22); glowAt(GLOW[C.WHITE], p.x, p.y, 10 + Math.sin(G.t * 6 + i) * 2); }
     else if (p.type === 4) { glowAt(SOFT[C.EMER], p.x, p.y, 26); ctx.fillStyle = '#d8ffe8'; ctx.fillRect(p.x - 7, p.y - 2.5, 14, 5); ctx.fillRect(p.x - 2.5, p.y - 7, 5, 14); }
     else { glowAt(SOFT[C.ICE], p.x, p.y, 26); ctx.strokeStyle = '#bff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(p.x, p.y, 8, G.t * 4, G.t * 4 + 4.5); ctx.stroke(); }
   }
   ctx.globalCompositeOperation = 'source-over';
+  // искры опыта — ромбики (не круглые, чтобы не путать с вражескими пулями); один путь на тир
+  for (let tier = 0; tier < 3; tier++) {
+    const r = XPS[tier], sp = G.t * 3; let any = false; ctx.beginPath();
+    for (let i = 0; i < picks.n; i++) { const p = picks.items[i]; if (p.type !== tier || !inView(p.x, p.y, 10)) continue; any = true;
+      const q = r * (0.85 + 0.15 * Math.sin(sp + i)); ctx.moveTo(p.x, p.y - q * 1.3); ctx.lineTo(p.x + q, p.y); ctx.lineTo(p.x, p.y + q * 1.3); ctx.lineTo(p.x - q, p.y); ctx.closePath(); }
+    if (any) { ctx.fillStyle = PAL[XPC[tier]]; ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 1; ctx.stroke(); }
+  }
   // враги: проход свечения
   const it = enemies.items;
   if (hi) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.45;
@@ -1704,7 +1710,7 @@ function renderWorld() {
   for (let i = 0; i < pbul.n; i++) { const b = pbul.items[i]; if (!inView(b.x, b.y, 10)) continue;
     const s = Math.hypot(b.vx, b.vy) || 1, cs = b.vx / s * WS, sn = b.vy / s * WS;
     ctx.setTransform(cs, sn, -sn, cs, OX + b.x * WS, OY + b.y * WS);
-    ctx.drawImage(pimg, -15, -6, 30, 12); if (b.crit) ctx.drawImage(GLOW[C.GOLD], -9, -9, 18, 18); }
+    ctx.drawImage(pimg, -20, -8, 34, 16); ctx.drawImage(GLOW[C.WHITE], -7, -3, 16, 6); if (b.crit) ctx.drawImage(GLOW[C.GOLD], -11, -11, 22, 22); }
   setWorld();
   // частицы
   for (let i = 0; i < parts.n; i++) { const p = parts.items[i]; const k = p.life / p.max; if (!inView(p.x, p.y, 20)) continue;
@@ -1878,7 +1884,7 @@ function startRun() {
   for (const p of [enemies, pbul, ebul, parts, rings, texts, bolts, picks, mines]) p.clear();
   Object.assign(G, {t: 0, runT: 0, zone: 1, zoneT: 0, score: 0, combo: 0, comboT: 0, maxCombo: 0, mult: 1, kills: 0, runPearls: 0, boss: null,
     bossClearT: 0, bossesKilled: 0, shake: 0, hitStop: 0, flash: 0, hurtFlash: 0, levelPending: 0, levelDelay: 0, dying: 0, noHit: true,
-    synergies: 0, revived: false, camX: 0, camY: 0, spawnAcc: 0, packT: 15, dmgScale: 1, hpScale: 1, pullT: 0, comboMilestone: 0, victory: false});
+    synergies: 0, revived: false, camX: 0, camY: 0, spawnAcc: 0, packT: 9, dmgScale: 1, hpScale: 1, pullT: 0, comboMilestone: 0, victory: false});
   G.rerolls = S.shop.reroll || 0;
   Object.assign(P, {x: 0, y: 0, vx: 0, vy: 0, ang: -Math.PI / 2, inv: 1.5, dashT: 0, dashCd: 0, fireT: 0.3, flare: S.shop.flare ? 50 : 0, level: 1, xp: 0,
     xpNext: xpNeed(1), up: {}, novaT: 2, mineT: 1.5, trailT: 0, skin: S.skin, pal: SKINS[S.skin].pal, dead: false, maxHp: 0});
@@ -2164,7 +2170,7 @@ requestAnimationFrame(t => { lastT = t; frame(t); });
 
 // Хук для автотестов и отладки (QA): window.__SB
 window.__SB = {G, P, S, ST, PERF, enemies, ebul, pbul, parts, startRun, pauseGame, resumeGame, gameOver,
-  jumpZone(z) { G.zone = z - 1; G.zoneT = CFG.ZONE_TIME; }, giveXP(n) { addXP(n); }, god(on) { P.inv = on ? 1e9 : 0; },
+  jumpZone(z) { G.zone = z - 1; G.zoneT = CFG.ZONE_TIME; }, giveXP(n) { addXP(n); }, god(on) { G.god = !!on; },
   up(id, n) { P.up[id] = (P.up[id] || 0) + (n || 1); computeStats(); }};
 })();
 </script>
