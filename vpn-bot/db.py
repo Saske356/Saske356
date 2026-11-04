@@ -93,6 +93,10 @@ class DB:
         return self.conn.execute("SELECT COUNT(*) FROM users WHERE referrer_id=?",
                                  (user_id,)).fetchone()[0]
 
+    def active_users(self) -> dict[int, float]:
+        return {r[0]: r[1] for r in self.conn.execute(
+            "SELECT id, expires_at FROM users WHERE expires_at > ?", (time.time(),))}
+
     def all_user_ids(self) -> list[int]:
         return [r[0] for r in self.conn.execute("SELECT id FROM users")]
 

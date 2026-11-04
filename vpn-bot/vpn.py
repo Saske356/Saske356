@@ -1,11 +1,10 @@
 """Подключение к VPN-серверу.
 
-Пока сервера нет, работает DemoProvider: он выдаёт ненастоящие ключи с пометкой DEMO,
-чтобы можно было проверить весь путь покупки. Когда появится сервер, сюда добавляется
-класс, который создаёт клиента в панели (например, 3x-ui), и в get_provider()
-DemoProvider меняется на него. Остальной код бота трогать не придётся.
+VPN_MODE=demo (по умолчанию) — ненастоящие ключи с пометкой DEMO, чтобы проверить покупку.
+VPN_MODE=xray — настоящий VPN на этом же сервере (см. xray_provider.py и install.sh).
 """
 
+import os
 import uuid
 
 
@@ -34,4 +33,7 @@ class DemoProvider(VpnProvider):
 
 
 def get_provider() -> VpnProvider:
+    if os.environ.get("VPN_MODE", "demo") == "xray":
+        from xray_provider import from_env
+        return from_env()
     return DemoProvider()

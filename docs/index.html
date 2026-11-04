@@ -328,6 +328,12 @@
       <div class="tier" style="margin-top:8px">Здравствуйте${D.n ? ", " + D.n.replace(/[<>&]/g, "") : ""}</div>
       <div class="until">Оформите доступ, и персональный ключ появится здесь.</div></div>`;
   }
+  if (D.loc && D.loc.length > 1) {
+    const l = document.createElement("div");
+    l.className = "until"; l.style.marginTop = "12px";
+    l.textContent = "Страны: " + D.loc.join(" · ");
+    card.appendChild(l);
+  }
 
   // ---- пробный период ----
   if (D.tr && D.bu) {

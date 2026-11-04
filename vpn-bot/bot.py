@@ -100,11 +100,18 @@ def can_trial(row) -> bool:
             and not is_active(row))
 
 
+def location_names() -> list[str]:
+    return [l["name"] for l in getattr(vpn, "locations", [])]
+
+
 def main_text(row) -> str:
     name = esc(row["first_name"] or "Гость")
+    feats = list(config.FEATURES)
+    if len(location_names()) > 1:
+        feats.append("Страны: " + ", ".join(location_names()))
     return (f"<b>{name}, добро пожаловать.</b>\n"
             f"<i>{esc(config.TAGLINE)}.</i>\n\n"
-            f"<blockquote>{bullets(esc(f) for f in config.FEATURES)}</blockquote>\n\n"
+            f"<blockquote>{bullets(esc(f) for f in feats)}</blockquote>\n\n"
             f"{status_line(row)}")
 
 
@@ -121,7 +128,7 @@ def miniapp_url(row) -> str:
         "bu": STATE["username"], "s": config.SUPPORT,
         "rf": f"https://t.me/{STATE['username']}?start=ref_{row['id']}" if STATE["username"] else "",
         "rb": config.REF_BONUS_DAYS, "rj": config.REF_ON_JOIN,
-        "rc": db.referral_count(row["id"]), "p": plans,
+        "rc": db.referral_count(row["id"]), "p": plans, "loc": location_names(),
     }
     raw = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode()
     return config.MINIAPP_URL + "#d=" + base64.urlsafe_b64encode(raw).decode().rstrip("=")
@@ -208,9 +215,9 @@ def plans_kb() -> InlineKeyboardMarkup:
 
 
 APPS = {
-    "android": ("🤖 Android", "v2rayNG или Hiddify", "из Google Play"),
-    "ios": ("🍏 iPhone и iPad", "Streisand, V2Box или Hiddify", "из App Store"),
-    "windows": ("🪟 Windows", "Hiddify или v2rayN", "с официального сайта"),
+    "android": ("🤖 Android", "Hiddify или v2rayNG", "из Google Play"),
+    "ios": ("🍏 iPhone и iPad", "Hiddify, Streisand или V2Box", "из App Store"),
+    "windows": ("🪟 Windows", "Hiddify", "с официального сайта"),
     "mac": ("💻 macOS", "Hiddify или V2Box", "из App Store"),
 }
 
@@ -220,14 +227,17 @@ def howto_text(platform: str) -> str:
     return (f"<b>{title}</b>\n\n"
             f"<blockquote>1. Установите {esc(apps)} {esc(store)}.\n"
             "2. Откройте «🗝 Мой ключ» и нажмите на ключ: он скопируется.\n"
-            "3. В приложении нажмите «+», затем «Импорт из буфера обмена».\n"
-            "4. Нажмите кнопку подключения ▶️</blockquote>\n\n"
+            "3. В приложении нажмите «+», затем «Добавить из буфера обмена».\n"
+            "4. Выберите страну и нажмите кнопку подключения ▶️</blockquote>\n\n"
             "Готово. Если что-то не получилось, консьерж поможет.")
 
 
 def key_block(row) -> str:
+    many = len(location_names()) > 1
     return (f"<code>{esc(row['vpn_key'])}</code>\n\n"
-            "<i>Нажмите на ключ, чтобы скопировать.</i>\n"
+            + ("<i>Нажмите на ссылку, чтобы скопировать. В ней сразу все страны.</i>\n" if many
+               else "<i>Нажмите на ключ, чтобы скопировать.</i>\n")
+            + 
             f"◆ Действует до <b>{fmt_date(row['expires_at'])}</b>" + demo_note())
 
 
@@ -644,6 +654,7 @@ def admin_text() -> str:
             "/give <code>id</code> <code>дней</code>: начислить дни\n"
             "/addpromo <code>КОД</code> <code>дней</code> <code>активаций</code>\n"
             "/payments <code>id</code> или <code>@ник</code>: платежи гостя\n"
+            "/locations: страны VPN\n"
             f"/testpay: тестовая оплата на {config.TEST_PLAN[2]} ⭐")
 
 
@@ -674,6 +685,55 @@ async def testpay(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Тестовый счёт на {price} ⭐. После оплаты придёт уведомление с charge_id, "
         "по нему можно проверить /refund.")
     await send_plan_invoice(context, update.effective_chat.id, "test", name, days, price)
+
+
+def locations_text() -> str:
+    lines = []
+    for l in getattr(vpn, "locations", []):
+        how = "через прокси" if l["proxy"] else "напрямую с сервера"
+        lines.append(f"◆ <code>{esc(l['code'])}</code> · {esc(l['name'])} · <i>{how}</i>")
+    return ("<b>Страны</b>\n\n" + "\n".join(lines) + "\n\n"
+            "Добавить: /addloc <code>код</code> <code>Название</code> | <code>socks5://логин:пароль@ip:порт</code>\n"
+            "Пример: <code>/addloc nl 🇳🇱 Нидерланды | socks5://user:pass@1.2.3.4:1080</code>\n"
+            "Удалить: /delloc <code>код</code>")
+
+
+@admin_only
+async def locations(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not hasattr(vpn, "locations"):
+        await update.message.reply_text("Страны настраиваются, когда подключён настоящий VPN (VPN_MODE=xray).")
+        return
+    await update.message.reply_text(locations_text())
+
+
+@admin_only
+async def addloc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not hasattr(vpn, "add_location"):
+        await update.message.reply_text("Страны настраиваются, когда подключён настоящий VPN (VPN_MODE=xray).")
+        return
+    text = update.message.text.split(maxsplit=1)
+    try:
+        head, proxy = text[1].split("|", 1)
+        code, name = head.strip().split(maxsplit=1)
+        vpn.add_location(code, name, proxy)
+    except (IndexError, ValueError) as e:
+        hint = f"\n\nОшибка: {esc(str(e))}" if isinstance(e, ValueError) and str(e) else ""
+        await update.message.reply_text(
+            "Формат: /addloc <code>код</code> <code>Название</code> | <code>socks5://логин:пароль@ip:порт</code>" + hint)
+        return
+    await update.message.reply_text(
+        f"Страна добавлена. Через пару секунд Xray перезапустится, и она появится у всех клиентов "
+        f"после обновления подписки.\n\n" + locations_text())
+
+
+@admin_only
+async def delloc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not hasattr(vpn, "remove_location") or not context.args:
+        await update.message.reply_text("Формат: /delloc <code>код</code>")
+        return
+    ok = vpn.remove_location(context.args[0])
+    await update.message.reply_text(("Удалено.\n\n" if ok else "Такой страны нет, или она последняя.\n\n")
+                                    + locations_text())
 
 
 @admin_only
@@ -809,8 +869,14 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
 # ---------------------------------------------------------------- профиль бота
 
 async def setup_profile(app: Application) -> None:
-    """Имя, описание до /start и меню команд — бот ставит себе сам."""
+    """Запуск VPN-части, затем имя, описание до /start и меню команд бота."""
     bot = app.bot
+    if hasattr(vpn, "sync"):
+        active = db.active_users()
+        await vpn.sync(active)
+        for uid in active:  # ключи из демо-режима меняются на настоящие
+            db.set_key(uid, vpn.sub_url(uid), True)
+        await vpn.start_sub_server()
     try:
         STATE["username"] = (await bot.get_me()).username or ""
     except TelegramError as e:
@@ -875,6 +941,9 @@ def build_app(token: str) -> Application:
     app.add_handler(CommandHandler("refund", refund))
     app.add_handler(CommandHandler("testpay", testpay))
     app.add_handler(CommandHandler("payments", payments))
+    app.add_handler(CommandHandler("locations", locations))
+    app.add_handler(CommandHandler("addloc", addloc))
+    app.add_handler(CommandHandler("delloc", delloc))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(PreCheckoutQueryHandler(precheckout))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, paid))
