@@ -23,7 +23,7 @@ _load_env_file()
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 ADMIN_IDS = {int(x) for x in os.environ.get("ADMIN_IDS", "").replace(" ", "").split(",") if x}
 BRAND = os.environ.get("BRAND", "Aurora VPN")
-TAGLINE = os.environ.get("TAGLINE", "Свободный интернет без тормозов")
+TAGLINE = os.environ.get("TAGLINE", "Приватный доступ к свободному интернету")
 SUPPORT = os.environ.get("SUPPORT_USERNAME", "").lstrip("@")
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot.db"))
 
@@ -33,16 +33,19 @@ REFUND_DAYS = int(os.environ.get("REFUND_DAYS", "3"))
 
 # Преимущества на главной. Пиши только то, что правда про твой сервер.
 FEATURES = [
-    "⚡ Высокая скорость, без рекламы",
-    "🔒 Протокол VLESS Reality",
-    "📱 Android, iPhone, Windows, macOS",
-    "🕶 Не храним историю посещений",
+    "Высокая скорость без рекламы",
+    "Протокол VLESS Reality",
+    "Android, iPhone, Windows и macOS",
+    "Без хранения истории посещений",
 ]
+
+# Обновлять ли при запуске имя, описание и меню команд бота
+SET_PROFILE = os.environ.get("SET_PROFILE", "1") == "1"
 
 # Тарифы: ключ -> (название, дней, цена в звёздах)
 PLANS = {
-    "m1": ("1 месяц", 30, 99),
+    "m1": ("Месяц", 30, 99),
     "m3": ("3 месяца", 90, 269),
-    "m6": ("6 месяцев", 180, 499),
-    "m12": ("12 месяцев", 365, 899),
+    "m6": ("Полгода", 180, 499),
+    "m12": ("Год", 365, 899),
 }
