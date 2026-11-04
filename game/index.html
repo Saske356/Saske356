@@ -1787,6 +1787,7 @@ function initBackground() {
   for (let i = 0; i < kinds.length; i++) DEMO.push({k: kinds[i], x: Math.random(), y: Math.random(), s: rand(0.8, 1.5), sp: rand(8, 22), p: Math.random() * TAU, a: Math.random() * TAU});
 }
 
+const lowHp = () => !P.dead && P.hp < P.maxHp * 0.3 && (G.state === 'play' || G.state === 'pause' || G.state === 'levelup');
 function renderBackground(dt) {
   const hi = QL >= 1;
   // 1) низкое разрешение: заливка, градиент, лучи, (виньетка на эконом/среднем)
@@ -1805,6 +1806,8 @@ function renderBackground(dt) {
   }
   g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
   if (QL < 2) g.drawImage(VIGN, 0, 0, W, H);
+  // мало здоровья: на эконом/среднем красная пульсация запекается в фон (без лишнего полноэкранного прохода)
+  if (QL < 2 && lowHp()) { g.globalAlpha = 0.45 + 0.3 * Math.sin(G.t * 6); g.drawImage(HURTV, 0, 0, W, H); g.globalAlpha = 1; }
   // 2) один полноэкранный проход
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
@@ -2027,7 +2030,8 @@ function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.a
 function renderHUD() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
   if (QL >= 2) ctx.drawImage(VIGN, 0, 0, W, H); // на эконом/среднем виньетка уже запечена в фон
-  if (G.hurtFlash > 0 || P.hp < P.maxHp * 0.3) { ctx.globalAlpha = Math.max(G.hurtFlash, P.hp < P.maxHp * 0.3 && !P.dead ? 0.35 + 0.25 * Math.sin(G.t * 6) : 0); ctx.drawImage(HURTV, 0, 0, W, H); ctx.globalAlpha = 1; }
+  const lh = QL >= 2 && lowHp();
+  if (G.hurtFlash > 0 || lh) { ctx.globalAlpha = Math.min(1, Math.max(G.hurtFlash, lh ? 0.35 + 0.25 * Math.sin(G.t * 6) : 0)); ctx.drawImage(HURTV, 0, 0, W, H); ctx.globalAlpha = 1; }
   if (G.state === 'title' || G.state === 'over' && G.dying <= 0 && false) return;
   if (G.state !== 'play' && G.state !== 'pause' && G.state !== 'levelup') return;
   const top = SAFE.t + 8, L = SAFE.l + 12;
@@ -2207,7 +2211,9 @@ function renderTut() {
   let a = fin ? Math.min(1, TUT.fin / 0.6) : ok ? 1 : Math.min(1, TUT.t / 0.35);
   a *= clamp((G.runT - 0.5) / 0.5, 0, 1);
   if (a <= 0) return;
-  const pw = Math.min(W - 32, 350), ph = 60, x = (W - pw) / 2, y = SAFE.t + 96, gold = ok || fin;
+  const pw = Math.min(W - 32, 350), ph = 60, x = (W - pw) / 2, y = SAFE.t + 96, gold = ok || fin, bn = G.banner;
+  if (bn.t < bn.dur && y + ph + 16 > H * 0.3 - 42) a *= clamp((bn.t - bn.dur + 0.4) / 0.4, 0, 1); // низкий экран: не налезать на баннер
+  if (a <= 0) return;
   ctx.globalAlpha = a; roundRect(x, y, pw, ph, 14); ctx.fillStyle = gold ? 'rgba(46,34,6,0.82)' : 'rgba(6,24,44,0.8)'; ctx.fill();
   ctx.strokeStyle = gold ? 'rgba(255,213,79,0.95)' : 'rgba(120,245,255,' + (0.45 + 0.25 * Math.sin(G.t * 5)) + ')'; ctx.lineWidth = 1.5; ctx.stroke();
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -2228,6 +2234,9 @@ let ENDBG = null;
 function startEnding() {
   G.state = 'ending'; END.t = 0; END.shown = false; resetJoy(); hlBtn(null); $('hud').classList.remove('on');
   Snd.setIntensity(0); sfx.flare(); vibrate([60, 40, 120]); ebul.clear();
+  // всё, что осталось лежать (жемчуг босса, искры), собирается само — ничего не теряется
+  for (let i = 0; i < picks.n; i++) { const pk = picks.items[i]; if (pk.type <= 2) addXP(pk.val); else if (pk.type === 3) G.runPearls++; }
+  picks.clear();
   S.wins = (S.wins || 0) + 1; END.first = !S.skins.dawn; S.skins.dawn = 1; persist();
   if (!ENDBG) { ENDBG = mkCanvas(2, 256); const g = ENDBG.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 256);
     gr.addColorStop(0, '#9af7ff'); gr.addColorStop(0.35, '#2aa6d4'); gr.addColorStop(0.75, '#0b4f86'); gr.addColorStop(1, '#06305a'); g.fillStyle = gr; g.fillRect(0, 0, 2, 256); }
