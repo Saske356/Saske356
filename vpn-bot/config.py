@@ -39,6 +39,9 @@ FEATURES = [
     "Без хранения истории посещений",
 ]
 
+# Адрес мини-приложения (GitHub Pages). Пусто — кнопка приложения не показывается.
+MINIAPP_URL = os.environ.get("MINIAPP_URL", "").strip()
+
 # Обновлять ли при запуске имя, описание и меню команд бота
 SET_PROFILE = os.environ.get("SET_PROFILE", "1") == "1"
 

@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Aurora VPN</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Manrope:wght@400;500;600;700&display=swap">
+<style>
+  /* Макет: одна колонка, премиальный тёмный экран, золото только на акцентах */
+  :root {
+    --bg: #0a0908;
+    --panel: #14110d;
+    --panel-2: #1b1712;
+    --line: rgba(212, 175, 55, .22);
+    --line-soft: rgba(212, 175, 55, .12);
+    --gold: #d4af37;
+    --gold-hi: #f6e3a8;
+    --gold-lo: #9c7a26;
+    --text: #efe8da;
+    --muted: #9a917f;
+    --ok: #7fd1a0;
+    --serif: "Cormorant Garamond", "Times New Roman", serif;
+    --sans: "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body {
+    font-family: var(--sans); font-size: 15px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
+    background:
+      radial-gradient(120% 60% at 50% -10%, rgba(120, 86, 28, .35), transparent 60%),
+      var(--bg);
+    min-height: 100vh;
+  }
+  .wrap { max-width: 520px; margin: 0 auto;
+          padding: 18px max(16px, env(safe-area-inset-right)) 40px max(16px, env(safe-area-inset-left));
+          display: flex; flex-direction: column; gap: 22px; }
+
+  .gold-text { background: linear-gradient(180deg, var(--gold-hi) 0%, var(--gold) 45%, var(--gold-lo) 75%, #e8cf86 100%);
+               -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .eyebrow { font-size: 11px; letter-spacing: .28em; text-transform: uppercase; color: var(--gold); }
+  h1, h2 { font-family: var(--serif); font-weight: 700; margin: 0; text-wrap: balance; }
+  .ring .num, .plan .pr, .ref .big, .steps li::before { font-variant-numeric: lining-nums; font-feature-settings: "lnum" 1; }
+  h2 { font-size: 26px; letter-spacing: .02em; }
+  .sub { color: var(--muted); font-size: 13.5px; margin: 2px 0 0; }
+
+  /* шапка */
+  .hero { display: flex; align-items: center; gap: 16px; padding-top: 6px; }
+  .hero svg { flex: 0 0 64px; filter: drop-shadow(0 6px 18px rgba(212,175,55,.35)); }
+  .hero h1 { font-size: 34px; line-height: 1; letter-spacing: .04em; }
+  .hero .tag { color: var(--muted); font-size: 13px; margin-top: 6px; }
+
+  .divider { display: flex; align-items: center; gap: 10px; color: var(--gold); }
+  .divider::before, .divider::after { content: ""; height: 1px; flex: 1;
+    background: linear-gradient(90deg, transparent, var(--line), transparent); }
+  .divider span { font-size: 10px; }
+
+  /* карточки */
+  .card { background: linear-gradient(180deg, var(--panel-2), var(--panel));
+          border: 1px solid var(--line); border-radius: 18px; padding: 18px; position: relative; }
+  .status { display: flex; align-items: center; gap: 16px; }
+  .ring { flex: 0 0 74px; height: 74px; position: relative; }
+  .ring svg { width: 74px; height: 74px; transform: rotate(-90deg); }
+  .ring .num { position: absolute; inset: 0; display: grid; place-items: center; text-align: center;
+               font-family: var(--serif); font-size: 26px; font-weight: 700; line-height: .9; }
+  .ring .num small { display: block; font-family: var(--sans); font-size: 9.5px; letter-spacing: .12em;
+                     color: var(--muted); font-weight: 600; margin-top: 3px; }
+  .status .tier { font-family: var(--serif); font-size: 24px; font-weight: 700; }
+  .status .until { color: var(--muted); font-size: 13.5px; }
+  .pill { display: inline-block; font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase;
+          padding: 3px 9px; border-radius: 99px; border: 1px solid var(--line); color: var(--gold); }
+  .pill.on { color: var(--ok); border-color: rgba(127, 209, 160, .35); }
+
+  .btn { width: 100%; border: 0; border-radius: 14px; padding: 14px 16px; cursor: pointer;
+         font: 700 15px var(--sans); letter-spacing: .02em; transition: transform .12s ease, filter .12s ease; }
+  .btn:active { transform: scale(.98); }
+  .btn:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 2px; }
+  .btn.gold { color: #1b1408; background: linear-gradient(180deg, #f3dc95, var(--gold) 55%, #b48c2c);
+              box-shadow: 0 8px 24px rgba(212, 175, 55, .25), inset 0 1px 0 rgba(255,255,255,.4); }
+  .btn.ghost { color: var(--text); background: transparent; border: 1px solid var(--line); }
+  .row { display: flex; gap: 10px; }
+  .row > * { flex: 1; min-width: 0; }
+
+  .trial { display: flex; align-items: center; gap: 14px; }
+  .trial .t { flex: 1; min-width: 0; }
+  .trial .t b { font-family: var(--serif); font-size: 20px; }
+  .trial .t p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  .trial .btn { width: auto; flex: 0 0 auto; padding: 11px 16px; }
+
+  /* тарифы */
+  .plans { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .plan { text-align: left; color: var(--text); font-family: var(--sans);
+          background: var(--panel); border: 1px solid var(--line-soft); border-radius: 16px;
+          padding: 14px; cursor: pointer; display: flex; flex-direction: column; gap: 4px;
+          transition: border-color .15s, transform .12s; position: relative; }
+  .plan:active { transform: scale(.98); }
+  .plan:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .plan .nm { font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .02em; }
+  .plan .pr { font-family: var(--serif); font-size: 30px; font-weight: 700; line-height: 1.05; }
+  .plan .pr span { font-family: var(--sans); font-size: 15px; }
+  .plan .pm { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .plan .save { font-size: 11.5px; color: var(--gold); font-weight: 600; min-height: 17px; }
+  .plan.best { border-color: var(--gold); background: linear-gradient(180deg, #221b10, var(--panel));
+               box-shadow: 0 0 0 1px rgba(212,175,55,.25), 0 10px 30px rgba(212,175,55,.12); }
+  .badge { position: absolute; top: -9px; right: 10px; font-size: 9.5px; letter-spacing: .14em;
+           text-transform: uppercase; font-weight: 700; padding: 3px 8px; border-radius: 99px;
+           color: #1b1408; background: linear-gradient(180deg, #f3dc95, var(--gold)); }
+  .badge.soft { color: var(--gold); background: var(--bg); border: 1px solid var(--line); }
+  .note { color: var(--muted); font-size: 12.5px; margin: 10px 2px 0; }
+
+  /* ключ */
+  .key { font-family: ui-monospace, "JetBrains Mono", Menlo, monospace; font-size: 12px; color: var(--gold-hi);
+         background: #0d0b09; border: 1px dashed var(--line); border-radius: 12px; padding: 12px;
+         word-break: break-all; user-select: all; max-height: 92px; overflow: auto; }
+  #qr { display: grid; place-items: center; padding: 14px; background: #f6efe0; border-radius: 14px; margin-top: 12px; }
+  #qr img, #qr canvas { max-width: 100%; height: auto; }
+  .demo { font-size: 12px; color: #e0b36a; margin-top: 10px; }
+
+  /* подключение */
+  .seg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; background: var(--panel);
+         border: 1px solid var(--line-soft); border-radius: 14px; padding: 4px; }
+  .seg button { border: 0; background: transparent; color: var(--muted); font: 600 12.5px var(--sans);
+                padding: 9px 4px; border-radius: 10px; cursor: pointer; }
+  .seg button[aria-selected="true"] { background: var(--panel-2); color: var(--gold-hi);
+                                       box-shadow: inset 0 0 0 1px var(--line); }
+  .steps { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; counter-reset: s; }
+  .steps li { display: flex; gap: 12px; align-items: flex-start; font-size: 14px; }
+  .steps li::before { counter-increment: s; content: counter(s); flex: 0 0 26px; height: 26px; border-radius: 50%;
+                      display: grid; place-items: center; font: 700 13px var(--serif);
+                      color: #1b1408; background: linear-gradient(180deg, #f3dc95, var(--gold)); }
+
+  .ref .big { font-family: var(--serif); font-size: 40px; font-weight: 700; line-height: 1; }
+  .ref p { margin: 6px 0 14px; color: var(--muted); font-size: 13.5px; }
+
+  footer { display: flex; justify-content: center; gap: 18px; color: var(--muted); font-size: 12.5px; }
+  footer a { color: var(--muted); text-decoration: none; border-bottom: 1px solid var(--line); cursor: pointer; }
+
+  .toast { position: fixed; left: 50%; bottom: calc(22px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px);
+           background: #1f1a12; color: var(--gold-hi); border: 1px solid var(--line); padding: 10px 16px;
+           border-radius: 99px; font-size: 13px; opacity: 0; transition: .25s; pointer-events: none; z-index: 20; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  .overlay { position: fixed; inset: 0; background: rgba(5,4,3,.82); backdrop-filter: blur(6px);
+             display: grid; place-items: center; z-index: 30; padding: 24px; }
+  .overlay .card { max-width: 380px; text-align: center; padding: 26px 22px; }
+  .overlay h2 { font-size: 30px; margin: 10px 0 6px; }
+  .overlay p { color: var(--muted); margin: 0 0 18px; }
+
+  .appear { animation: rise .5s ease both; }
+  .appear:nth-child(2) { animation-delay: .04s } .appear:nth-child(3) { animation-delay: .08s }
+  .appear:nth-child(4) { animation-delay: .12s } .appear:nth-child(5) { animation-delay: .16s }
+  @keyframes rise { from { opacity: .001; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .appear { animation: none; } .btn, .plan { transition: none; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fbefc5"/><stop offset=".35" stop-color="#e2c06b"/>
+      <stop offset=".6" stop-color="#b0812a"/><stop offset="1" stop-color="#f0d68a"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<main class="wrap" id="app">
+  <header class="hero appear">
+    <svg viewBox="0 0 100 100" width="64" height="64" aria-hidden="true">
+      <path d="M50 3 93 18 89 56 50 97 11 56 7 18Z" fill="url(#g)"/>
+      <path d="M50 11 85 23 82 54 50 88 18 54 15 23Z" fill="#0c0a08"/>
+      <path d="M50 16 80 26 77 52 50 81 23 52 20 26Z" fill="none" stroke="url(#g)" stroke-width="1"/>
+      <text x="50" y="60" text-anchor="middle" font-family="Cormorant Garamond, serif" font-weight="700" font-size="40" fill="url(#g)" id="mono">A</text>
+    </svg>
+    <div>
+      <div class="eyebrow">Private access</div>
+      <h1 class="gold-text" id="brand">AURORA VPN</h1>
+      <div class="tag" id="tagline">Приватный доступ к свободному интернету</div>
+    </div>
+  </header>
+
+  <section class="card appear" id="statusCard" aria-live="polite"></section>
+
+  <section class="card trial appear" id="trialCard" hidden>
+    <div class="t"><b class="gold-text" id="trialTitle">1 день бесплатно</b><p>Попробуйте перед покупкой. Без оплаты.</p></div>
+    <button class="btn gold" id="trialBtn" type="button">Попробовать</button>
+  </section>
+
+  <section class="appear" id="plansSec">
+    <div class="eyebrow">Тарифы</div>
+    <h2 class="gold-text">Выберите срок</h2>
+    <p class="sub">Чем дольше, тем выгоднее. Продление добавляется к текущему сроку.</p>
+    <div class="plans" id="plans" style="margin-top:14px"></div>
+    <p class="note">Оплата звёздами Telegram ⭐. Ключ придёт сразу после оплаты.</p>
+  </section>
+
+  <section class="appear" id="keySec" hidden>
+    <div class="eyebrow">Персональный ключ</div>
+    <h2 class="gold-text">Ваш ключ</h2>
+    <div class="card" style="margin-top:12px">
+      <div class="key" id="key"></div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn gold" id="copyKey" type="button">Скопировать</button>
+        <button class="btn ghost" id="qrBtn" type="button">QR-код</button>
+      </div>
+      <div id="qr" hidden></div>
+      <div class="demo" id="demoNote" hidden>Демо-режим: сервер ещё не подключён, ключ пока не работает.</div>
+    </div>
+  </section>
+
+  <section class="appear">
+    <div class="eyebrow">Подключение</div>
+    <h2 class="gold-text">За минуту</h2>
+    <div class="card" style="margin-top:12px">
+      <div class="seg" role="tablist" id="seg">
+        <button role="tab" data-os="android" aria-selected="true">Android</button>
+        <button role="tab" data-os="ios" aria-selected="false">iPhone</button>
+        <button role="tab" data-os="windows" aria-selected="false">Windows</button>
+        <button role="tab" data-os="mac" aria-selected="false">macOS</button>
+      </div>
+      <ol class="steps" id="steps"></ol>
+    </div>
+  </section>
+
+  <section class="card ref appear" id="refCard">
+    <div class="eyebrow">Привилегия</div>
+    <div class="big gold-text" id="refBonus">+7 дней</div>
+    <p id="refText">за каждого друга, который оформит доступ. Без ограничений.</p>
+    <div class="row">
+      <button class="btn gold" id="shareRef" type="button">Пригласить</button>
+      <button class="btn ghost" id="copyRef" type="button">Ссылка</button>
+    </div>
+  </section>
+
+  <footer class="appear">
+    <a id="support" role="button" tabindex="0">Консьерж</a>
+    <a id="terms" role="button" tabindex="0">Условия</a>
+  </footer>
+</main>
+
+<div class="toast" id="toast" role="status"></div>
+<div class="overlay" id="paidOverlay" hidden>
+  <div class="card">
+    <svg viewBox="0 0 100 100" width="62" height="62" aria-hidden="true"><path d="M50 3 93 18 89 56 50 97 11 56 7 18Z" fill="url(#g)"/><path d="M30 52 44 65 70 36" fill="none" stroke="#0c0a08" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <h2 class="gold-text">Добро пожаловать</h2>
+    <p>Оплата прошла. Ключ уже в чате с ботом.</p>
+    <button class="btn gold" id="closeApp" type="button">Вернуться в чат</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+(() => {
+  "use strict";
+  const tg = window.Telegram && window.Telegram.WebApp;
+  const $ = id => document.getElementById(id);
+  const haptic = (kind = "light") => { try { tg.HapticFeedback.impactOccurred(kind); } catch {} };
+  const success = () => { try { tg.HapticFeedback.notificationOccurred("success"); } catch {} };
+
+  // ---- данные от бота приходят в адресе после #d= ----
+  function readData() {
+    const m = location.hash.match(/d=([A-Za-z0-9_-]+)/);
+    if (!m) return null;
+    try {
+      let b = m[1].replace(/-/g, "+").replace(/_/g, "/");
+      while (b.length % 4) b += "=";
+      const bytes = Uint8Array.from(atob(b), c => c.charCodeAt(0));
+      return JSON.parse(new TextDecoder().decode(bytes));
+    } catch { return null; }
+  }
+  const D = readData() || { b: "Aurora VPN", tg: "Приватный доступ к свободному интернету", p: [], e: 0 };
+
+  const plural = n => {
+    const a = n % 10, b = n % 100;
+    if (a === 1 && b !== 11) return n + " день";
+    if (a >= 2 && a <= 4 && (b < 12 || b > 14)) return n + " дня";
+    return n + " дней";
+  };
+  const fmtDate = ts => new Date(ts * 1000).toLocaleDateString("ru-RU");
+
+  function toast(msg) {
+    const t = $("toast"); t.textContent = msg; t.classList.add("show");
+    clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 1800);
+  }
+  async function copy(text, okMsg) {
+    try { await navigator.clipboard.writeText(text); toast(okMsg); success(); }
+    catch {
+      const r = document.createRange(); const el = $("key");
+      r.selectNodeContents(el); const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      toast("Выделено: скопируйте вручную");
+    }
+  }
+  const openTg = url => { if (tg && tg.openTelegramLink) tg.openTelegramLink(url); else window.open(url, "_blank"); };
+
+  // ---- шапка ----
+  $("brand").textContent = (D.b || "Aurora VPN").toUpperCase();
+  $("mono").textContent = (D.b || "A").charAt(0).toUpperCase();
+  $("tagline").textContent = D.tg || "";
+  document.title = D.b || "Aurora VPN";
+
+  // ---- статус ----
+  const now = Date.now() / 1000;
+  const active = D.e && D.e > now;
+  const left = active ? Math.ceil((D.e - now) / 86400) : 0;
+  const card = $("statusCard");
+  if (!readData()) {
+    card.innerHTML = `<div><span class="pill">Нет данных</span>
+      <div class="tier" style="margin-top:8px">Откройте через бота</div>
+      <div class="until">Нажмите кнопку «Приложение» в чате с ботом, чтобы увидеть свой статус.</div></div>`;
+  } else if (active) {
+    const frac = Math.max(.04, Math.min(1, left / 30));
+    const C = 2 * Math.PI * 32;
+    card.innerHTML = `<div class="status">
+      <div class="ring"><svg viewBox="0 0 74 74"><circle cx="37" cy="37" r="32" fill="none" stroke="rgba(212,175,55,.15)" stroke-width="5"/>
+      <circle cx="37" cy="37" r="32" fill="none" stroke="url(#g)" stroke-width="5" stroke-linecap="round"
+        stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - frac)}"/></svg>
+      <div class="num"><div class="gold-text">${left}<small>${plural(left).split(" ")[1].toUpperCase()}</small></div></div></div>
+      <div><span class="pill on">Активен</span><div class="tier gold-text" style="margin-top:6px">Premium</div>
+      <div class="until">Действует до ${fmtDate(D.e)}</div></div></div>
+      <button class="btn ghost" id="extendBtn" type="button" style="margin-top:14px">Продлить доступ</button>`;
+    $("extendBtn").onclick = () => { haptic(); $("plansSec").scrollIntoView({ behavior: "smooth" }); };
+  } else {
+    card.innerHTML = `<div><span class="pill">Не активирован</span>
+      <div class="tier" style="margin-top:8px">Здравствуйте${D.n ? ", " + D.n.replace(/[<>&]/g, "") : ""}</div>
+      <div class="until">Оформите доступ, и персональный ключ появится здесь.</div></div>`;
+  }
+
+  // ---- пробный период ----
+  if (D.tr && D.bu) {
+    $("trialCard").hidden = false;
+    $("trialTitle").textContent = plural(D.td || 1).replace(/^./, c => c.toUpperCase()) + " бесплатно";
+    $("trialBtn").onclick = () => { haptic("medium"); openTg(`https://t.me/${D.bu}?start=trial`); try { tg.close(); } catch {} };
+  }
+
+  // ---- тарифы ----
+  const plansEl = $("plans");
+  const plans = D.p || [];
+  plans.forEach((p, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "plan" + (i === plans.length - 1 && plans.length > 1 ? " best" : "");
+    const perMonth = Math.round(p.price / (p.days / 30));
+    const badge = i === plans.length - 1 && plans.length > 1 ? `<span class="badge">Лучшая цена</span>`
+                : (i === 1 && plans.length > 2 ? `<span class="badge soft">Популярный</span>` : "");
+    b.innerHTML = `${badge}<span class="nm"></span><span class="pr gold-text">${p.price} <span>⭐</span></span>
+      <span class="pm">${perMonth} ⭐ в месяц</span><span class="save">${p.disc >= 3 ? "выгода " + p.disc + "%" : ""}</span>`;
+    b.querySelector(".nm").textContent = p.name;
+    b.onclick = () => buy(p);
+    plansEl.appendChild(b);
+  });
+  if (!plans.length) plansEl.innerHTML = `<p class="sub">Тарифы появятся, когда вы откроете приложение из чата с ботом.</p>`;
+
+  function buy(p) {
+    haptic("medium");
+    if (!p.link || !tg || !tg.openInvoice) { toast("Откройте приложение из чата с ботом"); return; }
+    tg.openInvoice(p.link, status => {
+      if (status === "paid") { success(); $("paidOverlay").hidden = false; }
+      else if (status === "failed") toast("Оплата не прошла. Попробуйте ещё раз");
+    });
+  }
+  $("closeApp").onclick = () => { try { tg.close(); } catch { $("paidOverlay").hidden = true; } };
+
+  // ---- ключ ----
+  if (active && D.k) {
+    $("keySec").hidden = false;
+    $("key").textContent = D.k;
+    $("demoNote").hidden = !D.dm;
+    $("copyKey").onclick = () => copy(D.k, "Ключ скопирован");
+    let qrMade = false;
+    $("qrBtn").onclick = () => {
+      haptic();
+      const box = $("qr"); box.hidden = !box.hidden;
+      if (!qrMade && window.QRCode) {
+        new QRCode(box, { text: D.k, width: 220, height: 220, colorDark: "#0a0908", colorLight: "#f6efe0" });
+        qrMade = true;
+      }
+      $("qrBtn").textContent = box.hidden ? "QR-код" : "Скрыть QR";
+    };
+  }
+
+  // ---- инструкции ----
+  const OS = {
+    android: ["Установите v2rayNG или Hiddify из Google Play.", "Скопируйте ключ выше.",
+              "В приложении нажмите «+», затем «Импорт из буфера обмена».", "Нажмите кнопку подключения ▶"],
+    ios: ["Установите Streisand, V2Box или Hiddify из App Store.", "Скопируйте ключ выше.",
+          "В приложении нажмите «+» и добавьте ключ из буфера.", "Включите подключение и разрешите VPN."],
+    windows: ["Установите Hiddify или v2rayN с официального сайта.", "Скопируйте ключ выше.",
+              "Нажмите «+» и выберите импорт из буфера обмена.", "Нажмите «Подключить»."],
+    mac: ["Установите Hiddify или V2Box из App Store.", "Скопируйте ключ выше.",
+          "Добавьте профиль из буфера обмена.", "Включите подключение."],
+  };
+  function showOS(os) {
+    document.querySelectorAll("#seg button").forEach(b => b.setAttribute("aria-selected", b.dataset.os === os));
+    $("steps").innerHTML = "";
+    OS[os].forEach(s => { const li = document.createElement("li"); li.textContent = s; $("steps").appendChild(li); });
+  }
+  document.querySelectorAll("#seg button").forEach(b => b.onclick = () => { haptic(); showOS(b.dataset.os); });
+  const ua = navigator.userAgent;
+  showOS(/iPhone|iPad/.test(ua) ? "ios" : /Mac/.test(ua) ? "mac" : /Windows/.test(ua) ? "windows" : "android");
+
+  // ---- друзья ----
+  if (D.rf) {
+    $("refBonus").textContent = "+" + plural(D.rb || 7);
+    $("refText").textContent = `за каждого друга, который оформит доступ. Приглашено: ${D.rc || 0}.`;
+    const text = `Приглашаю в ${D.b}: быстрый приватный VPN`;
+    $("shareRef").onclick = () => { haptic(); openTg(`https://t.me/share/url?url=${encodeURIComponent(D.rf)}&text=${encodeURIComponent(text)}`); };
+    $("copyRef").onclick = () => copy(D.rf, "Ссылка скопирована");
+  } else {
+    $("refCard").hidden = true;
+  }
+
+  // ---- подвал ----
+  $("support").onclick = () => { if (D.s) openTg(`https://t.me/${D.s}`); else toast("Консьерж скоро появится"); };
+  $("terms").onclick = () => { if (D.bu) { openTg(`https://t.me/${D.bu}?start=terms`); try { tg.close(); } catch {} } };
+
+  // ---- интеграция с Telegram ----
+  if (tg) {
+    try {
+      tg.ready(); tg.expand();
+      tg.setHeaderColor("#0a0908"); tg.setBackgroundColor("#0a0908");
+      if (tg.setBottomBarColor) tg.setBottomBarColor("#0a0908");
+    } catch {}
+    if (!active && plans.length && tg.MainButton) {
+      tg.MainButton.setParams({ text: "ОФОРМИТЬ ДОСТУП", color: "#d4af37", text_color: "#1b1408" });
+      tg.MainButton.onClick(() => { haptic(); $("plansSec").scrollIntoView({ behavior: "smooth" }); });
+      tg.MainButton.show();
+    }
+  }
+})();
+</script>
+</body>
+</html>

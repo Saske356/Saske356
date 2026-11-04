@@ -4,15 +4,17 @@
 """
 
 import asyncio
+import base64
 import datetime
 import html
 import io
+import json
 import logging
 import time
 
 import qrcode
 from telegram import (BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto,
-                      LabeledPrice, Update)
+                      LabeledPrice, MenuButtonWebApp, Update, WebAppInfo)
 from telegram.constants import ParseMode
 from telegram.error import BadRequest, Forbidden, TelegramError
 from telegram.ext import (Application, CallbackQueryHandler, CommandHandler, ContextTypes,
@@ -33,8 +35,14 @@ esc = html.escape
 
 CONFETTI = "5046509860389126442"  # встроенный эффект Telegram «🎉»
 
+# Заполняется при запуске: имя бота и готовые ссылки на оплату для мини-приложения
+STATE: dict = {"username": "", "links": {}}
 
-def B(text: str, data: str | None = None, url: str | None = None) -> InlineKeyboardButton:
+
+def B(text: str, data: str | None = None, url: str | None = None,
+      webapp: str | None = None) -> InlineKeyboardButton:
+    if webapp:
+        return InlineKeyboardButton(text, web_app=WebAppInfo(webapp))
     return InlineKeyboardButton(text, url=url) if url else InlineKeyboardButton(text, callback_data=data)
 
 
@@ -96,8 +104,42 @@ def main_text(row) -> str:
             f"{status_line(row)}")
 
 
+def miniapp_url(row) -> str:
+    """Адрес мини-приложения с данными этого пользователя после #d=."""
+    plans = [{"id": k, "name": n, "days": d, "price": pr, "disc": plan_discount(d, pr),
+              "link": STATE["links"].get(k, "")} for k, (n, d, pr) in config.PLANS.items()]
+    active = is_active(row)
+    data = {
+        "b": config.BRAND, "tg": config.TAGLINE, "n": row["first_name"] or "",
+        "e": int(row["expires_at"]) if active else 0,
+        "k": (row["vpn_key"] or "") if active else "",
+        "tr": can_trial(row), "td": config.TRIAL_DAYS, "dm": vpn.is_demo,
+        "bu": STATE["username"], "s": config.SUPPORT,
+        "rf": f"https://t.me/{STATE['username']}?start=ref_{row['id']}" if STATE["username"] else "",
+        "rb": config.REF_BONUS_DAYS, "rc": db.referral_count(row["id"]), "p": plans,
+    }
+    raw = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode()
+    return config.MINIAPP_URL + "#d=" + base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+async def refresh_menu(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> None:
+    """Кнопка «Приложение» в меню чата пользователя со свежими данными."""
+    if not config.MINIAPP_URL:
+        return
+    row = db.get_user(user_id)
+    if not row:
+        return
+    try:
+        await context.bot.set_chat_menu_button(
+            chat_id=user_id, menu_button=MenuButtonWebApp("Приложение", WebAppInfo(miniapp_url(row))))
+    except TelegramError as e:
+        log.warning("кнопка меню для %s: %s", user_id, e)
+
+
 def main_kb(row) -> InlineKeyboardMarkup:
     rows = [[B("◆ Продлить доступ" if is_active(row) else "◆ Оформить доступ", "plans")]]
+    if config.MINIAPP_URL:
+        rows.append([B("✨ Открыть приложение", webapp=miniapp_url(row))])
     if can_trial(row):
         rows.append([B(f"✦ {plural_days(config.TRIAL_DAYS).capitalize()} бесплатно", "trial")])
     rows += [
@@ -271,6 +313,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         except TelegramError:
             pass
     context.user_data.clear()
+    await refresh_menu(context, u.id)
+    arg = context.args[0] if context.args else ""
+    if arg == "trial":  # из мини-приложения
+        if can_trial(row):
+            await do_trial(update, context, row)
+            return
+        await update.message.reply_text("Пробный период уже использован.")
+    elif arg == "terms":
+        await terms(update, context)
+        return
+    elif arg == "plans":
+        await show(update, context, plans_text(), plans_kb(), banner="plans")
+        return
     await show(update, context, main_text(row), main_kb(row))
 
 
@@ -293,6 +348,18 @@ async def paysupport(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         f"{plural_days(config.REFUND_DAYS)}, если VPN не заработал.")
 
 
+async def do_trial(update: Update, context: ContextTypes.DEFAULT_TYPE, row) -> None:
+    uid = row["id"]
+    db.mark_trial(uid)
+    row = await grant(uid, config.TRIAL_DAYS)
+    await refresh_menu(context, uid)
+    await show(update, context,
+               f"<b>Пробный доступ на {plural_days(config.TRIAL_DAYS)} активирован</b>\n\n"
+               "Ваш персональный ключ:\n" + key_block(row),
+               key_kb(), banner="welcome")
+    await notify_admins(context, f"✦ Пробный период: {esc(row['first_name'] or '')} (<code>{uid}</code>)")
+
+
 # ---------------------------------------------------------------- кнопки
 
 async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -305,14 +372,8 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not can_trial(row):
             await q.answer("Пробный период уже использован", show_alert=True)
             return
-        db.mark_trial(uid)
-        row = await grant(uid, config.TRIAL_DAYS)
         await q.answer("✦ Пробный период активирован")
-        await show(update, context,
-                   f"<b>Пробный доступ на {plural_days(config.TRIAL_DAYS)} активирован</b>\n\n"
-                   "Ваш персональный ключ:\n" + key_block(row),
-                   key_kb(), banner="welcome")
-        await notify_admins(context, f"✦ Пробный период: {esc(row['first_name'] or '')} (<code>{uid}</code>)")
+        await do_trial(update, context, row)
         return
 
     if data.startswith("buy:"):
@@ -478,9 +539,11 @@ async def paid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not db.add_payment(u.id, plan, sp.total_amount, days, sp.telegram_payment_charge_id):
         return  # Telegram прислал тот же платёж повторно
     row = await grant(u.id, days)
+    await refresh_menu(context, u.id)
 
     if first_payment and row["referrer_id"]:
         ref_row = await grant(row["referrer_id"], config.REF_BONUS_DAYS)
+        await refresh_menu(context, ref_row["id"])
         try:
             await context.bot.send_message(
                 ref_row["id"],
@@ -540,6 +603,7 @@ async def redeem(update: Update, context: ContextTypes.DEFAULT_TYPE, code: str) 
                    KB([B("🎟 Ввести другой", "promo"), BACK]))
         return
     row = await grant(uid, days)
+    await refresh_menu(context, uid)
     await show(update, context,
                f"<b>Промокод принят</b>\n\n◆ Начислено <b>+{plural_days(days)}</b>\n"
                f"◆ Доступ действует до <b>{fmt_date(row['expires_at'])}</b>",
@@ -612,6 +676,7 @@ async def give(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("Такого гостя нет в боте.")
         return
     row = await grant(uid, days)
+    await refresh_menu(context, uid)
     await update.message.reply_text(f"Начислено {plural_days(days)}. Доступ до {fmt_date(row['expires_at'])}.")
     try:
         await context.bot.send_message(uid, f"🎁 Вам начислено <b>+{plural_days(days)}</b> доступа.")
@@ -647,6 +712,7 @@ async def do_refund(context: ContextTypes.DEFAULT_TYPE, charge: str) -> str:
     if not is_active(row) and row["key_active"]:
         await vpn.revoke(row["id"])
         db.set_key(row["id"], row["vpn_key"], False)
+    await refresh_menu(context, p["user_id"])
     try:
         await context.bot.send_message(p["user_id"], f"↩️ Вам возвращено {p['stars']} ⭐.")
     except TelegramError:
@@ -716,6 +782,7 @@ async def lifecycle_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     for row in db.expired_with_key():
         await vpn.revoke(row["id"])
         db.set_key(row["id"], row["vpn_key"], False)
+        await refresh_menu(context, row["id"])
         try:
             await context.bot.send_message(
                 row["id"], "Срок доступа закончился, VPN отключён. Продлите, чтобы снова пользоваться.",
@@ -732,9 +799,24 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def setup_profile(app: Application) -> None:
     """Имя, описание до /start и меню команд — бот ставит себе сам."""
+    bot = app.bot
+    try:
+        STATE["username"] = (await bot.get_me()).username or ""
+    except TelegramError as e:
+        log.warning("get_me: %s", e)
+    if config.MINIAPP_URL:
+        for k, (name, days, price) in config.PLANS.items():
+            try:
+                STATE["links"][k] = await bot.create_invoice_link(
+                    title=f"{config.BRAND} · {name}",
+                    description=f"Персональный доступ к VPN на {plural_days(days)}. "
+                                "Ключ придёт сразу после оплаты.",
+                    payload=f"plan:{k}:{days}:{price}", provider_token="",
+                    currency="XTR", prices=[LabeledPrice(name, price)])
+            except TelegramError as e:
+                log.warning("ссылка на оплату %s: %s", k, e)
     if not config.SET_PROFILE:
         return
-    bot = app.bot
     steps = [
         lambda: bot.set_my_commands([
             BotCommand("start", "Главное меню"),
