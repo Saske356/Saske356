@@ -1,0 +1,34 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "The Hollow §8[BP]",
+    "description": "Хоррор-аддон: оно наблюдает за тобой из темноты.",
+    "uuid": "fb19c6c7-eadc-4e5b-98d8-3690f755d368",
+    "version": [1, 0, 0],
+    "min_engine_version": [1, 21, 0]
+  },
+  "modules": [
+    {
+      "type": "data",
+      "uuid": "12c7d1b3-0396-48a9-afc4-d60f7fc4bc5c",
+      "version": [1, 0, 0]
+    },
+    {
+      "type": "script",
+      "language": "javascript",
+      "uuid": "a8c70f89-381d-4f90-ae49-40926c21450a",
+      "version": [1, 0, 0],
+      "entry": "scripts/main.js"
+    }
+  ],
+  "dependencies": [
+    {
+      "uuid": "3c98309a-af00-42de-8693-fa77f483059f",
+      "version": [1, 0, 0]
+    },
+    {
+      "module_name": "@minecraft/server",
+      "version": "1.11.0"
+    }
+  ]
+}

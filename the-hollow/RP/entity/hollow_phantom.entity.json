@@ -1,0 +1,32 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "hollow:hollow_phantom",
+      "materials": {
+        "default": "entity_alphatest"
+      },
+      "textures": {
+        "default": "textures/entity/the_hollow"
+      },
+      "geometry": {
+        "default": "geometry.the_hollow"
+      },
+      "animations": {
+        "walk": "animation.the_hollow.walk",
+        "look": "animation.the_hollow.look",
+        "idle": "animation.the_hollow.idle"
+      },
+      "scripts": {
+        "animate": [
+          "walk",
+          "look",
+          "idle"
+        ]
+      },
+      "render_controllers": [
+        "controller.render.default"
+      ]
+    }
+  }
+}

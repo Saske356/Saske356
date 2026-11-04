@@ -1,0 +1,258 @@
+{
+  "format_version": "1.12.0",
+  "minecraft:geometry": [
+    {
+      "description": {
+        "identifier": "geometry.the_hollow",
+        "texture_width": 64,
+        "texture_height": 64,
+        "visible_bounds_width": 3,
+        "visible_bounds_height": 5,
+        "visible_bounds_offset": [
+          0,
+          2,
+          0
+        ]
+      },
+      "bones": [
+        {
+          "name": "root",
+          "pivot": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "body",
+          "parent": "root",
+          "pivot": [
+            0,
+            26,
+            0
+          ],
+          "cubes": [
+            {
+              "origin": [
+                -5,
+                26,
+                -2.5
+              ],
+              "size": [
+                10,
+                16,
+                5
+              ],
+              "uv": [
+                12,
+                0
+              ]
+            }
+          ]
+        },
+        {
+          "name": "head",
+          "parent": "body",
+          "pivot": [
+            0,
+            42,
+            0
+          ],
+          "cubes": [
+            {
+              "origin": [
+                -3.5,
+                42,
+                -4.5
+              ],
+              "size": [
+                7,
+                10,
+                7
+              ],
+              "uv": [
+                0,
+                36
+              ]
+            }
+          ]
+        },
+        {
+          "name": "horn_left",
+          "parent": "head",
+          "pivot": [
+            2,
+            52,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            -18
+          ],
+          "cubes": [
+            {
+              "origin": [
+                1.5,
+                52,
+                -0.5
+              ],
+              "size": [
+                1,
+                5,
+                1
+              ],
+              "uv": [
+                54,
+                0
+              ]
+            }
+          ]
+        },
+        {
+          "name": "horn_right",
+          "parent": "head",
+          "pivot": [
+            -2,
+            52,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            18
+          ],
+          "cubes": [
+            {
+              "origin": [
+                -2.5,
+                52,
+                -0.5
+              ],
+              "size": [
+                1,
+                5,
+                1
+              ],
+              "uv": [
+                54,
+                0
+              ],
+              "mirror": true
+            }
+          ]
+        },
+        {
+          "name": "left_arm",
+          "parent": "body",
+          "pivot": [
+            6.5,
+            41,
+            0
+          ],
+          "cubes": [
+            {
+              "origin": [
+                5,
+                11,
+                -1.5
+              ],
+              "size": [
+                3,
+                30,
+                3
+              ],
+              "uv": [
+                42,
+                0
+              ]
+            }
+          ]
+        },
+        {
+          "name": "right_arm",
+          "parent": "body",
+          "pivot": [
+            -6.5,
+            41,
+            0
+          ],
+          "cubes": [
+            {
+              "origin": [
+                -8,
+                11,
+                -1.5
+              ],
+              "size": [
+                3,
+                30,
+                3
+              ],
+              "uv": [
+                42,
+                0
+              ],
+              "mirror": true
+            }
+          ]
+        },
+        {
+          "name": "left_leg",
+          "parent": "root",
+          "pivot": [
+            2.5,
+            26,
+            0
+          ],
+          "cubes": [
+            {
+              "origin": [
+                1,
+                0,
+                -1.5
+              ],
+              "size": [
+                3,
+                26,
+                3
+              ],
+              "uv": [
+                0,
+                0
+              ]
+            }
+          ]
+        },
+        {
+          "name": "right_leg",
+          "parent": "root",
+          "pivot": [
+            -2.5,
+            26,
+            0
+          ],
+          "cubes": [
+            {
+              "origin": [
+                -4,
+                0,
+                -1.5
+              ],
+              "size": [
+                3,
+                26,
+                3
+              ],
+              "uv": [
+                0,
+                0
+              ],
+              "mirror": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

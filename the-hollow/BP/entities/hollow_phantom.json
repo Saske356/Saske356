@@ -1,0 +1,33 @@
+{
+  "format_version": "1.21.0",
+  "minecraft:entity": {
+    "description": {
+      "identifier": "hollow:hollow_phantom",
+      "is_spawnable": false,
+      "is_summonable": true,
+      "is_experimental": false
+    },
+    "components": {
+      "minecraft:type_family": { "family": ["hollow_phantom", "inanimate"] },
+      "minecraft:health": { "value": 1000, "max": 1000 },
+      "minecraft:collision_box": { "width": 0.1, "height": 0.1 },
+      "minecraft:physics": { "has_collision": true, "has_gravity": true },
+      "minecraft:pushable": { "is_pushable": false, "is_pushable_by_piston": false },
+      "minecraft:knockback_resistance": { "value": 1.0 },
+      "minecraft:movement": { "value": 0 },
+      "minecraft:fire_immune": {},
+      "minecraft:breathable": { "total_supply": 15, "suffocate_time": 0, "breathes_water": true, "breathes_air": true },
+      "minecraft:damage_sensor": {
+        "triggers": [{ "cause": "all", "deals_damage": false }]
+      },
+      "minecraft:behavior.look_at_player": {
+        "priority": 1,
+        "look_distance": 96,
+        "probability": 1.0,
+        "look_time": [600, 600],
+        "angle_of_view_horizontal": 360,
+        "angle_of_view_vertical": 360
+      }
+    }
+  }
+}
