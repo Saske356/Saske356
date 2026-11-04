@@ -935,7 +935,7 @@ window.addEventListener('blur', () => { Input.keys = {}; if (G.state === 'play')
 document.addEventListener('contextmenu', e => e.preventDefault());
 document.addEventListener('gesturestart', e => e.preventDefault());
 document.addEventListener('dblclick', e => e.preventDefault());
-document.addEventListener('touchmove', e => { if (!e.target.closest || !e.target.closest('.scroll,.screen.on')) e.preventDefault(); }, {passive: false}); // QA: экраны меню прокручиваются на маленьких телефонах
+document.addEventListener('touchmove', e => { if (e.cancelable && (!e.target.closest || !e.target.closest('.scroll,.screen.on'))) e.preventDefault(); }, {passive: false}); // QA: экраны меню прокручиваются на маленьких телефонах
 
 function hudBtn(id, fn) {
   const b = $(id);
