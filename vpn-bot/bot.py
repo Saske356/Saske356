@@ -108,6 +108,27 @@ def main_kb(row) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def find_plan(plan: str, user_id: int):
+    """Тариф по ключу. Тестовый тариф существует только для админов."""
+    if plan == "test":
+        return config.TEST_PLAN if user_id in config.ADMIN_IDS else None
+    return config.PLANS.get(plan)
+
+
+async def send_plan_invoice(context: ContextTypes.DEFAULT_TYPE, chat_id: int, plan: str,
+                            name: str, days: int, price: int) -> None:
+    await context.bot.send_invoice(
+        chat_id=chat_id,
+        title=f"{config.BRAND} · {name}",
+        description=f"Персональный доступ к VPN на {plural_days(days)}. "
+                    "Ключ придёт сразу после оплаты.",
+        payload=f"plan:{plan}:{days}:{price}",
+        provider_token="",
+        currency="XTR",
+        prices=[LabeledPrice(name, price)],
+    )
+
+
 def plan_discount(days: int, price: int) -> int:
     base = config.PLANS["m1"][2] if "m1" in config.PLANS else price
     full = base * days / 30
@@ -301,16 +322,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             return
         name, days, price = config.PLANS[plan]
         await q.answer("Счёт ниже 👇")
-        await context.bot.send_invoice(
-            chat_id=update.effective_chat.id,
-            title=f"{config.BRAND} · {name}",
-            description=f"Персональный доступ к VPN на {plural_days(days)}. "
-                        "Ключ придёт сразу после оплаты.",
-            payload=f"plan:{plan}:{days}:{price}",
-            provider_token="",
-            currency="XTR",
-            prices=[LabeledPrice(name, price)],
-        )
+        await send_plan_invoice(context, update.effective_chat.id, plan, name, days, price)
         return
 
     if data == "qr":
@@ -423,7 +435,7 @@ async def precheckout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     except ValueError:
         await q.answer(ok=False, error_message="Счёт устарел. Откройте меню и выберите тариф заново.")
         return
-    current = config.PLANS.get(plan)
+    current = find_plan(plan, q.from_user.id)
     if q.currency != "XTR" or not current or current[1] != days or current[2] != price \
             or q.total_amount != price:
         await q.answer(ok=False, error_message="Тариф изменился. Откройте меню и выберите тариф заново.")
@@ -452,7 +464,7 @@ async def paid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         except TelegramError:
             pass
 
-    name = config.PLANS.get(plan, (plan,))[0]
+    name = (find_plan(plan, u.id) or (plan,))[0]
     await show(update, context,
                "<b>Оплата прошла. Благодарим за доверие.</b>\n\n"
                f"◆ Тариф: <b>{esc(name)}</b>\n"
@@ -531,7 +543,8 @@ def admin_text() -> str:
             "<b>Команды</b>\n"
             "/give <code>id</code> <code>дней</code>: начислить дни\n"
             "/addpromo <code>КОД</code> <code>дней</code> <code>активаций</code>\n"
-            "/refund <code>charge_id</code>: вернуть звёзды")
+            "/refund <code>charge_id</code>: вернуть звёзды\n"
+            f"/testpay: тестовая оплата на {config.TEST_PLAN[2]} ⭐")
 
 
 def admin_kb() -> InlineKeyboardMarkup:
@@ -550,6 +563,16 @@ def admin_only(func):
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     current_user(update)
     await show(update, context, admin_text(), admin_kb())
+
+
+@admin_only
+async def testpay(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    current_user(update)
+    name, days, price = config.TEST_PLAN
+    await update.message.reply_text(
+        f"Тестовый счёт на {price} ⭐. После оплаты придёт уведомление с charge_id, "
+        "по нему можно проверить /refund.")
+    await send_plan_invoice(context, update.effective_chat.id, "test", name, days, price)
 
 
 @admin_only
@@ -689,6 +712,7 @@ def build_app(token: str) -> Application:
     app.add_handler(CommandHandler("give", give))
     app.add_handler(CommandHandler("addpromo", addpromo))
     app.add_handler(CommandHandler("refund", refund))
+    app.add_handler(CommandHandler("testpay", testpay))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(PreCheckoutQueryHandler(precheckout))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, paid))
