@@ -488,6 +488,7 @@ const CHARS = {
   lumen: {name:'Люмен',  cost:0,   d:'Сбалансированная искра. С неё всё началось.', hp:100, speed:1,    rate:1,   dmg:1,   pierce:0, orb:0, armor:0, dashCd:1,   col:C.CYAN},
   needle:{name:'Игла',   cost:250, d:'Быстрая и хрупкая: +1 пробивание, +20% скорострельности, частый рывок.', hp:70, speed:1.15, rate:1.2, dmg:1, pierce:1, orb:0, armor:0, dashCd:0.65, col:C.EMER},
   shell: {name:'Панцирь',cost:400, d:'Медленный танк: две споры-спутника и броня с самого начала.', hp:160, speed:0.88, rate:0.9, dmg:1.1, pierce:0, orb:2, armor:2, dashCd:1.2, col:C.AMBER},
+  squall:{name:'Шквал',  cost:500, d:'Стеклянная пушка: +30% урона, +1 пробивание и частый рывок, но хрупкая.', hp:60, speed:1.08, rate:1, dmg:1.3, pierce:1, orb:0, armor:0, dashCd:0.8, col:C.FIRE},
 };
 // Облики (цвет свечения игрока)
 const SKINS = {
@@ -497,6 +498,8 @@ const SKINS = {
   emerald: {name:'Изумруд', pal:C.EMER,  cost:160},
   coral:   {name:'Коралл',  pal:C.CORAL, cost:200},
   ghost:   {name:'Призрак', pal:C.GHOST, cost:350},
+  ember:   {name:'Уголь',   pal:C.FIRE,  cost:260},
+  frost:   {name:'Иней',    pal:C.ICE,   cost:300},
   dawn:    {name:'Заря',    pal:C.DAWN,  cost:0, win:1}, // награда за победу над Сердцем Бездны
 };
 // Постоянные усиления (за жемчуг)
@@ -568,8 +571,9 @@ const EN = {
     lumen:['Lumen','A balanced spark. Where it all began.'],
     needle:['Needle','Fast and fragile: +1 pierce, +20% fire rate, frequent dash.'],
     shell:['Shell','Slow tank: two orbiting spores and armor from the start.'],
+    squall:['Squall','Glass cannon: +30% damage, +1 pierce and frequent dash, but fragile.'],
   },
-  skins: { azure:'Azure', amber:'Amber', amethyst:'Amethyst', emerald:'Emerald', coral:'Coral', ghost:'Ghost', dawn:'Dawn' },
+  skins: { azure:'Azure', amber:'Amber', amethyst:'Amethyst', emerald:'Emerald', coral:'Coral', ghost:'Ghost', ember:'Ember', frost:'Frost', dawn:'Dawn' },
   shop: {
     hp:['Sturdy Shell','+10 health'], dmg:['Brightness','+6% damage'], spd:['Streamlined','+4% speed'],
     mag:['Attraction','+15% pickup radius'], xp:['Deep Wisdom','+8% XP'],
