@@ -392,7 +392,10 @@ function objKitButton() {
   });
   itemsEl.appendChild(b);
 }
-(function () {
-  const el = document.getElementById('items');
-  if (el && window.MutationObserver) new MutationObserver(() => objKitButton()).observe(el, { childList: true });
-})();
+// [интеграция] набор сапёра — через EXTRA_ITEMS магазина (вкладка «Снаряжение»), а не вставкой в каждую вкладку
+const EXTRA_ITEMS = [{
+  id: 'kit', name: 'Набор сапёра', price: KIT_PRICE, side: 'def',
+  get desc() { return 'Разминирование за ' + String(CHARGE.defuseKit).replace('.', ',') + ' с вместо ' + CHARGE.defuse; },
+  owned: u => !!u.kit,
+  buy: u => { if (!mode.bomb || !canBuy() || u.kit || u.money < KIT_PRICE) return false; u.money -= KIT_PRICE; u.kit = true; beep(880, 0.06, 0.08, 'triangle'); return true; },
+}];
