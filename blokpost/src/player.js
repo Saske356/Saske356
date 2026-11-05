@@ -132,11 +132,11 @@ function animateViewmodel(p, w, dt, hs) {
   const breathe = Math.sin(gt * 1.6) * 0.002;
   const pos = _vp.copy(vm.hip).lerp(vm.ads, S.ads);
   const ins = S.inspect > 0 ? Math.sin(Math.PI * clamp(1 - S.inspect / 2.4, 0, 1)) : 0;
-  let gx = pos.x + Math.sin(S.bob) * 0.011 * amp + S.sway * 0.4 + S.strafe * 0.01 - ins * 0.05,
-    gy = pos.y + Math.abs(Math.cos(S.bob)) * 0.011 * amp - S.swap * 0.32 - tilt * 0.05 - S.land * 0.035 - S.swayY * 0.3 + breathe - S.crouch * 0.008,
+  let gx = pos.x + Math.sin(S.bob) * 0.011 * amp + S.sway * 0.4 + S.strafe * 0.01 - ins * 0.05 - tilt * 0.06,
+    gy = pos.y + Math.abs(Math.cos(S.bob)) * 0.011 * amp - S.swap * 0.32 + tilt * 0.02 - S.land * 0.035 - S.swayY * 0.3 + breathe - S.crouch * 0.008,
     gz = pos.z + S.kick * (S.ads > 0.5 ? 0.04 : 0.065) + ins * 0.03;
-  let rx = S.kick * 0.1 + tilt * 0.3 + S.swayY * 0.6 - S.swap * 0.7 + ins * 0.15,
-    ry = S.sway * 0.8 + (1 - S.ads) * 0.06 + ins * 0.9, rz = tilt * 0.55 + S.strafe * 0.04 + ins * 0.45;
+  let rx = S.kick * 0.1 + tilt * 0.12 + S.swayY * 0.6 - S.swap * 0.7 + ins * 0.15,
+    ry = S.sway * 0.8 + (1 - S.ads) * 0.06 + ins * 0.9 + tilt * 0.2, rz = -tilt * 0.5 + S.strafe * 0.04 + ins * 0.45;
   vm.gun.position.set(0, 0, 0); vm.gun.rotation.set(0, 0, 0);
   if (vm.type === 'knife') {
     rx += 0.3; ry += 0.3; rz += -0.2;

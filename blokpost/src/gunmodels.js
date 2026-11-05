@@ -4,7 +4,7 @@
 // Каждая деталь — { g, c, k }: геометрия, цвет и вид материала k: 'metal' | 'polymer' | 'wood' | 'accent'.
 // Детали склеиваются по видам материала: отдельный меш на вид (mesh.userData.kind) — скин меняет материал меша.
 // Хук скинов: если объявлена функция gunMaterial(weaponKey, kind), её результат (материал) используется вместо нашего.
-const GC = { blk: 0x1d1f21, metal: 0x2c2f32, steel: 0x41464b, park: 0x33352f, wood: 0x6a4224, wood2: 0x5a3820, fde: 0x8c7755, fde2: 0x75633f, od: 0x47523c, od2: 0x3a4431, brown: 0x4b2c1a, lens: 0x5fa0a8, red: 0x8a2a20, brass: 0xb08a3e, poly: 0x262729, grey: 0x55595c, tan: 0x9a8a6a };
+const GC = { blk: 0x1d1f21, metal: 0x2c2f32, steel: 0x41464b, park: 0x33352f, wood: 0x4a2c18, wood2: 0x3a2214, fde: 0x7a6848, fde2: 0x64553a, od: 0x3c4632, od2: 0x323a2a, brown: 0x3e2416, lens: 0x5fa0a8, red: 0x8a2a20, brass: 0xb08a3e, poly: 0x262729, grey: 0x55595c, tan: 0x7a6e58 };
 const KIND_BY_COLOR = { [GC.wood]: 'wood', [GC.wood2]: 'wood', [GC.brown]: 'wood', [GC.metal]: 'metal', [GC.steel]: 'metal', [GC.park]: 'metal', [GC.lens]: 'accent', [GC.red]: 'accent', [GC.brass]: 'accent' };
 const GUN_KINDS = ['metal', 'polymer', 'wood', 'accent'];
 const kindOf = pt => pt.k || KIND_BY_COLOR[pt.c] || 'polymer';
@@ -405,9 +405,9 @@ const woodTex = tex(128, 128, (g, w, h) => {
   grain(g, w, h, 16);
 });
 const GUNMATS = {
-  metal: new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.72, roughness: 0.42, map: metalTex, roughnessMap: metalTex, envMap: gunEnv, envMapIntensity: 1.1 }),
-  polymer: new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.05, roughness: 0.68, map: polyTex, envMap: gunEnv, envMapIntensity: 0.6 }),
-  wood: new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.0, roughness: 0.5, map: woodTex, envMap: gunEnv, envMapIntensity: 0.55 }),
+  metal: new THREE.MeshStandardMaterial({ vertexColors: true, color: 0xd0d0d0, metalness: 0.72, roughness: 0.42, map: metalTex, roughnessMap: metalTex, envMap: gunEnv, envMapIntensity: 1.1 }),
+  polymer: new THREE.MeshStandardMaterial({ vertexColors: true, color: 0xa8a8a8, metalness: 0.1, roughness: 0.62, map: polyTex, envMap: gunEnv, envMapIntensity: 0.6 }),
+  wood: new THREE.MeshStandardMaterial({ vertexColors: true, color: 0x9a9a9a, metalness: 0.0, roughness: 0.48, map: woodTex, envMap: gunEnv, envMapIntensity: 0.55 }),
   accent: new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.45, roughness: 0.28, envMap: gunEnv, envMapIntensity: 1 }),
 };
 const gunMat = GUNMATS.polymer; // совместимость со старым кодом

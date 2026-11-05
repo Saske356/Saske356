@@ -23,6 +23,13 @@ const fabricTex = tex(128, 128, (g, w, h) => {
 const charMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0.02, map: fabricTex });
 const hitMat = new THREE.MeshBasicMaterial({ visible: false });
 const charGeo = {};
+const rb = (w, h, d, r) => rbox(w, h, d, r, 2);
+// капсула с одним сегментом скругления (дешевле limbGeo)
+function cap(a, b, r, seg = 5) {
+  const len = Math.max(0.001, a.distanceTo(b)), g = new THREE.CapsuleGeometry(r, len, 1, seg);
+  g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(_up, b.clone().sub(a).normalize())); g.translate((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+  return g;
+}
 const BOT_GUN_SCALE = 0.8;
 
 function resolveStyle(team, skinId) {
@@ -49,6 +56,7 @@ const skinTone = (S, L) => L.face === 'bala' ? S.bala : (S.tones ? S.tones[L.ton
 /* ---------------- заготовки ---------------- */
 // конус-конечность от a (радиус r0) к b (r1) с шаром в суставе a
 function tlimb(a, b, r0, r1, seg = 8, joint = true) {
+  if (joint === 'lite') joint = false;
   const len = Math.max(0.001, a.distanceTo(b));
   const g = new THREE.CylinderGeometry(r1, r0, len, seg, 1, true);
   const q = new THREE.Quaternion().setFromUnitVectors(_up, b.clone().sub(a).normalize());
@@ -82,29 +90,31 @@ function handParts(S, H, Y, X, side, o = {}) {
     const y = 0.031 - j * 0.0205, rr = fr * (j === 3 ? 0.82 : 1), curl = 1 - open;
     const angs = [-0.2, 0.55 * curl + 0.1, 1.3 * curl + 0.1, (2.15 - j * 0.06) * curl + 0.15];
     const pts = angs.map((a, i) => L((rx + rr) * Math.cos(a) + (i ? 0 : 0.012), y, -(rz + rr) * Math.sin(a) + (i ? 0 : rz * 0.2)));
+    if (o.lite) { parts.push({ g: cap(pts[0], pts[2], rr, seg), c }, { g: cap(pts[2], pts[3], rr * 0.9, seg), c }); continue; }
     for (let k = 0; k < 3; k++) parts.push({ g: limbGeo(pts[k], pts[k + 1], rr * (1 - k * 0.08), seg), c });
   }
   const th = [L(rx + 0.008, 0.042, rz * 0.7), L(rx * 0.3, 0.056, rz * 0.15), L(-rx - 0.002, 0.05, -rz * 0.45), L(-rx - 0.004, 0.044, -rz * 0.95)];
-  for (let k = 0; k < 3; k++) parts.push({ g: limbGeo(th[k], th[k + 1], fr * 1.08, seg), c });
+  if (o.lite) parts.push({ g: cap(th[0], th[2], fr * 1.08, seg), c }, { g: cap(th[2], th[3], fr, seg), c });
+  else for (let k = 0; k < 3; k++) parts.push({ g: limbGeo(th[k], th[k + 1], fr * 1.08, seg), c });
   return { parts, wrist: L(rx * 0.7 + 0.01, -0.052, rz * 0.6 + 0.02) };
 }
 // рука: плечо → (ИК) локоть → запястье + кисть; rolled — закатанный рукав
 function armParts(S, L, sh, hand, pole, o = {}) {
-  const seg = o.seg || 8, out = [...hand.parts];
+  const seg = o.seg || 8, out = [...hand.parts], R = o.thick || 1;
   const w = hand.wrist, el = ik(sh, w, o.l1 || 0.3, o.l2 || 0.27, pole);
   const skin = skinTone(S, { face: 'skin', tone: L.tone });
-  out.push(...PL(tlimb(sh, el, 0.062, 0.05, seg), S.uni));
-  out.push(...PL(tlimb(sh.clone().lerp(el, 0.32), sh.clone().lerp(el, 0.58), 0.066, 0.06, seg, false), S.uni2));
-  { const pp = sh.clone().lerp(el, 0.42).add(sideOff(el.clone().sub(sh), o.side || 1, 0.06)); out.push(P(rbox(0.016, 0.055, 0.05, 0.006), S.acc, [pp.x, pp.y, pp.z])); }
+  out.push(...PL(tlimb(sh, el, 0.062 * R, 0.05 * R, seg), S.uni));
+  out.push(...PL(tlimb(sh.clone().lerp(el, 0.32), sh.clone().lerp(el, 0.58), 0.066 * R, 0.06 * R, seg, false), S.uni2));
+  { const pp = sh.clone().lerp(el, 0.42).add(sideOff(el.clone().sub(sh), o.side || 1, 0.06 * R)); out.push(P(rb(0.016, 0.055, 0.05, 0.006), S.acc, [pp.x, pp.y, pp.z])); }
   if (L.rolled) {
-    out.push(...PL(tlimb(el, el.clone().lerp(w, 0.22), 0.058, 0.055, seg, true), S.uni2));
-    out.push(...PL(tlimb(el.clone().lerp(w, 0.2), w, 0.043, 0.035, seg, false), skin));
+    out.push(...PL(tlimb(el, el.clone().lerp(w, 0.22), 0.058 * R, 0.055 * R, seg, true), S.uni2));
+    out.push(...PL(tlimb(el.clone().lerp(w, 0.2), w, 0.043 * R, 0.035, seg, false), skin));
   } else {
-    out.push(...PL(tlimb(el, w, 0.05, 0.042, seg), S.uni));
-    out.push(...PL(tlimb(el.clone().lerp(w, 0.12), el.clone().lerp(w, 0.3), 0.054, 0.052, seg, false), S.uni2));
+    out.push(...PL(tlimb(el, w, 0.05 * R, 0.04, seg), S.uni));
+    out.push(...PL(tlimb(el.clone().lerp(w, 0.12), el.clone().lerp(w, 0.3), 0.054 * R, 0.052 * R, seg, false), S.uni2));
   }
-  out.push(...PL(tlimb(el.clone().lerp(w, 0.78), w.clone().lerp(el, -0.05), 0.046, 0.044, seg, false), S.glove));
-  if (o.watch) out.push({ g: P(rbox(0.03, 0.012, 0.03, 0.004), 0x111111).g.translate(...w.clone().lerp(el, 0.12).add(V3(0, 0.04, 0)).toArray()), c: 0x111111 });
+  out.push(...PL(tlimb(el.clone().lerp(w, 0.78), w.clone().lerp(el, -0.05), 0.044, 0.041, seg, false), S.glove));
+  if (o.watch) out.push({ g: P(rb(0.03, 0.012, 0.03, 0.004), 0x111111).g.translate(...w.clone().lerp(el, 0.12).add(V3(0, 0.04, 0)).toArray()), c: 0x111111 });
   return out;
 }
 function sideOff(dir, side, r) { const Y = dir.clone().normalize(); return new THREE.Vector3(side, 0, 0).addScaledVector(Y, -Y.x * side).normalize().multiplyScalar(r); }
@@ -112,120 +122,120 @@ function sideOff(dir, side, r) { const Y = dir.clone().normalize(); return new T
 /* ---------------- тело ---------------- */
 function pelvisGeo(S) {
   return mergeUV([
-    P(rbox(0.34, 0.22, 0.22, 0.07), S.uni2, [0, 0, 0]),
-    P(rbox(0.36, 0.055, 0.235, 0.02), S.strap, [0, 0.08, 0]),
-    P(rbox(0.05, 0.045, 0.02, 0.005), 0x8a8a80, [0, 0.08, -0.125]),
-    P(rbox(0.11, 0.09, 0.06, 0.02), S.pouch, [-0.1, 0.05, 0.135]), P(rbox(0.1, 0.09, 0.06, 0.02), S.pouch, [0.1, 0.05, 0.135]),
-    P(rbox(0.06, 0.1, 0.07, 0.02), S.pouch, [-0.185, 0.04, -0.04]),
-    P(rbox(0.04, 0.02, 0.012, 0.004), S.pouch, [0.14, 0.11, -0.12]), P(rbox(0.04, 0.02, 0.012, 0.004), S.pouch, [-0.14, 0.11, -0.12]),
+    P(rb(0.34, 0.22, 0.22, 0.07), S.uni2, [0, 0, 0]),
+    P(rb(0.36, 0.055, 0.235, 0.02), S.strap, [0, 0.08, 0]),
+    P(rb(0.05, 0.045, 0.02, 0.005), 0x8a8a80, [0, 0.08, -0.125]),
+    P(rb(0.11, 0.09, 0.06, 0.02), S.pouch, [-0.1, 0.05, 0.135]), P(rb(0.1, 0.09, 0.06, 0.02), S.pouch, [0.1, 0.05, 0.135]),
+    P(rb(0.06, 0.1, 0.07, 0.02), S.pouch, [-0.185, 0.04, -0.04]),
+    P(rb(0.04, 0.02, 0.012, 0.004), S.pouch, [0.14, 0.11, -0.12]), P(rb(0.04, 0.02, 0.012, 0.004), S.pouch, [-0.14, 0.11, -0.12]),
   ], { uvScale: 3 });
 }
 function thighGeo(S, side) {
   return mergeUV([
     ...PL(tlimb(V3(0, 0.03, 0), V3(0, -0.42, 0.0), 0.098, 0.072, 10), S.uni),
-    P(rbox(0.05, 0.14, 0.13, 0.022), S.uni2, [side * 0.088, -0.22, 0.0]),
-    P(rbox(0.054, 0.02, 0.13, 0.006), S.uni2, [side * 0.09, -0.15, 0.0]),
-    ...(side > 0 ? [P(rbox(0.07, 0.17, 0.09, 0.02), S.strap, [0.1, -0.12, 0.0]), P(rbox(0.04, 0.06, 0.05, 0.01), 0x1a1a1a, [0.1, -0.01, 0.0]),
-      P(rbox(0.012, 0.025, 0.2, 0.004), S.strap, [0.0, -0.19, 0.0], [0, Math.PI / 2, 0])] : []),
+    P(rb(0.05, 0.14, 0.13, 0.022), S.uni2, [side * 0.088, -0.22, 0.0]),
+    P(rb(0.054, 0.02, 0.13, 0.006), S.uni2, [side * 0.09, -0.15, 0.0]),
+    ...(side > 0 ? [P(rb(0.07, 0.17, 0.09, 0.02), S.strap, [0.1, -0.12, 0.0]), P(rb(0.04, 0.06, 0.05, 0.01), 0x1a1a1a, [0.1, -0.01, 0.0]),
+      P(rb(0.012, 0.025, 0.2, 0.004), S.strap, [0.0, -0.19, 0.0], [0, Math.PI / 2, 0])] : []),
   ], { uvScale: 3 });
 }
 function shinGeo(S) {
   return mergeUV([
-    P(rbox(0.12, 0.13, 0.075, 0.03), S.pad, [0, -0.01, -0.07]),
-    P(rbox(0.13, 0.03, 0.02, 0.008), S.strap, [0, -0.01, -0.03]),
+    P(rb(0.12, 0.13, 0.075, 0.03), S.pad, [0, -0.01, -0.07]),
+    P(rb(0.13, 0.03, 0.02, 0.008), S.strap, [0, -0.01, -0.03]),
     ...PL(tlimb(V3(0, 0.0, 0), V3(0, -0.34, 0.01), 0.072, 0.058, 10), S.uni),
-    P(rbox(0.13, 0.07, 0.13, 0.04), S.uni2, [0, -0.33, 0.005]),
-    P(rbox(0.12, 0.15, 0.14, 0.04), S.boot, [0, -0.42, 0.0]),
-    P(rbox(0.12, 0.07, 0.27, 0.03), S.boot, [0, -0.47, -0.045]),
-    P(rbox(0.125, 0.025, 0.285, 0.01), 0x141412, [0, -0.505, -0.047]),
-    ...[0, 1, 2].map(i => P(rbox(0.09, 0.008, 0.01, 0.003), 0x16140f, [0, -0.37 - i * 0.03, -0.072 - i * 0.012])),
+    P(rb(0.13, 0.07, 0.13, 0.04), S.uni2, [0, -0.33, 0.005]),
+    P(rb(0.12, 0.15, 0.14, 0.04), S.boot, [0, -0.42, 0.0]),
+    P(rb(0.12, 0.07, 0.27, 0.03), S.boot, [0, -0.47, -0.045]),
+    P(rb(0.125, 0.025, 0.285, 0.01), 0x141412, [0, -0.505, -0.047]),
+    ...[0, 1, 2].map(i => P(rb(0.09, 0.008, 0.01, 0.003), 0x16140f, [0, -0.37 - i * 0.03, -0.072 - i * 0.012])),
   ], { uvScale: 3 });
 }
 function chestGeo(S, L, vest) {
   const p = [
-    P(rbox(0.3, 0.22, 0.19, 0.08), S.uni, [0, 0.08, 0]),
-    P(rbox(0.4, 0.3, 0.23, 0.1), S.uni, [0, 0.3, 0]),
+    P(rb(0.3, 0.22, 0.19, 0.08), S.uni, [0, 0.08, 0]),
+    P(rb(0.4, 0.3, 0.23, 0.1), S.uni, [0, 0.3, 0]),
     P(new THREE.SphereGeometry(0.088, 10, 8), S.uni, [0.205, 0.42, 0]), P(new THREE.SphereGeometry(0.088, 10, 8), S.uni, [-0.205, 0.42, 0]),
     P(new THREE.CylinderGeometry(0.052, 0.06, 0.12, 10), skinTone(S, L), [0, 0.53, 0]),
-    P(rbox(0.2, 0.05, 0.16, 0.025), S.uni2, [0, 0.5, 0.0]),
+    P(rb(0.2, 0.05, 0.16, 0.025), S.uni2, [0, 0.5, 0.0]),
   ];
   if (vest) {
     p.push(
-      P(rbox(0.35, 0.3, 0.065, 0.025), S.vest, [0, 0.29, -0.12]), P(rbox(0.35, 0.31, 0.06, 0.025), S.vest, [0, 0.3, 0.12]),
-      P(rbox(0.06, 0.2, 0.2, 0.02), S.vest, [0.185, 0.24, 0]), P(rbox(0.06, 0.2, 0.2, 0.02), S.vest, [-0.185, 0.24, 0]),
-      P(rbox(0.06, 0.05, 0.25, 0.02), S.vest, [0.13, 0.46, 0]), P(rbox(0.06, 0.05, 0.25, 0.02), S.vest, [-0.13, 0.46, 0]),
-      ...[0, 1, 2].map(i => P(rbox(0.36, 0.008, 0.07, 0.003), S.strap, [0, 0.2 + i * 0.05, -0.12])),
-      ...[-0.09, 0, 0.09].map(x => P(rbox(0.075, 0.11, 0.055, 0.015), S.pouch, [x, 0.17, -0.175])),
-      ...[-0.09, 0, 0.09].map(x => P(rbox(0.078, 0.03, 0.058, 0.01), S.strap, [x, 0.225, -0.176])),
-      P(rbox(0.12, 0.07, 0.04, 0.012), S.pouch, [0.08, 0.35, -0.168]),
-      P(rbox(0.06, 0.04, 0.008, 0.003), S.acc, [-0.1, 0.38, -0.155]),
-      P(rbox(0.07, 0.15, 0.05, 0.015), 0x222321, [-0.13, 0.32, 0.168]),
+      P(rb(0.35, 0.3, 0.065, 0.025), S.vest, [0, 0.29, -0.12]), P(rb(0.35, 0.31, 0.06, 0.025), S.vest, [0, 0.3, 0.12]),
+      P(rb(0.06, 0.2, 0.2, 0.02), S.vest, [0.185, 0.24, 0]), P(rb(0.06, 0.2, 0.2, 0.02), S.vest, [-0.185, 0.24, 0]),
+      P(rb(0.06, 0.05, 0.25, 0.02), S.vest, [0.13, 0.46, 0]), P(rb(0.06, 0.05, 0.25, 0.02), S.vest, [-0.13, 0.46, 0]),
+      ...[0, 1, 2].map(i => P(rb(0.36, 0.008, 0.07, 0.003), S.strap, [0, 0.2 + i * 0.05, -0.12])),
+      ...[-0.09, 0, 0.09].map(x => P(rb(0.075, 0.11, 0.055, 0.015), S.pouch, [x, 0.17, -0.175])),
+      ...[-0.09, 0, 0.09].map(x => P(rb(0.078, 0.03, 0.058, 0.01), S.strap, [x, 0.225, -0.176])),
+      P(rb(0.12, 0.07, 0.04, 0.012), S.pouch, [0.08, 0.35, -0.168]),
+      P(rb(0.06, 0.04, 0.008, 0.003), S.acc, [-0.1, 0.38, -0.155]),
+      P(rb(0.07, 0.15, 0.05, 0.015), 0x222321, [-0.13, 0.32, 0.168]),
       P(limbGeo(V3(-0.13, 0.4, 0.17), V3(-0.13, 0.6, 0.17), 0.005, 4), 0x111111),
-      P(rbox(0.11, 0.17, 0.06, 0.02), S.pouch, [0.07, 0.28, 0.172]),
-      P(rbox(0.05, 0.05, 0.03, 0.01), S.pouch, [-0.19, 0.3, -0.06]),
+      P(rb(0.11, 0.17, 0.06, 0.02), S.pouch, [0.07, 0.28, 0.172]),
+      P(rb(0.05, 0.05, 0.03, 0.01), S.pouch, [-0.19, 0.3, -0.06]),
     );
   } else {
     p.push(
-      P(rbox(0.11, 0.1, 0.03, 0.012), S.uni2, [0.09, 0.33, -0.12]), P(rbox(0.11, 0.1, 0.03, 0.012), S.uni2, [-0.09, 0.33, -0.12]),
-      P(rbox(0.115, 0.03, 0.034, 0.008), S.uni2, [0.09, 0.385, -0.122]), P(rbox(0.115, 0.03, 0.034, 0.008), S.uni2, [-0.09, 0.385, -0.122]),
-      P(rbox(0.07, 0.32, 0.012, 0.004), S.strap, [0.1, 0.3, -0.118], [0, 0, 0.35]), P(rbox(0.07, 0.32, 0.012, 0.004), S.strap, [-0.1, 0.3, -0.118], [0, 0, -0.35]),
-      P(rbox(0.32, 0.1, 0.06, 0.02), S.pouch, [0, 0.12, -0.13]),
+      P(rb(0.11, 0.1, 0.03, 0.012), S.uni2, [0.09, 0.33, -0.12]), P(rb(0.11, 0.1, 0.03, 0.012), S.uni2, [-0.09, 0.33, -0.12]),
+      P(rb(0.115, 0.03, 0.034, 0.008), S.uni2, [0.09, 0.385, -0.122]), P(rb(0.115, 0.03, 0.034, 0.008), S.uni2, [-0.09, 0.385, -0.122]),
+      P(rb(0.07, 0.32, 0.012, 0.004), S.strap, [0.1, 0.3, -0.118], [0, 0, 0.35]), P(rb(0.07, 0.32, 0.012, 0.004), S.strap, [-0.1, 0.3, -0.118], [0, 0, -0.35]),
+      P(rb(0.32, 0.1, 0.06, 0.02), S.pouch, [0, 0.12, -0.13]),
     );
   }
   if (L.pack) p.push(
-    P(rbox(0.3, 0.36, 0.15, 0.05), S.pouch, [0, 0.3, 0.22]), P(rbox(0.28, 0.08, 0.16, 0.03), S.strap, [0, 0.47, 0.22]),
-    P(rbox(0.2, 0.12, 0.04, 0.015), S.vest, [0, 0.2, 0.305]), P(rbox(0.035, 0.3, 0.02, 0.006), S.strap, [0.12, 0.3, 0.3]), P(rbox(0.035, 0.3, 0.02, 0.006), S.strap, [-0.12, 0.3, 0.3]),
+    P(rb(0.3, 0.36, 0.15, 0.05), S.pouch, [0, 0.3, 0.22]), P(rb(0.28, 0.08, 0.16, 0.03), S.strap, [0, 0.47, 0.22]),
+    P(rb(0.2, 0.12, 0.04, 0.015), S.vest, [0, 0.2, 0.305]), P(rb(0.035, 0.3, 0.02, 0.006), S.strap, [0.12, 0.3, 0.3]), P(rb(0.035, 0.3, 0.02, 0.006), S.strap, [-0.12, 0.3, 0.3]),
   );
   return mergeUV(p, { uvScale: 3 });
 }
 function headGeo(S, L, helmet) {
   const face = skinTone(S, L), bala = L.face === 'bala';
   const parts = [
-    P(new THREE.SphereGeometry(0.102, 16, 12), face, [0, 0.04, 0], null, [0.95, 1.13, 1.04]),
-    P(rbox(0.12, 0.08, 0.09, 0.035), face, [0, -0.035, -0.045]),
-    P(rbox(0.026, 0.045, 0.03, 0.01), face, [0, 0.025, -0.11]),
-    P(rbox(0.15, 0.018, 0.03, 0.008), bala ? S.bala : S.hair, [0, 0.072, -0.095]),
+    P(new THREE.SphereGeometry(0.102, 14, 10), face, [0, 0.04, 0], null, [0.95, 1.13, 1.04]),
+    P(rb(0.12, 0.08, 0.09, 0.035), face, [0, -0.035, -0.045]),
+    P(rb(0.026, 0.045, 0.03, 0.01), face, [0, 0.025, -0.11]),
+    P(rb(0.15, 0.018, 0.03, 0.008), bala ? S.bala : S.hair, [0, 0.072, -0.095]),
     P(new THREE.SphereGeometry(0.024, 6, 5), face, [0.098, 0.035, 0.0], null, [0.5, 1, 0.8]), P(new THREE.SphereGeometry(0.024, 6, 5), face, [-0.098, 0.035, 0.0], null, [0.5, 1, 0.8]),
   ];
-  if (bala) parts.push(P(rbox(0.16, 0.03, 0.035, 0.012), STYLE.A.tones[L.tone % 3], [0, 0.05, -0.096]));
+  if (bala) parts.push(P(rb(0.16, 0.03, 0.035, 0.012), STYLE.A.tones[L.tone % 3], [0, 0.05, -0.096]));
   else {
-    parts.push(P(rbox(0.024, 0.012, 0.012, 0.005), 0x1a1612, [0.033, 0.05, -0.1]), P(rbox(0.024, 0.012, 0.012, 0.005), 0x1a1612, [-0.033, 0.05, -0.1]));
-    if (L.beard) parts.push(P(rbox(0.125, 0.07, 0.09, 0.03), S.hair, [0, -0.05, -0.05]));
-    parts.push(P(rbox(0.04, 0.008, 0.01, 0.003), 0x6a3a30, [0, -0.025, -0.106]));
+    parts.push(P(rb(0.024, 0.012, 0.012, 0.005), 0x1a1612, [0.033, 0.05, -0.1]), P(rb(0.024, 0.012, 0.012, 0.005), 0x1a1612, [-0.033, 0.05, -0.1]));
+    if (L.beard) parts.push(P(rb(0.125, 0.07, 0.09, 0.03), S.hair, [0, -0.05, -0.05]));
+    parts.push(P(rb(0.04, 0.008, 0.01, 0.003), 0x6a3a30, [0, -0.025, -0.106]));
   }
-  if (L.eyes === 'goggles') parts.push(P(rbox(0.16, 0.045, 0.03, 0.015), 0x15171a, [0, 0.055, -0.098]), P(rbox(0.14, 0.032, 0.012, 0.01), S.lens, [0, 0.055, -0.113]));
-  else if (L.eyes === 'glasses') parts.push(P(rbox(0.065, 0.026, 0.01, 0.008), 0x101214, [-0.036, 0.052, -0.108]), P(rbox(0.065, 0.026, 0.01, 0.008), 0x101214, [0.036, 0.052, -0.108]), P(rbox(0.005, 0.006, 0.1, 0.002), 0x101214, [0.088, 0.055, -0.06]), P(rbox(0.005, 0.006, 0.1, 0.002), 0x101214, [-0.088, 0.055, -0.06]));
-  const cups = () => [P(new THREE.CylinderGeometry(0.04, 0.044, 0.04, 12), 0x26292c, [0.11, 0.03, 0.005], [0, 0, Math.PI / 2]), P(new THREE.CylinderGeometry(0.04, 0.044, 0.04, 12), 0x26292c, [-0.11, 0.03, 0.005], [0, 0, Math.PI / 2]),
+  if (L.eyes === 'goggles') parts.push(P(rb(0.16, 0.045, 0.03, 0.015), 0x15171a, [0, 0.055, -0.098]), P(rb(0.14, 0.032, 0.012, 0.01), S.lens, [0, 0.055, -0.113]));
+  else if (L.eyes === 'glasses') parts.push(P(rb(0.065, 0.026, 0.01, 0.008), 0x101214, [-0.036, 0.052, -0.108]), P(rb(0.065, 0.026, 0.01, 0.008), 0x101214, [0.036, 0.052, -0.108]), P(rb(0.005, 0.006, 0.1, 0.002), 0x101214, [0.088, 0.055, -0.06]), P(rb(0.005, 0.006, 0.1, 0.002), 0x101214, [-0.088, 0.055, -0.06]));
+  const cups = () => [P(new THREE.CylinderGeometry(0.04, 0.044, 0.04, 9), 0x26292c, [0.11, 0.03, 0.005], [0, 0, Math.PI / 2]), P(new THREE.CylinderGeometry(0.04, 0.044, 0.04, 9), 0x26292c, [-0.11, 0.03, 0.005], [0, 0, Math.PI / 2]),
     P(limbGeo(V3(0.12, 0.0, -0.02), V3(0.05, -0.05, -0.1), 0.004, 4), 0x111111)];
   if (helmet) {
     const hc = L.cover ? S.cover : S.helm;
     parts.push(
-      P(new THREE.SphereGeometry(0.132, 18, 9, 0, Math.PI * 2, 0, Math.PI * 0.52), hc, [0, 0.07, 0.005], null, [1, 0.95, 1.06]),
-      P(new THREE.CylinderGeometry(0.134, 0.137, 0.022, 18), S.helm, [0, 0.068, 0.005], null, [1, 1, 1.06]),
-      P(new THREE.CylinderGeometry(0.128, 0.131, 0.012, 18), S.strap, [0, 0.12, 0.005], null, [1, 1, 1.06]),
-      P(rbox(0.058, 0.04, 0.025, 0.008), 0x1e2022, [0, 0.15, -0.128]),
-      P(rbox(0.012, 0.028, 0.12, 0.004), 0x23262a, [0.133, 0.1, 0.0]), P(rbox(0.012, 0.028, 0.12, 0.004), 0x23262a, [-0.133, 0.1, 0.0]),
-      P(rbox(0.07, 0.05, 0.03, 0.01), S.pouch, [0, 0.11, 0.135]),
-      P(rbox(0.052, 0.012, 0.052, 0.004), S.acc, [0, 0.198, 0.02]),
+      P(new THREE.SphereGeometry(0.132, 14, 6, 0, Math.PI * 2, 0, Math.PI * 0.52), hc, [0, 0.07, 0.005], null, [1, 0.95, 1.06]),
+      P(new THREE.CylinderGeometry(0.134, 0.137, 0.022, 14, 1, true), S.helm, [0, 0.068, 0.005], null, [1, 1, 1.06]),
+      P(new THREE.CylinderGeometry(0.128, 0.131, 0.012, 14, 1, true), S.strap, [0, 0.12, 0.005], null, [1, 1, 1.06]),
+      P(rb(0.058, 0.04, 0.025, 0.008), 0x1e2022, [0, 0.15, -0.128]),
+      P(rb(0.012, 0.028, 0.12, 0.004), 0x23262a, [0.133, 0.1, 0.0]), P(rb(0.012, 0.028, 0.12, 0.004), 0x23262a, [-0.133, 0.1, 0.0]),
+      P(rb(0.07, 0.05, 0.03, 0.01), S.pouch, [0, 0.11, 0.135]),
+      P(rb(0.052, 0.012, 0.052, 0.004), S.acc, [0, 0.198, 0.02]),
       ...cups(),
     );
   } else if (L.hat === 'cap') {
     parts.push(
       P(new THREE.CylinderGeometry(0.11, 0.115, 0.075, 16), S.helm, [0, 0.13, 0.005]),
       P(new THREE.SphereGeometry(0.111, 16, 6, 0, Math.PI * 2, 0, Math.PI * 0.35), S.helm, [0, 0.145, 0.005]),
-      P(rbox(0.17, 0.012, 0.1, 0.005), S.helm, [0, 0.1, -0.132], [-0.12, 0, 0]),
-      P(rbox(0.05, 0.03, 0.008, 0.004), S.acc, [0, 0.14, -0.112]),
-      ...cups(), P(rbox(0.23, 0.012, 0.02, 0.005), 0x26292c, [0, 0.19, 0.0]),
+      P(rb(0.17, 0.012, 0.1, 0.005), S.helm, [0, 0.1, -0.132], [-0.12, 0, 0]),
+      P(rb(0.05, 0.03, 0.008, 0.004), S.acc, [0, 0.14, -0.112]),
+      ...cups(), P(rb(0.23, 0.012, 0.02, 0.005), 0x26292c, [0, 0.19, 0.0]),
     );
   } else if (L.hat === 'beanie') {
     parts.push(P(new THREE.SphereGeometry(0.112, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), S.helm, [0, 0.07, 0.005], null, [1, 1.12, 1.06]),
       P(new THREE.CylinderGeometry(0.114, 0.117, 0.04, 16), S.uni2, [0, 0.085, 0.005], null, [1, 1, 1.06]));
   } else if (L.hat === 'bandana') {
     parts.push(P(new THREE.SphereGeometry(0.108, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.45), S.uni2, [0, 0.07, 0.005], null, [1, 1.12, 1.06]),
-      P(rbox(0.05, 0.04, 0.05, 0.015), S.uni2, [0, 0.06, 0.12]), P(rbox(0.03, 0.08, 0.012, 0.005), S.uni2, [0.01, 0.0, 0.13], [0.2, 0, 0.2]));
+      P(rb(0.05, 0.04, 0.05, 0.015), S.uni2, [0, 0.06, 0.12]), P(rb(0.03, 0.08, 0.012, 0.005), S.uni2, [0.01, 0.0, 0.13], [0.2, 0, 0.2]));
   } else {
     parts.push(P(new THREE.SphereGeometry(0.106, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.42), S.hair, [0, 0.07, 0.005], null, [1, 1.12, 1.06]), ...cups(),
-      P(rbox(0.23, 0.014, 0.022, 0.006), 0x26292c, [0, 0.19, 0.0]));
+      P(rb(0.23, 0.014, 0.022, 0.006), 0x26292c, [0, 0.19, 0.0]));
   }
   return mergeUV(parts, { uvScale: 3 });
 }
@@ -236,23 +246,23 @@ const holdOf = key => HOLD[(WEAPONS[key] || WEAPONS.pistol).hold] || HOLD.rifle;
 function armsGeo(S, L, key, cacheKey) {
   const id = cacheKey + '|' + key; if (charGeo[id]) return charGeo[id];
   const w = WEAPONS[key], G = GUNS[key], s = BOT_GUN_SCALE, H = holdOf(key);
-  const rs = V3(0.205, 0.0, 0), ls = V3(-0.205, 0.0, 0), o = { seg: 6 };
+  const rs = V3(0.205, 0.0, 0), ls = V3(-0.205, 0.0, 0), o = { seg: 6, lite: true };
   const gripAxis = V3(0, 0.97, -0.24);
   let right, left, lp, rp;
   if (w.hold === 'pistol' || w.hold === 'grenade') {
-    right = handParts(S, H.clone().add(V3(0, -0.02 * s, 0)), gripAxis, V3(1, 0, 0), 1, { seg: 4 });
-    left = w.hold === 'pistol' ? handParts(S, H.clone().add(V3(-0.018, -0.035, 0.01)), V3(0, 1, -0.3), V3(-1, -0.3, 0), -1, { seg: 4 })
-      : handParts(S, V3(-0.12, -0.12, -0.2), V3(0.2, 1, -0.3), V3(-1, 0, 0), -1, { seg: 4, open: 0.3 });
+    right = handParts(S, H.clone().add(V3(0, -0.02 * s, 0)), gripAxis, V3(1, 0, 0), 1, { seg: 4, lite: true });
+    left = w.hold === 'pistol' ? handParts(S, H.clone().add(V3(-0.018, -0.035, 0.01)), V3(0, 1, -0.3), V3(-1, -0.3, 0), -1, { seg: 4, lite: true })
+      : handParts(S, V3(-0.12, -0.12, -0.2), V3(0.2, 1, -0.3), V3(-1, 0, 0), -1, { seg: 4, lite: true, open: 0.3 });
     rp = V3(0.4, -0.4, 0.1); lp = V3(-0.4, -0.4, 0.1);
   } else if (w.hold === 'knife') {
-    right = handParts(S, H, V3(0, 0.25, -1), V3(1, 0, 0), 1, { seg: 4, rx: 0.012, rz: 0.016 });
-    left = handParts(S, V3(-0.14, -0.2, -0.22), V3(0.2, 1, -0.4), V3(-1, 0, 0), -1, { seg: 4, open: 0.4 });
+    right = handParts(S, H, V3(0, 0.25, -1), V3(1, 0, 0), 1, { seg: 4, lite: true, rx: 0.012, rz: 0.016 });
+    left = handParts(S, V3(-0.14, -0.2, -0.22), V3(0.2, 1, -0.4), V3(-1, 0, 0), -1, { seg: 4, lite: true, open: 0.4 });
     rp = V3(0.5, -0.4, 0.2); lp = V3(-0.5, -0.4, 0.1);
   } else {
-    right = handParts(S, H, gripAxis, V3(1, 0, 0), 1, { seg: 4 });
+    right = handParts(S, H, gripAxis, V3(1, 0, 0), 1, { seg: 4, lite: true });
     const fH = H.clone().add(V3(0, G.foreY * s, -G.fore * s));
-    left = G.foreGrip ? handParts(S, fH, V3(0, 1, 0.2), V3(-1, 0, 0), -1, { seg: 4 })
-      : handParts(S, fH, V3(0, 0, -1), V3(-0.6, -0.8, 0), -1, { seg: 4, rx: G.foreR * s, rz: G.foreR * s });
+    left = G.foreGrip ? handParts(S, fH, V3(0, 1, 0.2), V3(-1, 0, 0), -1, { seg: 4, lite: true })
+      : handParts(S, fH, V3(0, 0, -1), V3(-0.6, -0.8, 0), -1, { seg: 4, lite: true, rx: G.foreR * s, rz: G.foreR * s });
     rp = V3(0.6, -0.5, 0.25); lp = V3(-0.3, -0.9, -0.2);
   }
   const r = mergeUV(armParts(S, L, rs, right, rp, { ...o, side: 1 }), { uvScale: 3 });

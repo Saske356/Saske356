@@ -10,7 +10,7 @@ function vmStyle() {
 }
 function vmArmsGeo(k) {
   const G = GUNS[k], w = WEAPONS[k], { S, L } = vmStyle();
-  const o = { seg: 10, l1: 0.44, l2: 0.31 }, ho = { seg: 6 };
+  const o = { seg: 10, l1: 0.44, l2: 0.31, thick: 0.8 }, ho = { seg: 6 };
   const rs = V3(0.24, -0.36, 0.6), ls = V3(-0.32, -0.38, 0.5);
   let R, Lh, rp = V3(0.5, -0.6, 0.3), lp = V3(-0.6, -0.6, 0.1);
   if (w.hold === 'knife') {
@@ -52,7 +52,7 @@ function buildVM(k) {
   const type = w.melee ? 'knife' : w.grenade ? 'nade' : 'gun';
   if (type === 'knife') { body.rotation.set(0, 0, 0); }
   g.visible = false; vmCam.add(g);
-  const hip = type === 'knife' ? V3(0.2, -0.2, -0.36) : type === 'nade' ? V3(0.17, -0.16, -0.34) : w.hold === 'pistol' ? V3(0.13, -0.14, -0.38) : V3(0.16, -0.175, -0.44);
+  const hip = type === 'knife' ? V3(0.15, -0.16, -0.3) : type === 'nade' ? V3(0.15, -0.12, -0.3) : w.hold === 'pistol' ? V3(0.12, -0.13, -0.36) : V3(0.15, -0.17, -0.47);
   VM[k] = { g, gun, body, mag, pump, bolt, right, left, flash, flashT: 0, type, hip,
     ads: V3(0, -G.sight, w.hold === 'pistol' ? -0.34 : -0.27),
     magHome: V3(0, 0, 0), leftHome: V3(0, 0, 0) };
