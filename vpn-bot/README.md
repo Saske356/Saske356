@@ -51,8 +51,8 @@ python bot.py
 ## Мини-приложение
 В папке `docs/` лежит мини-приложение: оно открывается прямо внутри Telegram. В нём статус подписки, тарифы с оплатой, ключ с QR-кодом, инструкции и приглашение друзей.
 
-1. Включи GitHub Pages: репозиторий → **Settings → Pages** → Source: **Deploy from a branch** → ветка с ботом, папка **/docs** → **Save**.
-2. Через пару минут приложение откроется по адресу `https://<ник>.github.io/<репозиторий>/`.
+1. Включи GitHub Pages: репозиторий → **Settings → Pages** → Source: **Deploy from a branch** → ветка **`main`**, папка **/ (root)** → **Save**.
+2. Через пару минут приложение откроется по адресу `https://<ник>.github.io/<репозиторий>/docs/`.
 3. Впиши этот адрес в `.env`: `MINIAPP_URL=https://...` и перезапусти бота.
 
 Бот сам создаёт ссылки на оплату и ставит каждому пользователю кнопку «Приложение» в меню чата с его данными. Отдельный сервер для приложения не нужен.
@@ -69,7 +69,7 @@ python bot.py
 Нужен VPS на Ubuntu 22.04/24.04 или Debian с выделенным IPv4. Зайди на него по SSH (с Android подойдёт Termux: `pkg install openssh`, затем `ssh root@IP`) и выполни:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Saske356/Saske356/claude/android-usage-ql87m8/vpn-bot/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/Saske356/Saske356/main/vpn-bot/install.sh)
 ```
 
 Установщик сам поставит Xray (VLESS Reality на порту 443), бота, раздачу подписок (порт 2096), включит BBR и автозапуск. Он спросит токен бота, твой Telegram ID и название страны сервера. Настройки останутся только на сервере, в `/opt/aurora/vpn-bot/.env`. Повторный запуск той же команды обновляет бота и сохраняет настройки.

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Установщик Aurora VPN: Xray (VLESS Reality) + бот + раздача подписок.
 # Запуск на чистом сервере Ubuntu/Debian от root:
-#   bash <(curl -fsSL https://raw.githubusercontent.com/Saske356/Saske356/claude/android-usage-ql87m8/vpn-bot/install.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/Saske356/Saske356/main/vpn-bot/install.sh)
 # Повторный запуск обновляет код и сохраняет настройки.
 set -euo pipefail
 
 REPO="${REPO:-https://github.com/Saske356/Saske356.git}"
-BRANCH="${BRANCH:-claude/android-usage-ql87m8}"
+BRANCH="${BRANCH:-main}"
 DIR=/opt/aurora
 BOT="$DIR/vpn-bot"
 ENV="$BOT/.env"
