@@ -503,7 +503,7 @@ const sfx = {
   head() { if (!this.ok()) return; const t = AC.currentTime; tone(t, .3, 2350, 2330, .1); tone(t, .3, 3520, 3500, .05); },
   hurt() { if (!this.ok()) return; const t = AC.currentTime; tone(t, .2, 95, 45, .5); noise(t, .12, { f0: 900, f1: 200, vol: .2 }); },
   step() { if (!this.ok()) return; noise(AC.currentTime, .07, { f0: 900, f1: 260, vol: .07 }); },
-  reload() { if (!this.ok()) return; this.click(.35, 1700, .3); this.click(.25, 1200, .45); this.click(.5, 2300, 1.68); this.click(.4, 1500, 1.98); this.click(.45, 2100, 2.1); },
+  reload() { if (!this.ok()) return; this.click(.35, 1700, .36); this.click(.25, 1200, .5); this.click(.3, 1900, 1.42); this.click(.55, 2300, 1.62); this.click(.45, 1500, 2.04); this.click(.5, 2100, 2.17); },
   empty() { this.click(.3, 3400); },
   wave() { if (!this.ok()) return; const t = AC.currentTime; tone(t, .5, 660, 660, .08, 'square'); tone(t + .16, .6, 880, 880, .07, 'square'); }
 };
@@ -521,6 +521,50 @@ const muzzle = new THREE.Object3D(); orient.add(muzzle);
 const vmFlashSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texFlash, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
 vmFlashSprite.visible = false; muzzle.add(vmFlashSprite);
 const magGroup = new THREE.Group();
+// ---------- hands (gloves on the gun, sleeves reaching back to fixed elbows) ----------
+const RELOAD_T = 2.6, RELOAD_LOAD = 1.62;
+const gloveMat = new THREE.MeshStandardMaterial({ color: 0x2e2c29, roughness: .85, side: THREE.DoubleSide });
+const padMat = new THREE.MeshStandardMaterial({ color: 0x1b1a18, roughness: .6, side: THREE.DoubleSide });
+const sleeveMat = new THREE.MeshStandardMaterial({ color: 0x4a5236, roughness: .95 });
+const cuffMat = new THREE.MeshStandardMaterial({ color: 0x2c3122, roughness: .9 });
+function makeHand() {
+  const h = new THREE.Group();
+  const add = (geo, mat, x, y, z, rx = 0, ry = 0, rz = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); m.frustumCulled = false; h.add(m); return m; };
+  add(new THREE.BoxGeometry(.088, .03, .074), gloveMat, 0, 0, 0);                       // palm (palm faces +y)
+  add(new THREE.BoxGeometry(.07, .014, .03), padMat, .004, -.018, -.012);                // knuckle pad on the back
+  const fg = new THREE.CapsuleGeometry(.0105, .022, 4, 8);
+  for (let i = 0; i < 4; i++) add(fg, gloveMat, .03 - i * .021, .022, -.044, .45, 0, 0); // curled fingers
+  add(new THREE.CapsuleGeometry(.012, .036, 4, 8), gloveMat, .012, .016, .044, 0, 0, Math.PI / 2 - .3); // thumb
+  h.userData.wrist = new THREE.Vector3(-.058, -.004, 0);
+  return h;
+}
+const handL = makeHand(), handR = makeHand();
+handR.scale.z = -1;
+function makeArm() {
+  const g = new THREE.Group();
+  const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(.036, .05, 1, 12, 1, true), sleeveMat); sleeve.frustumCulled = false;
+  const cuff = new THREE.Mesh(new THREE.CylinderGeometry(.033, .035, 1, 12), cuffMat); cuff.frustumCulled = false;
+  g.add(sleeve, cuff); g.userData = { sleeve, cuff }; return g;
+}
+const armL = makeArm(), armR = makeArm();
+const elbowL = new THREE.Vector3(-.16, -.52, .02), elbowR = new THREE.Vector3(.36, -.5, .1);
+const UPV = new THREE.Vector3(0, 1, 0);
+function placeArm(arm, hand, elbow) {
+  const w = hand.localToWorld(new THREE.Vector3().copy(hand.userData.wrist));
+  const d = new THREE.Vector3().subVectors(elbow, w), len = d.length(); d.divideScalar(len);
+  const q = new THREE.Quaternion().setFromUnitVectors(UPV, d);
+  const { sleeve, cuff } = arm.userData;
+  sleeve.position.copy(w).addScaledVector(d, .03 + (len - .03) / 2); sleeve.scale.set(1, len - .03, 1); sleeve.quaternion.copy(q);
+  cuff.position.copy(w).addScaledVector(d, .018); cuff.scale.set(1, .04, 1); cuff.quaternion.copy(q);
+}
+const RK = { gun: null, mag: null, hand: null };
+function sampleKeys(keys, t) {
+  let i = 0; while (i < keys.length - 1 && t > keys[i + 1][0]) i++;
+  if (i >= keys.length - 1) return keys[keys.length - 1][1];
+  const [t0, a] = keys[i], [t1, b] = keys[i + 1], k = smooth(t0, t1, t);
+  return a.map((v, j) => v + (b[j] - v) * k);
+}
+let handRest = [0, 0, 0], handRRest = [0, 0, 0];
 const sightInfo = { fx: 0, fy: 0, fz: 0, rx: 0, ry: 0 };
 
 // skins: one shader for both material groups, patterns in gun space so they flow across parts
@@ -657,6 +701,31 @@ function setupGun(gltf) {
     let n = '', a = o; for (let k = 0; k < 4 && a; k++, a = a.parent) n += a.name + ' ';
     o.material = /stockWood|woodUpper|woodLower|grip/i.test(n) ? woodMat : metalMat;
   });
+  // hands: left under the handguard, right around the pistol grip
+  const wl = boxOf('r_woodLower_low'), gp = boxOf('bl_grip_low'), fl = boxOf('r_flap_low'), dc = boxOf('u_dustcover_low');
+  const cx = (b) => (b.min.x + b.max.x) / 2, cz = (b) => (b.min.z + b.max.z) / 2;
+  handRest = wl ? [cx(wl), wl.min.y - .016, cz(wl)] : [.15, .03, 0];
+  orient.add(handL, handR);
+  handL.position.fromArray(handRest);
+  if (gp) { handR.position.set(cx(gp) + .006, (gp.min.y + gp.max.y) / 2 + .01, cz(gp)); handR.rotation.set(0, 0, -1.3); }
+  vmScene.add(armL, armR);
+  // reload keyframes, all in gun (orient) space
+  const mTop = magGroup.position.clone();
+  const grip = new THREE.Vector3(.03, -.085, -.042);                       // where the left hand holds the magazine
+  const magKeys = [[0, [0, 0, 0, 0]], [.36, [0, 0, 0, 0]], [.52, [.012, -.05, 0, .32]], [.74, [.04, -.42, .02, .62]], [1.04, [.04, -.42, .02, .62]],
+    [1.4, [.022, -.07, 0, .3]], [1.62, [0, 0, 0, 0]]];
+  const magHand = (t) => { const [dx, dy, dz, rz] = sampleKeys(magKeys, t), c = Math.cos(rz), sn = Math.sin(rz);
+    return [mTop.x + dx + grip.x * c - grip.y * sn, mTop.y + dy + grip.x * sn + grip.y * c, mTop.z + dz + grip.z, 1.3, 0, rz]; };
+  const ch = fl ? [cx(fl) + .01, (fl.min.y + fl.max.y) / 2, fl.max.z + .03] : [.03, .08, .05];
+  const under = [mTop.x - .075, mTop.y - .06, .01];   // route the hand under the receiver, behind the magazine
+  RK.mag = magKeys;
+  RK.hand = [[0, [...handRest, 0, 0, 0]], [.28, magHand(0)], [.36, magHand(.36)], [.52, magHand(.52)], [.74, magHand(.74)], [1.04, magHand(1.04)],
+    [1.4, magHand(1.4)], [1.62, magHand(1.62)], [1.7, magHand(1.62)], [1.84, [...under, -.6, 0, 0]], [1.98, [...ch, -1.3, 0, 0]],
+    [2.1, [ch[0] - .075, ch[1], ch[2], -1.3, 0, 0]], [2.22, [...ch, -1.3, 0, 0]], [2.6, [...handRest, 0, 0, 0]]];
+  // gun: lift and roll toward the camera so the magazine well faces you, then roll right for the bolt
+  const up = [-.085, .05, -.03, .06, .78, .22], seat = [-.085, .036, -.03, .03, .78, .2], bolt = [-.07, .045, -.02, .04, .62, .05];
+  RK.gun = [[0, [0, 0, 0, 0, 0, 0]], [.32, up], [1.58, up], [1.65, seat], [1.76, up],
+    [1.98, bolt], [2.1, [bolt[0], bolt[1], bolt[2] + .02, bolt[3] + .02, bolt[4], bolt[5] - .03]], [2.22, bolt], [2.6, [0, 0, 0, 0, 0, 0]]];
   orient.rotation.y = Math.PI / 2;
   vmFlashSprite.scale.setScalar(.2);
 }
@@ -1085,11 +1154,11 @@ function updateWeapon(dt) {
   W.adsK = lerp(W.adsK, W.ads && !W.reloading ? 1 : 0, damp(13, dt));
   if (W.reloading) {
     W.reloadT += dt;
-    if (W.reloadT >= 1.72 && W.mag < 30 && !W.loaded) { const n = Math.min(30 - W.mag, W.res); W.mag += n; W.res -= n; W.loaded = true; updateHud(); }
-    if (W.reloadT >= 2.3) { W.reloading = false; W.loaded = false; }
+    if (W.reloadT >= RELOAD_LOAD && W.mag < 30 && !W.loaded) { const n = Math.min(30 - W.mag, W.res); W.mag += n; W.res -= n; W.loaded = true; updateHud(); }
+    if (W.reloadT >= RELOAD_T) { W.reloading = false; W.loaded = false; }
   }
   $('#reloadbar').style.opacity = W.reloading ? 1 : 0;
-  $('#reloadbar i').style.width = (W.reloading ? Math.min(1, W.reloadT / 2.3) * 100 : 0) + '%';
+  $('#reloadbar i').style.width = (W.reloading ? Math.min(1, W.reloadT / RELOAD_T) * 100 : 0) + '%';
   if (W.firing && !W.reloading && T >= W.next) fire();
   const cross = $('#cross');
   cross.style.setProperty('--g', (5 + spread() * 620).toFixed(1) + 'px');
@@ -1136,13 +1205,10 @@ function updateViewmodel(dt) {
   const bx = Math.sin(bobPh) * .011 * mv * adsF, by = -Math.abs(Math.cos(bobPh)) * .011 * mv * adsF;
   swayX = lerp(swayX, clamp(-lookDX * .8, -.06, .06), damp(10, dt)); lookDX = 0;
   // reload choreography
-  let rz = 0, rx = 0, ry = 0, ty = 0, tx = 0, magY = 0, magR = 0;
-  if (W.reloading) {
-    const t = W.reloadT, tilt = smooth(0, .3, t) * (1 - smooth(1.9, 2.3, t));
-    rz = tilt * .38; rx = tilt * .1; ty = -tilt * .03; tx = -tilt * .02;
-    const out = smooth(.3, .6, t) * (1 - smooth(1.3, 1.72, t));
-    magY = -out * .26; magR = out * .35;
-    if (t > 1.95 && t < 2.15) kick.z += dt * .25;
+  let rz = 0, rx = 0, ry = 0, ty = 0, tx = 0, tz = 0, mag = [0, 0, 0, 0], hand = [...handRest, 0, 0, 0];
+  if (W.reloading && RK.gun) {
+    const t = W.reloadT, gk = sampleKeys(RK.gun, t);
+    [tx, ty, tz, rx, ry, rz] = gk; mag = sampleKeys(RK.mag, t); hand = sampleKeys(RK.hand, t);
   }
   // inspect
   if (inGame && inspectT < 3.4) {
@@ -1150,16 +1216,20 @@ function updateViewmodel(dt) {
     ry += a * 1.15; rz += a * .35; tx -= a * .07; ty += a * .03;
   }
   if (!inGame) { kick.z = kick.r = 0; }
-  anim.position.set(bx + tx + kick.side * .3, by + ty - P.land - kick.r * .05, kick.z * adsF + .0);
+  anim.position.set(bx + tx + kick.side * .3, by + ty - P.land - kick.r * .05, kick.z * adsF + tz);
   anim.rotation.set(kick.r * (.6 + .4 * adsF) + rx, swayX * adsF + ry, rz + swayX * .5 * adsF + kick.side);
-  magGroup.position.y = magBaseY + magY;
-  magGroup.rotation.z = magR;
+  magGroup.position.set(magBase.x + mag[0], magBase.y + mag[1], magBase.z + mag[2]);
+  magGroup.rotation.z = mag[3];
+  handL.position.set(hand[0], hand[1], hand[2]); handL.rotation.set(hand[3], hand[4], hand[5]);
+  const showHands = inGame;
+  handL.visible = handR.visible = armL.visible = armR.visible = showHands;
   if (flashT > 0) { flashT -= dt; if (flashT <= 0) { vmFlashSprite.visible = false; vmFlash.intensity = 0; camFlash.intensity = 0; } }
   vmFlash.position.copy(muzzle.getWorldPosition(tmpV));
-  orient.updateMatrixWorld(true);
+  vmScene.updateMatrixWorld(true);
+  if (showHands) { placeArm(armL, handL, elbowL); placeArm(armR, handR, elbowR); }
   skinU.uRootInv.value.copy(orient.matrixWorld).invert();
 }
-let magBaseY = 0;
+const magBase = new THREE.Vector3();
 
 // ---------- menu camera ----------
 function menuCam(dt) {
@@ -1223,7 +1293,7 @@ async function loadModel() {
   return new Promise((res, rej) => new GLTFLoader().parse(bytes.buffer, '', res, rej));
 }
 loadModel().then((gltf) => {
-  setupGun(gltf); magBaseY = magGroup.position.y; computeAds(); gunReady = true;
+  setupGun(gltf); magBase.copy(magGroup.position); computeAds(); gunReady = true;
   setSkin(skinIdx); showBest(); G.state = 'menu'; show('menu');
 }).catch((err) => { $('#lTxt').textContent = 'Не удалось загрузить модель. Обновите страницу.'; console.error(err); });
 requestAnimationFrame(frame);
