@@ -1,0 +1,51 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.svetbezdny.game'
+    compileSdk 35
+    buildToolsVersion '35.0.0'
+
+    defaultConfig {
+        applicationId 'com.svetbezdny.game'
+        minSdk 24
+        targetSdk 35
+        versionCode 2
+        versionName '1.1'
+        buildConfigField 'String', 'YANDEX_REWARDED_ID', "\"${project.findProperty('yandexRewardedId') ?: 'demo-rewarded-yandex'}\""
+    }
+
+    buildFeatures { buildConfig true }
+
+    signingConfigs {
+        release {
+            // Ключ подписи НЕ хранится в репозитории: путь и пароль передаются при сборке
+            // ./gradlew assembleRelease -Pks=/путь/к/svetbezdny.keystore -PksPass=пароль
+            storeFile file(project.findProperty('ks') ?: "${System.getProperty('user.home')}/.svetbezdny.keystore")
+            storePassword project.findProperty('ksPass') ?: 'svetbezdny'
+            keyAlias 'svetbezdny'
+            keyPassword project.findProperty('ksPass') ?: 'svetbezdny'
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    // Игра — тот же единый index.html из папки game/
+    sourceSets { main { assets.srcDirs = ['build/gameAssets'] } }
+}
+
+def copyGame = tasks.register('copyGame', Copy) {
+    from('../../index.html')
+    into('build/gameAssets')
+}
+preBuild.dependsOn(copyGame)
+
+dependencies {
+    implementation 'com.yandex.android:mobileads:7.18.8'
+}

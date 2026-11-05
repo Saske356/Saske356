@@ -16,6 +16,7 @@ import android.webkit.WebViewClient;
 /** Полноэкранная оболочка: игра «Свет Бездны» из assets/index.html в WebView. */
 public class MainActivity extends Activity {
     private WebView web;
+    private RewardedAds ads;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -41,6 +42,10 @@ public class MainActivity extends Activity {
         web.setWebViewClient(new WebViewClient());
         web.setWebChromeClient(new WebChromeClient());
         setContentView(web);
+
+        // Реклама за награду: игра видит объект window.AndroidAds
+        ads = new RewardedAds(this, web);
+        web.addJavascriptInterface(ads, "AndroidAds");
 
         if (savedInstanceState != null) web.restoreState(savedInstanceState);
         else web.loadUrl("file:///android_asset/index.html");
@@ -92,7 +97,7 @@ public class MainActivity extends Activity {
     public void onBackPressed() {
         // «Назад» = пауза (Escape); повторное «Назад» на паузе сворачивает игру.
         web.evaluateJavascript(
-            "(function(){try{var p=window.__SB&&window.__SB.ST;" +
+            "(function(){try{" +
             "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true}));" +
             "return 'ok';}catch(e){return 'err';}})()",
             null);
@@ -109,6 +114,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (ads != null) ads.destroy();
         if (web != null) web.destroy();
         super.onDestroy();
     }

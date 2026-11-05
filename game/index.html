@@ -52,6 +52,7 @@ h2{font-size:28px;font-weight:900;letter-spacing:2px;margin-bottom:14px;color:#f
 .btn:active{transform:scale(.95);box-shadow:0 0 30px rgba(63,240,255,.7),inset 0 0 20px rgba(63,240,255,.4);}
 .btn.big{min-height:68px;font-size:26px;letter-spacing:3px;}
 .btn.pink{border-color:rgba(255,120,220,.9);background:linear-gradient(180deg,rgba(255,79,216,.25),rgba(90,20,90,.35));box-shadow:0 0 18px rgba(255,79,216,.4),inset 0 0 14px rgba(255,79,216,.2);}
+[hidden]{display:none!important}
 .btn.gold{border-color:rgba(255,213,79,.95);color:#fff6d6;background:linear-gradient(180deg,rgba(255,213,79,.25),rgba(110,70,10,.35));box-shadow:0 0 18px rgba(255,213,79,.4),inset 0 0 14px rgba(255,213,79,.2);}
 .btn.small{min-height:44px;font-size:16px;max-width:none;width:auto;display:inline-block;margin:4px;padding:8px 14px;}
 .btn[disabled]{opacity:.38;filter:grayscale(.6);}
@@ -292,6 +293,16 @@ flex-wrap:wrap;justify-content:center;align-content:center;gap:0 10px}
   <div class="sub" id="lvSub">Выбери одно улучшение</div>
   <div id="cards"></div>
   <button class="btn small" id="btnReroll" style="margin-top:12px">Перебор</button>
+  <button class="btn small gold" id="btnAdReroll" hidden>▶ Перебор за рекламу</button>
+</div>
+
+<!-- Второй шанс за рекламу (только в Android-приложении) -->
+<div class="screen" id="scrRevive">
+  <h2>ИСКРА ГАСНЕТ…</h2>
+  <div class="sub">Посмотри короткую рекламу, и Люмен вспыхнет снова</div>
+  <div class="bigScore" id="revT">5</div>
+  <button class="btn big gold" id="btnAdRevive">▶ ПРОДОЛЖИТЬ ЗА РЕКЛАМУ</button>
+  <button class="btn" id="btnNoRevive">Нет, завершить</button>
 </div>
 
 <!-- Пауза -->
@@ -310,6 +321,7 @@ flex-wrap:wrap;justify-content:center;align-content:center;gap:0 10px}
   <div class="bigScore" id="overScore">0</div>
   <div class="rec" id="overRec">НОВЫЙ РЕКОРД!</div>
   <div class="stats" id="overStats"></div>
+  <button class="btn gold" id="btnAdDouble" hidden>▶ ×2 жемчуга за рекламу</button>
   <button class="btn big" id="btnAgain">ЕЩЁ РАЗ</button>
   <div class="row">
     <button class="btn pink" id="btnOverShop">Улучшения</button>
@@ -2115,7 +2127,7 @@ function render(dt) {
 }
 
 /* ============================ 10. UI ============================ */
-const SCREENS = ['scrTitle', 'scrHow', 'scrLevel', 'scrPause', 'scrOver', 'scrShop', 'scrAch', 'scrSet', 'scrEnd'];
+const SCREENS = ['scrTitle', 'scrHow', 'scrLevel', 'scrPause', 'scrRevive', 'scrOver', 'scrShop', 'scrAch', 'scrSet', 'scrEnd'];
 let backTo = 'scrTitle';
 function show(id) { if (id !== 'scrTitle') $('scrTitle').classList.remove('reveal'); for (const s of SCREENS) $(s).classList.toggle('on', s === id); document.body.classList.toggle('menu', !!id); }
 function click(id, fn) { $(id).addEventListener('click', e => { Snd.init(); Snd.resume(); Snd.mStart(); sfx.click(); fn(e); }); }
@@ -2316,7 +2328,7 @@ function startRun() {
   Object.assign(G, {t: 0, runT: 0, zone: 1, zoneT: 0, score: 0, combo: 0, comboT: 0, maxCombo: 0, mult: 1, kills: 0, runPearls: 0, boss: null,
     bossClearT: 0, bossesKilled: 0, shake: 0, hitStop: 0, flash: 0, hurtFlash: 0, levelPending: 0, levelDelay: 0, dying: 0, noHit: true,
     synergies: 0, revived: false, camX: 0, camY: 0, spawnAcc: 0, packT: 9, dmgScale: 1, hpScale: 1, pullT: 0, comboMilestone: 0, victory: false,
-    endless: false, endingT: 0});
+    endless: false, endingT: 0, adRevived: false, adDoubled: false, adRerolls: 0, lastEarned: 0});
   G.rerolls = S.shop.reroll || 0;
   Object.assign(P, {x: 0, y: 0, vx: 0, vy: 0, ang: -Math.PI / 2, inv: 1.5, dashT: 0, dashCd: 0, fireT: 0.3, flare: S.shop.flare ? 50 : 0, level: 1, xp: 0,
     xpNext: xpNeed(1), up: {}, novaT: 2, mineT: 1.5, trailT: 0, skin: S.skin, pal: SKINS[S.skin].pal, dead: false, maxHp: 0});
@@ -2380,6 +2392,7 @@ function renderCards() {
   clearTimeout(renderCards.tm); // QA: быстрый «Перебор» не должен разблокировать новые карты раньше времени
   renderCards.tm = setTimeout(() => { for (const c of box.children) c.classList.remove('locked'); }, 480);
   const rb = $('btnReroll'); rb.style.display = G.rerolls > 0 ? 'inline-block' : 'none'; rb.textContent = 'Перебор (' + G.rerolls + ')';
+  $('btnAdReroll').hidden = !(G.rerolls <= 0 && G.adRerolls < 2 && Ads.ready());
   $('lvSub').textContent = G.levelPending > 0 ? 'Выбери улучшение · ещё ' + G.levelPending : 'Выбери одно улучшение';
 }
 function takeUpgrade(u) {
@@ -2536,10 +2549,67 @@ function qualityTick(ms) {
   } else { QAUTO.bad = 0; if (avg >= 18) QAUTO.good = 0; }
 }
 
+/* ---------- реклама за награду ----------
+   Работает только в Android-приложении: оболочка добавляет объект window.AndroidAds
+   (isReady(), show(place)) и сообщает итог через window.__adResult(place, ok).
+   В браузере кнопок рекламы просто нет. */
+const Ads = {
+  cb: null,
+  ready() { try { return !!(window.AndroidAds && window.AndroidAds.isReady()); } catch (e) { return false; } },
+  show(place, cb) {
+    if (this.cb || !this.ready()) { cb(false); return; }
+    this.cb = cb;
+    try { window.AndroidAds.show(place); } catch (e) { this.cb = null; cb(false); }
+  }
+};
+window.__adResult = function (place, ok) {
+  const cb = Ads.cb; Ads.cb = null;
+  if (cb) setTimeout(() => cb(!!ok), 0);
+};
+
+/** После гибели: предложить «второй шанс» за рекламу (раз за забег). */
+function offerRevive() {
+  if (G.adRevived || G.victory || !Ads.ready()) return false;
+  G.state = 'revive'; $('hud').classList.remove('on'); resetJoy(); Snd.setIntensity(0);
+  let n = 5; $('revT').textContent = n; show('scrRevive');
+  clearInterval(offerRevive.tm);
+  offerRevive.tm = setInterval(() => {
+    if (Ads.cb) return; // пока идёт реклама, отсчёт стоит
+    n--; $('revT').textContent = Math.max(0, n);
+    if (n <= 0) declineRevive();
+  }, 1000);
+  return true;
+}
+function declineRevive() { clearInterval(offerRevive.tm); if (G.state === 'revive') gameOver(); }
+function adRevive() {
+  clearInterval(offerRevive.tm);
+  Ads.show('revive', ok => {
+    if (G.state !== 'revive') return;
+    if (!ok) { gameOver(); return; }
+    G.adRevived = true; G.dying = 0; P.dead = false; P.hp = Math.ceil(P.maxHp * 0.6); P.inv = 3;
+    G.state = 'play'; show(null); $('hud').classList.add('on'); resetJoy(); Snd.setIntensity(1);
+    doFlare(true); banner('ВТОРОЙ ШАНС', 'Свет снова с тобой', '#ffd54a', 2.2);
+  });
+}
+function adDouble() {
+  Ads.show('double', ok => {
+    if (!ok || G.adDoubled || G.state !== 'over') return;
+    G.adDoubled = true; S.pearls += G.lastEarned; S.totalPearls = (S.totalPearls || 0) + G.lastEarned; persist();
+    $('btnAdDouble').hidden = true;
+    const cells = $('overStats').children, last = cells[cells.length - 1];
+    if (last) last.innerHTML = '<b>' + pearlHTML('+' + G.lastEarned * 2) + '</b><span>ЖЕМЧУГ ×2</span>';
+    sfx.pickCard(); vibrate(30);
+  });
+}
+function adReroll() {
+  Ads.show('reroll', ok => { if (ok && G.adRerolls < 2) { G.adRerolls++; renderCards(); } });
+}
+
 /* ---------- конец забега ---------- */
 function gameOver() {
   G.state = 'over'; $('hud').classList.remove('on'); Snd.setIntensity(0); resetJoy();
   const earned = G.runPearls + Math.floor(G.score / 1500) + (G.zone - 1) * 2 + G.bossesKilled * 15;
+  G.lastEarned = earned; clearInterval(offerRevive.tm);
   S.pearls += earned; S.totalPearls = (S.totalPearls || 0) + earned; S.runs++; S.totalKills += G.kills;
   const rec = G.score > S.best; if (rec) S.best = G.score;
   S.bestDepth = Math.max(S.bestDepth, G.zone * 100);
@@ -2556,6 +2626,7 @@ function gameOver() {
   const cell = (v, l) => '<div><b>' + v + '</b><span>' + l + '</span></div>';
   $('overStats').innerHTML = cell(G.zone * 100 + ' м', 'ГЛУБИНА') + cell(m + ':' + (s < 10 ? '0' : '') + s, 'ВРЕМЯ') + cell(fmt(G.kills), 'ВРАГОВ') +
     cell(G.maxCombo, 'МАКС. КОМБО') + cell(P.level, 'УРОВЕНЬ') + cell(pearlHTML('+' + earned), 'ЖЕМЧУГ');
+  $('btnAdDouble').hidden = !(earned > 0 && !G.adDoubled && Ads.ready());
   show('scrOver');
   // счёт «накручивается»
   const target = G.score, el = $('overScore'), t0 = performance.now();
@@ -2582,6 +2653,10 @@ click('btnAgain', startRun);
 click('btnOverShop', () => openShop('scrOver'));
 click('btnOverMenu', toTitle);
 click('btnReroll', () => { if (G.rerolls > 0) { G.rerolls--; renderCards(); } });
+click('btnAdReroll', adReroll);
+click('btnAdRevive', adRevive);
+click('btnNoRevive', declineRevive);
+click('btnAdDouble', adDouble);
 for (const [id, k] of [['setSound', 'sound'], ['setMusic', 'music'], ['setVibro', 'vibro'], ['setQuality', 'quality'], ['setNums', 'nums'], ['setShake', 'shake']]) click(id, () => toggleSet(k));
 
 /* ============================ 11. MAIN LOOP ============================ */
@@ -2617,7 +2692,7 @@ function frame(now) {
   if (G.state === 'play') {
     let dt = rdt;
     if (G.hitStop > 0) { G.hitStop -= rdt; dt = rdt * 0.06; }
-    if (G.dying > 0) { G.dying -= rdt; dt = rdt * 0.35; if (G.dying <= 0) { updateRun(dt, rdt); gameOver(); } }
+    if (G.dying > 0) { G.dying -= rdt; dt = rdt * 0.35; if (G.dying <= 0) { updateRun(dt, rdt); if (!offerRevive()) gameOver(); } }
     if (G.state === 'play') updateRun(dt, rdt);
     // HUD-кнопки обновляются только при изменении (без лишних перерасчётов стилей)
     const p = Math.floor(P.flare) / 100;
