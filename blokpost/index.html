@@ -349,6 +349,9 @@
   .stats div { background: rgba(255,255,255,.04); border-radius: 8px; padding: 7px 10px; display: flex; flex-direction: column; gap: 2px; }
   .stats small { font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
   .stats b { font: 400 22px var(--f-display); font-variant-numeric: tabular-nums; }
+  #over .ovAct { position: sticky; bottom: -12px; background: linear-gradient(180deg, rgba(13,19,22,0), rgba(13,19,22,.97) 30%); padding: 10px 0 2px; margin-top: -4px; }
+  #over .ovTop { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  #over .ovTop .mvp { flex: 1; min-width: 220px; }
   .mvp { display: flex; align-items: center; gap: 12px; border: 1px solid rgba(242,203,76,.4); background: linear-gradient(90deg, rgba(242,203,76,.14), transparent); border-radius: 8px; padding: 8px 12px; }
   .mvp .star { font: 400 14px var(--f-display); color: var(--signal-ink); background: var(--signal); padding: 5px 8px; border-radius: 5px; letter-spacing: .06em; }
   .mvp b { font: 400 18px var(--f-display); display: block; } .mvp b.A { color: var(--steel); } .mvp b.B { color: var(--rust); }
@@ -371,6 +374,7 @@
     .items { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
     .stats b { font-size: 18px; }
     #over .card { gap: 8px; }
+    #over .res { font-size: 32px; }
     .tables td { padding: 3px 5px; }
   }
   @media (max-width: 600px) { .tables { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(3, 1fr); } }
@@ -492,8 +496,8 @@
 
 <div class="screen dim" id="over" hidden>
   <div class="card" style="width:min(720px,100%)">
-    <div class="brand"><div class="eyebrow" id="overSub">Матч окончен</div><p class="res" id="overRes">Победа</p></div>
-    <div class="mvp" id="ovMvp" hidden></div>
+    <div class="ovTop"><div class="brand"><div class="eyebrow" id="overSub">Матч окончен</div><p class="res" id="overRes">Победа</p></div>
+    <div class="mvp" id="ovMvp" hidden></div></div>
     <div class="stats">
       <div><small>Счёт</small><b id="ovScore">8:3</b></div>
       <div><small>Убийства</small><b id="ovK">0</b></div>
@@ -502,7 +506,7 @@
       <div><small>Урон</small><b id="ovDmg">0</b></div>
     </div>
     <div class="tables" id="ovTables"></div>
-    <div class="row"><button class="go" id="againBtn">Ещё матч</button><button class="ghost" id="menuBtn">В меню</button></div>
+    <div class="row ovAct"><button class="go" id="againBtn">Ещё матч</button><button class="ghost" id="menuBtn">В меню</button></div>
   </div>
 </div>
 

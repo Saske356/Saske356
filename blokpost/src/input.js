@@ -51,7 +51,7 @@ const TOUCH_BTNS = [
   { id: 'knife',   role: 'knife',   name: 'Нож',              s: 40, h: 'r', v: 'b', x: 104, y: 202, action: 'action:knife' },
   { id: 'grenade', role: 'grenade', name: 'Граната',          s: 46, h: 'r', v: 'b', x: 232, y: 102, action: 'action:grenade' },
   { id: 'drop',    role: 'drop',    name: 'Выбросить',        s: 38, h: 'r', v: 'b', x: 290, y: 52, action: 'action:drop' },
-  { id: 'use',     role: 'use',     name: 'Действие',         s: 62, h: 'r', v: 'b', x: 330, y: 150, cls: 'act' },
+  { id: 'use',     role: 'use',     name: 'Действие',         s: 62, h: 'r', v: 'b', x: 312, y: 150, cls: 'act' },
   { id: 'buy',     role: 'buy',     name: 'Закупка',          s: 44, h: 'l', v: 't', x: 156, y: 30, cls: 'sig' },
   { id: 'board',   role: 'board',   name: 'Счёт',             s: 40, h: 'r', v: 't', x: 94,  y: 28 },
   { id: 'pause',   role: 'pause',   name: 'Пауза',            s: 40, h: 'r', v: 't', x: 44,  y: 28 },
