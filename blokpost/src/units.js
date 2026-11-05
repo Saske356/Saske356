@@ -11,6 +11,8 @@ function makeUnit(team, name, isPlayer) {
     money: 800, kills: 0, deaths: 0, sprayN: 0, punch: 0, punchY: 0, scoped: false, fireLatch: false, spottedT: 0, protT: 0, respawnT: 0,
     path: null, pathI: 0, goalT: 0, target: null, targetVisible: false, reactT: 0, thinkT: 0, strafeT: 0, strafeDir: 0, aimPitch: 0,
     lastSeen: new THREE.Vector3(), lastSeenT: 0, alertT: 0, burst: 0, walkPhase: Math.random() * 6, stuckT: 0, lastPos: new THREE.Vector3(), deathT: 0,
+    // режим «Подрыв»: сторона, заряд, действия, набор сапёра; ai — состояние тактики бота (bots.js)
+    side: null, hasCharge: false, planting: false, defusing: false, useT: 0, kit: false, ai: null,
   };
   if (!isPlayer) {
     u.mesh = makeBody(team);
@@ -27,9 +29,13 @@ function disposeUnits() {
   units = []; bots = [];
 }
 let player;
+// window.__simAllBots = true (только для тестов tools/sim.js): вместо игрока в команде «Сталь» тоже бот,
+// а player — выбывший наблюдатель вне списка units.
 function buildUnits() {
   disposeUnits();
+  if (typeof resetObjective === 'function') resetObjective();
   player = makeUnit('A', 'Ты', true);
+  if (window.__simAllBots) { units.pop(); player.alive = false; makeUnit('A', 'Сим', false); }
   for (let i = 0; i < mode.size - 1; i++) makeUnit('A', NAMES.A[i], false);
   for (let i = 0; i < mode.size; i++) makeUnit('B', NAMES.B[i], false);
   bots = units.filter(u => !u.isPlayer);

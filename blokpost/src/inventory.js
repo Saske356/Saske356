@@ -553,7 +553,7 @@ function ivRenderGuns() {
     ivBtn('ghost', 'Штатная на все', () => { for (const k of INV_GUNS()) INV.eqGun[k] = null; ivApplyEquip(); ivRenderGuns(); }, !INV_GUNS().some(k => INV.eqGun[k]));
   }
 }
-const TEAM_NAME = { A: '«Сталь»', B: '«Ржавчина»' };
+const INV_TEAM_NAME = { A: '«Сталь»', B: '«Ржавчина»' };
 function ivRenderChars() {
   ivFilterChips([['A', 'Сталь'], ['B', 'Ржавчина']], IVU.team, t => { IVU.team = t; IVU.sel = null; ivRenderChars(); }, v => v);
   const team = IVU.team;
@@ -563,7 +563,7 @@ function ivRenderChars() {
   const grid = ivQ('.ivg'); grid.innerHTML = '';
   const eqUid = INV.eqChar[team] || null;
   if (IVU.sel === null) IVU.sel = eqUid || 'def';
-  const def = ivCard({ t: 'c', team }, { name: 'Штатная форма', sub: 'Команда ' + TEAM_NAME[team], badge: eqUid ? null : 'Надета' });
+  const def = ivCard({ t: 'c', team }, { name: 'Штатная форма', sub: 'Команда ' + INV_TEAM_NAME[team], badge: eqUid ? null : 'Надета' });
   def.setAttribute('aria-selected', String(IVU.sel === 'def'));
   def.addEventListener('click', () => { IVU.sel = 'def'; ivRenderChars(); });
   grid.appendChild(def);
@@ -579,12 +579,12 @@ function ivRenderChars() {
   if (it) {
     const d = CHAR_SKINS[it.id], on = eqUid === it.uid;
     const extra = [d.headgear && { helmet: 'шлем', cap: 'кепка', boonie: 'панама', balaclava: 'балаклава' }[d.headgear], ...(d.extras || []).map(x => ({ backpack: 'рюкзак', radio: 'рация', kneepads: 'наколенники', patch: 'нашивка' }[x] || x))].filter(Boolean);
-    ivInfo(d.rarity, d.name, 'Команда ' + TEAM_NAME[team] + (extra.length ? ' · ' + extra.join(', ') : ''), null);
+    ivInfo(d.rarity, d.name, 'Команда ' + INV_TEAM_NAME[team] + (extra.length ? ' · ' + extra.join(', ') : ''), null);
     pvShowChar(team, it.id, gk);
     ivBtn('go', on ? 'Снять' : 'Надеть', () => { INV.eqChar[team] = on ? null : it.uid; ivApplyEquip(); ivRenderChars(); });
     ivBtn('ghost', 'Разобрать +' + INV_SCRAP[d.rarity], () => ivScrap(it));
   } else {
-    ivInfo(null, 'Штатная форма', 'Команда ' + TEAM_NAME[team], null);
+    ivInfo(null, 'Штатная форма', 'Команда ' + INV_TEAM_NAME[team], null);
     pvShowChar(team, null, gk);
     ivBtn('go', eqUid ? 'Надеть штатную' : 'Надета', () => { INV.eqChar[team] = null; ivApplyEquip(); ivRenderChars(); }, !eqUid);
   }
@@ -677,7 +677,7 @@ function ivFinishSpin() {
   if (it.t === 'c') charThumb(cv, it.id); else skinThumb(cv, it);
   const info = ivEl('div', 'ivr');
   const rr = ivEl('div', 'ivrar', rar.name); rr.style.setProperty('--rc', rar.color);
-  info.append(rr, ivEl('div', 'ivname', d.name), ivEl('div', 'ivsub', it.t === 'g' ? 'Скин оружия · ' + wearName(it.w) : 'Форма бойца · команда ' + TEAM_NAME[d.team === 'B' ? 'B' : 'A']));
+  info.append(rr, ivEl('div', 'ivname', d.name), ivEl('div', 'ivsub', it.t === 'g' ? 'Скин оружия · ' + wearName(it.w) : 'Форма бойца · команда ' + INV_TEAM_NAME[d.team === 'B' ? 'B' : 'A']));
   const row = ivEl('div', 'row');
   const mk = (cls, text, fn, dis) => { const b = ivEl('button', cls, text); b.type = 'button'; b.disabled = !!dis; b.addEventListener('click', fn); row.appendChild(b); return b; };
   mk('go', 'Забрать', () => { ivCloseOpening(); ivShowItem(it); });
