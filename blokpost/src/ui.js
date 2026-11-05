@@ -24,10 +24,10 @@ function catOf(k, w) {
 }
 const nadeList = () => {
   if (typeof GRENADES === 'undefined' || !GRENADES) return [];
-  return Array.isArray(GRENADES) ? GRENADES.map(g => [g.id || g.key, g]) : Object.entries(GRENADES);
+  return Array.isArray(GRENADES) ? GRENADES.map(g => typeof g === 'string' ? [g, WEAPONS[g] || {}] : [g.id || g.key, g]) : Object.entries(GRENADES); // [интеграция] ключи гранат из weapons.js
 };
 const extraList = () => (typeof EXTRA_ITEMS !== 'undefined' && Array.isArray(EXTRA_ITEMS)) ? EXTRA_ITEMS.filter(it => !it.side || !player.side || it.side === player.side) : [];
-const shopWeapons = () => Object.keys(WEAPONS).filter(k => !isMelee(k, WEAPONS[k]) && !WEAPONS[k].noBuy && (k === 'pistol' || PRIMARIES.includes(k) || WEAPONS[k].price > 0));
+const shopWeapons = () => Object.keys(WEAPONS).filter(k => !isMelee(k, WEAPONS[k]) && !WEAPONS[k].noBuy && !WEAPONS[k].grenade && (k === 'pistol' || PRIMARIES.includes(k) || WEAPONS[k].price > 0));
 let shopCat = 'rifle';
 function statBars(w) {
   const sp = w.scope ? w.scopedSpread : w.spread;
@@ -40,6 +40,8 @@ function shopItems(cat) {
     if (tdm) return out;
     out.push({ id: 'armor', name: 'Бронежилет', desc: 'Плиты поглощают половину урона', price: ARMOR_PRICE, icon: ICON_SVG.armor,
       own: player.armor >= 100, buy: () => { if (player.money < ARMOR_PRICE || player.armor >= 100) return false; player.money -= ARMOR_PRICE; player.armor = 100; return true; } });
+    if (typeof buyArmor === 'function') out.push({ id: 'helmet', name: 'Бронежилет и шлем', desc: 'Шлем гасит часть урона в голову', price: (player.armor >= 100 ? 0 : ARMOR_PRICE) + HELMET_PRICE, icon: ICON_SVG.armor,
+      own: player.armor >= 100 && !!player.helmet, buy: () => buyArmor(player, true) }); // [интеграция]
     for (const it of extraList()) {
       out.push({ id: it.id, name: it.name, desc: it.desc, price: it.price || 0, icon: ICON_SVG.kit,
         own: !!(it.owned && it.owned(player)), buy: () => !!(it.buy && it.buy(player) !== false) });
@@ -49,7 +51,7 @@ function shopItems(cat) {
   if (cat === 'nade') {
     if (typeof buyGrenade !== 'function') return out;
     for (const [id, g] of nadeList()) {
-      const n = player.grenades ? (typeof player.grenades[id] === 'number' ? player.grenades[id] : 0) : 0;
+      const n = player.ammo && player.ammo[id] ? player.ammo[id].mag : (player.grenades && typeof player.grenades[id] === 'number' ? player.grenades[id] : 0); // [интеграция]
       out.push({ id, name: g.name || wName(id), desc: g.desc || '', price: g.price || 0, icon: g.icon || ICON_SVG.grenade, count: n,
         own: g.max != null ? n >= g.max : false, buy: () => buyGrenade(player, id) !== false });
     }
