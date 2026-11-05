@@ -462,6 +462,11 @@ const UPG = [
   {id:'armor', name:'Хитин',           max:4, col:C.AMBER, d:'−2 урона от каждого удара'},
   {id:'dash',  name:'Течение',         max:3, col:C.CYAN,  d:'Рывок чаще и ранит врагов на пути'},
   {id:'flare', name:'Солнечное ядро',  max:3, col:C.GOLD,  d:'Вспышка копится на 30% быстрее'},
+  {id:'burn',  name:'Жар',             max:4, col:C.AMBER, d:'Попадания поджигают: урон со временем'},
+  {id:'siphon',name:'Сифон',           max:3, col:C.CORAL, d:'Шанс исцелиться при убийстве'},
+  {id:'echo',  name:'Эхо',             max:3, col:C.ICE,   d:'Шанс выстрелить залпом повторно'},
+  {id:'barrier',name:'Оберег',         max:3, col:C.WHITE, d:'Щит восстанавливается и гасит удар'},
+  {id:'overcharge',name:'Перегрев',    max:3, col:C.GOLD,  d:'Каждый 6-й залп — тяжёлый пробивающий снаряд'},
   // --- синергии ---
   {id:'storm',    syn:['orbit',2,'chain',2], name:'Грозовой рой',  max:1, col:C.GOLD, d:'Споры бьют цепными молниями'},
   {id:'supernova',syn:['nova',2,'crit',2],   name:'Сверхновая',    max:1, col:C.GOLD, d:'Импульс ×2 урона, шире, а убитые им взрываются'},
@@ -469,6 +474,9 @@ const UPG = [
   {id:'abyssice', syn:['frost',1,'mine',2],  name:'Ледяная бездна',max:1, col:C.GOLD, d:'Мины замораживают всё в радиусе'},
   {id:'hunter',   syn:['homing',1,'pierce',2],name:'Охотник',      max:1, col:C.GOLD, d:'+40% урона, снаряды разгоняются'},
   {id:'tide',     syn:['dash',2,'speed',2],  name:'Прилив',        max:1, col:C.GOLD, d:'Рывок стирает пули и оставляет волну'},
+  {id:'wildfire', syn:['burn',2,'nova',1],    name:'Пожар',         max:1, col:C.GOLD, d:'Горящие враги при гибели поджигают соседей'},
+  {id:'aegis',    syn:['barrier',1,'armor',2],name:'Эгида',         max:1, col:C.GOLD, d:'Второй заряд щита, а погашенный удар бьёт в ответ'},
+  {id:'leech',    syn:['siphon',1,'regen',1], name:'Пиявка',        max:1, col:C.GOLD, d:'Каждое убийство лечит, лечение усилено'},
 ];
 const UPG_BY = {}; for (const u of UPG) UPG_BY[u.id] = u;
 
@@ -538,12 +546,20 @@ const EN = {
     speed:['Fins','+10% speed'], magnet:['Attraction','+40% pickup radius'],
     armor:['Chitin','−2 damage from each hit'], dash:['Current','Dash more often and harm foes in its path'],
     flare:['Solar Core','Flare charges 30% faster'],
+    burn:['Ember','Hits ignite enemies for damage over time'],
+    siphon:['Siphon','Chance to heal on kill'],
+    echo:['Echo','Chance to fire the volley a second time'],
+    barrier:['Ward','A shield recharges and absorbs one hit'],
+    overcharge:['Overcharge','Every 6th volley fires a heavy piercing bolt'],
     storm:['Thunder Swarm','Spores strike with chain lightning'],
     supernova:['Supernova','Pulse ×2 damage, wider, and its kills explode'],
     prism:['Prism','Projectile splits in two on hit'],
     abyssice:['Abyssal Ice','Mines freeze everything in radius'],
     hunter:['Hunter','+40% damage, projectiles accelerate'],
     tide:['Tide','Dash erases bullets and leaves a wave'],
+    wildfire:['Wildfire','Burning enemies ignite their neighbors on death'],
+    aegis:['Aegis','A second shield charge, and a blocked hit strikes back'],
+    leech:['Leech','Every kill heals you, and healing is stronger'],
   },
   chars: {
     lumen:['Lumen','A balanced spark. Where it all began.'],
@@ -1265,6 +1281,12 @@ function computeStats() {
   ST.regen = 0.8 * lv('regen');
   ST.dashCd = 2.3 * (1 - 0.2 * lv('dash')) * ch.dashCd; ST.dashDmg = lv('dash') ? ST.dmg * 2.5 : 0;
   ST.flareMul = 1 + 0.3 * lv('flare');
+  ST.burn = lv('burn') ? ST.dmg * (0.14 + 0.1 * lv('burn')) * (lv('wildfire') ? 1.3 : 1) : 0; // урон/сек
+  ST.wildfire = lv('wildfire');
+  ST.siphonCh = lv('siphon') ? 0.1 + 0.07 * lv('siphon') : 0; ST.leech = lv('leech');
+  ST.echoCh = lv('echo') ? 0.12 + 0.1 * lv('echo') : 0;
+  ST.barrierMax = lv('barrier') ? lv('barrier') >= 1 ? 1 + (lv('aegis') ? 1 : 0) : 0 : 0; ST.barrierCd = 9 - 1.4 * lv('barrier'); ST.aegis = lv('aegis');
+  ST.over = lv('overcharge') ? 6 : 0;
   ST.xpMul = 1 + 0.08 * (sh.xp || 0);
   ST.bspd = 640 * (lv('hunter') ? 1.15 : 1); ST.range = 540;
   const oldMax = P.maxHp;
@@ -1306,7 +1328,7 @@ function spawnEnemy(type, x, y, elite) {
   const z = G.zone - 1, hpMul = (1 + 0.24 * z + 0.025 * z * z) * (d.boss ? G.hpScale : 1);
   e.type = type; e.x = x; e.y = y; e.vx = 0; e.vy = 0; e.r = d.r; e.maxHp = e.hp = d.boss ? d.hp * G.hpScale : d.hp * hpMul;
   e.spd = d.spd * (d.boss ? 1 : 1 + Math.min(0.35, z * 0.03)); e.dmg = d.dmg * G.dmgScale; e.xp = d.xp; e.score = d.score; e.col = d.col;
-  e.ang = Math.atan2(P.y - y, P.x - x); e.t = Math.random() * 2; e.st = 0; e.state = 0; e.flash = 0; e.slow = 0; e.freeze = 0;
+  e.ang = Math.atan2(P.y - y, P.x - x); e.t = Math.random() * 2; e.st = 0; e.state = 0; e.flash = 0; e.slow = 0; e.freeze = 0; e.burn = 0; e.burnT = 0; e.burnAcc = 0;
   e.elite = elite ? 1 : 0; e.dead = false; e.uid = G.uid++; e.orbCd = 0; e.dashHit = 0; e.chainMark = 0; e.scale = 1;
   e.hh = 0; e.hn = 0; e.phase = Math.random() * TAU; e.p1 = 0; e.p2 = 0; e.p3 = Math.random() < 0.5 ? 1 : -1; e.spawnT = 0.4;
   if (elite) { e.maxHp = e.hp = e.hp * 3.5; e.scale = 1.4; e.xp *= 4; e.score *= 5; e.dmg *= 1.3; }
@@ -1461,6 +1483,7 @@ function updatePlayer(dt) {
   if (P.dashCd > 0) P.dashCd -= dt;
   if (P.hp < P.maxHp * 0.3) { P.beatT = (P.beatT || 0) - dt; if (P.beatT <= 0) { P.beatT = 0.9; sfx.beat(); } } // сердцебиение на низком здоровье
   if (ST.regen > 0 && P.hp < P.maxHp) P.hp = Math.min(P.maxHp, P.hp + ST.regen * dt);
+  if (ST.barrierMax > 0 && (P.shield || 0) < ST.barrierMax) { P.shieldT -= dt; if (P.shieldT <= 0) { P.shield = (P.shield || 0) + 1; P.shieldT = ST.barrierCd; ring(P.x, P.y, P.r, P.r + 14, 0.4, C.WHITE, 3); sfx.graze(); } }
   // след
   P.trailT -= dt;
   if (P.trailT <= 0) { P.trailT = 0.035; TRAIL[trailHead * 2] = P.x; TRAIL[trailHead * 2 + 1] = P.y; trailHead = (trailHead + 1) % 12; }
@@ -1472,6 +1495,8 @@ function updatePlayer(dt) {
       P.fireT += 1 / ST.rate; if (P.fireT < 0) P.fireT = 0;
       const a = Math.atan2(tg.y - P.y, tg.x - P.x), n = ST.multi, sp = 0.15;
       for (let i = 0; i < n; i++) firePB(P.x + Math.cos(a) * 14, P.y + Math.sin(a) * 14, a + (i - (n - 1) / 2) * sp, ST.dmg, true);
+      if (ST.echoCh && Math.random() < ST.echoCh) { for (let i = 0; i < n; i++) firePB(P.x + Math.cos(a) * 14, P.y + Math.sin(a) * 14, a + (i - (n - 1) / 2) * sp + rand(-0.05, 0.05), ST.dmg * 0.8, true); part(P.x, P.y, 0, 0, 0.2, 14, C.ICE, 1); }
+      if (ST.over) { P.shotN = (P.shotN || 0) + 1; if (P.shotN % ST.over === 0) { const hb = firePB(P.x + Math.cos(a) * 16, P.y + Math.sin(a) * 16, a, ST.dmg * 4, false); if (hb) { hb.pierce += 4; hb.r = 7; } sfx.nova(); ring(P.x, P.y, 6, 40, 0.25, C.GOLD, 4); } }
       part(P.x + Math.cos(a) * 18, P.y + Math.sin(a) * 18, Math.cos(a) * 60, Math.sin(a) * 60, 0.12, 10, P.pal, 0);
       sfx.shoot();
     } else P.fireT = 0.05;
@@ -1538,6 +1563,7 @@ function damageEnemy(e, dmg, crit, fromAng, kx, ky, src) {
   const isBoss = !!ET[e.type].boss;
   if (!isBoss) { const kb = e.elite ? 0.3 : 1; e.vx += kx * kb; e.vy += ky * kb; }
   if (ST.frost && src !== 'chain') e.slow = 0.6 + 0.5 * ST.frost;
+  if (ST.burn && src !== 'burn' && !ET[e.type].boss) { e.burn = ST.burn; e.burnT = 3; }
   if (S.set.nums) dmgText(e, dmg, crit);
   sfx.hit();
   if (e.hp <= 0) killEnemy(e, src);
@@ -1564,6 +1590,10 @@ function chainFrom(e0, dmg, n) {
     cx = best.x; cy = best.y; damageEnemy(best, dmg, false, NaN, 0, 0, 'chain');
   }
 }
+function igniteNear(x, y) {
+  const n = gridQuery(x, y, 110, QB);
+  for (let i = 0; i < n; i++) { const e = enemies.items[QB[i]]; if (e.dead || ET[e.type].boss) continue; e.burn = Math.max(e.burn, ST.burn || 1); e.burnT = Math.max(e.burnT, 2.4); }
+}
 function killEnemy(e, src) {
   e.dead = true; G.kills++;
   const isBoss = !!ET[e.type].boss;
@@ -1571,6 +1601,7 @@ function killEnemy(e, src) {
   G.mult = 1 + Math.min(9, G.combo * 0.05);
   G.score += Math.round(e.score * G.mult);
   P.flare = Math.min(100, P.flare + (isBoss ? 50 : e.elite ? 6 : 0.9) * ST.flareMul);
+  if ((ST.siphonCh && Math.random() < ST.siphonCh) || ST.leech) { if (P.hp < P.maxHp) { const h = P.maxHp * (ST.leech ? 0.03 : 0.02) * (isBoss ? 4 : 1); P.hp = Math.min(P.maxHp, P.hp + h); if (Math.random() < 0.3) text(P.x, P.y - 24, '+' + Math.round(h), '#8affc0', false, false); } }
   const sz = e.r * e.scale;
   burst(e.x, e.y, Math.min(26, 8 + sz * 0.6), e.col, 90 + sz * 6, 6 + sz * 0.3, 0.55);
   burst(e.x, e.y, 4, C.WHITE, 60, 5, 0.3);
@@ -1629,6 +1660,9 @@ function explode(x, y, R, dmg, freeze) {
 /* ---------- игрок получает урон ---------- */
 function hurtPlayer(dmg) {
   if (P.inv > 0 || P.dashT > 0 || G.state !== 'play' || G.dying > 0 || G.god) return;
+  if ((P.shield || 0) > 0) { P.shield--; P.inv = Math.max(P.inv, 1.0); sfx.clink(); ring(P.x, P.y, P.r, P.r + 30, 0.4, C.WHITE, 5); shake(8); vibrate(25);
+    if (ST.aegis) { const n = gridQuery(P.x, P.y, 150, QA); for (let i = 0; i < n; i++) { const e = enemies.items[QA[i]]; if (e.dead) continue; damageEnemy(e, ST.dmg * 3, true, NaN, 0, 0); } }
+    return; }
   dmg = Math.max(1, Math.round(dmg - ST.armor));
   P.hp -= dmg; P.inv = 1.2; // QA: чуть дольше неуязвимость после удара — смерти «пачкой» реже
  G.noHit = false; G.hurtFlash = 1; shake(13); G.hitStop = 0.06;
@@ -1702,6 +1736,10 @@ function updateEnemies(dt) {
     if (e.spawnT > 0) e.spawnT -= dt;
     if (e.flash > 0) e.flash -= dt;
     if (e.slow > 0) e.slow -= dt;
+    if (e.burnT > 0 && !e.dead) { e.burnT -= dt; e.burnAcc += dt;
+      if (e.burnAcc >= 0.3) { const bd = e.burn * e.burnAcc; e.burnAcc = 0; e.hp -= bd; e.flash = Math.max(e.flash, 0.04);
+        if (QL > 0 && Math.random() < 0.5) part(e.x + rand(-6, 6), e.y - e.r * 0.4, rand(-20, 20), rand(-60, -20), 0.4, 6, C.AMBER, 2);
+        if (e.hp <= 0) { const wf = ST.wildfire && e.burn > 0; killEnemy(e, 'burn'); if (wf) igniteNear(e.x, e.y); continue; } } }
     const fz = e.freeze > 0; if (fz) e.freeze -= dt;
     const sp = fz ? 0 : e.spd * (e.slow > 0 ? 0.6 : 1);
     const dx = P.x - e.x, dy = P.y - e.y, d = Math.sqrt(dx * dx + dy * dy) || 1, ux = dx / d, uy = dy / d;
@@ -2158,6 +2196,7 @@ function renderWorld() {
     for (let i = 0; i < ST.orbN; i++) { glowAt(GLOW[C.DRIFT], ORB[i * 2], ORB[i * 2 + 1], 16); glowAt(GLOW[C.WHITE], ORB[i * 2], ORB[i * 2 + 1], 6); }
     ctx.globalCompositeOperation = 'source-over';
     if (ST.orbN > 0) { ctx.globalAlpha = 0.12; ctx.strokeStyle = PAL[C.DRIFT]; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(P.x, P.y, 64, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1; }
+    if ((P.shield || 0) > 0) { for (let k = 0; k < P.shield; k++) { ctx.globalAlpha = 0.4 + 0.2 * Math.sin(G.t * 4 + k); ctx.strokeStyle = PAL[C.WHITE]; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(P.x, P.y, P.r + 12 + k * 5, 0, TAU); ctx.stroke(); } ctx.globalAlpha = 1; }
     if (G.pullT > 0) { ctx.globalAlpha = 0.5; ctx.strokeStyle = PAL[C.GOLD]; ctx.lineWidth = 2; ctx.setLineDash && ctx.setLineDash([6, 10]);
       ctx.beginPath(); ctx.moveTo(P.x, P.y); ctx.lineTo(G.pullX, G.pullY); ctx.stroke(); ctx.setLineDash && ctx.setLineDash([]); ctx.globalAlpha = 1; }
   }
@@ -2661,6 +2700,14 @@ function drawIcon(c, id, colIdx) {
     case 'flare': Ci(32, 32, 10, 1); for (let i = 0; i < 8; i++) { const a = i / 8 * TAU; Ln(32 + Math.cos(a) * 16, 32 + Math.sin(a) * 16, 32 + Math.cos(a) * 26, 32 + Math.sin(a) * 26); } break;
     case 'prism': g.beginPath(); g.moveTo(32, 10); g.lineTo(52, 48); g.lineTo(12, 48); g.closePath(); g.stroke(); Ln(4, 30, 24, 32); Ln(42, 30, 60, 22); Ln(42, 34, 60, 42); break;
     case 'hunter': Ci(32, 32, 16); Ln(32, 6, 32, 20); Ln(32, 44, 32, 58); Ln(6, 32, 20, 32); Ln(44, 32, 58, 32); Ci(32, 32, 4, 1); break;
+    case 'burn': g.beginPath(); g.moveTo(32, 8); g.quadraticCurveTo(48, 28, 40, 44); g.quadraticCurveTo(38, 54, 32, 56); g.quadraticCurveTo(26, 54, 24, 44); g.quadraticCurveTo(16, 28, 32, 8); g.closePath(); g.stroke(); Ci(32, 42, 7, 1); break;
+    case 'siphon': g.beginPath(); g.moveTo(32, 10); g.quadraticCurveTo(50, 36, 32, 54); g.quadraticCurveTo(14, 36, 32, 10); g.closePath(); g.stroke(); Ci(32, 40, 5, 1); break;
+    case 'echo': Ci(32, 32, 8, 1); Ci(32, 32, 16); Ci(32, 32, 24); break;
+    case 'barrier': g.beginPath(); g.moveTo(32, 8); g.lineTo(52, 18); g.lineTo(48, 40); g.quadraticCurveTo(40, 54, 32, 58); g.quadraticCurveTo(24, 54, 16, 40); g.lineTo(12, 18); g.closePath(); g.stroke(); break;
+    case 'overcharge': Ln(36, 8, 22, 34, 34, 34, 20, 58); Ln(44, 24, 58, 24); Ln(6, 40, 20, 40); break;
+    case 'wildfire': g.beginPath(); g.moveTo(32, 6); g.quadraticCurveTo(52, 30, 42, 48); g.quadraticCurveTo(38, 56, 32, 58); g.quadraticCurveTo(26, 56, 22, 48); g.quadraticCurveTo(12, 30, 32, 6); g.closePath(); g.stroke(); Ln(20, 20, 10, 12); Ln(44, 20, 54, 12); Ci(32, 44, 8, 1); break;
+    case 'aegis': g.beginPath(); g.moveTo(32, 8); g.lineTo(52, 18); g.lineTo(48, 40); g.quadraticCurveTo(40, 54, 32, 58); g.quadraticCurveTo(24, 54, 16, 40); g.lineTo(12, 18); g.closePath(); g.stroke(); star(32, 32, 10, 4, 4); break;
+    case 'leech': g.beginPath(); g.moveTo(32, 10); g.quadraticCurveTo(50, 36, 32, 54); g.quadraticCurveTo(14, 36, 32, 10); g.closePath(); g.stroke(); Ln(26, 36, 38, 36); Ln(32, 30, 32, 42); break;
     default: Ci(32, 32, 14, 1);
   }
 }
