@@ -10,7 +10,7 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isTouch, powerPre
 renderer.autoClear = false;
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 0.92;
 const scene = new THREE.Scene();
 const SKY = 0xc4cfd2;                 // цвет дымки у горизонта (sRGB)
 scene.background = new THREE.Color(SKY);
@@ -174,20 +174,20 @@ const MATDEF = {
   metal: { size: 2.5, n: 7, metal: 0.35, fn(u, v, o) {
     const ribs = 12, w = fract(u * ribs), prof = smooth(0.0, 0.18, w) * (1 - smooth(0.5, 0.68, w));
     const m = nz(NZ.mid, u, v), f = nz(NZ.hi, u, v, 2), streak = nz(NZ.mid, u * 6, v * 0.3, 1);
-    const rust = smooth(0.62, 0.78, m * 0.6 + streak * 0.5);
+    const rust = smooth(0.72, 0.86, m * 0.6 + streak * 0.5) * 0.8;
     const c = 0.66 + (f - 0.5) * 0.05 - prof * 0.04;
     o.r = c * (1 - rust) + 0.45 * rust; o.g = c * 1.02 * (1 - rust) + 0.25 * rust; o.b = c * 1.05 * (1 - rust) + 0.14 * rust;
     o.h = 0.3 + prof * 0.6; o.ro = 0.48 + rust * 0.4 + (f - 0.5) * 0.1;
   } },
-  plaster: { size: 2.5, n: 1.5, metal: 0, fn(u, v, o) {
+  plaster: { size: 5, n: 1.5, metal: 0, fn(u, v, o) {
     const m = nz(NZ.mid, u, v), f = nz(NZ.hi, u, v, 2);
     let c = 0.8 + (m - 0.5) * 0.08 + (f - 0.5) * 0.05;
     // нижняя панель — кафель
-    const tv = fract(v * 2);
     o.h = 0.5 + (f - 0.5) * 0.2; o.ro = 0.9;
-    if (tv > 0.74) {
-      const tu = fract(u * 10), tvv = fract(v * 20);
-      if (tu < 0.05 || tvv < 0.08) { c = 0.62; o.h = 0.2; } else { c = 0.7 + _hash(Math.floor(u * 10), Math.floor(v * 20), 9) * 0.06; o.ro = 0.35; o.h = 0.6; }
+    if (v > 0.985) { c = 0.35; o.h = 0.3; o.r = o.g = o.b = c; return; }   // плинтус
+    if (v > 0.77) {
+      const tu = fract(u * 20), tvv = fract(v * 40);
+      if (tu < 0.05 || tvv < 0.08) { c = 0.62; o.h = 0.2; } else { c = 0.7 + _hash(Math.floor(u * 20), Math.floor(v * 40), 9) * 0.06; o.ro = 0.35; o.h = 0.6; }
       o.r = c * 0.78; o.g = c * 0.88; o.b = c * 0.86;
     } else { o.r = c; o.g = c * 0.95; o.b = c * 0.86; }
   } },
@@ -205,7 +205,7 @@ const MATDEF = {
     const hb = _hash(((col % cols) + cols) % cols, row, 7), f = nz(NZ.hi, u, v, 2), m = nz(NZ.mid, u, v);
     if (gap) { o.r = o.g = o.b = 0.22; o.h = 0.1; o.ro = 1; }
     else {
-      const k = 0.52 + hb * 0.12 + (f - 0.5) * 0.08 - smooth(0.6, 0.9, m) * 0.12;
+      const k = 0.44 + hb * 0.12 + (f - 0.5) * 0.08 - smooth(0.6, 0.9, m) * 0.12;
       const warm = hb > 0.7 ? 1 : 0;
       o.r = k * (1 + warm * 0.12); o.g = k * (0.98 + warm * 0.02); o.b = k * (0.94 - warm * 0.06); o.h = 0.7 + (f - 0.5) * 0.2; o.ro = 0.8;
     }
@@ -216,21 +216,21 @@ const MATDEF = {
     if (grout) { o.r = 0.4; o.g = 0.39; o.b = 0.36; o.h = 0.2; o.ro = 0.9; }
     else {
       const chk = (Math.floor(u * 5) + Math.floor(v * 5)) % 2;
-      const k = (chk ? 0.68 : 0.6) + hb * 0.04 + (f - 0.5) * 0.04 - smooth(0.62, 0.9, m) * 0.1;
+      const k = (chk ? 0.58 : 0.5) + hb * 0.04 + (f - 0.5) * 0.04 - smooth(0.62, 0.9, m) * 0.1;
       o.r = k; o.g = k * 0.97; o.b = k * 0.92; o.h = 0.6; o.ro = 0.28 + smooth(0.55, 0.85, m) * 0.4;
     }
   } },
   plates: { size: 2.5, n: 3, metal: 0, fn(u, v, o) {
     const su = Math.min(fract(u * 2), 1 - fract(u * 2)), sv = Math.min(fract(v * 2), 1 - fract(v * 2));
     const f = nz(NZ.hi, u, v, 2), m = nz(NZ.mid, u, v), big = nz(NZ.lo, u, v);
-    let c = 0.5 + (big - 0.5) * 0.12 + (m - 0.5) * 0.08 + (f - 0.5) * 0.05;
+    let c = 0.43 + (big - 0.5) * 0.12 + (m - 0.5) * 0.08 + (f - 0.5) * 0.05;
     o.h = 0.55 + (f - 0.5) * 0.25; o.ro = 0.85;
     if (Math.min(su, sv) < 0.012) { c *= 0.55; o.h = 0.1; }
     o.r = c * 1.02; o.g = c; o.b = c * 0.95;
   } },
   floorc: { size: 2.5, n: 2, metal: 0, fn(u, v, o) {
     const f = nz(NZ.hi, u, v, 2), m = nz(NZ.mid, u, v), big = nz(NZ.lo, u, v);
-    let c = 0.55 + (big - 0.5) * 0.14 + (m - 0.5) * 0.06 + (f - 0.5) * 0.03;
+    let c = 0.45 + (big - 0.5) * 0.14 + (m - 0.5) * 0.06 + (f - 0.5) * 0.03;
     const su = Math.min(fract(u), 1 - fract(u)), sv = Math.min(fract(v), 1 - fract(v));
     o.h = 0.5 + (f - 0.5) * 0.12; o.ro = 0.55 + (m - 0.5) * 0.4;
     if (Math.min(su, sv) < 0.008) { c *= 0.6; o.h = 0.1; }
@@ -290,7 +290,7 @@ function buildSky(W) {
         r = 0.77 + (0.30 - 0.77) * t; gg = 0.81 + (0.50 - 0.81) * t; b = 0.82 + (0.74 - 0.82) * t;
         // облака: кучевые у горизонта, перистые выше
         const cu = u, cvv = (1 - el) * 0.9;
-        const n1 = nz(NZ.lo, cu * 2, cvv * 1.5), n2 = nz(NZ.mid, cu * 2, cvv * 3);
+        const n1 = nz(NZ.lo, cu * 3, cvv * 2.2), n2 = nz(NZ.mid, cu * 3, cvv * 4);
         const dens = smooth(0.48, 0.72, n1 * 0.7 + n2 * 0.4) * smooth(0.02, 0.12, el) * (1 - smooth(0.55, 0.95, el));
         const lit = 0.88 + 0.12 * Math.max(0, cs);
         r = r * (1 - dens) + 0.93 * lit * dens; gg = gg * (1 - dens) + 0.91 * lit * dens; b = b * (1 - dens) + 0.88 * lit * dens;
@@ -533,7 +533,7 @@ function buildRoofs(group, props) {
     gb.v(x1, y + 0.02, z0, 0, 1, 0, 1, 1, top); gb.v(x0, y + 0.02, z0, 0, 1, 0, 0, 1, top);
     gb.quad(t, t + 1, t + 2, t + 3);
   }
-  const m = new THREE.Mesh(gb.build(), levelMat('metal'));
+  const m = new THREE.Mesh(gb.build(), levelMat('concrete'));
   m.castShadow = m.receiveShadow = true; group.add(m); levelMeshes.push(m);
 }
 
@@ -907,7 +907,7 @@ function buildOverlay(group) {
       }
     }
     // трещины
-    g.strokeStyle = 'rgba(15,13,10,.45)'; g.lineWidth = Math.max(1, pc / 40);
+    g.strokeStyle = 'rgba(15,13,10,.28)'; g.lineWidth = Math.max(1, pc / 64);
     for (let i = 0; i < MW * MH / 10; i++) {
       const [cx, cz] = openCells[Math.floor(Math.random() * openCells.length)];
       let x = (cx + Math.random()) * pc, y = (cz + Math.random()) * pc, a = Math.random() * 6.28;
@@ -1034,7 +1034,7 @@ _applyGfxImpl = function () {
     const pm = new THREE.PMREMGenerator(renderer);
     envRT = pm.fromEquirectangular(skyTex); pm.dispose();
     scene.environment = envRT.texture; vmScene.environment = envRT.texture;
-    hemi.intensity = 0.45; sun.intensity = 2.3;
+    hemi.intensity = 0.4; sun.intensity = 1.9;
   } else {
     envRT = null; scene.environment = null; vmScene.environment = null;
     hemi.intensity = 0.95; sun.intensity = 1.9;

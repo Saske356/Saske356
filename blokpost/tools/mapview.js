@@ -20,7 +20,7 @@ fs.writeFileSync(dev, '<!doctype html><html><head><meta charset="utf-8"><meta na
     const t0 = performance.now(); applyGraphics(); resize();
     const buildMs = Math.round(performance.now() - t0);
     document.querySelector('#menu') && (document.querySelector('#menu').style.display = 'none');
-    const orig = renderer.render.bind(renderer);
+    const orig = renderer.render.bind(renderer); window.__orig = orig;
     window.__cam = null;
     renderer.render = (s, c) => orig(s, s === scene && window.__cam ? window.__cam : c);
     // связность
@@ -45,12 +45,14 @@ fs.writeFileSync(dev, '<!doctype html><html><head><meta charset="utf-8"><meta na
     warehouse: [80, 1.7, 54, 42, 1.4, 56],
     tunnel: [75, 1.7, 67, 40, 1.6, 67],
     atkspawn: [112, 1.7, 36, 80, 2, 36],
+    menuSpot: 'spot',
     menu: 'menu',
   };
   for (const [name, v] of Object.entries(views)) {
     const stat = await p.evaluate(v => {
       let cam;
       if (v === 'menu') { window.__cam = null; return null; }
+      if (v === 'spot') v = [MENU_SPOT.camX, 1.7, MENU_SPOT.camZ, MENU_SPOT.x - 0.3, 1.15, MENU_SPOT.z];
       if (v.ortho) {
         const W = MW * CELL, H = MH * CELL;
         cam = new THREE.OrthographicCamera(-W / 2 * 1.05, W / 2 * 1.05, H / 2 * 1.05 * 844 / 390 / (W / H), -H / 2 * 1.05 * 844 / 390 / (W / H), 1, 400);
@@ -63,7 +65,7 @@ fs.writeFileSync(dev, '<!doctype html><html><head><meta charset="utf-8"><meta na
         cam = new THREE.PerspectiveCamera(74, 844 / 390, 0.05, 900); cam.position.set(v[0], v[1], v[2]); cam.lookAt(v[3], v[4], v[5]);
       }
       window.__cam = cam;
-      const orig = Object.getPrototypeOf(renderer).render.bind(renderer);
+      const orig = window.__orig;
       renderer.info.autoReset = false; renderer.info.reset(); renderer.clear(); orig(scene, cam);
       const r = renderer.info.render; const o = { calls: r.calls, tris: r.triangles }; renderer.info.autoReset = true;
       return o;
