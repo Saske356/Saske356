@@ -186,7 +186,11 @@ function aiPrepare() {
     const inSpots = aiSpread(inner, c => Math.min(nav.cover[c], 2) * 1.5 + Math.random() * 1.5, 1.5, 8);
     const plantSpots = aiSpread(cells, c => Math.min(nav.cover[c], 2) * 2 + Math.random(), 1.2, 6);
     let cc = cells[0], cd = 1e9; for (const c of cells) { const d = aiDist(c, s.center.x, s.center.z); if (d < cd) { cd = d; cc = c; } }
-    nav.sites[s.id] = { id: s.id, cells, dS, ents, holds, inSpots: inSpots.length ? inSpots : cells.slice(0, 5), plantSpots: plantSpots.length ? plantSpots : cells.slice(0, 3), center: cc, cx: s.center.x, cz: s.center.z };
+    // позиции отхода защиты: рядом с точкой со своей стороны, без вида на центр точки — ждать подмогу и возвращать точку
+    const fallC = [];
+    for (let i = 0; i < N; i++) if (aiOpen(i) && dS[i] >= 3 && dS[i] <= 9 && nav.dDef[i] <= nav.dDef[cells[0]] + 2 && !aiSee(i, s.center.x, s.center.z)) fallC.push(i);
+    const falls = aiSpread(fallC, c => Math.min(nav.cover[c], 2) - Math.abs(dS[c] - 5) * 0.3 + Math.random(), 1.8, 6);
+    nav.sites[s.id] = { id: s.id, cells, dS, ents, holds, falls, inSpots: inSpots.length ? inSpots : cells.slice(0, 5), plantSpots: plantSpots.length ? plantSpots : cells.slice(0, 3), center: cc, cx: s.center.x, cz: s.center.z };
     nav.siteIds.push(s.id);
   }
   // «середина» для ротации защиты: примерно на равном пути до обеих точек, на своей половине, у укрытия
@@ -235,7 +239,7 @@ function aiOnKill(victim, attacker) {
       m.lastSeen.copy(attacker.pos); m.lastSeenT = 3; m.alertT = 2;
     }
   }
-  const site = aiSiteNear(victim.pos.x, victim.pos.z, 7);
+  const site = aiSiteNear(victim.pos.x, victim.pos.z, 4);
   if (site) T.siteLoss[site] = gt;
 }
 // приказ: type 'hold' | 'plant' | 'defuse' | 'pickup' | 'flee' | 'hunt'; cells — путевые точки; watch — куда смотреть на месте
@@ -480,7 +484,7 @@ function aiDefend(T, mates) {
   for (const id of NAV.siteIds) {
     if (P.rotated[id]) continue;
     const S = NAV.sites[id];
-    const n = fresh.filter(s => S.dS[aiCellAt(s.x, s.z)] <= 7).length;
+    const n = fresh.filter(s => aiSiteNear(s.x, s.z, 4) === id).length; // только у этой точки и ближе к ней, чем к другой
     const lost = T.siteLoss[id] && gt - T.siteLoss[id] < 6;
     if (n >= 2 || (n >= 1 && lost) || (lost && Math.random() < 0.5)) {
       P.rotated[id] = true;
@@ -490,7 +494,17 @@ function aiDefend(T, mates) {
       if (n >= 3 || lost) go.push(...farB.slice(0, Math.max(0, farB.length - 1)));
       else if (farB.length >= 2) go.push(farB[0]);
       T.n++; const tag = 'r' + T.n;
+      const own = mates.filter(b => P.assign.get(b) === id);
       for (const b of go) { P.assign.set(b, id); aiHoldFor(T, b, id, mates, tag); b.ai.order.tag = P.tag; }
+      // точку давят числом: свои отходят на позиции отхода, подмога собирается там же — дальше возврат точки
+      if (n >= 3 && own.length < n && S.falls.length && Math.random() < 0.75) {
+        for (const b of own.concat(go)) {
+          if (b.targetVisible && b.hp > 50) continue;
+          const f = S.falls.filter(c => !aiTaken(mates, c, b, 1.4));
+          const c = (f.length ? f : S.falls).reduce((m, c) => aiDist(c, b.pos.x, b.pos.z) < aiDist(m, b.pos.x, b.pos.z) ? c : m);
+          aiGive(b, 'hold', c, { x: S.cx, z: S.cz }, { tag: P.tag, crouch: Math.random() < 0.4 });
+        }
+      }
     }
   }
   // иногда меняем позицию, чтобы не стоять предсказуемо
@@ -746,7 +760,8 @@ function updateBot(b, dt) {
       const holding = o && a.arrived;
       b.strafeT -= dt;
       if (b.strafeT <= 0) {
-        if (holding) { b.strafeT = rand(0.25, 0.6); b.strafeDir = Math.random() < 0.45 + D.peek * 0.2 ? 0 : (Math.random() < 0.5 ? -1 : 1); }
+        // держащий позицию стреляет стоя на месте (так точнее), лишь изредка смещается
+        if (holding) { b.strafeT = rand(0.4, 0.9); b.strafeDir = Math.random() < 0.8 + D.peek * 0.15 ? 0 : (Math.random() < 0.5 ? -1 : 1); }
         else { b.strafeT = rand(0.35, 1.1); b.strafeDir = Math.random() < (w.scope ? 0.75 : 0.3) ? 0 : (Math.random() < 0.5 ? -1 : 1); }
         a.engCrouch = holding && !w.scope && !w.pellets && Math.random() < 0.25 + D.peek * 0.25;
       }

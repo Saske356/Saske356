@@ -283,7 +283,7 @@ const objHud = (() => {
   const cache = new WeakMap();
   const txt = (el, v) => { if (cache.get(el) !== v) { cache.set(el, v); el.textContent = v; } };
   const tog = (el, cls, v) => { if (el.classList.contains(cls) !== v) el.classList.toggle(cls, v); };
-  const pv = new THREE.Vector3();
+  const pv = new THREE.Vector3(), objV = new THREE.Vector3();
   function place(el, x, y, z, label) {
     pv.set(x, y, z).project(camera);
     const vis = pv.z < 1 && pv.z > -1;
@@ -301,13 +301,33 @@ const objHud = (() => {
       radarC.width = base.width; radarC.height = base.height;
       Object.assign(radarC.style, { left: base.offsetLeft + 'px', top: base.offsetTop + 'px', width: base.offsetWidth + 'px', height: base.offsetHeight + 'px' });
     }
-    const W = radarC.width, H = radarC.height, sx = W / (MW * CELL), sz = H / (MH * CELL);
+    // та же проекция, что у drawRadar в hud.js: центр — игрок (или камера наблюдения), радиус RAD_R м, поворот по взгляду
+    const W = radarC.width, H = radarC.height, c = W / 2, R = typeof RAD_R !== 'undefined' ? RAD_R : 30, k = c / R;
+    const cx = player.alive ? player.pos.x : camera.position.x, cz = player.alive ? player.pos.z : camera.position.z;
+    const rot = settings.radarRotate !== false;
+    let yaw = player.yaw;
+    if (!player.alive) { objV.set(0, 0, -1).applyQuaternion(camera.quaternion); yaw = Math.atan2(-objV.x, -objV.z); }
+    const cr = rot ? Math.cos(yaw) : 1, sr = rot ? Math.sin(yaw) : 0;
+    // мировая точка → экран радара; дальние прижимаются к краю круга
+    const toScr = (x, z, edge) => {
+      const dx = x - cx, dz = z - cz; let sx = c + (dx * cr - dz * sr) * k, sy = c + (dx * sr + dz * cr) * k;
+      const ex = sx - c, ey = sy - c, d = Math.hypot(ex, ey), m = c - edge;
+      if (d > m) { sx = c + ex / d * m; sy = c + ey / d * m; }
+      return [sx, sy];
+    };
+    radarG.setTransform(1, 0, 0, 1, 0, 0);
     radarG.clearRect(0, 0, W, H);
-    radarG.font = 'bold ' + Math.round(H * 0.12) + 'px sans-serif'; radarG.textAlign = 'center'; radarG.textBaseline = 'middle';
+    radarG.save();
+    radarG.beginPath(); radarG.arc(c, c, c - 1, 0, Math.PI * 2); radarG.clip();
+    radarG.translate(c, c); if (rot) radarG.rotate(yaw); radarG.scale(k, k); radarG.translate(-cx, -cz);
+    radarG.fillStyle = 'rgba(242,203,76,.16)';
+    for (const s of objSites()) for (const q of s.cells) radarG.fillRect(q[0] * CELL, q[1] * CELL, CELL + 0.05, CELL + 0.05);
+    radarG.restore();
+    radarG.font = '700 14px Rubik, sans-serif'; radarG.textAlign = 'center'; radarG.textBaseline = 'middle';
     for (const s of objSites()) {
-      radarG.fillStyle = 'rgba(242,203,76,.16)';
-      for (const c of s.cells) radarG.fillRect(c[0] * CELL * sx, c[1] * CELL * sz, CELL * sx + 0.5, CELL * sz + 0.5);
-      radarG.fillStyle = 'rgba(242,203,76,.9)'; radarG.fillText(s.id === 'B' ? 'Б' : s.id, s.center.x * sx, s.center.z * sz);
+      const [sx, sy] = toScr(s.center.x, s.center.z, 12);
+      radarG.fillStyle = 'rgba(8,13,15,.72)'; radarG.beginPath(); radarG.arc(sx, sy, 9, 0, Math.PI * 2); radarG.fill();
+      radarG.fillStyle = 'rgba(242,203,76,.95)'; radarG.fillText(s.id === 'B' ? 'Б' : s.id, sx, sy + 1);
     }
     const cs = chargeState, mineAtk = teamSide[player.team] === 'atk';
     let p = null;
@@ -315,9 +335,10 @@ const objHud = (() => {
     else if (mineAtk && cs.state === 'dropped') p = cs.pos;
     else if (mineAtk && cs.state === 'carried' && cs.carrier && !cs.carrier.isPlayer) p = cs.carrier.pos;
     if (p) {
+      const [px, py] = toScr(p.x, p.z, 8);
       radarG.fillStyle = cs.state === 'planted' ? (Math.floor(gt * 4) % 2 ? '#ff4a3d' : '#ffb0a0') : '#f2cb4c';
-      radarG.fillRect(p.x * sx - 5, p.z * sz - 4, 10, 8);
-      radarG.strokeStyle = '#11171a'; radarG.lineWidth = 1.5; radarG.strokeRect(p.x * sx - 5, p.z * sz - 4, 10, 8);
+      radarG.fillRect(px - 5, py - 4, 10, 8);
+      radarG.strokeStyle = '#11171a'; radarG.lineWidth = 1.5; radarG.strokeRect(px - 5, py - 4, 10, 8);
     }
   }
   return {

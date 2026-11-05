@@ -58,6 +58,7 @@ fs.writeFileSync(dev, '<!doctype html><html><head><meta charset="utf-8"><meta na
   console.log('Средняя длина раунда', avgT.toFixed(1), 'с');
   console.log('Раунды: всего', all.rounds.length, '· «Сталь»', cnt(r => r.winner === 'A'), '· «Ржавчина»', cnt(r => r.winner === 'B'));
   console.log('По сторонам: атака', cnt(r => r.winSide === 'atk'), '· защита', cnt(r => r.winSide === 'def'));
+  console.log('Сталь в атаке', cnt(r => r.winner === 'A' && r.winSide === 'atk'), '/', cnt(r => (r.winner === 'A') === (r.winSide === 'atk')), '· Сталь в защите', cnt(r => r.winner === 'A' && r.winSide === 'def'), '/', cnt(r => (r.winner === 'A') === (r.winSide === 'def')));
   console.log('Исходы:', JSON.stringify(codes), '· раундов с закладкой', cnt(r => r.planted));
   console.log('Заряд:', JSON.stringify(all.obj));
   console.log('ИИ:', JSON.stringify(all.ai), '· застреваний >10 с (проверка теста):', all.stuckSim, JSON.stringify(all.types || {}));
