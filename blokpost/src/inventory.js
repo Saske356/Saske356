@@ -281,10 +281,11 @@ function pvFrame(t) {
   if (!PV.auto) { PV.idle += dt; if (PV.idle > 3) PV.auto = true; }
   if (PV.auto) PV.yaw += dt * 0.45;
   PV.pivot.rotation.set(0, PV.yaw, 0);
-  if (PV.obj) PV.obj.rotation.x = PV.kind === 'char' ? 0 : 0;
-  // камера: вписываем объект по радиусу, смотрим чуть сверху; выше — место под подпись внизу
-  const f = PV.fit, d = f.r / Math.sin(PV.cam.fov * Math.PI / 360) * PV.zoom * (PV.cam.aspect < 1 ? 1.25 / PV.cam.aspect : 1);
-  const ty = f.y - f.r * 0.28;
+    // камера: вписываем объект по радиусу, смотрим чуть сверху; выше — место под подпись внизу
+  // объект занимает долю k полувысоты кадра и сдвинут вверх: внизу панели подпись и кнопки
+  const f = PV.fit, tn = Math.tan(PV.cam.fov * Math.PI / 360), asp = PV.cam.aspect;
+  const H = f.r / f.k * PV.zoom * Math.max(1, f.wide / asp, 1 / asp);
+  const d = H / tn, ty = f.y - H * 0.26;
   PV.cam.position.set(0, ty + Math.sin(PV.pitch) * d, Math.cos(PV.pitch) * d);
   PV.cam.lookAt(0, ty, 0);
   PV.r.render(PV.scene, PV.cam);
@@ -302,8 +303,10 @@ function pvDestroy() {
   PV.cv.remove();
   Object.assign(PV, { r: null, cv: null, scene: null, cam: null, pivot: null, ro: null });
 }
-function pvSet(obj, kind, fitR, fitY) {
-  pvClear(); PV.obj = obj; PV.kind = kind; PV.fit = { r: fitR, y: fitY };
+function pvSet(obj, kind, fitR, fitY, k, wide) {
+  if (PV.obj) PV.pivot.remove(PV.obj);
+  if (PV.kind !== kind) { PV.yaw = { char: Math.PI + 0.55, gun: 0.35, case: 0.45 }[kind] || 0; PV.pitch = 0.12; PV.zoom = 1; }
+  PV.obj = obj; PV.kind = kind; PV.fit = { r: fitR, y: fitY, k: k || 0.7, wide: wide || 1 };
   PV.pivot.add(obj);
 }
 // модель оружия: копия вьюмодели без рук и вспышки (работает и со старыми, и с новыми моделями «Боя»)
@@ -327,16 +330,18 @@ function pvGunModel(k) {
 }
 function pvShowGun(k, eq) {
   if (!PV.r) return;
+  pvClear();
   const gun = pvGunModel(k);
   skinGunObject(gun, eq, k);
   const holder = new THREE.Group(), box = new THREE.Box3().setFromObject(gun), ctr = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
   gun.position.sub(ctr);
   holder.add(gun); holder.rotation.set(0.1, -Math.PI / 2, 0);  // ствол вправо, лёгкий наклон
   const wrap = new THREE.Group(); wrap.add(holder);
-  pvSet(wrap, 'gun', Math.max(size.x, size.y, size.z) * 0.62, 0.02);
+  pvSet(wrap, 'gun', Math.max(size.x, size.y, size.z) / 2, 0, 0.62, 1.2);
 }
 function pvShowChar(team, skinId, k) {
   if (!PV.r) return;
+  pvClear();
   const mb = makeBody._skOrig || makeBody;
   let body;
   _skSuppress++;
@@ -351,7 +356,7 @@ function pvShowChar(team, skinId, k) {
   if (!skHasRebuild()) recolorObject(body.root, team, skinHasDef(skinId) ? skinId : null);
   skinGunObject(body.gun, invGunSkin(k), k);
   body.root.position.set(0, 0, 0); body.root.rotation.set(0, 0, 0);
-  const disp = PV.disp; pvSet(body.root, 'char', 1.08, 0.98); PV.disp = PV.disp.concat(disp.filter(x => !PV.disp.includes(x)));
+  pvSet(body.root, 'char', 0.98, 0.95, 0.7);
   // тень-пятно под ногами
   const blob = new THREE.Mesh(new THREE.CircleGeometry(0.55, 24), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false }));
   blob.rotation.x = -Math.PI / 2; blob.position.y = 0.005; body.root.add(blob); PV.disp.push(blob.geometry, blob.material);
@@ -360,6 +365,7 @@ const skinHasDef = id => !!(id && CHAR_SKINS[id]);
 // кейс: ящик со скруглёнными гранями, наклейкой и ручкой
 function pvShowCase(caseId) {
   if (!PV.r) return;
+  pvClear();
   const c = CASES[caseId], cv = document.createElement('canvas'); cv.width = 512; cv.height = 256;
   const g = cv.getContext('2d');
   const gr = g.createLinearGradient(0, 0, 0, 256); gr.addColorStop(0, c.cols[0]); gr.addColorStop(1, c.cols[2]);
@@ -384,8 +390,7 @@ function pvShowCase(caseId) {
   for (const x of [-0.3, 0.3]) { const l = new THREE.Mesh(latchG, metal); l.position.set(x, 0.17, 0.175); grp.add(l); }
   const rib = new THREE.BoxGeometry(0.92, 0.02, 0.36), ribM = new THREE.MeshStandardMaterial({ color: 0x15191c, roughness: 0.7 });
   const r1 = new THREE.Mesh(rib, ribM); r1.position.y = 0.12; grp.add(r1);
-  PV.disp.length = 0;
-  pvSet(grp, 'case', 0.55, 0.0);
+  pvSet(grp, 'case', 0.5, 0.02, 0.72, 1.1);
   PV.disp.push(geo, side, front, tFront, metal, handle.geometry, latchG, rib, ribM);
 }
 
