@@ -400,7 +400,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // витрина в меню: бойцы обеих команд стоят в проходе склада
-const SHOW = { x: 40, z: 30 };
+const SHOW = typeof MENU_SPOT !== 'undefined' ? MENU_SPOT : { x: 40, z: 30, camX: 37.5, camZ: 39 };
 function resetMenuScene() {
   mode = MODES[settings.mode];
   buildUnits();

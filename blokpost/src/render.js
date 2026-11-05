@@ -1095,3 +1095,7 @@ scene.onBeforeRender = () => {
 };
 }
 applyGraphics();
+
+// [интеграция] переключатели графики из настроек пересобирают уровень
+bus.on('settings:gfx', () => { applyGraphics(); resize(); });
+bus.on('settings:shadows', () => { applyGraphics(); resize(); });

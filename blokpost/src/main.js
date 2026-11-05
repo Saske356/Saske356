@@ -30,8 +30,8 @@ function update(dt) {
   if (state === 'menu' || state === 'over') {
     menuT += dt * 0.15; gt += dt;
     camera.fov = 45; camera.updateProjectionMatrix();
-    camera.position.set(SHOW.x - 2.5 + Math.sin(menuT) * 0.8, 1.7, SHOW.z + 9);
-    camera.lookAt(SHOW.x - 2.2, 1.15, SHOW.z);
+    camera.position.set(SHOW.camX + Math.sin(menuT) * 0.8, 1.7, SHOW.camZ);
+    camera.lookAt(SHOW.x, 1.15, SHOW.z);
     for (const b of bots) syncBotMesh(b, dt, 0);
     return;
   }
