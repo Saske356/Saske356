@@ -15,8 +15,8 @@ const MODES = {
   tdm:    { name: 'Командный бой', size: 5, rounds: false, killLimit: 40, time: 300, tag: '5×5 · до 40 убийств', desc: 'Возрождение через 3 секунды, оружие бесплатно в арсенале. Держите линию и давите вместе.' },
   comp:   { name: 'Подрыв', size: 5, rounds: true, bomb: true, win: 7, maxRounds: 12, half: 6, roundTime: 105, freeze: 8, money: 800, chargeTime: 40, lateExec: 38,
             startSide: 'def', tag: '5×5 · до 7 побед · смена сторон', desc: 'Атака закладывает заряд на точке А или Б, защита держит точки и разминирует. Одна жизнь, экономика.' },
-  allies: { name: 'Союзники', size: 2, rounds: true, bomb: true, win: 5, maxRounds: 8, half: 4, roundTime: 70, freeze: 6, money: 1000, chargeTime: 30, lateExec: 28,
-            startSide: 'atk', tag: '2×2 · до 5 побед · заряд', desc: 'Ты и напарник против двоих. Короткие раунды с зарядом на двух точках.' },
+  allies: { name: 'Союзники', size: 2, rounds: true, bomb: true, win: 5, maxRounds: 8, half: 4, roundTime: 70, freeze: 6, money: 1000, chargeTime: 30, lateExec: 28, sites: 1,
+            startSide: 'atk', tag: '2×2 · до 5 побед · заряд', desc: 'Ты и напарник против двоих. Короткие раунды, заряд и одна точка на матч.' },
 };
 // Порядок кнопок режимов в меню
 const MODE_ORDER = ['tdm', 'comp', 'allies'];

@@ -85,6 +85,12 @@ function resetObjective() {
   if (typeof units !== 'undefined') for (const u of units) { u.hasCharge = false; setPack(u, false); }
   objHud.hide();
 }
+// Активные точки матча: mode.sites === 1 — одна случайная точка на матч (режим «Союзники»), иначе все
+let objActive = null;
+function objPickSites() { objActive = mode.bomb && mode.sites === 1 && SITES.length > 1 ? [pick(SITES).id] : null; }
+const objSiteOn = id => !objActive || objActive.includes(id);
+const objSites = () => SITES.filter(s => objSiteOn(s.id));
+function objInSite(x, z) { const id = inSite(x, z); return id && objSiteOn(id) ? id : null; }
 function objRoundStart() {
   resetObjective();
   if (!mode.bomb) return;
@@ -116,7 +122,7 @@ function pickupCharge(u) {
   else if (u.team === player.team) objHud.note(u.name + ' подобрал заряд');
 }
 function plantCharge(u) {
-  const site = inSite(u.pos.x, u.pos.z);
+  const site = objInSite(u.pos.x, u.pos.z);
   u.hasCharge = false; u.planting = false; u.useT = 0; setPack(u, false);
   chargeState.state = 'planted'; chargeState.carrier = null; chargeState.site = site; chargeState.planter = u; chargeState.plantedRound = true; chargeState.beepT = 0;
   chargeState.pos.set(u.pos.x, 0, u.pos.z);
@@ -133,6 +139,7 @@ function defuseCharge(u) {
   chargeState.state = 'defused'; chargeLed.visible = false;
   u.money = Math.min(MONEY_CAP, u.money + ECON.defuseSelf);
   objStats.defuses++;
+  if (units.some(o => o.alive && o.side === 'atk')) objStats.defusesUnderFire = (objStats.defusesUnderFire || 0) + 1;
   bus.emit('charge:defused', u);
   endRound(u.team, (u.isPlayer ? 'Ты разминировал заряд' : u.name + ' разминировал заряд'), 'defuse');
 }
@@ -171,7 +178,7 @@ function objActionFor(u) {
   if (!mode.bomb || state !== 'live' || !u.alive) return null;
   const cs = chargeState;
   if (u.side === 'atk') {
-    if (u.hasCharge && u.onGround && inSite(u.pos.x, u.pos.z)) return 'plant';
+    if (u.hasCharge && u.onGround && objInSite(u.pos.x, u.pos.z)) return 'plant';
     if (cs.state === 'dropped' && Math.hypot(u.pos.x - cs.pos.x, u.pos.z - cs.pos.z) < CHARGE.pickDist + 0.3) return 'pickup';
   } else if (u.side === 'def' && cs.state === 'planted' && Math.hypot(u.pos.x - cs.pos.x, u.pos.z - cs.pos.z) < CHARGE.useDist) return 'defuse';
   return null;
@@ -198,7 +205,7 @@ function objTick(dt) {
     for (const u of units) {
       if (!u.alive) continue;
       if (u.planting) {
-        if (!u.hasCharge || !inSite(u.pos.x, u.pos.z) || Math.hypot(u.vx, u.vz) > 1.2) { u.planting = false; u.useT = 0; }
+        if (!u.hasCharge || !objInSite(u.pos.x, u.pos.z) || Math.hypot(u.vx, u.vz) > 1.2) { u.planting = false; u.useT = 0; }
         else { u.useT += dt; if (u.useT >= CHARGE.plant) { plantCharge(u); break; } }
       } else if (u.defusing) {
         if (cs.state !== 'planted' || Math.hypot(u.pos.x - cs.pos.x, u.pos.z - cs.pos.z) > CHARGE.useDist + 0.3 || Math.hypot(u.vx, u.vz) > 1.2) { u.defusing = false; u.useT = 0; }
@@ -297,7 +304,7 @@ const objHud = (() => {
     const W = radarC.width, H = radarC.height, sx = W / (MW * CELL), sz = H / (MH * CELL);
     radarG.clearRect(0, 0, W, H);
     radarG.font = 'bold ' + Math.round(H * 0.12) + 'px sans-serif'; radarG.textAlign = 'center'; radarG.textBaseline = 'middle';
-    for (const s of SITES) {
+    for (const s of objSites()) {
       radarG.fillStyle = 'rgba(242,203,76,.16)';
       for (const c of s.cells) radarG.fillRect(c[0] * CELL * sx, c[1] * CELL * sz, CELL * sx + 0.5, CELL * sz + 0.5);
       radarG.fillStyle = 'rgba(242,203,76,.9)'; radarG.fillText(s.id === 'B' ? 'Б' : s.id, s.center.x * sx, s.center.z * sz);
@@ -352,7 +359,7 @@ const objHud = (() => {
       // метки точек и заряда на экране
       const live = state === 'live' || state === 'freeze';
       const camX = camera.position.x, camZ = camera.position.z;
-      for (const s of SITES) {
+      for (const s of SITES) { if (!objSiteOn(s.id)) { tog(marks[s.id], 'on', false); continue; }
         const m = marks[s.id];
         if (!live) { tog(m, 'on', false); continue; }
         const d = Math.hypot(s.center.x - camX, s.center.z - camZ);

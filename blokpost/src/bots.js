@@ -138,7 +138,7 @@ function aiPrepare() {
   const zAtk = typeof spawnZones !== 'undefined' && spawnZones.atk && spawnZones.atk.length ? spawnZones.atk : spawns.B;
   const zDef = typeof spawnZones !== 'undefined' && spawnZones.def && spawnZones.def.length ? spawnZones.def : spawns.A;
   nav.dAtk = aiField(cellsOf(zAtk)); nav.dDef = aiField(cellsOf(zDef));
-  for (const s of (typeof SITES !== 'undefined' ? SITES : [])) {
+  for (const s of (typeof SITES !== 'undefined' ? (typeof objSites === 'function' ? objSites() : SITES) : [])) {
     const cells = s.cells.map(c => c[1] * MW + c[0]).filter(aiOpen);
     if (!cells.length) continue;
     const dS = aiField(cells);
@@ -285,7 +285,8 @@ function aiFleeIfNeeded(b, tLeft) {
   const p = chargeState.pos;
   if (tLeft > 0 && Math.hypot(b.pos.x - p.x, b.pos.z - p.z) < CHARGE.radius + 1) {
     const d = Math.hypot(b.pos.x - p.x, b.pos.z - p.z), runT = (CHARGE.radius + 2 - d) / 3.6;
-    if (runT + 0.8 > tLeft) return false; // уже не успеть — некуда бежать, держим позицию
+    if (tLeft > runT + 2.5) return false;  // ещё рано уходить
+    if (runT + 0.4 > tLeft) return false;  // уже не успеть — держим позицию
     const c = aiFleeCell(b, p); if (c >= 0) { aiGive(b, 'flee', c, null, { tag: 'flee' }); b.defusing = false; return true; }
   }
   return false;
@@ -631,7 +632,7 @@ function perceive(b) {
     if (score < bd) { bd = score; best = e; }
   }
   if (best) {
-    if (best !== b.target || !b.targetVisible) { b.reactT = rand(D.react[0], D.react[1]) * (b.alertT > 0 ? 0.7 : 1); b.burst = 0; }
+    if (best !== b.target || !b.targetVisible) { b.reactT = rand(D.react[0], D.react[1]) * (b.alertT > 0 ? 0.7 : 1) * (b.ai && b.ai.arrived && Math.hypot(b.vx, b.vz) < 1 ? 0.7 : 1) * (Math.hypot(best.vx, best.vz) > 2.5 ? 1.1 : 1); b.burst = 0; } // держащий угол реагирует быстрее бегущего
     b.target = best; b.targetVisible = true; b.lastSeen.copy(best.pos); b.lastSeenT = 5; best.spottedT = 1.2;
     aiSpot(b.team, best);
   } else b.targetVisible = false;
@@ -715,7 +716,7 @@ function updateBot(b, dt) {
   const cs = chargeState;
   // действия режима
   let busy = false;
-  if (o && o.type === 'plant' && a.arrived && b.hasCharge && inSite(b.pos.x, b.pos.z)) {
+  if (o && o.type === 'plant' && a.arrived && b.hasCharge && objInSite(b.pos.x, b.pos.z)) {
     b.planting = !engaged; busy = b.planting;
   } else b.planting = false;
   if (o && o.type === 'defuse' && cs.state === 'planted' && Math.hypot(b.pos.x - cs.pos.x, b.pos.z - cs.pos.z) < CHARGE.useDist - 0.25) {

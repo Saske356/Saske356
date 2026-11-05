@@ -51,20 +51,43 @@ function botBuy(b) {
   const firstOfHalf = roundNo === 1 || (mode.half && roundNo === mode.half + 1);
   const eco = !firstOfHalf && !b.primary && avg < 2300 && b.money < 3400 && lossStreak[b.team] < 3;
   if (!b.primary && !eco) {
-    const m = b.money; let p = null;
-    if (m >= 4750 + 650 && Math.random() < 0.18) p = 'sniper';
-    else if (m >= 3100 + 650) p = Math.random() < 0.5 ? 'carbine' : 'rifle';
-    else if (m >= 2700) p = 'rifle';
-    else if (m >= 1250 && Math.random() < 0.65) p = Math.random() < 0.55 ? 'smg' : 'shotgun';
+    const m = b.money, C = botWeaponClasses(), afford = l => l.filter(k => WEAPONS[k].price <= m);
+    let p = null;
+    const snip = afford(C.sniper).filter(k => m >= WEAPONS[k].price + ARMOR_PRICE);
+    const rif = afford(C.rifle).filter(k => m >= WEAPONS[k].price + ARMOR_PRICE);
+    if (snip.length && Math.random() < 0.18) p = pick(snip);
+    else if (rif.length) p = pick(rif);
+    else if (afford(C.rifle).length && m >= 2700) p = pick(afford(C.rifle));
+    else if (afford(C.light).length && Math.random() < 0.65) p = pick(afford(C.light));
     if (p) { b.money -= WEAPONS[p].price; b.primary = p; }
   }
   if (b.armor < 100 && b.money >= ARMOR_PRICE && (!eco || b.money > 1600)) { b.money -= ARMOR_PRICE; b.armor = 100; }
   if (mode.bomb && b.side === 'def' && !b.kit && b.money >= KIT_PRICE && (b.primary || Math.random() < 0.3) && Math.random() < 0.7) { b.money -= KIT_PRICE; b.kit = true; }
-  // гранаты ботов — свой бюджет ИИ (бросок через throwGrenade, если «Бой» её предоставляет)
+  // гранаты: через buyGrenade модуля «Бой», если он есть (он же списывает деньги); иначе — свой бюджет ИИ
   b.aiNades = { smoke: 0, flash: 0, he: 0 };
-  if (!eco) for (const [k, pr] of [['smoke', 300], ['flash', 200], ['he', 300]]) if (b.money >= pr + 200 && Math.random() < 0.75) { b.money -= pr; b.aiNades[k] = 1; }
+  if (eco) return;
+  const G = typeof GRENADES === 'object' && GRENADES ? GRENADES : null;
+  for (const k of ['smoke', 'flash', 'he']) {
+    const pr = G && G[k] && G[k].price !== undefined ? G[k].price : (k === 'flash' ? 200 : 300);
+    if (b.money < pr + 200 || Math.random() > 0.75) continue;
+    if (typeof buyGrenade === 'function') { if (buyGrenade(b, k) !== false) b.aiNades[k] = 1; }
+    else { b.money -= pr; b.aiNades[k] = 1; }
+  }
 }
-function pickBotLoadout() { const r = Math.random(); return r < 0.14 ? 'sniper' : r < 0.3 ? 'smg' : r < 0.42 ? 'shotgun' : r < 0.7 ? 'rifle' : 'carbine'; }
+// Оружие для закупки ботов строится по WEAPONS (новые стволы подхватываются сами):
+// sniper — с оптикой, rifle — основные от $2500, light — дешёвые (пистолеты-пулемёты, дробовики и т.п.)
+function botWeaponClasses() {
+  const keys = (typeof PRIMARIES !== 'undefined' ? PRIMARIES : Object.keys(WEAPONS))
+    .filter(k => WEAPONS[k] && WEAPONS[k].price > 0 && k !== 'pistol' && WEAPONS[k].hold !== 'knife' && !/^Пистолет$/.test(WEAPONS[k].cls || ''));
+  const C = { sniper: [], rifle: [], light: [] };
+  for (const k of keys) { const w = WEAPONS[k]; (w.scope ? C.sniper : w.price >= 2500 ? C.rifle : C.light).push(k); }
+  return C;
+}
+function pickBotLoadout() {
+  const C = botWeaponClasses(), r = Math.random();
+  const l = r < 0.14 && C.sniper.length ? C.sniper : r < 0.42 && C.light.length ? C.light : C.rifle.length ? C.rifle : C.light.concat(C.sniper);
+  return l.length ? pick(l) : 'pistol';
+}
 function resetUnit(u, keep) {
   u.alive = true; u.hp = 100; u.vx = u.vz = u.vy = 0; u.onGround = true; u.protT = 0;
   u.reloading = 0; u.nextShot = 0; u.sprayN = 0; u.punch = u.punchY = 0; u.scoped = false; u.fireLatch = false;
@@ -99,6 +122,7 @@ function startMatch() {
   teamSide.A = mode.startSide || 'def'; teamSide.B = teamSide.A === 'atk' ? 'def' : 'atk';
   applySides();
   for (const u of units) { u.kills = 0; u.deaths = 0; u.money = mode.money || 0; u.primary = null; u.armor = 0; u.kit = false; u.alive = true; }
+  if (typeof objPickSites === 'function') objPickSites();
   if (typeof aiMatchStart === 'function') aiMatchStart();
   if (mode.rounds) startRound();
   else {
@@ -124,7 +148,8 @@ function startRound() {
     if (typeof objRoundStart === 'function') objRoundStart();
     const atk = teamSide[player.team] === 'atk';
     showMsg('Раунд ' + roundNo + (mode.half && roundNo === mode.half + 1 ? ' · смена сторон' : ''),
-      atk ? 'Атака: заложите заряд на точке А или Б' : 'Защита: не дайте заложить заряд');
+      objActive ? (atk ? 'Атака: заложите заряд — ' : 'Защита: удержите ') + objSites().map(s => s.name).join(', ')
+        : atk ? 'Атака: заложите заряд на точке А или Б' : 'Защита: не дайте заложить заряд');
   } else showMsg('Раунд ' + roundNo, 'Закупка и подготовка');
   $('#rnd').textContent = 'Раунд ' + roundNo + (mode.maxRounds ? ' / ' + mode.maxRounds : '');
   if (typeof aiRoundStart === 'function') aiRoundStart();
@@ -150,7 +175,7 @@ function endRound(winner, reason, code) {
       if (u.team === loser && u.side === 'atk' && code === 'time' && u.alive) add = 0; // отсиделись до конца времени — без награды
       u.money = Math.min(MONEY_CAP, u.money + add);
     }
-    roundLog.push({ n: roundNo, winner, winSide: teamSide[winner], code: code || 'time', planted });
+    roundLog.push({ n: roundNo, winner, winSide: teamSide[winner], code: code || 'time', planted, t: Math.round(roundElapsed) });
   } else for (const u of units) u.money = Math.min(MONEY_CAP, u.money + (u.team === winner ? 3250 : 1900));
   for (const u of units) { u.planting = false; u.defusing = false; u.useT = 0; }
   showMsg(winner === 'A' ? 'Раунд за «Сталью»' : 'Раунд за «Ржавчиной»', reason, winner);
