@@ -5,3 +5,5 @@ __pycache__/
 chain.json
 chain.json.tmp
 names.json
+xmrig/
+xmrig.log
