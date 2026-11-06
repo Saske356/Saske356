@@ -29,6 +29,12 @@ cd game/android
 export ANDROID_HOME=/путь/к/android-sdk
 ./gradlew assembleRelease -Pks=/путь/к/svetbezdny.keystore -PksPass=пароль
 # готовый файл: app/build/outputs/apk/release/app-release.apk
+# RuStore требует классическую подпись v1, а сборщик её пропускает (minSdk 24).
+# Поэтому после сборки переподпишите файл всеми схемами:
+zipalign -f -p 4 app/build/outputs/apk/release/app-release.apk aligned.apk
+apksigner sign --ks /путь/к/svetbezdny.keystore --ks-key-alias svetbezdny \
+  --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+  --out ../dist/SvetBezdny.apk aligned.apk
 ```
 Ключ подписи храните в надёжном месте и **не загружайте в GitHub**: без того же ключа обновление не встанет поверх старой версии.
 
