@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
+import android.view.Display;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
@@ -28,6 +29,8 @@ public class MainActivity extends Activity {
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
         }
 
+        requestMaxRefreshRate(w);
+
         web = new WebView(this);
         web.setBackgroundColor(0xFF020814);
         WebSettings s = web.getSettings();
@@ -50,6 +53,23 @@ public class MainActivity extends Activity {
         if (savedInstanceState != null) web.restoreState(savedInstanceState);
         else web.loadUrl("file:///android_asset/index.html");
         hideSystemBars();
+    }
+
+    /** Просим у экрана максимальную частоту обновления (90/120/144 Гц), не меняя разрешение. */
+    private void requestMaxRefreshRate(Window w) {
+        try {
+            Display d = Build.VERSION.SDK_INT >= 30 ? getDisplay() : getWindowManager().getDefaultDisplay();
+            if (d == null) return;
+            Display.Mode cur = d.getMode(), best = cur;
+            for (Display.Mode m : d.getSupportedModes()) {
+                if (m.getPhysicalWidth() == cur.getPhysicalWidth() && m.getPhysicalHeight() == cur.getPhysicalHeight()
+                        && m.getRefreshRate() > best.getRefreshRate()) best = m;
+            }
+            WindowManager.LayoutParams lp = w.getAttributes();
+            lp.preferredDisplayModeId = best.getModeId();
+            lp.preferredRefreshRate = best.getRefreshRate();
+            w.setAttributes(lp);
+        } catch (Throwable ignored) { }
     }
 
     private void hideSystemBars() {
