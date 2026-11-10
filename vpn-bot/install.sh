@@ -25,17 +25,83 @@ retry() {
   done
   return 1
 }
+retry3() { local n; for n in 1 2 3; do "$@" && return 0; [ "$n" -lt 3 ] && { echo "Пробую ещё раз ($((n+1)) из 3)..."; sleep 5; }; done; return 1; }
 fetch() { curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 15 "$@"; }
 
+XRAY_REPO=XTLS/Xray-core
+
+xray_arch() {
+  case "$(uname -m)" in
+    x86_64|amd64) echo 64 ;;
+    aarch64|arm64) echo arm64-v8a ;;
+    *) return 1 ;;
+  esac
+}
+
+# Загрузка, которая 30 секунд стоит на месте, считается оборванной.
+grab() {
+  curl -fsSL --retry 2 --retry-delay 3 --retry-all-errors --connect-timeout 15 \
+    --speed-limit 1024 --speed-time 30 -o "$1" "$2"
+}
+
+# Последняя версия Xray и SHA-256 её архива по данным GitHub API.
+xray_release() {
+  fetch -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$XRAY_REPO/releases/latest" \
+    | python3 -I -c '
+import json, sys
+d = json.load(sys.stdin)
+want = "Xray-linux-%s.zip" % sys.argv[1]
+digest = next((a.get("digest") or "" for a in d.get("assets", []) if a.get("name") == want), "")
+print(d["tag_name"], digest.split(":", 1)[1] if digest.startswith("sha256:") else "-")
+' "$1"
+}
+
+# С некоторых серверов архивы GitHub не скачиваются, поэтому есть запасное зеркало.
+# Архив принимается, только если его SHA-256 совпадает с опубликованным.
+download_xray_zip() {
+  local out="$1" arch info tag api_sum sum got url
+  arch=$(xray_arch) || { echo "Xray не поддерживает процессор $(uname -m)"; return 1; }
+  info=$(xray_release "$arch") || { echo "GitHub API не ответил"; return 1; }
+  read -r tag api_sum <<<"$info"
+  [ -n "$tag" ] || return 1
+  if [ -x "$XRAY" ] && "$XRAY" version 2>/dev/null | head -1 | grep -qF " ${tag#v} "; then
+    echo "Xray $tag уже установлен"
+    return 2
+  fi
+  for url in \
+    "https://github.com/$XRAY_REPO/releases/download/$tag/Xray-linux-$arch.zip" \
+    "https://downloads.sourceforge.net/project/xray-core.mirror/$tag/Xray-linux-$arch.zip"; do
+    echo "Качаю Xray $tag с $(printf '%s' "$url" | cut -d/ -f3)..."
+    rm -f "$out"
+    grab "$out" "$url" || { echo "Не скачалось, пробую другой источник"; continue; }
+    sum="$api_sum"
+    if [ "$sum" = "-" ]; then
+      grab "$out.dgst" "$url.dgst" || continue
+      sum=$(awk -F'= *' '/^SHA2-256/ {print $2; exit}' "$out.dgst")
+    fi
+    got=$(sha256sum "$out" | cut -d' ' -f1)
+    [ -n "$sum" ] && [ "$got" = "$sum" ] && return 0
+    echo "Файл повреждён (контрольная сумма не совпала), пробую другой источник"
+  done
+  return 1
+}
+
 install_xray() {
-  local f rc
-  f=$(mktemp)
-  fetch -o "$f" https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh || { rm -f "$f"; return 1; }
+  local tmp rc
+  tmp=$(mktemp -d)
+  fetch -o "$tmp/install-release.sh" https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh \
+    || { rm -rf "$tmp"; return 1; }
   # Обрезанный файл без последней строки запускать нельзя.
-  tail -n 3 "$f" | grep -q '^main "\$@"' || { rm -f "$f"; return 1; }
-  bash "$f" install >/dev/null
+  tail -n 3 "$tmp/install-release.sh" | grep -q '^main "\$@"' || { rm -rf "$tmp"; return 1; }
+  download_xray_zip "$tmp/xray.zip"
   rc=$?
-  rm -f "$f"
+  if [ "$rc" -eq 0 ]; then
+    bash "$tmp/install-release.sh" install -l "$tmp/xray.zip" >/dev/null
+    rc=$?
+  elif [ "$rc" -eq 2 ]; then
+    rc=0
+  fi
+  rm -rf "$tmp"
   return $rc
 }
 
@@ -55,15 +121,15 @@ case "$ID" in ubuntu|debian) ;; *) fail "нужен Ubuntu или Debian, а з�
 say "Ставлю пакеты"
 export DEBIAN_FRONTEND=noninteractive
 retry apt-get update -qq || fail "не удалось обновить список пакетов"
-retry apt-get install -y -qq curl git python3 python3-venv python3-pip openssl ca-certificates >/dev/null \
+retry apt-get install -y -qq curl unzip git python3 python3-venv python3-pip openssl ca-certificates >/dev/null \
   || fail "не удалось поставить пакеты"
 
 say "Ставлю Xray"
-if ! retry install_xray; then
+if ! retry3 install_xray; then
   if [ -x "$XRAY" ]; then
     echo "Обновить Xray не вышло, оставляю уже установленный."
   else
-    fail "Xray не скачался с GitHub. Подождите пару минут и запустите команду ещё раз"
+    fail "Xray не скачался ни с GitHub, ни с зеркала. Подождите пару минут и запустите команду ещё раз"
   fi
 fi
 [ -x "$XRAY" ] || fail "Xray не установился"
