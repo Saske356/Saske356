@@ -322,6 +322,7 @@ flex-wrap:wrap;justify-content:center;align-content:center;gap:0 10px}
   <div class="bigScore" id="overScore">0</div>
   <div class="rec" id="overRec">НОВЫЙ РЕКОРД!</div>
   <div class="stats" id="overStats"></div>
+  <div id="overQuests" style="width:100%;max-width:340px;margin:0 auto 8px;font-size:12.5px;line-height:1.55;text-align:left;opacity:.92"></div>
   <button class="btn gold" id="btnAdDouble" hidden>▶ ×2 жемчуга за рекламу</button>
   <button class="btn big" id="btnAgain">ЕЩЁ РАЗ</button>
   <div class="row">
@@ -657,7 +658,7 @@ const EN = {
     cont:'tap to continue', m:'m', lv:'LV', comboW:'combo', flareBtn:'FLARE', dashBtn:'DASH', fps:'Frame rate', quests:'Daily quests', questsTitle:'TODAY\u2019S QUESTS', claim:'Claim', claimed:'Claimed',
     streakLine:(n)=>'Login streak: day '+n+' · tomorrow +'+15*Math.min(n+1,7)+' pearls', loginT:(n)=>'DAILY BONUS · DAY '+n, qDoneT:'QUEST COMPLETE',
     qName:(id,n)=>({kills:'Defeat '+n+' enemies',depth:'Reach '+n+' m',pearls:'Collect '+n+' pearls',boss:'Defeat a boss'+(n>1?' ×'+n:''),chest:'Open '+n+' chests',flare:'Use Flare '+n+' times',runs:'Play '+n+' runs',combo:'Reach a combo of '+n})[id],
-    goldB:'GOLDEN SHOAL!', goldS:'catch them for pearls', chestB:'TREASURE CLAM!', chestS:'break it for a free upgrade', chestOpen:'TREASURE!', chestOpenS:'pearls and a bonus upgrade',
+    newRec:'NEW DEPTH RECORD!', goldB:'GOLDEN SHOAL!', goldS:'catch them for pearls', chestB:'TREASURE CLAM!', chestS:'break it for a free upgrade', chestOpen:'TREASURE!', chestOpenS:'pearls and a bonus upgrade',
     chalB:'SPEED TRIAL', chalS:(n,t)=>'defeat '+n+' in '+t+' s', chalWin:'TRIAL WON!', chalWinS:'a treasure clam appeared', chalFail:'TOO SLOW', chalHud:(g,n,t)=>'TRIAL '+g+' / '+n+' · '+t+' s', leviathanDie:'THE LEVIATHAN FALLS', leviathanDieS:'the deep shudders', unlockOwnD:'The “Dawn” skin is already yours. How deep can you go?', pearlsX2:'PEARLS ×2', pts:'pts', ups:'Depth',
   },
 };
@@ -707,7 +708,7 @@ const RU = {ui:{
   cont:'коснись, чтобы продолжить', m:'м', lv:'УР', comboW:'комбо', flareBtn:'ВСПЫШКА', dashBtn:'РЫВОК', fps:'Частота кадров', quests:'Задания', questsTitle:'ЗАДАНИЯ НА ДЕНЬ', claim:'Забрать', claimed:'Получено',
   streakLine:(n)=>'Вход подряд: день '+n+' · завтра +'+15*Math.min(n+1,7)+' жемчуга', loginT:(n)=>'НАГРАДА ЗА ВХОД · ДЕНЬ '+n, qDoneT:'ЗАДАНИЕ ВЫПОЛНЕНО',
   qName:(id,n)=>({kills:'Победи '+n+' врагов',depth:'Достигни '+n+' м',pearls:'Собери '+n+' жемчужин',boss:'Победи босса'+(n>1?' ×'+n:''),chest:'Открой '+n+' сундуков',flare:'Используй Вспышку '+n+' раз',runs:'Сыграй '+n+' заплывов',combo:'Набери комбо '+n})[id],
-  goldB:'ЗОЛОТОЙ КОСЯК!', goldS:'лови — это жемчуг', chestB:'ЖЕМЧУЖНИЦА!', chestS:'разбей — получишь улучшение', chestOpen:'СОКРОВИЩЕ!', chestOpenS:'жемчуг и бонусное улучшение',
+  newRec:'НОВЫЙ РЕКОРД ГЛУБИНЫ!', goldB:'ЗОЛОТОЙ КОСЯК!', goldS:'лови — это жемчуг', chestB:'ЖЕМЧУЖНИЦА!', chestS:'разбей — получишь улучшение', chestOpen:'СОКРОВИЩЕ!', chestOpenS:'жемчуг и бонусное улучшение',
   chalB:'ИСПЫТАНИЕ', chalS:(n,t)=>'победи '+n+' за '+t+' с', chalWin:'ИСПЫТАНИЕ ПРОЙДЕНО!', chalWinS:'появилась жемчужница', chalFail:'НЕ УСПЕЛ', chalHud:(g,n,t)=>'ИСПЫТАНИЕ '+g+' / '+n+' · '+t+' с', leviathanDie:'ЛЕВИАФАН ПОВЕРЖЕН', leviathanDieS:'бездна содрогается', unlockOwnD:'Облик «Заря» уже твой. Насколько глубоко ты сможешь спуститься?', pearlsX2:'ЖЕМЧУГ ×2', pts:'очков', ups:'Глубина',
 }};
 const RUTUT = [
@@ -1297,7 +1298,7 @@ const SAFE = {t: 0, b: 0, l: 0, r: 0};
 let MAX_PART = CFG.MAX_PART_HI;
 /* ---- Качество графики (QA): 0 — эконом, 1 — среднее, 2 — высокое.
    «Авто» снижает уровень, если скользящее среднее кадра > 22 мс, и осторожно повышает обратно. ---- */
-const QDPR = [1.25, 2, 3]; // эконом / средне / высоко (до родного разрешения экрана — без «мыла»)
+const QDPR = [1, 2, 3]; // эконом / средне / высоко (до родного разрешения экрана — без «мыла»)
 const QAUTO = {lvl: 2, acc: 0, n: 0, bad: 0, good: 0, fail: [0, 0, 0], cool: 0};
 let QL = 2, FRAME_CAP = false;
 function qLevel() { return S.set.quality === 'low' ? 0 : S.set.quality === 'high' ? 2 : QAUTO.lvl; }
@@ -1571,6 +1572,7 @@ function nextZone() {
   const depth = G.zone * 100;
   if (G.zone === 3 && G.noHit) unlock('depth300');
   if (G.zone >= 5) unlock('depth500');
+  if (!G.recShown && G.startBest >= 200 && depth > G.startBest) { G.recShown = true; text(P.x, P.y - 64, uiT('newRec'), '#ffd54f', true, true); sfx.level(); ring(P.x, P.y, 10, 160, 0.6, C.GOLD, 5); }
   S.bestDepth = Math.max(S.bestDepth, depth);
   if (G.zone % 5 === 0) { const n = G.zone / 5; const type = n <= 3 ? ['boss1', 'boss2', 'boss3'][n - 1] : ['boss4', 'boss1', 'boss2', 'boss3'][(n - 4) % 4];
     startBoss(type, Math.floor((G.zone - 5) / 20)); }
@@ -2269,7 +2271,7 @@ function buildScreenCaches() {
   HURTV = mkCanvas(256, 256); g = HURTV.getContext('2d');
   gr = g.createRadialGradient(128, 128, 70, 128, 128, 182);
   gr.addColorStop(0, 'rgba(255,0,40,0)'); gr.addColorStop(1, 'rgba(255,20,60,0.85)'); g.fillStyle = gr; g.fillRect(0, 0, 256, 256);
-  BG_K = QL >= 2 ? 1.5 : QL === 1 ? 2 : 3; // фон с декорациями чётче на высоком качестве
+  BG_K = QL >= 2 ? 1 / Math.min(2, DPR) : QL === 1 ? 1 : 3; // высокое: фон в 2× (чёткие декорации), эконом: в 1/3
   BGS = mkCanvas(W / BG_K, H / BG_K); BGX = BGS.getContext('2d', {alpha: false});
   RAYGRAD = BGX.createLinearGradient(0, 0, 0, H * 0.9);
   RAYGRAD.addColorStop(0, 'rgba(170,240,255,0.13)'); RAYGRAD.addColorStop(1, 'rgba(170,240,255,0)');
@@ -2307,18 +2309,21 @@ function buildDecorSprites() {
       g.shadowColor = '#5fffb0'; g.shadowBlur = 8; g.fillStyle = 'rgba(160,255,210,0.75)'; g.beginPath(); g.arc(Math.cos(a) * L, Math.sin(a) * L, 2.4, 0, TAU); g.fill(); g.shadowBlur = 0; }
     g.fillStyle = '#0a2a22'; g.beginPath(); g.arc(0, 0, 9, 0, TAU); g.fill();
   });
-  // Ветвистый коралл
-  const coral = (key, c1, c2) => makeSprite(key, 44, 8, (g, r) => {
+  // Ветвистый коралл: тёмное основание, светящиеся кончики
+  const coral = (key, base, midc, tip) => makeSprite(key, 44, 8, (g, r) => {
     g.lineCap = 'round';
-    const branch = (x, y, a, len, w, d) => { if (d > 4 || len < 5) return; const x2 = x + Math.cos(a) * len, y2 = y + Math.sin(a) * len;
-      g.strokeStyle = d < 2 ? c1 : c2; g.lineWidth = w; g.beginPath(); g.moveTo(x, y); g.lineTo(x2, y2); g.stroke();
-      branch(x2, y2, a - 0.5, len * 0.72, w * 0.72, d + 1); branch(x2, y2, a + 0.45, len * 0.68, w * 0.72, d + 1);
-      if (d === 4) { g.save(); g.shadowColor = c2; g.shadowBlur = 8; g.fillStyle = 'rgba(255,255,255,0.7)'; g.beginPath(); g.arc(x2, y2, 1.8, 0, TAU); g.fill(); g.restore(); } };
-    for (let i = 0; i < 5; i++) branch(0, 0, i / 5 * TAU, r * 0.34, 6, 0);
-    g.fillStyle = c1; g.beginPath(); g.arc(0, 0, 7, 0, TAU); g.fill();
+    const cols = [base, base, midc, midc, tip];
+    const branch = (x, y, a, len, w, d) => { if (d > 4 || len < 5) return; const bend = (d % 2 ? 0.22 : -0.22), x2 = x + Math.cos(a) * len, y2 = y + Math.sin(a) * len;
+      const mx = (x + x2) / 2 + Math.cos(a + 1.57) * len * bend, my = (y + y2) / 2 + Math.sin(a + 1.57) * len * bend;
+      if (d >= 3) { g.shadowColor = tip; g.shadowBlur = 6; } else g.shadowBlur = 0;
+      g.strokeStyle = cols[d]; g.lineWidth = w; g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(mx, my, x2, y2); g.stroke();
+      branch(x2, y2, a - 0.5, len * 0.72, w * 0.7, d + 1); branch(x2, y2, a + 0.45, len * 0.68, w * 0.7, d + 1);
+      if (d === 4) { g.shadowColor = tip; g.shadowBlur = 10; g.fillStyle = '#ffffff'; g.beginPath(); g.arc(x2, y2, 1.5, 0, TAU); g.fill(); } };
+    for (let i = 0; i < 5; i++) branch(0, 0, i / 5 * TAU + 0.2, r * 0.34, 5.5, 0);
+    g.shadowBlur = 0; g.fillStyle = base; g.beginPath(); g.arc(0, 0, 7, 0, TAU); g.fill();
   });
-  coral('d_coral', '#3a1a3a', '#a04a8a');
-  coral('d_coral2', '#3a2410', '#c07a3a');
+  coral('d_coral', '#2a1438', '#8a3a9a', '#ff8ae0');
+  coral('d_coral2', '#12283e', '#1f7a8a', '#6ff3e0');
   // Валун со светящимся мхом
   makeSprite('d_rock', 48, 8, (g, r) => {
     const pts = []; for (let i = 0; i < 11; i++) { const a = i / 11 * TAU, q = r * (0.72 + 0.22 * Math.sin(i * 2.7) * Math.cos(i * 1.3)); pts.push([Math.cos(a) * q, Math.sin(a) * q]); }
@@ -2452,7 +2457,9 @@ function renderBackground(dt) {
   const TWr = W * 1.6;
   for (let i = 0; i < (hi ? 5 : 3); i++) {
     const R = RAYS[i], x = mod(R[0] * TWr - G.camX * 0.05 * VS, TWr) - W * 0.3, sw = Math.sin(G.t * 0.3 + R[2]) * 40, w = R[1];
-    g.beginPath(); g.moveTo(x - w * 0.3, 0); g.lineTo(x + w * 0.3, 0); g.lineTo(x + w + sw + 60, H * 0.9); g.lineTo(x - w + sw + 60, H * 0.9); g.fill();
+    if (QL >= 2) { g.globalAlpha = rayA * 0.4; for (let q = 0; q < 3; q++) { const ww = w * (1.15 - q * 0.3);
+        g.beginPath(); g.moveTo(x - ww * 0.3, 0); g.lineTo(x + ww * 0.3, 0); g.lineTo(x + ww + sw + 60, H * 0.9); g.lineTo(x - ww + sw + 60, H * 0.9); g.fill(); } }
+    else { g.beginPath(); g.moveTo(x - w * 0.3, 0); g.lineTo(x + w * 0.3, 0); g.lineTo(x + w + sw + 60, H * 0.9); g.lineTo(x - w + sw + 60, H * 0.9); g.fill(); }
   }
   g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
   if (G.state !== 'title' && G.state !== 'intro') renderDecor(g, dt || 0.016);
@@ -2979,7 +2986,7 @@ function startRun() {
     bossClearT: 0, bossesKilled: 0, shake: 0, hitStop: 0, flash: 0, hurtFlash: 0, levelPending: 0, levelDelay: 0, dying: 0, noHit: true,
     synergies: 0, revived: false, camX: 0, camY: 0, spawnAcc: 0, packT: 9, dmgScale: 1, hpScale: 1, pullT: 0, comboMilestone: 0, victory: false,
     endless: false, endingT: 0, adRevived: false, adDoubled: false, adRerolls: 0, lastEarned: 0, evT: 20, chal: null, lastEv: '', chests: 0});
-  G.rerolls = S.shop.reroll || 0; buildDecor(0);
+  G.rerolls = S.shop.reroll || 0; buildDecor(0); G.startBest = S.bestDepth; G.recShown = false;
   Object.assign(P, {x: 0, y: 0, vx: 0, vy: 0, ang: -Math.PI / 2, inv: 1.5, dashT: 0, dashCd: 0, fireT: 0.3, flare: S.shop.flare ? 50 : 0, level: 1, xp: 0,
     xpNext: xpNeed(1), up: {}, novaT: 2, mineT: 1.5, trailT: 0, skin: S.skin, pal: SKINS[S.skin].pal, dead: false, maxHp: 0});
   for (let i = 0; i < 12; i++) { TRAIL[i * 2] = 0; TRAIL[i * 2 + 1] = 0; }
@@ -3331,6 +3338,7 @@ function gameOver() {
   const cell = (v, l) => '<div><b>' + v + '</b><span>' + l + '</span></div>';
   $('overStats').innerHTML = cell(G.zone * 100 + ' ' + uiT('m'), uiT('depth')) + cell(m + ':' + (s < 10 ? '0' : '') + s, uiT('time')) + cell(fmt(G.kills), uiT('foes')) +
     cell(G.maxCombo, uiT('maxCombo')) + cell(P.level, uiT('level')) + cell(pearlHTML('+' + earned), uiT('pearlsL'));
+  $('overQuests').innerHTML = (S.daily.quests || []).map(q => '<div style="display:flex;justify-content:space-between;gap:8px"><span>' + (q.done ? '<b style="color:#ffd54f">✓</b> ' : '• ') + uiT('qName')(q.id, q.need) + '</span><span style="color:' + (q.done ? '#ffd54f' : '#9fdfff') + ';white-space:nowrap">' + (q.done ? (q.got ? uiT('claimed') : uiT('claim') + '!') : fmt(q.p) + ' / ' + fmt(q.need)) + '</span></div>').join('');
   $('btnAdDouble').hidden = !(earned > 0 && !G.adDoubled && Ads.ready());
   show('scrOver');
   // счёт «накручивается»
