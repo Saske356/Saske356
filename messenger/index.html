@@ -1,11 +1,8 @@
 <title>Saske Messenger</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>
-/* ============================================================
-   Secure messenger — "obsidian & teal" identity.
-   Display: Space Grotesk · Body: Inter.
-   Layout: two panes (chat list / conversation), stacked on phone.
-   ============================================================ */
+/* Secure messenger — obsidian & teal. Display: Space Grotesk · Body: Inter.
+   Anonymity-first: only @handles and generated avatars; no real names/photos. */
 :root{
   --bg:#e9edf2; --panel:#ffffff; --panel-2:#f6f8fb;
   --fg:#101820; --muted:#64727f; --faint:#9aa7b3;
@@ -28,8 +25,7 @@
     --border:#1c2a36; --border-2:#16222d;
     --hover:#172330; --active:#143b36;
     --danger:#f87171; --online:#4ade80; --lock:#e0bd57;
-    --shadow:0 1px 2px rgba(0,0,0,.4);
-    --shadow-lg:0 16px 48px rgba(0,0,0,.55);
+    --shadow:0 1px 2px rgba(0,0,0,.4); --shadow-lg:0 16px 48px rgba(0,0,0,.55);
     color-scheme: dark;
   }
 }
@@ -42,16 +38,13 @@
   --border:#1c2a36; --border-2:#16222d;
   --hover:#172330; --active:#143b36;
   --danger:#f87171; --online:#4ade80; --lock:#e0bd57;
-  --shadow:0 1px 2px rgba(0,0,0,.4);
-  --shadow-lg:0 16px 48px rgba(0,0,0,.55);
+  --shadow:0 1px 2px rgba(0,0,0,.4); --shadow-lg:0 16px 48px rgba(0,0,0,.55);
   color-scheme: dark;
 }
 html,body{height:100%}
-body{
-  background:var(--bg); color:var(--fg);
+body{ background:var(--bg); color:var(--fg);
   font-family:'Inter',-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
-  font-size:15px; line-height:1.45; overflow:hidden; -webkit-font-smoothing:antialiased;
-}
+  font-size:15px; line-height:1.45; overflow:hidden; -webkit-font-smoothing:antialiased; }
 *{box-sizing:border-box}
 button{font:inherit; color:inherit; background:none; border:none; cursor:pointer; padding:0}
 input,textarea{font:inherit; color:var(--fg)}
@@ -60,15 +53,12 @@ h1,h2,h3,.disp{font-family:'Space Grotesk','Inter',sans-serif; letter-spacing:-.
 :focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:6px}
 
 .app{display:flex; height:100%; max-width:1320px; margin:0 auto; background:var(--panel); position:relative}
-.app::before{content:""; position:absolute; inset:0 0 auto; height:3px; z-index:3;
-  background:linear-gradient(90deg,var(--accent),var(--accent-2)); opacity:.9}
+.app::before{content:""; position:absolute; inset:0 0 auto; height:3px; z-index:3; background:linear-gradient(90deg,var(--accent),var(--accent-2)); opacity:.9}
 @media (min-width:1321px){ .app{border-left:1px solid var(--border); border-right:1px solid var(--border)} }
 
-/* ---- sidebar ---- */
 .sidebar{width:348px; min-width:288px; display:flex; flex-direction:column; border-right:1px solid var(--border); background:var(--panel)}
 .side-head{display:flex; align-items:center; gap:10px; padding-block:12px 10px;
-  padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(10px, env(safe-area-inset-right, 0px));
-  border-bottom:1px solid var(--border)}
+  padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(10px, env(safe-area-inset-right, 0px)); border-bottom:1px solid var(--border)}
 .brand{flex:1; min-width:0}
 .brand .t{font-weight:700; font-size:17px; display:flex; align-items:center; gap:7px}
 .brand .t .mark{width:22px;height:22px;flex:none}
@@ -78,17 +68,11 @@ h1,h2,h3,.disp{font-family:'Space Grotesk','Inter',sans-serif; letter-spacing:-.
 .icon-btn:hover{background:var(--hover); color:var(--fg)}
 .btn-new{background:linear-gradient(135deg,var(--accent),var(--accent-2));color:var(--accent-fg); font-size:22px; line-height:1; box-shadow:var(--shadow)}
 .btn-new:hover{filter:brightness(1.06)}
-.chat-list{flex:1; overflow-y:auto; padding-block:6px;
-  padding-left:max(8px, env(safe-area-inset-left, 0px)); padding-right:max(8px, env(safe-area-inset-right, 0px))}
+.chat-list{flex:1; overflow-y:auto; padding-block:6px; padding-left:max(8px, env(safe-area-inset-left, 0px)); padding-right:max(8px, env(safe-area-inset-right, 0px))}
 .chat-item{display:flex; gap:12px; align-items:center; width:100%; text-align:left; padding:9px 10px; border-radius:14px; transition:background .13s}
-.chat-item:hover{background:var(--hover)}
-.chat-item.active{background:var(--active)}
-.ava{width:48px;height:48px;border-radius:50%;flex:none;object-fit:cover;
-  display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:18px;
-  background:linear-gradient(135deg,var(--accent),var(--accent-2)); position:relative; overflow:visible}
-.ava img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block}
-.ava .dot{position:absolute; right:-1px; bottom:-1px; width:13px;height:13px;border-radius:50%;
-  background:var(--online); border:2.5px solid var(--panel); box-shadow:0 0 0 0 color-mix(in srgb,var(--online) 60%,transparent); animation:pulse 2.4s infinite}
+.chat-item:hover{background:var(--hover)} .chat-item.active{background:var(--active)}
+.ava{width:48px;height:48px;border-radius:50%;flex:none; display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:18px; background:var(--accent); position:relative}
+.ava .dot{position:absolute; right:-1px; bottom:-1px; width:13px;height:13px;border-radius:50%; background:var(--online); border:2.5px solid var(--panel); animation:pulse 2.4s infinite}
 @keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--online) 55%,transparent)}70%{box-shadow:0 0 0 6px transparent}100%{box-shadow:0 0 0 0 transparent}}
 @media (prefers-reduced-motion: reduce){.ava .dot{animation:none}}
 .ci-body{flex:1; min-width:0}
@@ -100,11 +84,8 @@ h1,h2,h3,.disp{font-family:'Space Grotesk','Inter',sans-serif; letter-spacing:-.
 .ci-unread{min-width:9px;height:9px;border-radius:999px;background:var(--accent);flex:none}
 .list-note{padding:22px 18px; color:var(--muted); font-size:13.5px; text-align:center; line-height:1.6}
 
-/* ---- chat pane ---- */
 .chatpane{flex:1; min-width:0; display:flex; flex-direction:column; background:var(--panel-2); position:relative}
-.chat-head{display:flex; align-items:center; gap:11px; padding-block:9px;
-  padding-left:max(10px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px));
-  background:var(--panel); border-bottom:1px solid var(--border); min-height:60px}
+.chat-head{display:flex; align-items:center; gap:11px; padding-block:9px; padding-left:max(10px, env(safe-area-inset-left, 0px)); padding-right:max(12px, env(safe-area-inset-right, 0px)); background:var(--panel); border-bottom:1px solid var(--border); min-height:60px}
 .btn-back{display:none; width:38px;height:38px; font-size:20px; color:var(--muted); flex:none; border-radius:12px}
 .btn-back:hover{background:var(--hover)}
 .ch-ava{width:40px;height:40px;font-size:16px}
@@ -113,17 +94,13 @@ h1,h2,h3,.disp{font-family:'Space Grotesk','Inter',sans-serif; letter-spacing:-.
 .ch-status{font-size:12.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .ch-status.online{color:var(--online)} .ch-status.typing{color:var(--accent)}
 .ch-lock{font-size:12px; color:var(--muted); display:flex; align-items:center; gap:4px; flex:none; background:var(--panel-2); border:1px solid var(--border); padding:4px 9px; border-radius:999px}
-.msgs{flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:3px; padding-block:14px;
-  padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px))}
-.day-sep{align-self:center; margin:12px 0 7px; font-size:12px; color:var(--muted); font-weight:600;
-  background:var(--panel); border:1px solid var(--border); padding:4px 13px; border-radius:999px; box-shadow:var(--shadow)}
-.btn-earlier{align-self:center; margin:6px 0 10px; font-size:13px; color:var(--accent); font-weight:600;
-  background:var(--panel); border:1px solid var(--border); padding:7px 16px; border-radius:999px}
+.msgs{flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:3px; padding-block:14px; padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px))}
+.day-sep{align-self:center; margin:12px 0 7px; font-size:12px; color:var(--muted); font-weight:600; background:var(--panel); border:1px solid var(--border); padding:4px 13px; border-radius:999px; box-shadow:var(--shadow)}
+.btn-earlier{align-self:center; margin:6px 0 10px; font-size:13px; color:var(--accent); font-weight:600; background:var(--panel); border:1px solid var(--border); padding:7px 16px; border-radius:999px}
 .row{display:flex; gap:8px; align-items:flex-end; max-width:min(74%, 580px); animation:rise .18s ease}
 @keyframes rise{from{opacity:0; transform:translateY(4px)}to{opacity:1; transform:none}}
 @media (prefers-reduced-motion: reduce){.row{animation:none}}
-.row.mine{align-self:flex-end; flex-direction:row-reverse}
-.row.theirs{align-self:flex-start}
+.row.mine{align-self:flex-end; flex-direction:row-reverse} .row.theirs{align-self:flex-start}
 .row .m-ava{width:30px;height:30px;font-size:12px;flex:none;margin-bottom:2px}
 .row .m-ava.ghost{visibility:hidden}
 .bubble{position:relative; padding:8px 13px 7px; border-radius:16px; min-width:0; box-shadow:var(--shadow)}
@@ -136,39 +113,29 @@ h1,h2,h3,.disp{font-family:'Space Grotesk','Inter',sans-serif; letter-spacing:-.
 .row.mine .bubble{cursor:pointer}
 .loc-card{display:flex; flex-direction:column; gap:3px; min-width:170px}
 .loc-card .pin{font-size:15px; font-weight:700; display:flex; gap:6px; align-items:center}
-.loc-card a{color:var(--accent); font-size:13px; font-weight:600; text-decoration:none}
-.loc-card a:hover{text-decoration:underline}
+.loc-card a{color:var(--accent); font-size:13px; font-weight:600; text-decoration:none} .loc-card a:hover{text-decoration:underline}
 .msg-actions{align-self:flex-end; margin:3px 4px 7px}
 .msg-actions button{color:var(--danger); font-size:13px; font-weight:600; background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:5px 13px}
-.composer{display:flex; gap:8px; align-items:flex-end; padding-block:9px;
-  padding-left:max(10px, env(safe-area-inset-left, 0px)); padding-right:max(10px, env(safe-area-inset-right, 0px));
-  background:var(--panel); border-top:1px solid var(--border)}
+.composer{display:flex; gap:8px; align-items:flex-end; padding-block:9px; padding-left:max(10px, env(safe-area-inset-left, 0px)); padding-right:max(10px, env(safe-area-inset-right, 0px)); background:var(--panel); border-top:1px solid var(--border)}
 .composer .pill{flex:1; min-width:0; display:flex; align-items:flex-end; gap:4px; background:var(--panel-2); border:1px solid var(--border); border-radius:22px; padding:2px 6px 2px 4px}
 .composer textarea{flex:1; min-width:0; resize:none; border:none; outline:none; background:transparent; max-height:150px; padding:9px 6px; line-height:1.4}
 .btn-attach{width:38px;height:38px;border-radius:50%;color:var(--muted);flex:none;font-size:19px}
 .btn-attach:hover{background:var(--hover); color:var(--accent)}
 .btn-send{width:42px;height:42px;border-radius:50%; background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:var(--accent-fg); flex:none; display:flex; align-items:center; justify-content:center; box-shadow:var(--shadow); transition:transform .12s}
-.btn-send:hover:not(:disabled){transform:scale(1.05)}
-.btn-send:disabled{opacity:.4; cursor:default}
+.btn-send:hover:not(:disabled){transform:scale(1.05)} .btn-send:disabled{opacity:.4; cursor:default}
 .btn-send svg{width:20px;height:20px;fill:currentColor; margin-left:2px}
 .note-bar{padding:11px 16px; text-align:center; color:var(--muted); font-size:13.5px; background:var(--panel); border-top:1px solid var(--border)}
-
-.placeholder{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; color:var(--muted); text-align:center; padding-block:24px;
-  padding-left:max(24px, env(safe-area-inset-left, 0px)); padding-right:max(24px, env(safe-area-inset-right, 0px))}
-.placeholder .big{width:76px;height:76px;border-radius:22px;display:flex;align-items:center;justify-content:center;font-size:36px;
-  background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 22%,transparent),color-mix(in srgb,var(--accent-2) 18%,transparent)); border:1px solid var(--border)}
+.placeholder{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; color:var(--muted); text-align:center; padding-block:24px; padding-left:max(24px, env(safe-area-inset-left, 0px)); padding-right:max(24px, env(safe-area-inset-right, 0px))}
+.placeholder .big{width:76px;height:76px;border-radius:22px;display:flex;align-items:center;justify-content:center;font-size:36px; background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 22%,transparent),color-mix(in srgb,var(--accent-2) 18%,transparent)); border:1px solid var(--border)}
 .placeholder h2{margin:0; font-size:19px; color:var(--fg)}
 .placeholder p{margin:0; max-width:38ch; font-size:14px; line-height:1.6}
 .conn-note{position:absolute; top:70px; left:50%; transform:translateX(-50%); z-index:5; background:var(--panel); border:1px solid var(--border); color:var(--muted); font-size:13px; padding:7px 15px; border-radius:999px; box-shadow:var(--shadow-lg)}
 
-/* ---- modal ---- */
-.overlay{position:fixed; inset:0; background:rgba(5,10,15,.55); backdrop-filter:blur(3px); z-index:20; display:flex; align-items:center; justify-content:center;
-  padding-block:20px; padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px))}
+.overlay{position:fixed; inset:0; background:rgba(5,10,15,.55); backdrop-filter:blur(3px); z-index:20; display:flex; align-items:center; justify-content:center; padding-block:20px; padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px))}
 .modal{background:var(--panel); border-radius:18px; width:452px; max-width:100%; max-height:min(86vh,640px); display:flex; flex-direction:column; box-shadow:var(--shadow-lg); border:1px solid var(--border)}
 .modal-head{display:flex; align-items:center; gap:8px; padding:16px 18px 10px}
 .modal-head h2{margin:0; font-size:18px; flex:1}
-.btn-close{width:34px;height:34px;color:var(--muted);font-size:20px; border-radius:10px}
-.btn-close:hover{background:var(--hover)}
+.btn-close{width:34px;height:34px;color:var(--muted);font-size:20px; border-radius:10px} .btn-close:hover{background:var(--hover)}
 .tabs{display:flex; gap:5px; padding:0 18px 12px}
 .tab{padding:7px 15px; border-radius:999px; font-size:14px; font-weight:600; color:var(--muted); background:var(--hover)}
 .tab.on{background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:var(--accent-fg)}
@@ -178,15 +145,9 @@ h1,h2,h3,.disp{font-family:'Space Grotesk','Inter',sans-serif; letter-spacing:-.
 .chips{display:flex; flex-wrap:wrap; gap:6px}
 .chip{display:flex; align-items:center; gap:6px; background:var(--active); border-radius:999px; padding:5px 11px; font-size:13.5px}
 .chip button{color:var(--muted); font-size:15px}
-.ppl{display:flex; flex-direction:column}
-.person{display:flex; align-items:center; gap:11px; padding:8px 6px; border-radius:12px; width:100%; text-align:left}
-.person:hover{background:var(--hover)}
-.person .ava{width:40px;height:40px;font-size:15px}
-.person .p-name{font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:var(--accent-fg); border-radius:12px; padding:11px 16px; font-weight:700; text-align:center; box-shadow:var(--shadow)}
 .btn-primary:disabled{opacity:.45; cursor:default; box-shadow:none}
-.btn-outline{border:1px solid var(--border); border-radius:12px; padding:10px 15px; font-weight:600; text-align:center; background:var(--panel-2)}
-.btn-outline:hover{background:var(--hover)} .btn-outline:disabled{opacity:.5; cursor:default}
+.btn-outline{border:1px solid var(--border); border-radius:12px; padding:10px 15px; font-weight:600; text-align:center; background:var(--panel-2)} .btn-outline:hover{background:var(--hover)} .btn-outline:disabled{opacity:.5; cursor:default}
 .hint{font-size:12.5px; color:var(--muted); line-height:1.55}
 .field-label{font-size:12.5px; font-weight:600; color:var(--muted); margin-bottom:-6px}
 .seg{display:flex; gap:4px; background:var(--panel-2); border:1px solid var(--border); border-radius:12px; padding:3px}
@@ -199,9 +160,7 @@ h1,h2,h3,.disp{font-family:'Space Grotesk','Inter',sans-serif; letter-spacing:-.
 .exp-row .ava{width:36px;height:36px;font-size:14px}
 .exp-row .n{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px}
 .exp-row .btn-outline{padding:7px 13px; font-size:13px; flex:none}
-.coord-grid{display:flex; gap:8px}
-.coord-grid>div{flex:1}
-
+.coord-grid{display:flex; gap:8px} .coord-grid>div{flex:1}
 .toast{position:fixed; bottom:calc(22px + env(safe-area-inset-bottom,0px)); left:50%; transform:translateX(-50%); background:var(--fg); color:var(--panel); padding:10px 18px; border-radius:12px; font-size:14px; z-index:40; max-width:90vw; box-shadow:var(--shadow-lg)}
 
 @media (max-width:720px){
@@ -221,42 +180,33 @@ h1,h2,h3,.disp{font-family:'Space Grotesk','Inter',sans-serif; letter-spacing:-.
       <span class="avatar-ring"><span class="ava me-ava" id="meAva" style="width:36px;height:36px;font-size:14px"></span></span>
       <div class="brand">
         <div class="t"><svg class="mark" viewBox="0 0 24 24" fill="none"><path d="M12 2l7 3v6c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V5l7-3z" fill="var(--accent)" opacity=".18"/><path d="M12 2l7 3v6c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V5l7-3z" stroke="var(--accent)" stroke-width="1.6"/><path d="M9 12l2 2 4-4" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Saske</div>
-        <div class="s">🔒 сквозное шифрование</div>
+        <div class="s" id="meHandle">🔒 анонимный мессенджер</div>
       </div>
       <button class="icon-btn" id="btnSettings" title="Настройки" aria-label="Настройки">⚙️</button>
       <button class="icon-btn" id="btnAdmin" title="Админ-панель" aria-label="Админ-панель" hidden>🛡️</button>
       <button class="icon-btn btn-new" id="btnNew" title="Новый чат" aria-label="Новый чат" hidden>+</button>
     </div>
-    <div class="chat-list" id="chatList">
-      <div class="list-note" id="listNote">Настраиваем шифрование…</div>
-    </div>
+    <div class="chat-list" id="chatList"><div class="list-note" id="listNote">Настраиваем шифрование…</div></div>
   </div>
 
   <div class="chatpane" id="chatPane">
     <div class="placeholder" id="welcome">
       <div class="big">🔐</div>
       <h2 id="wTitle">Saske Messenger</h2>
-      <p id="wText">Выберите чат слева или создайте новый. Все сообщения и геопозиции шифруются прямо на вашем устройстве.</p>
+      <p id="wText">Задайте свой @ник в настройках, затем добавляйте людей по их @нику. Реальные имена в приложении не показываются, сообщения и геопозиция шифруются на устройстве.</p>
     </div>
-
     <div class="chat-head" id="chatHead" hidden>
       <button class="btn-back" id="btnBack" aria-label="Назад">←</button>
       <span class="ava ch-ava" id="chAva"></span>
-      <div class="ch-body">
-        <div class="ch-name" id="chName"></div>
-        <div class="ch-status" id="chStatus"></div>
-      </div>
-      <div class="ch-lock" title="Сообщения зашифрованы">🔒 шифр</div>
+      <div class="ch-body"><div class="ch-name" id="chName"></div><div class="ch-status" id="chStatus"></div></div>
+      <button class="icon-btn" id="btnTtl" title="Исчезающие сообщения" aria-label="Исчезающие сообщения" style="width:34px;height:34px;font-size:16px">🕓</button>
+      <div class="ch-lock" id="chLock" title="Сообщения зашифрованы">🔒</div>
     </div>
     <div class="msgs" id="msgs" hidden></div>
     <div class="composer" id="composer" hidden>
       <button class="btn-attach" id="btnLoc" title="Отправить геопозицию" aria-label="Геопозиция">📍</button>
-      <div class="pill">
-        <textarea id="input" rows="1" placeholder="Сообщение…" aria-label="Текст сообщения"></textarea>
-      </div>
-      <button class="btn-send" id="btnSend" aria-label="Отправить" disabled>
-        <svg viewBox="0 0 24 24"><path d="M2.5 21.5l19-9.5-19-9.5v7.6l13 1.9-13 1.9z"/></svg>
-      </button>
+      <div class="pill"><textarea id="input" rows="1" placeholder="Сообщение…" aria-label="Текст сообщения"></textarea></div>
+      <button class="btn-send" id="btnSend" aria-label="Отправить" disabled><svg viewBox="0 0 24 24"><path d="M2.5 21.5l19-9.5-19-9.5v7.6l13 1.9-13 1.9z"/></svg></button>
     </div>
     <div class="note-bar" id="noteBar" hidden></div>
     <div class="conn-note" id="connNote" hidden>Подключаемся… данные могут быть неактуальны</div>
@@ -267,20 +217,19 @@ h1,h2,h3,.disp{font-family:'Space Grotesk','Inter',sans-serif; letter-spacing:-.
 <div class="overlay" id="overlay" hidden>
   <div class="modal">
     <div class="modal-head"><h2>Новый чат</h2><button class="btn-close" id="btnClose" aria-label="Закрыть">✕</button></div>
-    <div class="tabs">
-      <button class="tab on" id="tabDm">Личный чат</button>
-      <button class="tab" id="tabGroup">Группа</button>
-    </div>
+    <div class="tabs"><button class="tab on" id="tabDm">Личный чат</button><button class="tab" id="tabGroup">Группа</button></div>
     <div class="modal-body" id="dmBody">
-      <input type="text" id="dmSearch" placeholder="Поиск людей по имени…" autocomplete="off">
-      <div class="ppl" id="dmResults"></div>
-      <div class="hint">Найдите человека и нажмите на него — откроется зашифрованный личный чат.</div>
+      <div class="field-label">@ник собеседника</div>
+      <input type="text" id="dmHandle" placeholder="@ник" autocomplete="off" maxlength="22">
+      <button class="btn-primary" id="btnStartDm" disabled>Начать зашифрованный чат</button>
+      <div class="hint">Узнайте @ник человека любым способом и введите его. Реальные имена в приложении не показываются.</div>
     </div>
     <div class="modal-body" id="groupBody" hidden>
-      <input type="text" id="groupName" placeholder="Название группы" autocomplete="off" maxlength="80">
+      <div class="field-label">Название группы</div>
+      <input type="text" id="groupName" placeholder="Название" autocomplete="off" maxlength="80">
+      <div class="field-label">Участники по @нику</div>
+      <input type="text" id="groupHandle" placeholder="@ник — Enter, чтобы добавить" autocomplete="off" maxlength="22">
       <div class="chips" id="groupChips"></div>
-      <input type="text" id="groupSearch" placeholder="Добавить участников…" autocomplete="off">
-      <div class="ppl" id="groupResults"></div>
       <button class="btn-primary" id="btnCreateGroup" disabled>Создать группу</button>
     </div>
   </div>
@@ -291,17 +240,25 @@ h1,h2,h3,.disp{font-family:'Space Grotesk','Inter',sans-serif; letter-spacing:-.
   <div class="modal">
     <div class="modal-head"><h2>Настройки</h2><button class="btn-close" id="btnSetClose" aria-label="Закрыть">✕</button></div>
     <div class="modal-body">
-      <div class="field-label">Псевдоним (анонимность)</div>
-      <input type="text" id="handleInput" placeholder="Например: Ночной странник" autocomplete="off" maxlength="40">
-      <div class="hint">Этот псевдоним увидят собеседники вместо вашего настоящего имени. Email не показывается никому. Оставьте пустым — будет настоящее имя.</div>
-      <button class="btn-primary" id="btnSaveHandle">Сохранить псевдоним</button>
+      <div class="admin-warn" id="handleWarn" hidden>Задайте @ник — без него вас нельзя добавить в чат.</div>
+      <div class="field-label">Ваш @ник (уникальный, 3–20 символов: a–z, 0–9, _)</div>
+      <input type="text" id="handleInput" placeholder="nightwalker" autocomplete="off" maxlength="20">
+      <button class="btn-primary" id="btnSaveHandle">Сохранить @ник</button>
+      <div class="hint">Этот @ник увидят собеседники вместо вашего имени. Настоящее имя, фото и email в приложении не используются.</div>
       <div class="field-label" style="margin-top:4px">Тема</div>
-      <div class="seg" id="themeSeg">
-        <button data-th="system" class="on">Системная</button>
-        <button data-th="light">Светлая</button>
-        <button data-th="dark">Тёмная</button>
-      </div>
-      <div class="hint" style="margin-top:4px">🔒 Содержимое сообщений и координаты шифруются на устройстве. Метаданные (кто с кем и когда) видны участникам. Полная анонимность от платформы невозможна.</div>
+      <div class="seg" id="themeSeg"><button data-th="system" class="on">Системная</button><button data-th="light">Светлая</button><button data-th="dark">Тёмная</button></div>
+      <div class="hint" style="margin-top:4px">🔒 Содержимое и координаты шифруются на устройстве. Важно: владелец (escrow) и платформа технически могут читать — это анонимность между пользователями, не от владельца.</div>
+    </div>
+  </div>
+</div>
+
+<!-- Disappearing -->
+<div class="overlay" id="ttlOverlay" hidden>
+  <div class="modal">
+    <div class="modal-head"><h2>Исчезающие сообщения</h2><button class="btn-close" id="btnTtlClose" aria-label="Закрыть">✕</button></div>
+    <div class="modal-body">
+      <div class="hint">После выбранного срока сообщения удаляются у всех участников — шифртекст стирается из базы.</div>
+      <div class="seg" id="ttlSeg"><button data-ttl="0" class="on">Выкл</button><button data-ttl="3600">1 час</button><button data-ttl="86400">24 ч</button><button data-ttl="604800">7 дней</button></div>
     </div>
   </div>
 </div>
@@ -312,14 +269,11 @@ h1,h2,h3,.disp{font-family:'Space Grotesk','Inter',sans-serif; letter-spacing:-.
     <div class="modal-head"><h2>Отправить геопозицию</h2><button class="btn-close" id="btnLocClose" aria-label="Закрыть">✕</button></div>
     <div class="modal-body">
       <div class="hint" id="locStatus">Пробуем определить местоположение…</div>
-      <div class="coord-grid">
-        <div><div class="field-label">Широта</div><input type="number" id="locLat" step="any" placeholder="55.7558"></div>
-        <div><div class="field-label">Долгота</div><input type="number" id="locLng" step="any" placeholder="37.6173"></div>
-      </div>
+      <div class="coord-grid"><div><div class="field-label">Широта</div><input type="number" id="locLat" step="any" placeholder="55.7558"></div><div><div class="field-label">Долгота</div><input type="number" id="locLng" step="any" placeholder="37.6173"></div></div>
       <input type="text" id="locLabel" placeholder="Подпись (необязательно)" autocomplete="off" maxlength="80">
       <button class="btn-outline" id="btnDetect">Определить автоматически</button>
       <button class="btn-primary" id="btnSendLoc" disabled>🔒 Отправить зашифрованно</button>
-      <div class="hint">Координаты шифруются внутри сообщения — в базе они не хранятся открыто.</div>
+      <div class="hint">Координаты шифруются внутри сообщения — в базе их нет открытым текстом.</div>
     </div>
   </div>
 </div>
@@ -330,17 +284,10 @@ h1,h2,h3,.disp{font-family:'Space Grotesk','Inter',sans-serif; letter-spacing:-.
     <div class="modal-head"><h2>Админ-панель</h2><button class="btn-close" id="btnAdminClose" aria-label="Закрыть">✕</button></div>
     <div class="modal-body">
       <div class="admin-warn" id="adminWarn" hidden></div>
-      <div class="admin-box">
-        <h3>Выдача переписки по запросу</h3>
-        <p class="hint">Вы — владелец и держите escrow-ключ. Здесь можно расшифровать любой чат и сохранить переписку в файл. Используйте только для законных запросов.</p>
-        <div id="exportList"><div class="hint">Загрузка чатов…</div></div>
-      </div>
-      <div class="admin-box">
-        <h3>Резервная копия escrow-ключа</h3>
-        <p class="hint">Без этого ключа расшифровать переписку невозможно. Файл даёт полный доступ к содержимому всех чатов — храните его как пароль.</p>
+      <div class="admin-box"><h3>Выдача переписки по запросу</h3><p class="hint">Вы — владелец и держите escrow-ключ. Здесь можно расшифровать любой чат и сохранить переписку в файл.</p><div id="exportList"><div class="hint">Загрузка чатов…</div></div></div>
+      <div class="admin-box"><h3>Резервная копия escrow-ключа</h3><p class="hint">Без этого ключа расшифровать переписку невозможно. Файл даёт полный доступ — храните как пароль.</p>
         <button class="btn-outline" id="btnBackupKey">Сохранить резервную копию ключа</button>
-        <label class="btn-outline" style="cursor:pointer">Восстановить ключ из файла<input type="file" id="restoreKey" accept="application/json,.json" hidden></label>
-      </div>
+        <label class="btn-outline" style="cursor:pointer">Восстановить ключ из файла<input type="file" id="restoreKey" accept="application/json,.json" hidden></label></div>
     </div>
   </div>
 </div>
@@ -349,37 +296,28 @@ h1,h2,h3,.disp{font-family:'Space Grotesk','Inter',sans-serif; letter-spacing:-.
 "use strict";
 (function(){
   const $ = id => document.getElementById(id);
-  const app=$("app"), chatList=$("chatList"), listNote=$("listNote"),
-        welcome=$("welcome"), chatHead=$("chatHead"), msgsEl=$("msgs"),
-        composer=$("composer"), input=$("input"), btnSend=$("btnSend"),
+  const app=$("app"), chatList=$("chatList"), welcome=$("welcome"), chatHead=$("chatHead"),
+        msgsEl=$("msgs"), composer=$("composer"), input=$("input"), btnSend=$("btnSend"),
         noteBar=$("noteBar"), connNote=$("connNote");
-
   const MAXLEN=8000;
   let db=null, user=null, room=null, myId=null, downloads=null;
   let readOnly=false, isOwner=false;
-  let myPriv=null, myPub=null, escrowPubKey=null, escrowPriv=null, encReady=false;
-  const pubCache=new Map(), chatKeys=new Map(), chats=new Map();
-  const handles=new Map();            // uid -> nickname
+  let myPriv=null, myPub=null, escrowPubKey=null, escrowPriv=null, encReady=false, myHandle="";
+  const pubCache=new Map(), chatKeys=new Map(), chats=new Map(), handles=new Map();
   let activeId=null, unsubChats=[], unsubBlocks=null, unsubHandles=null;
   let blocks=new Map(), blockLimit=4, selectedMsgKey=null;
-  let onlineIds=new Set(), typingByChat=new Map();
-  let privBase="";
+  let onlineIds=new Set(), typingByChat=new Map(), privBase="", prunedOnce=new Set();
   let lastRead={}; try{ lastRead=JSON.parse(localStorage.getItem("sm_lastRead")||"{}")||{}; }catch(e){}
   function saveLastRead(){ try{ localStorage.setItem("sm_lastRead", JSON.stringify(lastRead)); }catch(e){} }
 
   /* theme */
-  (function initTheme(){ let t=null; try{ t=localStorage.getItem("sm_theme"); }catch(e){}
-    if(t==="light"||t==="dark") document.documentElement.setAttribute("data-theme",t); })();
-  function setTheme(t){
-    if(t==="system"){ document.documentElement.removeAttribute("data-theme"); try{ localStorage.removeItem("sm_theme"); }catch(e){} }
-    else { document.documentElement.setAttribute("data-theme",t); try{ localStorage.setItem("sm_theme",t); }catch(e){} }
-    for(const b of $("themeSeg").children) b.classList.toggle("on", b.dataset.th===t || (t==="system"&&b.dataset.th==="system"));
-  }
+  (function initTheme(){ let t=null; try{ t=localStorage.getItem("sm_theme"); }catch(e){} if(t==="light"||t==="dark") document.documentElement.setAttribute("data-theme",t); })();
+  function setTheme(t){ if(t==="system"){ document.documentElement.removeAttribute("data-theme"); try{ localStorage.removeItem("sm_theme"); }catch(e){} } else { document.documentElement.setAttribute("data-theme",t); try{ localStorage.setItem("sm_theme",t); }catch(e){} }
+    for(const b of $("themeSeg").children) b.classList.toggle("on", b.dataset.th===t); }
   $("themeSeg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(b) setTheme(b.dataset.th); });
-  (function reflectTheme(){ let t="system"; try{ t=localStorage.getItem("sm_theme")||"system"; }catch(e){}
-    for(const b of $("themeSeg").children) b.classList.toggle("on", b.dataset.th===t); })();
+  (function reflect(){ let t="system"; try{ t=localStorage.getItem("sm_theme")||"system"; }catch(e){} for(const b of $("themeSeg").children) b.classList.toggle("on", b.dataset.th===t); })();
 
-  /* ---------- crypto ---------- */
+  /* crypto */
   const enc=new TextEncoder(), dec=new TextDecoder();
   const subtle=(window.crypto&&window.crypto.subtle)||null;
   function b64(buf){ let s=""; const a=new Uint8Array(buf); for(let i=0;i<a.length;i++) s+=String.fromCharCode(a[i]); return btoa(s); }
@@ -392,18 +330,17 @@ h1,h2,h3,.disp{font-family:'Space Grotesk','Inter',sans-serif; letter-spacing:-.
   function impAes(raw){ return subtle.importKey("raw", raw, {name:"AES-GCM"}, false, ["encrypt","decrypt"]); }
   async function wrapTo(raw, pub){ return b64(await subtle.encrypt({name:"RSA-OAEP"}, pub, raw)); }
   async function unwrapWith(s, priv){ return new Uint8Array(await subtle.decrypt({name:"RSA-OAEP"}, priv, unb64(s))); }
-  async function aesEnc(text, key){ const iv=crypto.getRandomValues(new Uint8Array(12));
-    const ct=new Uint8Array(await subtle.encrypt({name:"AES-GCM", iv}, key, enc.encode(text)));
-    const out=new Uint8Array(12+ct.length); out.set(iv,0); out.set(ct,12); return b64(out); }
+  async function aesEnc(text, key){ const iv=crypto.getRandomValues(new Uint8Array(12)); const ct=new Uint8Array(await subtle.encrypt({name:"AES-GCM", iv}, key, enc.encode(text))); const out=new Uint8Array(12+ct.length); out.set(iv,0); out.set(ct,12); return b64(out); }
   async function aesDec(s, key){ const d=unb64(s); return dec.decode(await subtle.decrypt({name:"AES-GCM", iv:d.slice(0,12)}, key, d.slice(12))); }
   async function safeDec(s,key,fb){ try{ return await aesDec(s,key); }catch(e){ return fb; } }
 
-  /* ---------- helpers ---------- */
+  /* helpers */
   function toast(t){ const el=document.createElement("div"); el.className="toast"; el.textContent=t; document.body.appendChild(el); setTimeout(()=>el.remove(),3800); }
   function msgKey(){ return Date.now().toString(36).padStart(9,"0")+"_"+Math.random().toString(36).slice(2,6); }
   function blockId(seq){ return "b"+String(seq).padStart(6,"0"); }
-  function hash(s){ let x=5381; for(let i=0;i<s.length;i++){ x=((x*33)^s.charCodeAt(i))>>>0; } return x.toString(36); }
-  function dmIdFor(a,b){ const p=[a,b].sort(); return "dm_"+hash(p[0])+"_"+hash(p[1]); }
+  function hash(s){ let x=5381; for(let i=0;i<s.length;i++){ x=((x*33)^s.charCodeAt(i))>>>0; } return x>>>0; }
+  function dmIdFor(a,b){ const p=[a,b].sort(); return "dm_"+hash(p[0]).toString(36)+"_"+hash(p[1]).toString(36); }
+  function colorFor(uid){ const h=hash(uid||"x")%360; return "hsl("+h+" 50% 45%)"; }
   function fmtTime(ts){ const d=new Date(ts); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }
   function fmtListTime(ts){ const d=new Date(ts), now=new Date(); if(d.toDateString()===now.toDateString()) return fmtTime(ts);
     const days=["вс","пн","вт","ср","чт","пт","сб"]; if(now-d<6*864e5) return days[d.getDay()];
@@ -412,66 +349,56 @@ h1,h2,h3,.disp{font-family:'Space Grotesk','Inter',sans-serif; letter-spacing:-.
     const y=new Date(now-864e5); if(d.toDateString()===y.toDateString()) return "Вчера";
     const m=["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
     return d.getDate()+" "+m[d.getMonth()]+(d.getFullYear()!==now.getFullYear()?" "+d.getFullYear():""); }
-  function fmtStamp(ts){ const d=new Date(ts), p=n=>String(n).padStart(2,"0");
-    return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes()); }
-  function avaEl(profile,label,online){ const s=document.createElement("span"); s.className="ava";
-    if(profile&&profile.avatarUrl){ const img=document.createElement("img"); img.alt=""; img.src=profile.avatarUrl; s.appendChild(img); }
-    else { s.textContent=(label||"?").trim().charAt(0).toUpperCase()||"?"; if(profile&&profile.color) s.style.background=profile.color; }
+  function fmtStamp(ts){ const d=new Date(ts), p=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes()); }
+  function avaFor(uid,label,online){ const s=document.createElement("span"); s.className="ava"; s.style.background=colorFor(uid);
+    s.textContent=String(label||"?").replace(/^@/,"").trim().charAt(0).toUpperCase()||"?";
     if(online){ const d=document.createElement("span"); d.className="dot"; s.appendChild(d); } return s; }
-  async function resolveProfiles(ids){ if(!user||!ids.length) return {}; try{ return await user.profiles(ids); }catch(e){ return {}; } }
-  // anonymity: prefer a self-set nickname; never expose real name when user chose a handle
-  function displayName(ps,id){ if(handles.has(id)) return handles.get(id); return (ps&&ps[id]&&ps[id].name)||"Аноним"; }
+  // anonymity: identity shown is ONLY the self-chosen @handle; no real names anywhere.
+  function displayName(uid){ const h=handles.get(uid); return h?("@"+h):"Аноним"; }
   function otherMember(c){ return c.kind==="dm"?((c.members||[]).find(m=>m!==myId)||null):null; }
+  const TTL={0:"выкл",3600:"1 час",86400:"24 ч",604800:"7 дней"};
+  const TTLS={3600:"1ч",86400:"24ч",604800:"7д"};
+  function cutoffFor(c){ return c&&c.ttl? Date.now()-c.ttl*1000 : 0; }
 
-  /* ---------- key management ---------- */
+  /* keys */
   async function loadPub(uid){ if(pubCache.has(uid)) return pubCache.get(uid);
-    try{ const d=await db.doc("pubkeys/"+uid).get(); if(d.exists&&d.data().jwk){ const k=await impPub(d.data().jwk); pubCache.set(uid,k); return k; } }catch(e){}
-    pubCache.set(uid,null); return null; }
-  async function getChatKey(c){ if(chatKeys.has(c._id)) return chatKeys.get(c._id);
-    const w=c.wraps&&c.wraps[myId]; if(!w||!myPriv) return null;
+    try{ const d=await db.doc("pubkeys/"+uid).get(); if(d.exists&&d.data().jwk){ const k=await impPub(d.data().jwk); pubCache.set(uid,k); return k; } }catch(e){} pubCache.set(uid,null); return null; }
+  async function getChatKey(c){ if(chatKeys.has(c._id)) return chatKeys.get(c._id); const w=c.wraps&&c.wraps[myId]; if(!w||!myPriv) return null;
     try{ const raw=await unwrapWith(w, myPriv); const key=await impAes(raw); const o={key,raw}; chatKeys.set(c._id,o); return o; }catch(e){ return null; } }
-  async function ensureMemberWraps(c, o){ if(!o) return; const have=c.wraps||{}; const updates={};
+  async function ensureMemberWraps(c,o){ if(!o) return; const have=c.wraps||{}; const updates={};
     for(const uid of (c.members||[])){ if(uid===myId||have[uid]) continue; const pk=await loadPub(uid); if(pk) updates[uid]=await wrapTo(o.raw, pk); }
     if(!have.__escrow__ && escrowPubKey) updates.__escrow__=await wrapTo(o.raw, escrowPubKey);
     if(Object.keys(updates).length){ try{ await db.doc("chats/"+c._id).update({wraps:updates}); }catch(e){} } }
-  async function buildWraps(raw, memberIds){ const w={}; w[myId]=await wrapTo(raw,myPub);
-    if(escrowPubKey) w.__escrow__=await wrapTo(raw,escrowPubKey);
+  async function buildWraps(raw, memberIds){ const w={}; w[myId]=await wrapTo(raw,myPub); if(escrowPubKey) w.__escrow__=await wrapTo(raw,escrowPubKey);
     for(const uid of memberIds){ if(uid===myId) continue; const pk=await loadPub(uid); if(pk) w[uid]=await wrapTo(raw,pk); } return w; }
 
-  function stuck(title,text,note){ $("wTitle").textContent=title; $("wText").textContent=text;
-    chatList.textContent=""; const n=document.createElement("div"); n.className="list-note"; n.textContent=note||""; chatList.appendChild(n); }
+  function stuck(title,text,note){ $("wTitle").textContent=title; $("wText").textContent=text; chatList.textContent=""; const n=document.createElement("div"); n.className="list-note"; n.textContent=note||""; chatList.appendChild(n); }
 
-  /* ---------- chat list ---------- */
+  /* chat list */
   let listTok=0;
   async function renderChatList(){
     const tok=++listTok;
     const arr=[...chats.values()].sort((a,b)=>((b.last&&b.last.at)||b.createdAt||0)-((a.last&&a.last.at)||a.createdAt||0));
-    const ids=new Set(); arr.forEach(c=>{ const o=otherMember(c); if(o) ids.add(o); if(c.last&&c.last.by) ids.add(c.last.by); });
-    const ps=await resolveProfiles([...ids]);
     const info=new Map();
     for(const c of arr){ const o=await getChatKey(c); let title, last="";
-      if(c.kind==="dm"){ const ot=otherMember(c); title=ot?displayName(ps,ot):"Избранное"; }
+      if(c.kind==="dm"){ const ot=otherMember(c); title=ot?displayName(ot):"Избранное"; }
       else title=o&&c.nameC? await safeDec(c.nameC,o.key,"🔒 Группа") : (c.nameC?"🔒 Группа":(c.name||"Группа"));
-      if(c.last&&c.last.c) last=o? await safeDec(c.last.c,o.key,"🔒 зашифровано") : "🔒 зашифровано";
+      const cut=cutoffFor(c);
+      if(c.last&&c.last.at&&cut&&c.last.at<cut) last="🕓 исчезло";
+      else if(c.last&&c.last.c) last=o? await safeDec(c.last.c,o.key,"🔒 зашифровано") : "🔒 зашифровано";
       else if(c.last&&c.last.t) last=c.last.t;
       info.set(c._id,{title,last,hasKey:!!o}); }
     if(tok!==listTok) return;
     chatList.textContent="";
-    if(!arr.length){ const n=document.createElement("div"); n.className="list-note";
-      n.textContent=encReady?"Пока нет чатов. Нажмите «+», чтобы написать кому-нибудь.":"Настраиваем шифрование…"; chatList.appendChild(n); return; }
-    for(const c of arr){ const inf=info.get(c._id)||{};
-      const btn=document.createElement("button"); btn.className="chat-item"+(c._id===activeId?" active":"");
+    if(!arr.length){ const n=document.createElement("div"); n.className="list-note"; n.textContent=encReady?"Пока нет чатов. Нажмите «+» и добавьте человека по @нику.":"Настраиваем шифрование…"; chatList.appendChild(n); return; }
+    for(const c of arr){ const inf=info.get(c._id)||{}; const btn=document.createElement("button"); btn.className="chat-item"+(c._id===activeId?" active":"");
       const other=otherMember(c); const online=other?onlineIds.has(other):false;
-      btn.appendChild(avaEl(other?ps[other]:null, inf.title, online));
+      btn.appendChild(avaFor(other||c._id, inf.title, online));
       const body=document.createElement("div"); body.className="ci-body";
-      const top=document.createElement("div"); top.className="ci-top";
-      const nm=document.createElement("div"); nm.className="ci-name"; nm.textContent=inf.title||"Чат"; top.appendChild(nm);
-      if(c.last&&c.last.at){ const t=document.createElement("div"); t.className="ci-time"; t.textContent=fmtListTime(c.last.at); top.appendChild(t); }
-      body.appendChild(top);
-      const bot=document.createElement("div"); bot.className="ci-bottom";
-      const le=document.createElement("div"); le.className="ci-last";
-      if(c.last){ const pre=c.last.by===myId?"Вы: ":(c.kind!=="dm"&&inf.hasKey?displayName(ps,c.last.by).split(" ")[0]+": ":""); le.textContent=pre+(inf.last||""); }
-      else le.textContent="Нет сообщений";
+      const top=document.createElement("div"); top.className="ci-top"; const nm=document.createElement("div"); nm.className="ci-name"; nm.textContent=inf.title||"Чат"; top.appendChild(nm);
+      if(c.last&&c.last.at){ const t=document.createElement("div"); t.className="ci-time"; t.textContent=fmtListTime(c.last.at); top.appendChild(t); } body.appendChild(top);
+      const bot=document.createElement("div"); bot.className="ci-bottom"; const le=document.createElement("div"); le.className="ci-last";
+      if(c.last){ const pre=c.last.by===myId?"Вы: ":(c.kind!=="dm"&&inf.hasKey?displayName(c.last.by)+": ":""); le.textContent=pre+(inf.last||""); } else le.textContent="Нет сообщений";
       bot.appendChild(le);
       if(c.last&&c.last.by!==myId&&(lastRead[c._id]||0)<c.last.at&&c._id!==activeId){ const u=document.createElement("span"); u.className="ci-unread"; bot.appendChild(u); }
       body.appendChild(bot); btn.appendChild(body); btn.addEventListener("click",()=>openChat(c._id)); chatList.appendChild(btn); }
@@ -481,89 +408,75 @@ h1,h2,h3,.disp{font-family:'Space Grotesk','Inter',sans-serif; letter-spacing:-.
     const timer=setTimeout(()=>{ if(!loaded) connNote.hidden=false; },10000);
     unsubChats.push(db.collection("chats").where("members","array-contains",myId).onSnapshot(snap=>{
       if(!snap.metadata.fromCache){ loaded=true; clearTimeout(timer); connNote.hidden=true; }
-      snap.docChanges().forEach(ch=>{ if(ch.type==="removed"){ chats.delete(ch.doc.id); chatKeys.delete(ch.doc.id); }
-        else { const d=ch.doc.data()||{}; d._id=ch.doc.id; chats.set(ch.doc.id,d); } });
+      snap.docChanges().forEach(ch=>{ if(ch.type==="removed"){ chats.delete(ch.doc.id); chatKeys.delete(ch.doc.id); } else { const d=ch.doc.data()||{}; d._id=ch.doc.id; chats.set(ch.doc.id,d); } });
       renderChatList(); if(activeId&&chats.has(activeId)) renderHead();
     },e=>{ clearTimeout(timer); if(e.code!=="revoked") toast("Не удалось загрузить чаты"); })); }
+  function subscribeHandles(){ try{ unsubHandles=db.collection("handles").onSnapshot(snap=>{ snap.docChanges().forEach(ch=>{ if(ch.type==="removed") handles.delete(ch.doc.id); else { const h=(ch.doc.data()||{}).h; if(h) handles.set(ch.doc.id,String(h).slice(0,20)); else handles.delete(ch.doc.id); } }); if(handles.get(myId)) myHandle=handles.get(myId); refreshMe(); renderChatList(); if(activeId) renderHead(); },()=>{}); }catch(e){} }
 
-  function subscribeHandles(){ try{
-    unsubHandles=db.collection("handles").onSnapshot(snap=>{ snap.docChanges().forEach(ch=>{
-      if(ch.type==="removed") handles.delete(ch.doc.id); else { const h=(ch.doc.data()||{}).h; if(h) handles.set(ch.doc.id,String(h).slice(0,40)); else handles.delete(ch.doc.id); } });
-      renderChatList(); if(activeId) renderHead(); },()=>{}); }catch(e){} }
-
-  /* ---------- open chat ---------- */
-  async function openChat(id){
-    if(activeId===id&&app.classList.contains("show-chat")) return;
+  /* open chat */
+  async function openChat(id){ if(activeId===id&&app.classList.contains("show-chat")) return;
     activeId=id; selectedMsgKey=null; blockLimit=4; lastRead[id]=Date.now(); saveLastRead();
     app.classList.add("show-chat"); welcome.hidden=true; chatHead.hidden=false; msgsEl.hidden=false; msgsEl.textContent=""; blocks=new Map();
     renderHead(); renderChatList();
     const c=chats.get(id)||{}; const o=await getChatKey(c);
-    if(!o){ composer.hidden=true; noteBar.hidden=false;
-      noteBar.textContent="🔒 Нет ключа для этого чата. Он выдастся автоматически, когда участник с доступом откроет чат.";
-      if(unsubBlocks){unsubBlocks();unsubBlocks=null;} msgsEl.textContent="";
-      const ph=document.createElement("div"); ph.className="placeholder"; const h=document.createElement("h2"); h.textContent="Чат зашифрован";
-      const p=document.createElement("p"); p.textContent="У вас пока нет ключа от этого чата."; ph.appendChild(h); ph.appendChild(p); msgsEl.appendChild(ph); return; }
-    ensureMemberWraps(c,o);
-    composer.hidden=readOnly; noteBar.hidden=!readOnly;
+    if(!o){ composer.hidden=true; noteBar.hidden=false; noteBar.textContent="🔒 Нет ключа для этого чата. Он выдастся автоматически, когда участник с доступом откроет чат.";
+      if(unsubBlocks){unsubBlocks();unsubBlocks=null;} msgsEl.textContent=""; const ph=document.createElement("div"); ph.className="placeholder"; const h=document.createElement("h2"); h.textContent="Чат зашифрован"; const p=document.createElement("p"); p.textContent="У вас пока нет ключа от этого чата."; ph.appendChild(h); ph.appendChild(p); msgsEl.appendChild(ph); return; }
+    ensureMemberWraps(c,o); composer.hidden=readOnly; noteBar.hidden=!readOnly;
     if(readOnly) noteBar.textContent="Доступ только для чтения. Писать могут участники, добавленные как редакторы.";
     subscribeBlocks(); if(!readOnly) input.focus();
   }
-  function closeChat(){ app.classList.remove("show-chat"); activeId=null; selectedMsgKey=null;
-    if(unsubBlocks){unsubBlocks();unsubBlocks=null;} chatHead.hidden=true; msgsEl.hidden=true; composer.hidden=true; noteBar.hidden=true; welcome.hidden=false; renderChatList(); }
+  function closeChat(){ app.classList.remove("show-chat"); activeId=null; selectedMsgKey=null; if(unsubBlocks){unsubBlocks();unsubBlocks=null;} chatHead.hidden=true; msgsEl.hidden=true; composer.hidden=true; noteBar.hidden=true; welcome.hidden=false; renderChatList(); }
   $("btnBack").addEventListener("click",closeChat);
 
-  async function renderHead(){ const c=chats.get(activeId); if(!c) return;
-    const other=otherMember(c); const ps=await resolveProfiles(other?[other]:[]); const o=await getChatKey(c);
-    let title; if(c.kind==="dm") title=other?displayName(ps,other):"Избранное";
-    else title=o&&c.nameC? await safeDec(c.nameC,o.key,"🔒 Группа") : (c.name||"Группа");
-    const old=$("chAva"); const nv=avaEl(other?ps[other]:null,title,false); nv.id="chAva"; nv.classList.add("ch-ava"); old.replaceWith(nv);
+  async function renderHead(){ const c=chats.get(activeId); if(!c) return; const other=otherMember(c); const o=await getChatKey(c);
+    let title; if(c.kind==="dm") title=other?displayName(other):"Избранное"; else title=o&&c.nameC? await safeDec(c.nameC,o.key,"🔒 Группа") : (c.name||"Группа");
+    const old=$("chAva"); const nv=avaFor(other||c._id,title,false); nv.id="chAva"; nv.classList.add("ch-ava"); old.replaceWith(nv);
     $("chName").textContent=title; const st=$("chStatus"); st.className="ch-status";
     const typers=[...(typingByChat.get(activeId)||new Set())].filter(t=>t!==myId);
-    if(typers.length){ const tps=await resolveProfiles(typers); st.textContent=c.kind==="dm"?"печатает…":displayName(tps,typers[0])+" печатает…"; st.classList.add("typing"); }
+    if(typers.length){ st.textContent=c.kind==="dm"?"печатает…":displayName(typers[0])+" печатает…"; st.classList.add("typing"); }
     else if(c.kind==="dm"){ const online=other?onlineIds.has(other):false; st.textContent=online?"в сети":"не в сети"; if(online) st.classList.add("online"); }
     else { const n=(c.members||[]).length; st.textContent=n+" "+(n%10===1&&n%100!==11?"участник":(n%10>=2&&n%10<=4&&(n%100<10||n%100>=20)?"участника":"участников")); }
+    $("chLock").textContent = c.ttl? ("🔒 · 🕓 "+(TTLS[c.ttl]||"")) : "🔒";
   }
 
   function subscribeBlocks(){ if(unsubBlocks){unsubBlocks();unsubBlocks=null;} const cid=activeId; let loaded=false;
     const timer=setTimeout(()=>{ if(!loaded&&activeId===cid) connNote.hidden=false; },10000);
     unsubBlocks=db.doc("chats/"+cid).collection("blocks").orderBy("seq","desc").limit(blockLimit).onSnapshot(snap=>{
       if(activeId!==cid) return; if(!snap.metadata.fromCache){ loaded=true; clearTimeout(timer); connNote.hidden=true; }
-      blocks=new Map(); snap.docs.forEach(d=>blocks.set(d.id,d.data()||{})); renderMsgs(snap.size>=blockLimit);
+      blocks=new Map(); snap.docs.forEach(d=>blocks.set(d.id,d.data()||{}));
+      const c=chats.get(cid)||{}; if(c.ttl){ pruneExpired(cid,c.ttl); } renderMsgs(snap.size>=blockLimit);
     },e=>{ clearTimeout(timer); if(e.code!=="revoked") toast("Не удалось загрузить сообщения"); }); }
+
+  async function pruneExpired(cid,ttl){ if(!ttl) return; const cut=Date.now()-ttl*1000;
+    for(const [bid,b] of blocks){ const m=b.msgs||{}; const upd={}; for(const k in m){ const mm=m[k]; if(mm&&!mm.del&&(mm.at||0)<cut) upd[k]={del:true, at:mm.at||0}; }
+      if(Object.keys(upd).length){ try{ await db.doc("chats/"+cid).collection("blocks").doc(bid).update({msgs:upd}); }catch(e){} } } }
 
   function validCoord(lat,lng){ return Number.isFinite(lat)&&Number.isFinite(lng)&&lat>=-90&&lat<=90&&lng>=-180&&lng<=180; }
   function mapsUrl(lat,lng){ return "https://www.openstreetmap.org/?mlat="+encodeURIComponent(lat)+"&mlon="+encodeURIComponent(lng)+"#map=16/"+encodeURIComponent(lat)+"/"+encodeURIComponent(lng); }
 
   let msgsTok=0;
   async function renderMsgs(mayHaveEarlier){
-    const tok=++msgsTok; const c=chats.get(activeId)||{}; const o=await getChatKey(c); if(!o) return;
-    const all=[]; for(const b of blocks.values()){ const m=b.msgs||{}; for(const k in m){ if(m[k]&&typeof m[k]==="object") all.push([k,m[k]]); } }
+    const tok=++msgsTok; const c=chats.get(activeId)||{}; const o=await getChatKey(c); if(!o) return; const cut=cutoffFor(c);
+    const all=[]; for(const b of blocks.values()){ const m=b.msgs||{}; for(const k in m){ const mm=m[k]; if(mm&&typeof mm==="object"){ if(cut&&(mm.at||0)<cut) continue; all.push([k,mm]); } } }
     all.sort((a,b)=>a[0]<b[0]?-1:1);
-    const senderIds=[...new Set(all.map(x=>x[1].by).filter(Boolean))]; const ps=await resolveProfiles(senderIds);
     const content=new Map();
-    for(const [k,m] of all){ if(m.del){ content.set(k,{del:true}); continue; }
-      const plain=m.c? await safeDec(m.c,o.key,null) : (m.t||"");
-      if(plain===null){ content.set(k,{locked:true}); continue; }
-      if(m.kind==="loc"){ try{ const j=JSON.parse(plain); content.set(k,{loc:{lat:+j.lat,lng:+j.lng,label:(j.label||"").slice(0,120)}}); }catch(e){ content.set(k,{text:"📍 Геопозиция"}); } }
-      else content.set(k,{text:plain}); }
+    for(const [k,m] of all){ if(m.del){ content.set(k,{del:true}); continue; } const plain=m.c? await safeDec(m.c,o.key,null) : (m.t||""); if(plain===null){ content.set(k,{locked:true}); continue; }
+      if(m.kind==="loc"){ try{ const j=JSON.parse(plain); content.set(k,{loc:{lat:+j.lat,lng:+j.lng,label:(j.label||"").slice(0,120)}}); }catch(e){ content.set(k,{text:"📍 Геопозиция"}); } } else content.set(k,{text:plain}); }
     if(tok!==msgsTok) return;
     const nearBottom=msgsEl.scrollHeight-msgsEl.scrollTop-msgsEl.clientHeight<120; msgsEl.textContent="";
     if(mayHaveEarlier){ const b=document.createElement("button"); b.className="btn-earlier"; b.textContent="Показать более ранние"; b.addEventListener("click",()=>{ blockLimit+=4; subscribeBlocks(); }); msgsEl.appendChild(b); }
-    if(!all.length){ const ph=document.createElement("div"); ph.className="placeholder"; const h=document.createElement("h2"); h.textContent="Сообщений пока нет"; const p=document.createElement("p"); p.textContent="Напишите первое сообщение!"; ph.appendChild(h); ph.appendChild(p); msgsEl.appendChild(ph); }
+    if(!all.length){ const ph=document.createElement("div"); ph.className="placeholder"; const h=document.createElement("h2"); h.textContent="Сообщений пока нет"; const p=document.createElement("p"); p.textContent=c.ttl?"Исчезающие сообщения включены.":"Напишите первое сообщение!"; ph.appendChild(h); ph.appendChild(p); msgsEl.appendChild(ph); }
     let lastDay="", lastBy=null;
-    for(const [key,m] of all){ const day=new Date(m.at||0).toDateString();
-      if(day!==lastDay){ lastDay=day; lastBy=null; const s=document.createElement("div"); s.className="day-sep"; s.textContent=fmtDay(m.at||0); msgsEl.appendChild(s); }
+    for(const [key,m] of all){ const day=new Date(m.at||0).toDateString(); if(day!==lastDay){ lastDay=day; lastBy=null; const s=document.createElement("div"); s.className="day-sep"; s.textContent=fmtDay(m.at||0); msgsEl.appendChild(s); }
       const mine=m.by===myId; const row=document.createElement("div"); row.className="row "+(mine?"mine":"theirs");
-      if(!mine&&c.kind!=="dm"){ const show=lastBy!==m.by; const a=avaEl(ps[m.by],displayName(ps,m.by),false); a.classList.add("m-ava"); if(!show) a.classList.add("ghost"); row.appendChild(a); }
+      if(!mine&&c.kind!=="dm"){ const show=lastBy!==m.by; const a=avaFor(m.by,displayName(m.by),false); a.classList.add("m-ava"); if(!show) a.classList.add("ghost"); row.appendChild(a); }
       const bub=document.createElement("div"); bub.className="bubble";
-      if(!mine&&c.kind!=="dm"&&lastBy!==m.by){ const sn=document.createElement("div"); sn.className="b-sender"; sn.textContent=displayName(ps,m.by); if(ps[m.by]&&ps[m.by].color) sn.style.color=ps[m.by].color; bub.appendChild(sn); }
+      if(!mine&&c.kind!=="dm"&&lastBy!==m.by){ const sn=document.createElement("div"); sn.className="b-sender"; sn.textContent=displayName(m.by); sn.style.color=colorFor(m.by); bub.appendChild(sn); }
       const info=content.get(key)||{};
       if(info.del){ const tx=document.createElement("div"); tx.className="b-text deleted"; tx.textContent="Сообщение удалено"; const mt=document.createElement("span"); mt.className="b-meta"; mt.textContent=fmtTime(m.at||0); tx.appendChild(mt); bub.appendChild(tx); }
       else if(info.locked){ const tx=document.createElement("div"); tx.className="b-text locked"; tx.textContent="🔒 не удалось расшифровать"; bub.appendChild(tx); }
-      else if(info.loc){ const card=document.createElement("div"); card.className="loc-card";
-        const pin=document.createElement("div"); pin.className="pin"; pin.textContent="📍 "+(info.loc.label||"Геопозиция"); card.appendChild(pin);
-        if(validCoord(info.loc.lat,info.loc.lng)){ const co=document.createElement("div"); co.className="b-text"; co.style.fontSize="13px"; co.style.color="var(--muted)"; co.textContent=info.loc.lat.toFixed(5)+", "+info.loc.lng.toFixed(5); card.appendChild(co);
-          const a=document.createElement("a"); a.href=mapsUrl(info.loc.lat,info.loc.lng); a.target="_blank"; a.rel="noopener noreferrer"; a.textContent="Открыть на карте →"; card.appendChild(a); }
+      else if(info.loc){ const card=document.createElement("div"); card.className="loc-card"; const pin=document.createElement("div"); pin.className="pin"; pin.textContent="📍 "+(info.loc.label||"Геопозиция"); card.appendChild(pin);
+        if(validCoord(info.loc.lat,info.loc.lng)){ const co=document.createElement("div"); co.className="b-text"; co.style.fontSize="13px"; co.style.color="var(--muted)"; co.textContent=info.loc.lat.toFixed(5)+", "+info.loc.lng.toFixed(5); card.appendChild(co); const a=document.createElement("a"); a.href=mapsUrl(info.loc.lat,info.loc.lng); a.target="_blank"; a.rel="noopener noreferrer"; a.textContent="Открыть на карте →"; card.appendChild(a); }
         const mt=document.createElement("span"); mt.className="b-meta"; mt.textContent=fmtTime(m.at||0); card.appendChild(mt); bub.appendChild(card); }
       else { const tx=document.createElement("div"); tx.className="b-text"; tx.textContent=info.text||""; const mt=document.createElement("span"); mt.className="b-meta"; mt.textContent=fmtTime(m.at||0); tx.appendChild(mt); bub.appendChild(tx); }
       if(mine&&!info.del){ bub.addEventListener("click",()=>{ selectedMsgKey=selectedMsgKey===key?null:key; renderMsgs(mayHaveEarlier); }); }
@@ -573,186 +486,153 @@ h1,h2,h3,.disp{font-family:'Space Grotesk','Inter',sans-serif; letter-spacing:-.
     if(nearBottom) msgsEl.scrollTop=msgsEl.scrollHeight; lastRead[activeId]=Date.now(); saveLastRead();
   }
   function findBlockOfMsg(key){ for(const [bid,b] of blocks){ if(b.msgs&&b.msgs[key]) return bid; } return null; }
-  async function deleteMsg(key){ const bid=findBlockOfMsg(key); if(!bid) return; selectedMsgKey=null;
-    try{ await db.doc("chats/"+activeId).collection("blocks").doc(bid).update({msgs:{[key]:{del:true}}}); }catch(e){ toast("Не удалось удалить"); } }
+  async function deleteMsg(key){ const bid=findBlockOfMsg(key); if(!bid) return; selectedMsgKey=null; try{ await db.doc("chats/"+activeId).collection("blocks").doc(bid).update({msgs:{[key]:{del:true}}}); }catch(e){ toast("Не удалось удалить"); } }
 
-  /* ---------- send ---------- */
+  /* send */
   function setReadOnly(){ readOnly=true; composer.hidden=true; if(activeId){ noteBar.hidden=false; noteBar.textContent="Доступ только для чтения."; } $("btnNew").hidden=true; }
-  async function pushMessage(plain, preview, kind){
-    if(!activeId) return false; const cid=activeId; const c=chats.get(cid)||{}; const o=await getChatKey(c); if(!o){ toast("Нет ключа для этого чата"); return false; }
+  async function pushMessage(plain, preview, kind){ if(!activeId) return false; const cid=activeId; const c=chats.get(cid)||{}; const o=await getChatKey(c); if(!o){ toast("Нет ключа для этого чата"); return false; }
     const seq=c.seq||1; const key=msgKey(); const at=Date.now(); let c_enc, last_enc;
     try{ c_enc=await aesEnc(plain,o.key); last_enc=await aesEnc(preview.slice(0,90),o.key); }catch(e){ toast("Ошибка шифрования"); return false; }
-    const msg={c:c_enc, by:myId, at}; if(kind&&kind!=="text") msg.kind=kind;
-    const bref=db.doc("chats/"+cid).collection("blocks").doc(blockId(seq));
+    const msg={c:c_enc, by:myId, at}; if(kind&&kind!=="text") msg.kind=kind; const bref=db.doc("chats/"+cid).collection("blocks").doc(blockId(seq));
     try{ try{ await bref.update({seq, msgs:{[key]:msg}}); }catch(e){ if(e&&e.code==="invalid_argument"){ await bref.set({seq, msgs:{[key]:msg}}); } else throw e; } }
-    catch(e){ if(e&&e.code==="invalid_argument"){ setReadOnly(); toast("Похоже, у вас нет прав писать здесь"); }
-      else if(e&&e.code==="quota_exceeded"){ toast("Хранилище переполнено — удалите старые чаты"); } else toast("Не удалось отправить"); return false; }
-    const cur=blocks.get(blockId(seq)); const count=cur&&cur.msgs?Object.keys(cur.msgs).length+1:1;
-    const patch={last:{c:last_enc, by:myId, at}}; if(count>=64) patch.seq=seq+1;
-    try{ await db.doc("chats/"+cid).update(patch); }catch(e){} return true;
-  }
-  async function send(){ let text=input.value.replace(/\s+$/,""); if(!text.trim()||!activeId) return;
-    if(text.length>MAXLEN){ text=text.slice(0,MAXLEN); toast("Сообщение обрезано до "+MAXLEN+" символов"); }
-    const prev=input.value; input.value=""; autoGrow(); btnSend.disabled=true; sendTyping(null);
-    const ok=await pushMessage(text, text.slice(0,90), "text"); if(!ok){ input.value=prev; autoGrow(); btnSend.disabled=false; } }
+    catch(e){ if(e&&e.code==="invalid_argument"){ setReadOnly(); toast("Похоже, у вас нет прав писать здесь"); } else if(e&&e.code==="quota_exceeded"){ toast("Хранилище переполнено — удалите старые чаты"); } else toast("Не удалось отправить"); return false; }
+    const cur=blocks.get(blockId(seq)); const count=cur&&cur.msgs?Object.keys(cur.msgs).length+1:1; const patch={last:{c:last_enc, by:myId, at}}; if(count>=64) patch.seq=seq+1;
+    try{ await db.doc("chats/"+cid).update(patch); }catch(e){} return true; }
+  async function send(){ let text=input.value.replace(/\s+$/,""); if(!text.trim()||!activeId) return; if(text.length>MAXLEN){ text=text.slice(0,MAXLEN); toast("Сообщение обрезано до "+MAXLEN+" символов"); }
+    const prev=input.value; input.value=""; autoGrow(); btnSend.disabled=true; sendTyping(null); const ok=await pushMessage(text, text.slice(0,90), "text"); if(!ok){ input.value=prev; autoGrow(); btnSend.disabled=false; } }
   btnSend.addEventListener("click",send);
   const coarse=matchMedia("(pointer:coarse)").matches;
   input.addEventListener("keydown",e=>{ if(e.key==="Enter"&&!e.shiftKey&&!coarse){ e.preventDefault(); send(); } });
   function autoGrow(){ input.style.height="auto"; input.style.height=Math.min(input.scrollHeight,150)+"px"; btnSend.disabled=!input.value.trim(); }
   input.addEventListener("input",()=>{ autoGrow(); sendTyping(activeId); });
 
-  /* ---------- location ---------- */
+  /* disappearing */
+  const ttlOverlay=$("ttlOverlay");
+  $("btnTtl").addEventListener("click",()=>{ if(!activeId) return; const c=chats.get(activeId)||{}; for(const b of $("ttlSeg").children) b.classList.toggle("on", +b.dataset.ttl===(c.ttl||0)); ttlOverlay.hidden=false; });
+  $("btnTtlClose").addEventListener("click",()=>ttlOverlay.hidden=true);
+  ttlOverlay.addEventListener("click",e=>{ if(e.target===ttlOverlay) ttlOverlay.hidden=true; });
+  $("ttlSeg").addEventListener("click",async e=>{ const b=e.target.closest("button"); if(!b||!activeId) return; const ttl=+b.dataset.ttl; ttlOverlay.hidden=true;
+    try{ await db.doc("chats/"+activeId).update({ttl}); const c=chats.get(activeId); if(c) c.ttl=ttl; renderHead(); renderMsgs(blocks.size>=blockLimit); if(ttl) pruneExpired(activeId,ttl); toast(ttl?("Исчезают через "+TTL[ttl]):"Исчезающие сообщения выключены"); }catch(e){ toast("Не удалось изменить"); } });
+
+  /* location */
   const locOverlay=$("locOverlay");
-  function openLoc(){ if(!activeId) return; locOverlay.hidden=false; $("locLat").value=""; $("locLng").value=""; $("locLabel").value="";
-    $("locStatus").textContent="Пробуем определить местоположение…"; validateLoc(); detectLoc(); }
+  function openLoc(){ if(!activeId) return; locOverlay.hidden=false; $("locLat").value=""; $("locLng").value=""; $("locLabel").value=""; $("locStatus").textContent="Пробуем определить местоположение…"; validateLoc(); detectLoc(); }
   function closeLoc(){ locOverlay.hidden=true; }
-  $("btnLoc").addEventListener("click",openLoc);
-  $("btnLocClose").addEventListener("click",closeLoc);
+  $("btnLoc").addEventListener("click",openLoc); $("btnLocClose").addEventListener("click",closeLoc);
   locOverlay.addEventListener("click",e=>{ if(e.target===locOverlay) closeLoc(); });
   $("btnDetect").addEventListener("click",()=>{ $("locStatus").textContent="Определяем…"; detectLoc(); });
   function detectLoc(){ if(!navigator.geolocation){ $("locStatus").textContent="Авто-определение недоступно — введите координаты вручную."; return; }
-    let done=false; const to=setTimeout(()=>{ if(!done){ done=true; $("locStatus").textContent="Не удалось определить автоматически — введите координаты вручную."; } },9000);
-    try{ navigator.geolocation.getCurrentPosition(p=>{ if(done) return; done=true; clearTimeout(to);
-        $("locLat").value=p.coords.latitude.toFixed(6); $("locLng").value=p.coords.longitude.toFixed(6);
-        $("locStatus").textContent="Местоположение определено. Можно поправить вручную."; validateLoc(); },
-      ()=>{ if(done) return; done=true; clearTimeout(to); $("locStatus").textContent="Доступ к геолокации закрыт — введите координаты вручную."; }, {enableHighAccuracy:true, timeout:8000, maximumAge:60000}); }
-    catch(e){ clearTimeout(to); $("locStatus").textContent="Авто-определение недоступно — введите координаты вручную."; } }
-  function validateLoc(){ const lat=parseFloat($("locLat").value), lng=parseFloat($("locLng").value); $("btnSendLoc").disabled=!validCoord(lat,lng); }
+    let done=false; const to=setTimeout(()=>{ if(!done){ done=true; $("locStatus").textContent="Не удалось определить — введите координаты вручную."; } },9000);
+    try{ navigator.geolocation.getCurrentPosition(p=>{ if(done) return; done=true; clearTimeout(to); $("locLat").value=p.coords.latitude.toFixed(6); $("locLng").value=p.coords.longitude.toFixed(6); $("locStatus").textContent="Местоположение определено. Можно поправить."; validateLoc(); },
+      ()=>{ if(done) return; done=true; clearTimeout(to); $("locStatus").textContent="Доступ к геолокации закрыт — введите координаты вручную."; }, {enableHighAccuracy:true, timeout:8000, maximumAge:60000}); }catch(e){ clearTimeout(to); $("locStatus").textContent="Авто-определение недоступно — введите вручную."; } }
+  function validateLoc(){ $("btnSendLoc").disabled=!validCoord(parseFloat($("locLat").value),parseFloat($("locLng").value)); }
   $("locLat").addEventListener("input",validateLoc); $("locLng").addEventListener("input",validateLoc);
-  $("btnSendLoc").addEventListener("click",async()=>{ const lat=parseFloat($("locLat").value), lng=parseFloat($("locLng").value); if(!validCoord(lat,lng)) return;
-    const label=($("locLabel").value||"").slice(0,80); closeLoc();
-    await pushMessage(JSON.stringify({lat,lng,label}), "📍 "+(label||"Геопозиция"), "loc"); });
+  $("btnSendLoc").addEventListener("click",async()=>{ const lat=parseFloat($("locLat").value), lng=parseFloat($("locLng").value); if(!validCoord(lat,lng)) return; const label=($("locLabel").value||"").slice(0,80); closeLoc(); await pushMessage(JSON.stringify({lat,lng,label}), "📍 "+(label||"Геопозиция"), "loc"); });
 
-  /* ---------- presence ---------- */
+  /* presence */
   let typingTimer=null, lastTypingSent=0;
-  function sendTyping(chatId){ if(!room) return; const now=Date.now();
-    if(chatId){ if(now-lastTypingSent>2000){ lastTypingSent=now; room.presence({typing:chatId}).catch(()=>{}); } clearTimeout(typingTimer); typingTimer=setTimeout(()=>room.presence({typing:null}).catch(()=>{}),4000); }
-    else { clearTimeout(typingTimer); lastTypingSent=0; room.presence({typing:null}).catch(()=>{}); } }
-  function startPresence(){ if(!room) return; room.onPeers(ch=>{ onlineIds=new Set(); typingByChat=new Map();
-    for(const p of ch.peers){ if(p.by) onlineIds.add(p.by); const t=p.presence&&p.presence.typing;
-      if(t&&typeof t==="string"&&!p.isMe){ if(!typingByChat.has(t)) typingByChat.set(t,new Set()); if(p.by) typingByChat.get(t).add(p.by); } }
-    renderChatList(); if(activeId) renderHead(); },()=>{}); }
+  function sendTyping(chatId){ if(!room) return; const now=Date.now(); if(chatId){ if(now-lastTypingSent>2000){ lastTypingSent=now; room.presence({typing:chatId}).catch(()=>{}); } clearTimeout(typingTimer); typingTimer=setTimeout(()=>room.presence({typing:null}).catch(()=>{}),4000); } else { clearTimeout(typingTimer); lastTypingSent=0; room.presence({typing:null}).catch(()=>{}); } }
+  function startPresence(){ if(!room) return; room.onPeers(ch=>{ onlineIds=new Set(); typingByChat=new Map(); for(const p of ch.peers){ if(p.by) onlineIds.add(p.by); const t=p.presence&&p.presence.typing; if(t&&typeof t==="string"&&!p.isMe){ if(!typingByChat.has(t)) typingByChat.set(t,new Set()); if(p.by) typingByChat.get(t).add(p.by); } } renderChatList(); if(activeId) renderHead(); },()=>{}); }
 
-  /* ---------- new chat modal ---------- */
+  /* new chat by @handle */
   const overlay=$("overlay"), dmBody=$("dmBody"), groupBody=$("groupBody"); const groupMembers=new Map();
-  $("btnNew").addEventListener("click",()=>{ if(!encReady){ toast("Шифрование ещё настраивается, подождите секунду"); return; } overlay.hidden=false; $("dmSearch").value=""; searchInto("","dmResults",pickDm); $("dmSearch").focus(); });
+  $("btnNew").addEventListener("click",()=>{ if(!encReady){ toast("Шифрование ещё настраивается, подождите"); return; } if(!myHandle){ toast("Сначала задайте свой @ник в настройках"); openSettings(); return; } overlay.hidden=false; $("dmHandle").value=""; $("dmHandle").focus(); updateDmBtn(); });
   $("btnClose").addEventListener("click",()=>overlay.hidden=true);
   overlay.addEventListener("click",e=>{ if(e.target===overlay) overlay.hidden=true; });
   $("tabDm").addEventListener("click",()=>{ $("tabDm").classList.add("on"); $("tabGroup").classList.remove("on"); dmBody.hidden=false; groupBody.hidden=true; });
   $("tabGroup").addEventListener("click",()=>{ $("tabGroup").classList.add("on"); $("tabDm").classList.remove("on"); groupBody.hidden=false; dmBody.hidden=true; $("groupName").focus(); });
-  async function searchInto(q,target,onPick){ if(!user) return; let hits=[]; try{ hits=await user.search(q); }catch(e){} renderPeople(target,hits.filter(h=>h.id!==myId),onPick); }
-  function renderPeople(target,hits,onPick){ const el=$(target); el.textContent="";
-    if(!hits.length){ const n=document.createElement("div"); n.className="hint"; n.textContent="Никого не нашлось. Введите имя человека из вашей организации."; el.appendChild(n); return; }
-    for(const h of hits){ const b=document.createElement("button"); b.className="person"; b.appendChild(avaEl(h,h.name,false));
-      const nm=document.createElement("div"); nm.className="p-name"; nm.textContent=h.name; b.appendChild(nm); b.addEventListener("click",()=>onPick(h)); el.appendChild(b); } }
-  $("dmSearch").addEventListener("input",e=>searchInto(e.target.value,"dmResults",pickDm));
-  $("dmSearch").addEventListener("focus",()=>searchInto($("dmSearch").value,"dmResults",pickDm));
-  $("groupSearch").addEventListener("input",e=>searchInto(e.target.value,"groupResults",pickGroupMember));
-  $("groupSearch").addEventListener("focus",()=>searchInto($("groupSearch").value,"groupResults",pickGroupMember));
-  async function pickDm(h){ overlay.hidden=true; if(!escrowPubKey){ toast("Администратор ещё не настроил шифрование."); return; }
-    const id=dmIdFor(myId,h.id);
-    try{ const snap=await db.doc("chats/"+id).get();
-      if(!snap.exists){ const raw=crypto.getRandomValues(new Uint8Array(32)); const key=await impAes(raw); const wraps=await buildWraps(raw,[h.id]); chatKeys.set(id,{key,raw});
-        await db.doc("chats/"+id).set({kind:"dm", members:[myId,h.id], wraps, enc:true, createdBy:myId, createdAt:Date.now(), seq:1}); }
-      openChat(id);
-    }catch(e){ if(e&&e.code==="invalid_argument"){ setReadOnly(); toast("У вас нет прав создавать чаты"); } else toast("Не удалось открыть чат"); } }
-  function pickGroupMember(h){ groupMembers.set(h.id,h.name||"Кто-то"); $("groupSearch").value=""; renderChips(); updateGroupBtn(); }
-  function renderChips(){ const el=$("groupChips"); el.textContent="";
-    for(const [id,name] of groupMembers){ const c=document.createElement("span"); c.className="chip"; const t=document.createElement("span"); t.textContent=name; c.appendChild(t);
-      const x=document.createElement("button"); x.textContent="✕"; x.setAttribute("aria-label","Убрать"); x.addEventListener("click",()=>{ groupMembers.delete(id); renderChips(); updateGroupBtn(); }); c.appendChild(x); el.appendChild(c); } }
+
+  function normHandle(raw){ return String(raw||"").trim().replace(/^@+/,"").toLowerCase().replace(/[^a-z0-9_]/g,""); }
+  async function resolveHandle(raw){ const lower=normHandle(raw); if(lower.length<3) return null;
+    try{ const snap=await db.collection("handles").where("hl","==",lower).limit(5).get(); const docs=snap.docs.filter(d=>(d.data()||{}).hl===lower);
+      if(!docs.length) return null; if(docs.length>1) return {ambiguous:true}; return {uid:docs[0].id, display:(docs[0].data()||{}).h||lower}; }catch(e){ return null; } }
+
+  function updateDmBtn(){ $("btnStartDm").disabled=normHandle($("dmHandle").value).length<3; }
+  $("dmHandle").addEventListener("input",updateDmBtn);
+  $("dmHandle").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); $("btnStartDm").click(); } });
+  $("btnStartDm").addEventListener("click",async()=>{ const r=await resolveHandle($("dmHandle").value);
+    if(!r){ toast("Пользователь с таким @ником не найден"); return; } if(r.ambiguous){ toast("Несколько пользователей с этим ником — уточните"); return; } if(r.uid===myId){ toast("Это ваш собственный ник"); return; }
+    overlay.hidden=true; if(!escrowPubKey){ toast("Шифрование ещё не настроено администратором"); return; }
+    const id=dmIdFor(myId,r.uid);
+    try{ const snap=await db.doc("chats/"+id).get(); if(!snap.exists){ const raw=crypto.getRandomValues(new Uint8Array(32)); const key=await impAes(raw); const wraps=await buildWraps(raw,[r.uid]); chatKeys.set(id,{key,raw}); await db.doc("chats/"+id).set({kind:"dm", members:[myId,r.uid], wraps, enc:true, createdBy:myId, createdAt:Date.now(), seq:1}); } openChat(id); }
+    catch(e){ if(e&&e.code==="invalid_argument"){ setReadOnly(); toast("У вас нет прав создавать чаты"); } else toast("Не удалось открыть чат"); } });
+
   function updateGroupBtn(){ $("btnCreateGroup").disabled=!($("groupName").value.trim()&&groupMembers.size); }
   $("groupName").addEventListener("input",updateGroupBtn);
-  $("btnCreateGroup").addEventListener("click",async()=>{ const name=$("groupName").value.trim().slice(0,80); if(!name||!groupMembers.size) return;
-    if(!escrowPubKey){ toast("Администратор ещё не настроил шифрование."); return; } overlay.hidden=true;
+  $("groupHandle").addEventListener("keydown",async e=>{ if(e.key!=="Enter") return; e.preventDefault(); const r=await resolveHandle($("groupHandle").value);
+    if(!r){ toast("Ник не найден"); return; } if(r.ambiguous){ toast("Несколько пользователей с этим ником"); return; } if(r.uid===myId){ toast("Вы уже в группе"); return; }
+    groupMembers.set(r.uid,r.display); $("groupHandle").value=""; renderChips(); updateGroupBtn(); });
+  function renderChips(){ const el=$("groupChips"); el.textContent=""; for(const [id,name] of groupMembers){ const c=document.createElement("span"); c.className="chip"; const t=document.createElement("span"); t.textContent="@"+name; c.appendChild(t); const x=document.createElement("button"); x.textContent="✕"; x.setAttribute("aria-label","Убрать"); x.addEventListener("click",()=>{ groupMembers.delete(id); renderChips(); updateGroupBtn(); }); c.appendChild(x); el.appendChild(c); } }
+  $("btnCreateGroup").addEventListener("click",async()=>{ const name=$("groupName").value.trim().slice(0,80); if(!name||!groupMembers.size) return; if(!escrowPubKey){ toast("Шифрование ещё не настроено"); return; } overlay.hidden=true;
     try{ const members=[myId,...groupMembers.keys()]; const raw=crypto.getRandomValues(new Uint8Array(32)); const key=await impAes(raw); const wraps=await buildWraps(raw,[...groupMembers.keys()]); const nameC=await aesEnc(name,key);
-      const ref=await db.collection("chats").add({kind:"group", nameC, members, wraps, enc:true, createdBy:myId, createdAt:Date.now(), seq:1});
-      chatKeys.set(ref.id,{key,raw}); groupMembers.clear(); renderChips(); $("groupName").value=""; openChat(ref.id);
-    }catch(e){ if(e&&e.code==="invalid_argument"){ setReadOnly(); toast("У вас нет прав создавать чаты"); } else toast("Не удалось создать группу"); } });
+      const ref=await db.collection("chats").add({kind:"group", nameC, members, wraps, enc:true, createdBy:myId, createdAt:Date.now(), seq:1}); chatKeys.set(ref.id,{key,raw}); groupMembers.clear(); renderChips(); $("groupName").value=""; openChat(ref.id); }
+    catch(e){ if(e&&e.code==="invalid_argument"){ setReadOnly(); toast("У вас нет прав создавать чаты"); } else toast("Не удалось создать группу"); } });
 
-  /* ---------- settings ---------- */
+  /* settings + handle claim */
   const setOverlay=$("setOverlay");
-  $("btnSettings").addEventListener("click",async()=>{ setOverlay.hidden=false;
-    try{ const d=await db.doc("handles/"+myId).get(); $("handleInput").value=(d.exists&&d.data().h)||""; }catch(e){} });
+  function openSettings(){ setOverlay.hidden=false; $("handleInput").value=myHandle||""; $("handleWarn").hidden=!!myHandle; }
+  $("btnSettings").addEventListener("click",openSettings);
   $("btnSetClose").addEventListener("click",()=>setOverlay.hidden=true);
   setOverlay.addEventListener("click",e=>{ if(e.target===setOverlay) setOverlay.hidden=true; });
-  $("btnSaveHandle").addEventListener("click",async()=>{ const h=($("handleInput").value||"").trim().slice(0,40);
-    try{ if(h){ await db.doc("handles/"+myId).set({h, at:Date.now()}); handles.set(myId,h); } else { await db.doc("handles/"+myId).delete(); handles.delete(myId); }
-      toast(h?"Псевдоним сохранён":"Псевдоним убран"); setOverlay.hidden=true; renderChatList(); if(activeId) renderHead();
-    }catch(e){ toast("Не удалось сохранить"); } });
+  $("btnSaveHandle").addEventListener("click",async()=>{ const raw=($("handleInput").value||"").trim();
+    if(!raw){ try{ await db.doc("handles/"+myId).delete(); }catch(e){} handles.delete(myId); myHandle=""; refreshMe(); toast("@ник убран"); setOverlay.hidden=true; return; }
+    if(!/^[A-Za-z0-9_]{3,20}$/.test(raw)){ toast("Ник: 3–20 символов, латиница/цифры/_"); return; }
+    const lower=raw.toLowerCase();
+    try{ const snap=await db.collection("handles").where("hl","==",lower).limit(5).get(); const taken=snap.docs.some(d=>d.id!==myId&&(d.data()||{}).hl===lower); if(taken){ toast("Этот @ник уже занят"); return; }
+      await db.doc("handles/"+myId).set({h:raw, hl:lower, at:Date.now()}); handles.set(myId,raw); myHandle=raw; refreshMe(); renderChatList(); if(activeId) renderHead(); toast("@ник сохранён: @"+raw); setOverlay.hidden=true; }
+    catch(e){ if(e&&e.code==="invalid_argument"){ toast("Нет прав на запись — вас должны пригласить как редактора"); } else toast("Не удалось сохранить"); } });
+  function refreshMe(){ const old=$("meAva"); const nv=avaFor(myId,(myHandle||"?"),false); nv.id="meAva"; nv.classList.add("me-ava"); nv.style.width="36px"; nv.style.height="36px"; nv.style.fontSize="14px"; old.replaceWith(nv);
+    $("meHandle").textContent = myHandle? ("@"+myHandle) : "🔒 задайте @ник"; }
 
-  /* ---------- admin / export ---------- */
+  /* admin / export */
   const adminOverlay=$("adminOverlay");
-  $("btnAdmin").addEventListener("click",openAdmin);
-  $("btnAdminClose").addEventListener("click",()=>adminOverlay.hidden=true);
+  $("btnAdmin").addEventListener("click",openAdmin); $("btnAdminClose").addEventListener("click",()=>adminOverlay.hidden=true);
   adminOverlay.addEventListener("click",e=>{ if(e.target===adminOverlay) adminOverlay.hidden=true; });
-  async function openAdmin(){ adminOverlay.hidden=false; const warn=$("adminWarn");
-    if(!escrowPriv){ warn.hidden=false; warn.textContent="⚠ На этом устройстве нет escrow-ключа. Восстановите его из резервной копии, иначе расшифровать переписку нельзя."; } else warn.hidden=true;
-    renderExportList(); }
-  async function renderExportList(){ const el=$("exportList"); el.textContent="";
-    const arr=[...chats.values()].sort((a,b)=>((b.last&&b.last.at)||b.createdAt||0)-((a.last&&a.last.at)||a.createdAt||0));
+  async function openAdmin(){ adminOverlay.hidden=false; const warn=$("adminWarn"); if(!escrowPriv){ warn.hidden=false; warn.textContent="⚠ На этом устройстве нет escrow-ключа. Восстановите его из резервной копии, иначе расшифровать переписку нельзя."; } else warn.hidden=true; renderExportList(); }
+  async function renderExportList(){ const el=$("exportList"); el.textContent=""; const arr=[...chats.values()].sort((a,b)=>((b.last&&b.last.at)||b.createdAt||0)-((a.last&&a.last.at)||a.createdAt||0));
     if(!arr.length){ const n=document.createElement("div"); n.className="hint"; n.textContent="Чатов пока нет."; el.appendChild(n); return; }
-    const ids=new Set(); arr.forEach(c=>{ const o=otherMember(c); if(o) ids.add(o); }); const ps=await resolveProfiles([...ids]);
     for(const c of arr){ const row=document.createElement("div"); row.className="exp-row"; const o=await ownerChatKey(c); let title;
-      if(c.kind==="dm"){ const ot=otherMember(c); title="Личный: "+(ot?displayName(ps,ot):"—"); } else title="Группа: "+(o&&c.nameC? await safeDec(c.nameC,o,"🔒") : "🔒");
-      const other=otherMember(c); row.appendChild(avaEl(other?ps[other]:null,title,false)); const n=document.createElement("div"); n.className="n"; n.textContent=title; row.appendChild(n);
+      if(c.kind==="dm"){ const ot=otherMember(c); title="Личный: "+(ot?displayName(ot):"—"); } else title="Группа: "+(o&&c.nameC? await safeDec(c.nameC,o,"🔒") : "🔒");
+      const other=otherMember(c); row.appendChild(avaFor(other||c._id,title,false)); const n=document.createElement("div"); n.className="n"; n.textContent=title; row.appendChild(n);
       const b=document.createElement("button"); b.className="btn-outline"; b.textContent="Экспорт"; b.disabled=!escrowPriv; b.addEventListener("click",()=>exportChat(c,title)); row.appendChild(b); el.appendChild(row); } }
-  async function ownerChatKey(c){ if(!escrowPriv||!c.wraps||!c.wraps.__escrow__) return null;
-    try{ const raw=await unwrapWith(c.wraps.__escrow__, escrowPriv); return await impAes(raw); }catch(e){ return null; } }
+  async function ownerChatKey(c){ if(!escrowPriv||!c.wraps||!c.wraps.__escrow__) return null; try{ const raw=await unwrapWith(c.wraps.__escrow__, escrowPriv); return await impAes(raw); }catch(e){ return null; } }
   async function exportChat(c,title){ const key=await ownerChatKey(c); if(!key){ toast("Нет escrow-ключа для этого чата"); return; } toast("Расшифровываем…");
-    let msgs=[]; try{ const snap=await db.doc("chats/"+c._id).collection("blocks").orderBy("seq","asc").limit(1000).get();
-      for(const d of snap.docs){ const m=(d.data()||{}).msgs||{}; for(const k in m){ if(m[k]&&typeof m[k]==="object") msgs.push([k,m[k]]); } } }catch(e){ toast("Не удалось прочитать сообщения"); return; }
+    let msgs=[]; try{ const snap=await db.doc("chats/"+c._id).collection("blocks").orderBy("seq","asc").limit(1000).get(); for(const d of snap.docs){ const m=(d.data()||{}).msgs||{}; for(const k in m){ if(m[k]&&typeof m[k]==="object") msgs.push([k,m[k]]); } } }catch(e){ toast("Не удалось прочитать"); return; }
     msgs.sort((a,b)=>a[0]<b[0]?-1:1);
-    const sids=[...new Set([...(c.members||[]), ...msgs.map(x=>x[1].by)].filter(Boolean))]; const ps=await resolveProfiles(sids);
     const lines=["Переписка — Saske Messenger","Чат ID: "+c._id+"  ("+(c.kind==="dm"?"личный":"группа")+")","Экспортировано: "+fmtStamp(Date.now()),"Участники:"];
-    for(const uid of (c.members||[])) lines.push("  - "+displayName(ps,uid)+"  ["+uid+"]");
-    lines.push("".padEnd(52,"-"));
-    for(const [k,m] of msgs){ const who=displayName(ps,m.by); let body;
-      if(m.del) body="(сообщение удалено)";
-      else { const plain=m.c? await safeDec(m.c,key,"(не удалось расшифровать)") : (m.t||"");
-        if(m.kind==="loc"){ try{ const j=JSON.parse(plain); body="📍 "+(j.label?j.label+" ":"")+"("+j.lat+", "+j.lng+")"; }catch(e){ body="📍 Геопозиция"; } } else body=plain; }
-      lines.push("["+fmtStamp(m.at||0)+"] "+who+": "+body); }
+    for(const uid of (c.members||[])) lines.push("  - "+displayName(uid)+"  ["+uid+"]"); lines.push("".padEnd(52,"-"));
+    for(const [k,m] of msgs){ const who=displayName(m.by); let body; if(m.del) body="(удалено)"; else { const plain=m.c? await safeDec(m.c,key,"(не удалось расшифровать)") : (m.t||""); if(m.kind==="loc"){ try{ const j=JSON.parse(plain); body="📍 "+(j.label?j.label+" ":"")+"("+j.lat+", "+j.lng+")"; }catch(e){ body="📍 Геопозиция"; } } else body=plain; } lines.push("["+fmtStamp(m.at||0)+"] "+who+": "+body); }
     const text=lines.join("\n"); const fname="perepiska_"+c._id+".txt";
     if(downloads){ try{ await downloads.save({filename:fname, data:text}); toast("Файл сохранён"); return; }catch(e){} }
-    try{ await navigator.clipboard.writeText(text); toast("Скопировано в буфер обмена"); }catch(e){ toast("Не удалось сохранить файл"); } }
-  $("btnBackupKey").addEventListener("click",async()=>{ if(!escrowPriv){ toast("Нет ключа для резервной копии"); return; }
-    try{ const jwk=await expJwk(escrowPriv); const data=JSON.stringify({type:"saske-messenger-escrow-key", jwk, exportedAt:new Date().toISOString()},null,2);
-      if(downloads){ await downloads.save({filename:"saske-escrow-key-backup.json", data}); toast("Резервная копия сохранена"); } else { await navigator.clipboard.writeText(data); toast("Ключ скопирован"); }
-    }catch(e){ toast("Не удалось сохранить ключ"); } });
-  $("restoreKey").addEventListener("change",async e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return;
-    try{ const txt=await f.text(); const obj=JSON.parse(txt); if(!obj.jwk) throw 0; escrowPriv=await impPriv(obj.jwk);
-      await db.doc(privBase+"/escrow").set({jwk:obj.jwk}).catch(()=>{}); toast("Ключ восстановлен"); openAdmin();
-    }catch(err){ toast("Неверный файл ключа"); } e.target.value=""; });
+    try{ await navigator.clipboard.writeText(text); toast("Скопировано в буфер"); }catch(e){ toast("Не удалось сохранить"); } }
+  $("btnBackupKey").addEventListener("click",async()=>{ if(!escrowPriv){ toast("Нет ключа"); return; } try{ const jwk=await expJwk(escrowPriv); const data=JSON.stringify({type:"saske-messenger-escrow-key", jwk, exportedAt:new Date().toISOString()},null,2); if(downloads){ await downloads.save({filename:"saske-escrow-key-backup.json", data}); toast("Копия сохранена"); } else { await navigator.clipboard.writeText(data); toast("Ключ скопирован"); } }catch(e){ toast("Не удалось сохранить ключ"); } });
+  $("restoreKey").addEventListener("change",async e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return; try{ const obj=JSON.parse(await f.text()); if(!obj.jwk) throw 0; escrowPriv=await impPriv(obj.jwk); await db.doc(privBase+"/escrow").set({jwk:obj.jwk}).catch(()=>{}); toast("Ключ восстановлен"); openAdmin(); }catch(err){ toast("Неверный файл ключа"); } e.target.value=""; });
 
-  /* ---------- identity & escrow ---------- */
+  /* identity & escrow */
   async function ensureIdentity(){ const idoc=db.doc(privBase+"/identity"); let snap; try{ snap=await idoc.get(); }catch(e){ snap={exists:false}; }
     if(snap.exists&&snap.data().priv&&snap.data().pub){ try{ myPriv=await impPriv(snap.data().priv); myPub=await impPub(snap.data().pub); }catch(e){} }
     if(!myPriv||!myPub){ const kp=await genRSA(); const [pj,sj]=await Promise.all([expJwk(kp.publicKey),expJwk(kp.privateKey)]); myPriv=kp.privateKey; myPub=kp.publicKey; try{ await idoc.set({pub:pj, priv:sj, at:Date.now()}); }catch(e){} }
-    try{ const pd=await db.doc("pubkeys/"+myId).get(); const myJwk=await expJwk(myPub);
-      if(!pd.exists || JSON.stringify(pd.data().jwk)!==JSON.stringify(myJwk)) await db.doc("pubkeys/"+myId).set({jwk:myJwk, at:Date.now()}); pubCache.set(myId,myPub); }catch(e){} }
-  async function loadEscrow(){ let pub; try{ pub=await db.doc("escrow/pub").get(); }catch(e){ pub={exists:false}; }
-    if(pub.exists&&pub.data().jwk){ try{ escrowPubKey=await impPub(pub.data().jwk); }catch(e){} }
+    try{ const pd=await db.doc("pubkeys/"+myId).get(); const myJwk=await expJwk(myPub); if(!pd.exists || JSON.stringify(pd.data().jwk)!==JSON.stringify(myJwk)) await db.doc("pubkeys/"+myId).set({jwk:myJwk, at:Date.now()}); pubCache.set(myId,myPub); }catch(e){} }
+  async function loadEscrow(){ let pub; try{ pub=await db.doc("escrow/pub").get(); }catch(e){ pub={exists:false}; } if(pub.exists&&pub.data().jwk){ try{ escrowPubKey=await impPub(pub.data().jwk); }catch(e){} }
     if(isOwner){ try{ const pd=await db.doc(privBase+"/escrow").get(); if(pd.exists&&pd.data().jwk) escrowPriv=await impPriv(pd.data().jwk); }catch(e){}
-      if(!escrowPubKey){ try{ const kp=await genRSA(); const [pj,sj]=await Promise.all([expJwk(kp.publicKey),expJwk(kp.privateKey)]);
-        await db.doc(privBase+"/escrow").set({jwk:sj, at:Date.now()}); await db.doc("escrow/pub").set({jwk:pj, at:Date.now()}); escrowPriv=kp.privateKey; escrowPubKey=kp.publicKey; }catch(e){} } } }
+      if(!escrowPubKey){ try{ const kp=await genRSA(); const [pj,sj]=await Promise.all([expJwk(kp.publicKey),expJwk(kp.privateKey)]); await db.doc(privBase+"/escrow").set({jwk:sj, at:Date.now()}); await db.doc("escrow/pub").set({jwk:pj, at:Date.now()}); escrowPriv=kp.privateKey; escrowPubKey=kp.publicKey; }catch(e){} } } }
 
-  /* ---------- boot ---------- */
-  async function boot(){
-    if(!subtle){ stuck("Нет поддержки шифрования","Откройте приложение в обычном браузере (нужен защищённый контекст https).","Шифрование недоступно"); return; }
-    const [d,u,r,dl]=await Promise.all([claude.use("db"), claude.use("user"), claude.use("room"), claude.use("downloads")]);
-    db=d; user=u; room=r; downloads=dl;
-    if(!db||!user){ stuck("Нужен вход в Claude","Войдите в аккаунт Claude и откройте страницу заново.","Войдите, чтобы увидеть чаты"); return; }
-    myId=await user.id(); if(!myId){ stuck("Нужен вход в Claude","Войдите в аккаунт, чтобы пользоваться мессенджером.","Войдите, чтобы увидеть чаты"); return; }
+  /* boot */
+  async function boot(){ if(!subtle){ stuck("Нет поддержки шифрования","Откройте в обычном браузере (нужен https).","Шифрование недоступно"); return; }
+    const [d,u,r,dl]=await Promise.all([claude.use("db"), claude.use("user"), claude.use("room"), claude.use("downloads")]); db=d; user=u; room=r; downloads=dl;
+    if(!db||!user){ stuck("Нужен вход в Claude","Войдите в аккаунт и откройте страницу заново.","Войдите, чтобы увидеть чаты"); return; }
+    myId=await user.id(); if(!myId){ stuck("Нужен вход в Claude","Войдите в аккаунт.","Войдите, чтобы увидеть чаты"); return; }
     privBase="data/users/"+myId; isOwner=await user.isOwner(); const cw=await user.can("data.write");
-    try{ const me=await user.me(); const old=$("meAva"); const nv=avaEl(me,(handles.get(myId)||me.name||"Я"),false); nv.id="meAva"; nv.classList.add("me-ava"); nv.style.width="36px"; nv.style.height="36px"; nv.style.fontSize="14px"; old.replaceWith(nv); }catch(e){}
-    if(cw===false) setReadOnly();
+    try{ const hd=await db.doc("handles/"+myId).get(); if(hd.exists&&hd.data().h){ myHandle=String(hd.data().h).slice(0,20); handles.set(myId,myHandle); } }catch(e){}
+    refreshMe(); if(cw===false) setReadOnly();
     try{ await ensureIdentity(); await loadEscrow(); }catch(e){}
     encReady=!!(myPriv&&escrowPubKey);
-    if(isOwner) $("btnAdmin").hidden=false;
-    if(!readOnly && encReady) $("btnNew").hidden=false;
+    if(isOwner) $("btnAdmin").hidden=false; if(!readOnly && encReady) $("btnNew").hidden=false;
     if(isOwner && !escrowPubKey) toast("Не удалось настроить escrow-ключ. Проверьте доступ на запись.");
     subscribeHandles(); subscribeChats(); startPresence();
+    if(!readOnly && !myHandle){ setTimeout(()=>{ openSettings(); toast("Задайте @ник, чтобы вас могли добавить"); }, 400); }
   }
   if(window.claude&&window.claude.use) boot();
-  else { let tries=0; const iv=setInterval(()=>{ if(window.claude&&window.claude.use){ clearInterval(iv); boot(); } else if(++tries>50){ clearInterval(iv); stuck("Нужен вход в Claude","Откройте страницу в приложении Claude и войдите в аккаунт.","Войдите, чтобы увидеть чаты"); } },200); }
+  else { let tries=0; const iv=setInterval(()=>{ if(window.claude&&window.claude.use){ clearInterval(iv); boot(); } else if(++tries>50){ clearInterval(iv); stuck("Нужен вход в Claude","Откройте страницу в приложении Claude и войдите.","Войдите, чтобы увидеть чаты"); } },200); }
 })();
 </script>
