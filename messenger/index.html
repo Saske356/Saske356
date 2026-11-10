@@ -1,0 +1,733 @@
+<title>Saske Messenger</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: two panes — chat list left, conversation right; single pane stacked on phone */
+:root{
+  --bg:#eef1f5;
+  --panel:#ffffff;
+  --fg:#15202b;
+  --muted:#7b8794;
+  --accent:#3b7dd8;
+  --accent-fg:#ffffff;
+  --bubble-in:#ffffff;
+  --bubble-out:#d7e9fd;
+  --border:#dde3ea;
+  --hover:#f2f5f9;
+  --active:#e7effa;
+  --danger:#d64545;
+  --online:#3cb46e;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1621; --panel:#17212b; --fg:#e9eef3; --muted:#8a99a8;
+    --accent:#5b9bd9; --accent-fg:#ffffff;
+    --bubble-in:#182533; --bubble-out:#2b5278;
+    --border:#0b131c; --hover:#202b36; --active:#2b3a4a;
+    --danger:#e06c6c; --online:#4ecb84;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1621; --panel:#17212b; --fg:#e9eef3; --muted:#8a99a8;
+  --accent:#5b9bd9; --accent-fg:#ffffff;
+  --bubble-in:#182533; --bubble-out:#2b5278;
+  --border:#0b131c; --hover:#202b36; --active:#2b3a4a;
+  --danger:#e06c6c; --online:#4ecb84;
+  color-scheme: dark;
+}
+html,body{height:100%}
+body{
+  background:var(--bg); color:var(--fg);
+  font-family:'Inter',-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+  font-size:15px; line-height:1.4; overflow:hidden;
+}
+*{box-sizing:border-box}
+button{font:inherit; color:inherit; background:none; border:none; cursor:pointer; padding:0}
+input,textarea{font:inherit; color:var(--fg)}
+.app{display:flex; height:100%; max-width:1300px; margin:0 auto; background:var(--panel)}
+@media (min-width:1301px){ .app{border-left:1px solid var(--border); border-right:1px solid var(--border)} }
+
+/* ---- sidebar ---- */
+.sidebar{width:340px; min-width:280px; display:flex; flex-direction:column; border-right:1px solid var(--border); background:var(--panel)}
+.side-head{display:flex; align-items:center; gap:10px; padding-block:10px;
+  padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(12px, env(safe-area-inset-right, 0px));
+  border-bottom:1px solid var(--border)}
+.side-head .me-ava{width:34px;height:34px;border-radius:50%;flex:none}
+.side-title{font-weight:700; font-size:16px; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.btn-new{width:36px;height:36px;border-radius:50%;background:var(--accent);color:var(--accent-fg);
+  font-size:22px; line-height:1; display:flex;align-items:center;justify-content:center; flex:none}
+.btn-new:hover{filter:brightness(1.08)}
+.chat-list{flex:1; overflow-y:auto; padding-block:4px;
+  padding-left:max(6px, env(safe-area-inset-left, 0px)); padding-right:max(6px, env(safe-area-inset-right, 0px))}
+.chat-item{display:flex; gap:10px; align-items:center; width:100%; text-align:left;
+  padding:8px 10px; border-radius:10px}
+.chat-item:hover{background:var(--hover)}
+.chat-item.active{background:var(--active)}
+.ava{width:46px;height:46px;border-radius:50%;flex:none;object-fit:cover;
+  display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:18px;
+  background:var(--accent); position:relative}
+.ava img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block}
+.ava .dot{position:absolute; right:0; bottom:0; width:12px;height:12px;border-radius:50%;
+  background:var(--online); border:2px solid var(--panel)}
+.ci-body{flex:1; min-width:0}
+.ci-top{display:flex; align-items:baseline; gap:8px}
+.ci-name{font-weight:600; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.ci-time{font-size:12px; color:var(--muted); flex:none; font-variant-numeric:tabular-nums}
+.ci-bottom{display:flex; align-items:center; gap:6px}
+.ci-last{flex:1; min-width:0; color:var(--muted); font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.ci-unread{width:9px;height:9px;border-radius:50%;background:var(--accent);flex:none}
+.list-note{padding:18px 16px; color:var(--muted); font-size:13.5px; text-align:center}
+
+/* ---- chat pane ---- */
+.chatpane{flex:1; min-width:0; display:flex; flex-direction:column; background:var(--bg); position:relative}
+.chat-head{display:flex; align-items:center; gap:10px; padding-block:8px;
+  padding-left:max(10px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px));
+  background:var(--panel); border-bottom:1px solid var(--border); min-height:56px}
+.btn-back{display:none; width:36px;height:36px; font-size:20px; color:var(--muted); flex:none}
+.ch-ava{width:38px;height:38px;font-size:15px}
+.ch-body{flex:1; min-width:0}
+.ch-name{font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.ch-status{font-size:12.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.ch-status.online{color:var(--online)}
+.ch-status.typing{color:var(--accent)}
+.msgs{flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:2px; padding-block:12px;
+  padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px))}
+.day-sep{align-self:center; margin:10px 0 6px; font-size:12.5px; color:var(--muted);
+  background:var(--panel); border:1px solid var(--border); padding:3px 12px; border-radius:999px}
+.btn-earlier{align-self:center; margin:4px 0 8px; font-size:13px; color:var(--accent);
+  background:var(--panel); border:1px solid var(--border); padding:6px 14px; border-radius:999px}
+.row{display:flex; gap:8px; align-items:flex-end; max-width:min(72%, 560px)}
+.row.mine{align-self:flex-end; flex-direction:row-reverse}
+.row.theirs{align-self:flex-start}
+.row .m-ava{width:30px;height:30px;font-size:12px;flex:none;margin-bottom:2px}
+.row .m-ava.ghost{visibility:hidden}
+.bubble{position:relative; padding:7px 12px 6px; border-radius:14px; min-width:0; box-shadow:0 1px 1px rgba(0,0,0,.06)}
+.row.mine .bubble{background:var(--bubble-out); border-bottom-right-radius:5px}
+.row.theirs .bubble{background:var(--bubble-in); border-bottom-left-radius:5px}
+.b-sender{font-size:12.5px; font-weight:700; margin-bottom:1px}
+.b-text{white-space:pre-wrap; overflow-wrap:break-word}
+.b-text.deleted{color:var(--muted); font-style:italic}
+.b-meta{float:right; margin:7px -4px -2px 8px; font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums}
+.row.mine .bubble{cursor:pointer}
+.msg-actions{align-self:flex-end; margin:2px 4px 6px}
+.msg-actions button{color:var(--danger); font-size:13px; background:var(--panel);
+  border:1px solid var(--border); border-radius:8px; padding:4px 12px}
+.composer{display:flex; gap:8px; align-items:flex-end; padding-block:8px;
+  padding-left:max(12px, env(safe-area-inset-left, 0px)); padding-right:max(12px, env(safe-area-inset-right, 0px));
+  background:var(--panel); border-top:1px solid var(--border)}
+.composer textarea{flex:1; min-width:0; resize:none; border:none; outline:none; background:transparent;
+  max-height:140px; padding:8px 4px; line-height:1.35}
+.btn-send{width:40px;height:40px;border-radius:50%; background:var(--accent); color:var(--accent-fg);
+  flex:none; display:flex; align-items:center; justify-content:center}
+.btn-send:disabled{opacity:.4; cursor:default}
+.btn-send svg{width:20px;height:20px;fill:currentColor; margin-left:2px}
+.ro-note{padding:10px 16px; text-align:center; color:var(--muted); font-size:13.5px;
+  background:var(--panel); border-top:1px solid var(--border)}
+
+/* empty / status screens */
+.placeholder{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:10px; color:var(--muted); text-align:center; padding-block:20px;
+  padding-left:max(24px, env(safe-area-inset-left, 0px)); padding-right:max(24px, env(safe-area-inset-right, 0px))}
+.placeholder .big{font-size:40px}
+.placeholder h2{margin:0; font-size:17px; color:var(--fg)}
+.placeholder p{margin:0; max-width:34ch; font-size:14px}
+.conn-note{position:absolute; top:62px; left:50%; transform:translateX(-50%); z-index:5;
+  background:var(--panel); border:1px solid var(--border); color:var(--muted);
+  font-size:13px; padding:6px 14px; border-radius:999px; box-shadow:0 2px 8px rgba(0,0,0,.12)}
+
+/* ---- modal: new chat ---- */
+.overlay{position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:20;
+  display:flex; align-items:center; justify-content:center;
+  padding-block:20px; padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px))}
+.modal{background:var(--panel); border-radius:14px; width:420px; max-width:100%; max-height:min(80vh,560px);
+  display:flex; flex-direction:column; box-shadow:0 10px 40px rgba(0,0,0,.3)}
+.modal-head{display:flex; align-items:center; gap:8px; padding:14px 16px 8px}
+.modal-head h2{margin:0; font-size:17px; flex:1}
+.btn-close{width:32px;height:32px;color:var(--muted);font-size:20px}
+.tabs{display:flex; gap:4px; padding:0 16px 10px}
+.tab{padding:6px 14px; border-radius:999px; font-size:14px; color:var(--muted); background:var(--hover)}
+.tab.on{background:var(--accent); color:var(--accent-fg)}
+.modal input[type=text]{width:100%; border:1px solid var(--border); background:var(--bg);
+  border-radius:10px; padding:9px 12px; outline:none}
+.modal input[type=text]:focus{border-color:var(--accent)}
+.modal-body{padding:0 16px 16px; display:flex; flex-direction:column; gap:10px; overflow-y:auto; flex:1}
+.chips{display:flex; flex-wrap:wrap; gap:6px}
+.chip{display:flex; align-items:center; gap:6px; background:var(--active); border-radius:999px;
+  padding:4px 10px; font-size:13.5px}
+.chip button{color:var(--muted); font-size:15px}
+.ppl{display:flex; flex-direction:column}
+.person{display:flex; align-items:center; gap:10px; padding:8px 6px; border-radius:10px; width:100%; text-align:left}
+.person:hover{background:var(--hover)}
+.person .ava{width:38px;height:38px;font-size:15px}
+.person .p-name{font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.btn-primary{background:var(--accent); color:var(--accent-fg); border-radius:10px; padding:10px 16px; font-weight:600}
+.btn-primary:disabled{opacity:.45; cursor:default}
+.hint{font-size:12.5px; color:var(--muted)}
+
+.toast{position:fixed; bottom:calc(20px + env(safe-area-inset-bottom,0px)); left:50%; transform:translateX(-50%);
+  background:var(--fg); color:var(--bg); padding:9px 18px; border-radius:10px; font-size:14px; z-index:40;
+  max-width:90vw}
+
+/* ---- phone ---- */
+@media (max-width:720px){
+  .sidebar{width:100%; border-right:none}
+  .chatpane{position:absolute; inset:0; z-index:10; transform:translateX(102%); transition:transform .22s ease; box-shadow:-4px 0 20px rgba(0,0,0,.15)}
+  .app.show-chat .chatpane{transform:none}
+  .btn-back{display:flex; align-items:center; justify-content:center}
+  .row{max-width:84%}
+}
+@media (prefers-reduced-motion: reduce){ .chatpane{transition:none} }
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
+
+<div class="app" id="app">
+  <div class="sidebar">
+    <div class="side-head">
+      <span class="ava me-ava" id="meAva" style="width:34px;height:34px;font-size:13px"></span>
+      <div class="side-title">Saske Messenger</div>
+      <button class="btn-new" id="btnNew" title="Новый чат" aria-label="Новый чат" hidden>+</button>
+    </div>
+    <div class="chat-list" id="chatList">
+      <div class="list-note" id="listNote">Загрузка чатов…</div>
+    </div>
+  </div>
+
+  <div class="chatpane" id="chatPane">
+    <div class="placeholder" id="welcome">
+      <div class="big">💬</div>
+      <h2 id="wTitle">Saske Messenger</h2>
+      <p id="wText">Выберите чат слева или создайте новый, чтобы начать переписку.</p>
+    </div>
+
+    <div class="chat-head" id="chatHead" hidden>
+      <button class="btn-back" id="btnBack" aria-label="Назад">←</button>
+      <span class="ava ch-ava" id="chAva"></span>
+      <div class="ch-body">
+        <div class="ch-name" id="chName"></div>
+        <div class="ch-status" id="chStatus"></div>
+      </div>
+    </div>
+    <div class="msgs" id="msgs" hidden></div>
+    <div class="composer" id="composer" hidden>
+      <textarea id="input" rows="1" placeholder="Сообщение…" aria-label="Текст сообщения"></textarea>
+      <button class="btn-send" id="btnSend" aria-label="Отправить" disabled>
+        <svg viewBox="0 0 24 24"><path d="M2.5 21.5l19-9.5-19-9.5v7.6l13 1.9-13 1.9z"/></svg>
+      </button>
+    </div>
+    <div class="ro-note" id="roNote" hidden>У вас доступ только для чтения. Писать могут участники, добавленные как редакторы.</div>
+    <div class="conn-note" id="connNote" hidden>Подключаемся… данные могут быть неактуальны</div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay" hidden>
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Новый чат</h2>
+      <button class="btn-close" id="btnClose" aria-label="Закрыть">✕</button>
+    </div>
+    <div class="tabs">
+      <button class="tab on" id="tabDm">Личный чат</button>
+      <button class="tab" id="tabGroup">Группа</button>
+    </div>
+    <div class="modal-body" id="dmBody">
+      <input type="text" id="dmSearch" placeholder="Поиск людей по имени…" autocomplete="off">
+      <div class="ppl" id="dmResults"></div>
+      <div class="hint">Найдите человека и нажмите на него — откроется личный чат.</div>
+    </div>
+    <div class="modal-body" id="groupBody" hidden>
+      <input type="text" id="groupName" placeholder="Название группы" autocomplete="off">
+      <div class="chips" id="groupChips"></div>
+      <input type="text" id="groupSearch" placeholder="Добавить участников…" autocomplete="off">
+      <div class="ppl" id="groupResults"></div>
+      <button class="btn-primary" id="btnCreateGroup" disabled>Создать группу</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+(function(){
+  const $ = id => document.getElementById(id);
+  const app=$("app"), chatList=$("chatList"), listNote=$("listNote"),
+        welcome=$("welcome"), chatHead=$("chatHead"), msgsEl=$("msgs"),
+        composer=$("composer"), input=$("input"), btnSend=$("btnSend"),
+        roNote=$("roNote"), connNote=$("connNote");
+
+  let db=null, user=null, room=null, myId=null;
+  let readOnly=false;
+  const chats = new Map();          // chatId -> chat doc data
+  let activeId = null;
+  let unsubChats = [];
+  let unsubBlocks = null;
+  let blocks = new Map();           // blockId -> data
+  let blockLimit = 4;
+  let selectedMsgKey = null;
+  let onlineIds = new Set();
+  let typingByChat = new Map();     // chatId -> Set of user ids
+  let lastRead = {};
+  try{ lastRead = JSON.parse(localStorage.getItem("sm_lastRead")||"{}")||{}; }catch(e){}
+  function saveLastRead(){ try{ localStorage.setItem("sm_lastRead", JSON.stringify(lastRead)); }catch(e){} }
+
+  /* ---------- helpers ---------- */
+  function toast(t){
+    const el=document.createElement("div"); el.className="toast"; el.textContent=t;
+    document.body.appendChild(el); setTimeout(()=>el.remove(), 3500);
+  }
+  function msgKey(){
+    return Date.now().toString(36).padStart(9,"0")+"_"+Math.random().toString(36).slice(2,6);
+  }
+  function blockId(seq){ return "b"+String(seq).padStart(6,"0"); }
+  function hash(s){ let x=5381; for(let i=0;i<s.length;i++){ x=((x*33)^s.charCodeAt(i))>>>0; } return x.toString(36); }
+  function dmIdFor(a,b){ const p=[a,b].sort(); return "dm_"+hash(p[0])+"_"+hash(p[1]); }
+  function fmtTime(ts){ const d=new Date(ts); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }
+  function fmtListTime(ts){
+    const d=new Date(ts), now=new Date();
+    if(d.toDateString()===now.toDateString()) return fmtTime(ts);
+    const days=["вс","пн","вт","ср","чт","пт","сб"];
+    if(now-d < 6*864e5) return days[d.getDay()];
+    return String(d.getDate()).padStart(2,"0")+"."+String(d.getMonth()+1).padStart(2,"0")+"."+String(d.getFullYear()).slice(2);
+  }
+  function fmtDay(ts){
+    const d=new Date(ts), now=new Date();
+    if(d.toDateString()===now.toDateString()) return "Сегодня";
+    const y=new Date(now-864e5); if(d.toDateString()===y.toDateString()) return "Вчера";
+    const m=["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
+    return d.getDate()+" "+m[d.getMonth()]+(d.getFullYear()!==now.getFullYear()?" "+d.getFullYear():"");
+  }
+  function avaEl(profile, label, online){
+    const s=document.createElement("span"); s.className="ava";
+    if(profile && profile.avatarUrl){ const img=document.createElement("img"); img.alt=""; img.src=profile.avatarUrl; s.appendChild(img); }
+    else { s.textContent=(label||"?").trim().charAt(0).toUpperCase()||"?"; if(profile&&profile.color) s.style.background=profile.color; }
+    if(online){ const d=document.createElement("span"); d.className="dot"; s.appendChild(d); }
+    return s;
+  }
+  async function resolveProfiles(ids){
+    if(!user || !ids.length) return {};
+    try{ return await user.profiles(ids); }catch(e){ return {}; }
+  }
+  const nameOf=(ps,id)=> (ps && ps[id] && ps[id].name) || "Кто-то";
+
+  function chatTitle(chat, ps){
+    if(chat.kind==="dm"){
+      const other=(chat.members||[]).find(m=>m!==myId);
+      if(!other) return "Избранное";
+      return nameOf(ps, other);
+    }
+    return chat.name || "Группа";
+  }
+  function otherMember(chat){
+    if(chat.kind!=="dm") return null;
+    return (chat.members||[]).find(m=>m!==myId) || null;
+  }
+
+  /* ---------- screens ---------- */
+  function showSignedOut(){
+    listNote.textContent="";
+    $("wTitle").textContent="Нужен вход в Claude";
+    $("wText").textContent="Войдите в свой аккаунт Claude и откройте страницу заново — тогда появятся ваши чаты.";
+    listNote.textContent="Войдите, чтобы увидеть чаты";
+  }
+
+  /* ---------- chat list ---------- */
+  let renderListToken=0;
+  async function renderChatList(){
+    const tok=++renderListToken;
+    const arr=[...chats.values()].sort((a,b)=>((b.last&&b.last.at)||b.createdAt||0)-((a.last&&a.last.at)||a.createdAt||0));
+    const ids=new Set();
+    arr.forEach(c=>{ const o=otherMember(c); if(o) ids.add(o); if(c.last&&c.last.by) ids.add(c.last.by); });
+    const ps=await resolveProfiles([...ids]);
+    if(tok!==renderListToken) return;
+    chatList.textContent="";
+    if(!arr.length){
+      const n=document.createElement("div"); n.className="list-note";
+      n.textContent="Пока нет чатов. Нажмите «+», чтобы написать кому-нибудь или создать группу.";
+      chatList.appendChild(n); return;
+    }
+    for(const c of arr){
+      const btn=document.createElement("button");
+      btn.className="chat-item"+(c._id===activeId?" active":"");
+      const other=otherMember(c);
+      const online=other?onlineIds.has(other):false;
+      btn.appendChild(avaEl(other?ps[other]:null, chatTitle(c,ps), online));
+      const body=document.createElement("div"); body.className="ci-body";
+      const top=document.createElement("div"); top.className="ci-top";
+      const nm=document.createElement("div"); nm.className="ci-name"; nm.textContent=chatTitle(c,ps);
+      top.appendChild(nm);
+      if(c.last&&c.last.at){ const t=document.createElement("div"); t.className="ci-time"; t.textContent=fmtListTime(c.last.at); top.appendChild(t); }
+      body.appendChild(top);
+      const bot=document.createElement("div"); bot.className="ci-bottom";
+      const lastEl=document.createElement("div"); lastEl.className="ci-last";
+      if(c.last){
+        const pre=c.last.by===myId?"Вы: ":(c.kind!=="dm"?nameOf(ps,c.last.by).split(" ")[0]+": ":"");
+        lastEl.textContent=pre+(c.last.t||"");
+      } else lastEl.textContent="Нет сообщений";
+      bot.appendChild(lastEl);
+      if(c.last && c.last.by!==myId && (lastRead[c._id]||0) < c.last.at && c._id!==activeId){
+        const u=document.createElement("span"); u.className="ci-unread"; bot.appendChild(u);
+      }
+      body.appendChild(bot);
+      btn.appendChild(body);
+      btn.addEventListener("click",()=>openChat(c._id));
+      chatList.appendChild(btn);
+    }
+  }
+
+  function subscribeChats(){
+    unsubChats.forEach(u=>u()); unsubChats=[];
+    let loaded=false;
+    const timer=setTimeout(()=>{ if(!loaded){ connNote.hidden=false; } },10000);
+    const handle=snap=>{
+      if(!snap.metadata.fromCache){ loaded=true; clearTimeout(timer); connNote.hidden=true; }
+      snap.docChanges().forEach(ch=>{
+        if(ch.type==="removed"){ chats.delete(ch.doc.id); }
+        else { const d=ch.doc.data()||{}; d._id=ch.doc.id; chats.set(ch.doc.id,d); }
+      });
+      listNote.remove?.();
+      renderChatList();
+      if(activeId && chats.has(activeId)) renderHead();
+    };
+    const err=e=>{ clearTimeout(timer); if(e.code!=="revoked") toast("Не удалось загрузить чаты"); };
+    unsubChats.push(db.collection("chats").where("members","array-contains",myId).onSnapshot(handle,err));
+    unsubChats.push(db.collection("chats").where("public","==",true).onSnapshot(handle,err));
+  }
+
+  /* ---------- open chat / messages ---------- */
+  function openChat(id){
+    if(activeId===id && app.classList.contains("show-chat")) return;
+    activeId=id; selectedMsgKey=null; blockLimit=4;
+    lastRead[id]=Date.now(); saveLastRead();
+    app.classList.add("show-chat");
+    welcome.hidden=true; chatHead.hidden=false; msgsEl.hidden=false;
+    composer.hidden=readOnly; roNote.hidden=!readOnly;
+    msgsEl.textContent=""; blocks=new Map();
+    renderHead(); renderChatList();
+    subscribeBlocks();
+    if(!readOnly) input.focus();
+  }
+  function closeChat(){
+    app.classList.remove("show-chat");
+    activeId=null; selectedMsgKey=null;
+    if(unsubBlocks){unsubBlocks();unsubBlocks=null;}
+    chatHead.hidden=true; msgsEl.hidden=true; composer.hidden=true; roNote.hidden=true; welcome.hidden=false;
+    renderChatList();
+  }
+  $("btnBack").addEventListener("click",closeChat);
+
+  async function renderHead(){
+    const c=chats.get(activeId); if(!c) return;
+    const other=otherMember(c);
+    const ps=await resolveProfiles(other?[other]:[]);
+    const online=other?onlineIds.has(other):false;
+    const old=$("chAva"); const nv=avaEl(other?ps[other]:null, chatTitle(c,ps), false);
+    nv.id="chAva"; nv.classList.add("ch-ava"); old.replaceWith(nv);
+    $("chName").textContent=chatTitle(c,ps);
+    const st=$("chStatus"); st.className="ch-status";
+    const typers=[...(typingByChat.get(activeId)||new Set())].filter(t=>t!==myId);
+    if(typers.length){
+      const tps=await resolveProfiles(typers);
+      st.textContent=(c.kind==="dm"?"печатает…":nameOf(tps,typers[0])+" печатает…");
+      st.classList.add("typing");
+    } else if(c.kind==="dm"){
+      st.textContent=online?"в сети":"не в сети";
+      if(online) st.classList.add("online");
+    } else {
+      const n=(c.members||[]).length;
+      st.textContent=c.public?"публичный чат":n+" "+(n%10===1&&n%100!==11?"участник":(n%10>=2&&n%10<=4&&(n%100<10||n%100>=20)?"участника":"участников"));
+    }
+  }
+
+  function subscribeBlocks(){
+    if(unsubBlocks){unsubBlocks();unsubBlocks=null;}
+    const cid=activeId;
+    let loaded=false;
+    const timer=setTimeout(()=>{ if(!loaded && activeId===cid) connNote.hidden=false; },10000);
+    unsubBlocks=db.doc("chats/"+cid).collection("blocks")
+      .orderBy("seq","desc").limit(blockLimit)
+      .onSnapshot(snap=>{
+        if(activeId!==cid) return;
+        if(!snap.metadata.fromCache){ loaded=true; clearTimeout(timer); connNote.hidden=true; }
+        blocks=new Map();
+        snap.docs.forEach(d=>blocks.set(d.id,d.data()||{}));
+        renderMsgs(snap.size>=blockLimit);
+      },e=>{ clearTimeout(timer); if(e.code!=="revoked") toast("Не удалось загрузить сообщения"); });
+  }
+
+  let renderMsgsToken=0;
+  async function renderMsgs(mayHaveEarlier){
+    const tok=++renderMsgsToken;
+    const all=[];
+    for(const b of blocks.values()){
+      const m=b.msgs||{};
+      for(const k in m){ if(m[k]&&typeof m[k]==="object") all.push([k,m[k]]); }
+    }
+    all.sort((a,b)=>a[0]<b[0]?-1:1);
+    const c=chats.get(activeId)||{};
+    const senderIds=[...new Set(all.map(x=>x[1].by).filter(Boolean))];
+    const ps=await resolveProfiles(senderIds);
+    if(tok!==renderMsgsToken) return;
+
+    const nearBottom = msgsEl.scrollHeight - msgsEl.scrollTop - msgsEl.clientHeight < 120;
+    msgsEl.textContent="";
+
+    if(mayHaveEarlier){
+      const b=document.createElement("button"); b.className="btn-earlier"; b.textContent="Показать более ранние";
+      b.addEventListener("click",()=>{ blockLimit+=4; subscribeBlocks(); });
+      msgsEl.appendChild(b);
+    }
+    if(!all.length){
+      const ph=document.createElement("div"); ph.className="placeholder";
+      ph.innerHTML=""; const h=document.createElement("h2"); h.textContent="Сообщений пока нет";
+      const p=document.createElement("p"); p.textContent="Напишите первое сообщение!";
+      ph.appendChild(h); ph.appendChild(p); msgsEl.appendChild(ph);
+    }
+
+    let lastDay="", lastBy=null;
+    for(const [key,m] of all){
+      const day=new Date(m.at||0).toDateString();
+      if(day!==lastDay){
+        lastDay=day; lastBy=null;
+        const s=document.createElement("div"); s.className="day-sep"; s.textContent=fmtDay(m.at||0);
+        msgsEl.appendChild(s);
+      }
+      const mine=m.by===myId;
+      const row=document.createElement("div"); row.className="row "+(mine?"mine":"theirs");
+      if(!mine && c.kind!=="dm"){
+        const showAva=lastBy!==m.by;
+        const a=avaEl(ps[m.by], nameOf(ps,m.by), false); a.classList.add("m-ava");
+        if(!showAva) a.classList.add("ghost");
+        row.appendChild(a);
+      }
+      const bub=document.createElement("div"); bub.className="bubble";
+      if(!mine && c.kind!=="dm" && lastBy!==m.by){
+        const sn=document.createElement("div"); sn.className="b-sender";
+        sn.textContent=nameOf(ps,m.by);
+        if(ps[m.by]&&ps[m.by].color) sn.style.color=ps[m.by].color;
+        bub.appendChild(sn);
+      }
+      const tx=document.createElement("div"); tx.className="b-text";
+      if(m.del){ tx.classList.add("deleted"); tx.textContent="Сообщение удалено"; }
+      else tx.textContent=m.t||"";
+      const meta=document.createElement("span"); meta.className="b-meta"; meta.textContent=fmtTime(m.at||0);
+      tx.appendChild(meta);
+      bub.appendChild(tx);
+      if(mine && !m.del){
+        bub.addEventListener("click",()=>{ selectedMsgKey=selectedMsgKey===key?null:key; renderMsgs(mayHaveEarlier); });
+      }
+      row.appendChild(bub);
+      msgsEl.appendChild(row);
+      if(mine && selectedMsgKey===key && !m.del){
+        const act=document.createElement("div"); act.className="msg-actions";
+        const del=document.createElement("button"); del.textContent="Удалить сообщение";
+        del.addEventListener("click",()=>deleteMsg(key));
+        act.appendChild(del); msgsEl.appendChild(act);
+      }
+      lastBy=m.by;
+    }
+    if(nearBottom) msgsEl.scrollTop=msgsEl.scrollHeight;
+    lastRead[activeId]=Date.now(); saveLastRead();
+  }
+
+  function findBlockOfMsg(key){
+    for(const [bid,b] of blocks){ if(b.msgs&&b.msgs[key]) return bid; }
+    return null;
+  }
+  async function deleteMsg(key){
+    const bid=findBlockOfMsg(key); if(!bid) return;
+    selectedMsgKey=null;
+    try{ await db.doc("chats/"+activeId).collection("blocks").doc(bid).update({msgs:{[key]:{del:true}}}); }
+    catch(e){ toast("Не удалось удалить"); }
+  }
+
+  /* ---------- sending ---------- */
+  function setReadOnly(){
+    readOnly=true;
+    composer.hidden=true;
+    if(activeId) roNote.hidden=false;
+    $("btnNew").hidden=true;
+  }
+  async function send(){
+    const text=input.value.replace(/\s+$/,"");
+    if(!text.trim()||!activeId) return;
+    const cid=activeId;
+    const c=chats.get(cid)||{};
+    const seq=c.seq||1;
+    const key=msgKey();
+    const msg={t:text, by:myId, at:Date.now()};
+    input.value=""; autoGrow(); btnSend.disabled=true;
+    sendTyping(null);
+    const bref=db.doc("chats/"+cid).collection("blocks").doc(blockId(seq));
+    try{
+      try{ await bref.update({seq:seq, msgs:{[key]:msg}}); }
+      catch(e){
+        if(e&&e.code==="invalid_argument"){ await bref.set({seq:seq, msgs:{[key]:msg}}); }
+        else throw e;
+      }
+    }catch(e){
+      if(e&&e.code==="invalid_argument"){ setReadOnly(); toast("Похоже, у вас нет прав писать здесь"); }
+      else if(e&&e.code==="quota_exceeded"){ toast("Хранилище переполнено — удалите старые чаты"); }
+      else toast("Не удалось отправить, попробуйте ещё раз");
+      input.value=text; autoGrow(); btnSend.disabled=false;
+      return;
+    }
+    const cur=blocks.get(blockId(seq));
+    const count=cur&&cur.msgs?Object.keys(cur.msgs).length+1:1;
+    const patch={last:{t:text.slice(0,90), by:myId, at:msg.at}};
+    if(count>=64) patch.seq=seq+1;
+    try{ await db.doc("chats/"+cid).update(patch); }catch(e){}
+  }
+  btnSend.addEventListener("click",send);
+  const coarse = matchMedia("(pointer:coarse)").matches;
+  input.addEventListener("keydown",e=>{
+    if(e.key==="Enter"&&!e.shiftKey&&!coarse){ e.preventDefault(); send(); }
+  });
+  function autoGrow(){
+    input.style.height="auto";
+    input.style.height=Math.min(input.scrollHeight,140)+"px";
+    btnSend.disabled=!input.value.trim();
+  }
+  input.addEventListener("input",()=>{ autoGrow(); sendTyping(activeId); });
+
+  /* ---------- presence: online + typing ---------- */
+  let typingTimer=null, lastTypingSent=0;
+  function sendTyping(chatId){
+    if(!room) return;
+    const now=Date.now();
+    if(chatId){
+      if(now-lastTypingSent>2000){ lastTypingSent=now; room.presence({typing:chatId}).catch(()=>{}); }
+      clearTimeout(typingTimer);
+      typingTimer=setTimeout(()=>room.presence({typing:null}).catch(()=>{}),4000);
+    } else {
+      clearTimeout(typingTimer); lastTypingSent=0;
+      room.presence({typing:null}).catch(()=>{});
+    }
+  }
+  function startPresence(){
+    if(!room) return;
+    room.onPeers(ch=>{
+      onlineIds=new Set(); typingByChat=new Map();
+      for(const p of ch.peers){
+        if(p.by) onlineIds.add(p.by);
+        const t=p.presence&&p.presence.typing;
+        if(t&&typeof t==="string"&&!p.isMe){
+          if(!typingByChat.has(t)) typingByChat.set(t,new Set());
+          if(p.by) typingByChat.get(t).add(p.by);
+        }
+      }
+      renderChatList();
+      if(activeId) renderHead();
+    },()=>{ /* room unavailable: page keeps working without online status */ });
+  }
+
+  /* ---------- new chat modal ---------- */
+  const overlay=$("overlay"), dmBody=$("dmBody"), groupBody=$("groupBody");
+  const groupMembers=new Map(); // id -> name
+  $("btnNew").addEventListener("click",()=>{ overlay.hidden=false; $("dmSearch").value=""; renderPeople("dmResults",[],pickDm); $("dmSearch").focus(); searchInto("", "dmResults", pickDm); });
+  $("btnClose").addEventListener("click",()=>overlay.hidden=true);
+  overlay.addEventListener("click",e=>{ if(e.target===overlay) overlay.hidden=true; });
+  $("tabDm").addEventListener("click",()=>{ $("tabDm").classList.add("on"); $("tabGroup").classList.remove("on"); dmBody.hidden=false; groupBody.hidden=true; });
+  $("tabGroup").addEventListener("click",()=>{ $("tabGroup").classList.add("on"); $("tabDm").classList.remove("on"); groupBody.hidden=false; dmBody.hidden=true; $("groupName").focus(); });
+
+  async function searchInto(q, targetId, onPick){
+    if(!user) return;
+    const hits=await user.search(q);
+    renderPeople(targetId, hits.filter(h=>h.id!==myId), onPick);
+  }
+  function renderPeople(targetId, hits, onPick){
+    const el=$(targetId); el.textContent="";
+    if(!hits.length){
+      const n=document.createElement("div"); n.className="hint";
+      n.textContent="Никого не нашлось. Введите имя человека из вашей организации.";
+      el.appendChild(n); return;
+    }
+    for(const h of hits){
+      const b=document.createElement("button"); b.className="person";
+      b.appendChild(avaEl(h,h.name,false));
+      const nm=document.createElement("div"); nm.className="p-name"; nm.textContent=h.name;
+      b.appendChild(nm);
+      b.addEventListener("click",()=>onPick(h));
+      el.appendChild(b);
+    }
+  }
+  $("dmSearch").addEventListener("input",e=>searchInto(e.target.value,"dmResults",pickDm));
+  $("dmSearch").addEventListener("focus",()=>searchInto($("dmSearch").value,"dmResults",pickDm));
+  $("groupSearch").addEventListener("input",e=>searchInto(e.target.value,"groupResults",pickGroupMember));
+  $("groupSearch").addEventListener("focus",()=>searchInto($("groupSearch").value,"groupResults",pickGroupMember));
+
+  async function pickDm(h){
+    overlay.hidden=true;
+    const id=dmIdFor(myId,h.id);
+    try{
+      const snap=await db.doc("chats/"+id).get();
+      if(!snap.exists){
+        await db.doc("chats/"+id).set({kind:"dm", members:[myId,h.id], createdBy:myId, createdAt:Date.now(), seq:1});
+      }
+      openChat(id);
+    }catch(e){
+      if(e&&e.code==="invalid_argument"){ setReadOnly(); toast("У вас нет прав создавать чаты"); }
+      else toast("Не удалось открыть чат");
+    }
+  }
+  function pickGroupMember(h){
+    groupMembers.set(h.id,h.name||"Кто-то");
+    $("groupSearch").value="";
+    renderChips(); updateGroupBtn();
+  }
+  function renderChips(){
+    const el=$("groupChips"); el.textContent="";
+    for(const [id,name] of groupMembers){
+      const c=document.createElement("span"); c.className="chip";
+      const t=document.createElement("span"); t.textContent=name; c.appendChild(t);
+      const x=document.createElement("button"); x.textContent="✕"; x.setAttribute("aria-label","Убрать");
+      x.addEventListener("click",()=>{ groupMembers.delete(id); renderChips(); updateGroupBtn(); });
+      c.appendChild(x); el.appendChild(c);
+    }
+  }
+  function updateGroupBtn(){ $("btnCreateGroup").disabled=!($("groupName").value.trim()&&groupMembers.size); }
+  $("groupName").addEventListener("input",updateGroupBtn);
+  $("btnCreateGroup").addEventListener("click",async()=>{
+    const name=$("groupName").value.trim(); if(!name||!groupMembers.size) return;
+    overlay.hidden=true;
+    try{
+      const ref=await db.collection("chats").add({
+        kind:"group", name:name, members:[myId,...groupMembers.keys()],
+        createdBy:myId, createdAt:Date.now(), seq:1
+      });
+      groupMembers.clear(); renderChips(); $("groupName").value="";
+      openChat(ref.id);
+    }catch(e){
+      if(e&&e.code==="invalid_argument"){ setReadOnly(); toast("У вас нет прав создавать чаты"); }
+      else toast("Не удалось создать группу");
+    }
+  });
+
+  /* ---------- boot ---------- */
+  async function boot(){
+    const [d,u,r]=await Promise.all([claude.use("db"), claude.use("user"), claude.use("room")]);
+    db=d; user=u; room=r;
+    if(!db||!user){ showSignedOut(); return; }
+    myId=await user.id();
+    if(!myId){ showSignedOut(); return; }
+    try{
+      const me=await user.me();
+      const old=$("meAva"); const nv=avaEl(me, me.name||"Я", false);
+      nv.id="meAva"; nv.classList.add("me-ava");
+      nv.style.width="34px"; nv.style.height="34px"; nv.style.fontSize="13px";
+      old.replaceWith(nv);
+    }catch(e){}
+    const cw=await user.can("data.write");
+    if(cw===false){ setReadOnly(); }
+    else $("btnNew").hidden=false;
+    subscribeChats();
+    startPresence();
+  }
+  if(window.claude&&window.claude.use) boot();
+  else {
+    // the runtime attaches shortly after load; retry briefly
+    let tries=0;
+    const iv=setInterval(()=>{
+      if(window.claude&&window.claude.use){ clearInterval(iv); boot(); }
+      else if(++tries>50){ clearInterval(iv); showSignedOut(); }
+    },200);
+  }
+})();
+</script>
