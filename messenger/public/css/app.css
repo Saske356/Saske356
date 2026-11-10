@@ -717,3 +717,53 @@ body.escrow .d-card.secure .d-title .i { color: var(--warn); }
   .adm-grid { grid-template-columns: 1fr; }
   .adm-msg { grid-template-columns: 1fr; gap: 2px; }
 }
+
+/* ================= bots ================= */
+.bot-chip { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 6px; background: var(--ink); color: var(--paper); font: 800 10px/1.5 var(--font); letter-spacing: .04em; text-transform: uppercase; vertical-align: 2px; }
+.chat-row.active .bot-chip { background: var(--paper); color: var(--ink); }
+.intro.bot { gap: 6px; }
+.intro.bot .av { margin-bottom: 4px; }
+.intro.bot .btn { margin-top: 8px; }
+.intro.bot .small { display: flex; align-items: center; gap: 5px; }
+.kb { display: grid; gap: 4px; margin-top: 4px; width: 100%; min-width: 220px; }
+.kb-row { display: flex; gap: 4px; }
+.kb-btn { flex: 1; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 38px; padding: 6px 10px; border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent); backdrop-filter: blur(6px); box-shadow: var(--shadow-1); font-size: 14px; font-weight: 700; color: var(--ink); text-decoration: none; text-align: center; transition: background .12s, transform .1s; }
+.kb-btn:hover { background: var(--surface); }
+.kb-btn:active { transform: scale(.97); }
+.kb-btn.busy { opacity: .55; }
+.kb-btn .i.xs { opacity: .5; }
+.rk { display: grid; gap: 4px; padding: 6px; margin-bottom: 6px; border-radius: 18px; background: var(--surface-2); max-height: 30vh; overflow-y: auto; }
+.rk .kb-btn { background: var(--surface); }
+.cmds { margin-bottom: 6px; padding: 6px; border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-2); max-height: 280px; overflow-y: auto; }
+.cmds button { display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 9px 12px; border-radius: 12px; text-align: left; }
+.cmds button:hover { background: var(--surface-2); }
+.cmds b { color: var(--accent); }
+.cmds span { flex: 1; color: var(--ink-2); font-size: 14px; }
+.cmds small { color: var(--muted); }
+.d-cmds { display: grid; gap: 2px; margin: 8px -6px; }
+.d-cmds button { text-align: left; padding: 6px; border-radius: 9px; font-size: 13.5px; color: var(--ink-2); }
+.d-cmds button:hover { background: var(--surface); }
+.d-cmds b { color: var(--accent); }
+.bots-modal { max-width: 520px; }
+.bot-row { width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 14px; text-align: left; }
+.bot-row:hover { background: var(--surface-2); }
+.i.flip { transform: rotate(180deg); color: var(--muted); }
+.bot-new { margin-top: 10px; }
+.bot-head { display: flex; align-items: center; gap: 12px; margin: 12px 0 16px; }
+.bot-head > div { display: grid; }
+.token-box { padding: 14px; border-radius: 16px; background: var(--warn-bg); margin-bottom: 16px; }
+.token-box p { margin: 6px 0; }
+.token { display: block; padding: 10px 12px; border-radius: 10px; background: var(--surface); font: 600 13px/1.4 ui-monospace, Menlo, monospace; word-break: break-all; user-select: all; }
+.row-btns { display: flex; gap: 6px; margin: 8px 0; }
+.bot-meta { display: grid; gap: 10px; padding: 12px; margin: 10px 0; border-radius: 14px; background: var(--surface-2); font-size: 13.5px; }
+.bot-meta > div { display: grid; gap: 2px; overflow-wrap: anywhere; }
+.m-foot.flush { padding: 10px 0 0; }
+.api-help { margin: 14px 0 4px; font-size: 13.5px; color: var(--ink-2); }
+.api-help summary { cursor: pointer; font-weight: 700; color: var(--ink); }
+.api-help code { font-size: 12.5px; background: var(--surface-2); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
+.toggle small { font-weight: 500; }
+.token-box code { overflow-wrap: anywhere; }
+.apk-link { display: flex; align-items: center; justify-content: center; gap: 8px; height: 46px; margin-top: 10px; border-radius: 14px; border: 1.5px solid var(--line-2); color: var(--ink); font-weight: 700; text-decoration: none; }
+.apk-link:hover { background: var(--surface-2); }
+.apk-link small { font-size: 11px; font-weight: 800; padding: 1px 6px; border-radius: 6px; background: var(--ok); color: #fff; }

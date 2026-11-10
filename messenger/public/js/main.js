@@ -2,13 +2,14 @@
 import { S, forgetAll, decrypt, decryptAll, createDirect, chatTitle } from './state.js';
 import { connect, disconnect, setHandlers, api, rpc } from './net.js';
 import * as C from './crypto.js';
-import { $, $$, toast, fine } from './util.js';
+import { $, $$, toast, fine, hidden, native, systemNotify } from './util.js';
 import { App } from './bus.js';
 import { initRail, setTab, refreshPanel, updateRail, describe } from './sidebar.js';
 import { initConversation, openChat, closeChat, renderFeed, renderHead, renderPins, renderDetails, markRead, atBottom, setCtx, toggleDetails, msgIndex } from './conversation.js';
 import { startCall, handleCallEvent, inCall, hangup } from './calls.js';
 import { closeTopModal, closeMenu } from './modals.js';
 import { sounds } from './media.js';
+import { showBotAnswer } from './botsui.js';
 
 // ================= theme =================
 const themeMode = () => localStorage.getItem('orbita.theme') || 'auto';
@@ -19,6 +20,7 @@ function applyTheme() {
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   document.documentElement.style.setProperty('--accent', accent());
   document.querySelector('meta[name=theme-color]').content = dark ? '#121116' : '#f4f1ea';
+  try { native()?.setTheme(dark ? 'dark' : 'light', dark ? '#121116' : '#f4f1ea'); } catch {}
   if (S.me) updateRail();
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
@@ -113,14 +115,11 @@ async function logout(silent) {
 
 // ================= events =================
 function notify(c, m) {
-  if (!document.hidden && S.current === c.id) return;
+  if (!hidden() && S.current === c.id) return;
   sounds.message();
-  if (!document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return;
-  try {
-    const title = c.type === 'group' ? `${S.users[m.from]?.name} · ${c.title}` : chatTitle(c);
-    const n = new Notification(title, { body: describe(m, c), tag: 'chat' + c.id, icon: S.users[m.from]?.avatar || '/icon.svg' });
-    n.onclick = () => { window.focus(); App.openChat(c.id); n.close(); };
-  } catch {}
+  if (!hidden()) return;
+  const title = c.type === 'group' ? `${S.users[m.from]?.name} · ${c.title}` : chatTitle(c);
+  systemNotify(title, describe(m, c), 'chat' + c.id, () => App.openChat(c.id));
 }
 const isCurrent = id => S.current === id;
 
@@ -179,7 +178,7 @@ async function onEvent(evt) {
       c.lastMessage = m;
       if (S.typing[c.id]) { clearTimeout(S.typing[c.id][m.from]?.timer); delete S.typing[c.id][m.from]; }
       if (m.from !== S.me.id && m.kind !== 'service') {
-        const seenNow = isCurrent(c.id) && !document.hidden && atBottom();
+        const seenNow = isCurrent(c.id) && !hidden() && atBottom();
         if (!seenNow) c.unread = (c.unread || 0) + 1;
         notify(c, m);
       }
@@ -218,7 +217,7 @@ async function onEvent(evt) {
       apply(S.chats[evt.chatId]?.lastMessage);
       if (evt.type === 'reactions' && evt.added && evt.by !== S.me.id) {
         const m = msgIndex(evt.id) || S.chats[evt.chatId]?.lastMessage;
-        if (m?.from === S.me.id && (!isCurrent(evt.chatId) || document.hidden)) {
+        if (m?.from === S.me.id && (!isCurrent(evt.chatId) || hidden())) {
           sounds.message();
           toast(`${S.users[evt.by]?.name.split(' ')[0]} — ${evt.emoji} на ваше сообщение`);
         }
@@ -256,6 +255,7 @@ async function onEvent(evt) {
       if (S.current) { renderHead(); renderFeed(); renderDetails(); }
       return;
     }
+    case 'botAnswer': return showBotAnswer(evt);
     default:
       if (evt.type.startsWith('call:')) return handleCallEvent(evt);
   }
@@ -275,7 +275,19 @@ document.addEventListener('keydown', e => {
   if (document.activeElement?.closest('.search-field')) return;
   if (S.current && !inCall()) closeChat();
 });
-document.addEventListener('visibilitychange', () => { if (!document.hidden) markRead(); });
+document.addEventListener('visibilitychange', () => { if (!hidden()) markRead(); });
+// ---- hooks for the Android shell ----
+window.orbitaVisible = v => { window.__orbitaHidden = !v; if (v) markRead(); };
+window.orbitaOpen = tag => { const m = /^chat(\d+)$/.exec(tag || ''); if (m && S.chats[m[1]]) App.openChat(Number(m[1])); };
+window.orbitaBack = () => {
+  if ($('.menu')) { closeMenu(); return true; }
+  if (closeTopModal()) return true;
+  if (S.details) { toggleDetails(false); return true; }
+  if ($('#call') && !$('#call').classList.contains('hidden') && !$('#call').classList.contains('mini')) { $('#call').classList.add('mini'); return true; }
+  if (S.current) { closeChat(); return true; }
+  if (S.tab !== 'chats' && S.me) { setTab('chats'); return true; }
+  return false;
+};
 setInterval(() => { if (S.current) renderHead(); if (S.tab === 'people') refreshPanel(); }, 60e3);
 
 // ================= boot =================
@@ -284,6 +296,7 @@ setInterval(() => { if (S.current) renderHead(); if (S.tab === 'people') refresh
   initConversation();
   S.config = await fetch('/api/config').then(r => r.json()).catch(() => S.config);
   document.body.classList.toggle('escrow', !!S.config.escrow);
+  if (S.config.apk && !native()) $('#apkLink').classList.remove('hidden');
   const ident = await C.keystore.get();
   if (S.token && ident?.privateKey) {
     S.identity = { id: ident.userId, privateKey: ident.privateKey, publicKey: ident.publicKey };

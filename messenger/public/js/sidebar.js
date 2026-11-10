@@ -1,11 +1,13 @@
 // Rail + the left panel (chats / calls / people / me).
 import { S, chatTitle, peerId, userName, totalUnread } from './state.js';
 import { rpc, api } from './net.js';
+import { native } from './util.js';
 import { $, $$, esc, icon, shortTime, seen, duration, toast, debounce, ttlShort, ttlLabel } from './util.js';
 import { avatar, chatAvatar } from './avatar.js';
 import { menu, newGroup, personCard, safetyModal, passwordModal, sessionsModal, confirmBox } from './modals.js';
 import { sounds } from './media.js';
 import { App } from './bus.js';
+import { botsModal, botChip } from './botsui.js';
 
 const body = () => $('#panelBody');
 
@@ -153,7 +155,7 @@ function chatRowHtml(c) {
   return `<button class="chat-row ${S.current === c.id ? 'active' : ''}" data-chat="${c.id}">
     ${chatAvatar(c, 'lg')}
     <span class="cr-main">
-      <span class="cr-top"><b class="cr-name">${esc(chatTitle(c))}</b>${c.ttl ? `<span class="ttl-chip">${icon('timer')}${ttlShort(c.ttl)}</span>` : ''}<span class="cr-time">${ticks}${m ? shortTime(m.ts) : ''}</span></span>
+      <span class="cr-top"><b class="cr-name">${esc(chatTitle(c))}${c.type === 'direct' ? botChip(S.users[peerId(c)]) : ''}</b>${c.ttl ? `<span class="ttl-chip">${icon('timer')}${ttlShort(c.ttl)}</span>` : ''}<span class="cr-time">${ticks}${m ? shortTime(m.ts) : ''}</span></span>
       <span class="cr-bot"><span class="cr-prev">${prev}</span>${badge}</span>
     </span></button>`;
 }
@@ -221,7 +223,7 @@ function peopleSkeleton() {
 }
 function personRow(u) {
   return `<div class="person-row" data-user="${u.id}" role="button" tabindex="0">${avatar(u, 'md')}
-    <span class="cr-main"><b>${esc(u.name)}</b><small class="${u.online ? 'online' : ''}">@${esc(u.username)} · ${esc(seen(u))}</small></span>
+    <span class="cr-main"><b>${esc(u.name)}${botChip(u)}</b><small class="${u.online ? 'online' : ''}">@${esc(u.username)} · ${esc(seen(u))}</small></span>
     <button class="icon-btn" data-msg="${u.id}" title="Написать">${icon('chats')}</button></div>`;
 }
 function drawPeople() {
@@ -230,7 +232,7 @@ function drawPeople() {
     list.innerHTML = peopleResults.length ? `<h3 class="sect">Найдены</h3>` + peopleResults.map(personRow).join('') : `<div class="empty-state">${icon('search')}<p>Никого с таким именем</p></div>`;
     return;
   }
-  const all = Object.values(S.users).filter(u => u.id !== S.me.id);
+  const all = Object.values(S.users).filter(u => u.id !== S.me.id && !u.username.startsWith('deleted_'));
   const on = all.filter(u => u.online).sort((a, b) => a.name.localeCompare(b.name));
   const off = all.filter(u => !u.online).sort((a, b) => b.lastSeen - a.lastSeen);
   list.innerHTML = !all.length
@@ -255,6 +257,9 @@ function meSkeleton() {
     if (a === 'key') safetyModal(null);
     if (a === 'password') passwordModal();
     if (a === 'sessions') sessionsModal();
+    if (a === 'bots') botsModal();
+    if (a === 'server') { if (await confirmBox('Сменить сервер?', 'Приложение отключится от этого сервера. Ключ шифрования на устройстве сохранится.', 'Сменить', { danger: false })) native()?.resetServer(); return; }
+    if (a === 'notify' && native()) return toast('Уведомления настраиваются в настройках Android');
     if (a === 'notify') {
       if (!('Notification' in window)) return toast('Браузер не поддерживает уведомления');
       const r = await Notification.requestPermission();
@@ -293,7 +298,7 @@ function drawMe() {
   const focused = document.activeElement?.id;
   if (focused === 'meName' || focused === 'meBio') return; // don't clobber typing
   const u = S.me, theme = App.themeMode(), accent = App.accent();
-  const notif = 'Notification' in window ? Notification.permission : 'denied';
+  const notif = native() ? 'granted' : 'Notification' in window ? Notification.permission : 'denied';
   box.innerHTML = `
     <section class="me-card">
       <button class="me-av" data-a="avatar" title="Сменить фото">${avatar({ ...u, online: false }, 'xl')}<span class="me-av-edit">${icon('image')}</span></button>
@@ -313,10 +318,14 @@ function drawMe() {
       <button class="me-item" data-a="sessions">${icon('devices')}<span><b>Устройства</b><small>Где выполнен вход</small></span></button>
       <button class="me-item" data-a="password">${icon('key')}<span><b>Сменить пароль</b><small>Ключи переписки не изменятся</small></span></button>
     </section>
+    <section class="me-sect"><h3 class="sect">Для разработчиков</h3>
+      <button class="me-item" data-a="bots">${icon('sparkle')}<span><b>Мои боты</b><small>Создать бота, получить токен, настроить</small></span></button>
+    </section>
     <section class="me-sect"><h3 class="sect">Уведомления</h3>
       <button class="me-item" data-a="notify">${icon('bell')}<span><b>Уведомления браузера</b><small>${notif === 'granted' ? 'Включены' : notif === 'denied' ? 'Запрещены в браузере' : 'Нажмите, чтобы включить'}</small></span></button>
       <button class="me-item" data-a="sounds">${icon(sounds.enabled() ? 'bell' : 'micOff')}<span><b>Звуки</b><small>${sounds.enabled() ? 'Включены' : 'Выключены'}</small></span></button>
     </section>
+    ${native() ? `<button class="me-item" data-a="server">${icon('monitor')}<span><b>Сервер</b><small>${esc(location.host)} — сменить</small></span></button>` : ''}
     <button class="me-item danger" data-a="logout">${icon('logout')}<span><b>Выйти</b></span></button>
     <p class="fine-print">Орбита · P-256 + AES-256-GCM${S.config.escrow ? ' · служебный доступ по законному запросу' : ' · сквозное шифрование'}</p>`;
 }

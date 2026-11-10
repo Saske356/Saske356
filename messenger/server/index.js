@@ -10,6 +10,7 @@ const { WebSocketServer } = require('ws');
 const { open } = require('./db');
 const { createCalls } = require('./calls');
 const { createAdmin } = require('./admin');
+const { createBots } = require('./bots');
 
 const PORT = Number(process.env.PORT) || 3000;
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, '..', 'data'));
@@ -46,9 +47,11 @@ const isId = v => Number.isInteger(v) && v > 0;
 const sockets = new Map(); // userId -> Set<ws>
 
 function publicUser(u) {
+  const b = db.one('SELECT description, commands FROM bots WHERE user_id = ?', u.id);
   return {
     id: u.id, username: u.username, name: u.name, bio: u.bio, color: u.color, avatar: u.avatar || null,
     publicKey: u.public_key, online: sockets.has(u.id), lastSeen: u.last_seen,
+    ...(b ? { bot: true, botInfo: { description: b.description, commands: JSON.parse(b.commands) } } : {}),
   };
 }
 const userById = id => db.one('SELECT * FROM users WHERE id = ?', id);
@@ -124,6 +127,7 @@ function insertMessage(chatId, senderId, kind, fields = {}) {
   const msg = messageView(id);
   toChat(chatId, { type: 'message', message: msg });
   toChat(chatId, { type: 'read', chatId, userId: senderId, msgId: id });
+  if (bots && (kind === 'msg' || kind === 'service')) bots.onMessage(msg).catch(e => console.error('bots', e));
   return msg;
 }
 const service = (chatId, uid, event, extra = {}) => insertMessage(chatId, uid, 'service', { meta: { event, ...extra } });
@@ -182,6 +186,7 @@ function cleanBlobs(list, uid) {
 }
 
 // ================= handlers =================
+let bots = null;
 const calls = createCalls({ db, toUser, send, isMember, memberIds, chatRow, insertMessage, sockets, fail });
 
 const handlers = {
@@ -346,7 +351,9 @@ const handlers = {
     if (m.sender_id !== uid || m.kind !== 'msg') fail('Это сообщение нельзя изменить');
     const cipher = checkCipher(p, c);
     db.run('UPDATE messages SET kv = ?, iv = ?, ct = ?, edited_at = ? WHERE id = ?', cipher.kv, cipher.iv, cipher.ct, now(), m.id);
-    toChat(c.id, { type: 'edited', message: messageView(m.id) });
+    const view = messageView(m.id);
+    toChat(c.id, { type: 'edited', message: view });
+    bots.onMessage(view, 'edited_message').catch(() => {});
     return true;
   },
 
@@ -475,7 +482,7 @@ setInterval(() => {
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.ico': 'image/x-icon',
-  '.json': 'application/json', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json',
+  '.json': 'application/json', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json', '.apk': 'application/vnd.android.package-archive',
 };
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
@@ -565,9 +572,9 @@ const routes = {
     const b = await readJson(req);
     throttle(req, 'login:' + str(b.username, 32).toLowerCase());
     const u = db.one('SELECT * FROM users WHERE username = ?', str(b.username, 32));
-    const ok = u && typeof b.auth === 'string' &&
+    const ok = u && u.auth_hash !== '-' && typeof b.auth === 'string' &&
       crypto.timingSafeEqual(Buffer.from(hashAuth(b.auth, u.auth_salt), 'hex'), Buffer.from(u.auth_hash, 'hex'));
-    if (!ok) fail('Неверный логин или пароль');
+    if (!ok || u.auth_hash === '-') fail('Неверный логин или пароль');
     json(res, 200, { token: newSession(u.id, req), userId: u.id, publicKey: u.public_key, sealedKey: JSON.parse(u.sealed_key) });
   },
 
@@ -599,7 +606,8 @@ const routes = {
     json(res, 200, { sealedKey: JSON.parse(userById(uid).sealed_key) });
   },
 
-  'GET /api/config': async (req, res) => json(res, 200, { iceServers: ICE_SERVERS, reactions: REACTIONS, ttl: TTL_OPTIONS, escrow: admin.escrowPublic() }),
+  'GET /api/config': async (req, res) => json(res, 200, { iceServers: ICE_SERVERS, reactions: REACTIONS, ttl: TTL_OPTIONS, escrow: admin.escrowPublic(),
+    apk: fs.existsSync(path.join(PUBLIC_DIR, 'download', 'orbita.apk')) ? '/download/orbita.apk' : null }),
 
   'POST /api/blob': async (req, res) => {
     const uid = authUser(req); if (!uid) return json(res, 401, { error: 'Нужен вход' });
@@ -643,6 +651,9 @@ function safeJoin(root, rel) {
 
 const VENDOR = { manrope: '@fontsource-variable/manrope', unbounded: '@fontsource-variable/unbounded' };
 
+bots = createBots({ db, fail, UserError, toUser, toChat, memberIds, chatRow, insertMessage, messageView, publicUser, userById, pushChat, storeKeys, removeMessages,
+  escrowPublic: () => admin.escrowPublic(), BLOB_DIR, COLORS });
+Object.assign(handlers, bots.handlers);
 const admin = createAdmin({ db, fail, json, readJson, hashAuth, b64, checkSealed, messageViews, userById, publicUser, memberIds, throttle, port: PORT });
 Object.assign(routes, admin.routes);
 
@@ -653,6 +664,7 @@ const server = http.createServer(async (req, res) => {
   try {
     const route = routes[req.method + ' ' + p];
     if (route) return await route(req, res);
+    if (/^\/(file\/)?bot[^/]+\//.test(p)) return await bots.handle(req, res, url, readBody);
     if (p.startsWith('/api/')) return json(res, 404, { error: 'Not found' });
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }
 
@@ -723,11 +735,15 @@ wss.on('connection', (ws, req) => {
     const h = Object.prototype.hasOwnProperty.call(handlers, msg.type) ? handlers[msg.type] : null;
     const reply = (ok, payload) => msg.reqId && send(ws, { type: 'reply', reqId: msg.reqId, ok, ...payload });
     if (!h) return reply(false, { error: 'Неизвестная команда' });
-    try { reply(true, { data: h(uid, msg, ws) }); }
-    catch (e) {
+    const onError = e => {
       if (!(e instanceof UserError)) console.error(msg.type, e);
       reply(false, { error: e instanceof UserError ? e.message : 'Ошибка сервера' });
-    }
+    };
+    try {
+      const r = h(uid, msg, ws);
+      if (r && typeof r.then === 'function') r.then(data => reply(true, { data }), onError);
+      else reply(true, { data: r });
+    } catch (e) { onError(e); }
   });
   ws.on('close', () => {
     calls.socketClosed(ws);

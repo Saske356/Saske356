@@ -1,6 +1,7 @@
 // The open conversation: header, pinned bar, feed, composer and details panel.
 import { S, chatTitle, peerId, userName, encryptPayload, decrypt, decryptAll, addMembersEncrypted } from './state.js';
 import { rpc } from './net.js';
+import { hidden } from './util.js';
 import { $, $$, el, esc, icon, richText, onlyEmoji, hm, sameDay, dayLabel, seen, duration, size, plural, toast, fine, ttlLabel, ttlShort } from './util.js';
 import { avatar, chatAvatar } from './avatar.js';
 import { describe, serviceText, callText, isMissed, typingLine, readByOthers, refreshPanel } from './sidebar.js';
@@ -8,6 +9,7 @@ import { menu, closeMenu, confirmBox, lightbox, personCard, pickPeople, newPoll,
 import * as M from './media.js';
 import { safetyCode } from './crypto.js';
 import { App } from './bus.js';
+import { inlineKb, botChip } from './botsui.js';
 
 const feed = () => $('#feed');
 const scroller = () => $('#scroller');
@@ -27,7 +29,7 @@ export async function openChat(id, { force } = {}) {
     S.current = id;
     S.unreadMark[id] = c.reads[S.me.id] || 0;
     input().value = drafts[id] || '';
-    autoGrow();
+    autoGrow(); renderCmds();
     feed().innerHTML = '';
     pinIndex = 0;
   }
@@ -68,17 +70,19 @@ export function statusOf(c) {
     return { text: plural(c.members.length, 'участник', 'участника', 'участников') + (on > 1 ? ` · ${on} на связи` : '') };
   }
   const u = S.users[peerId(c)];
+  if (u?.bot) return { text: 'бот' };
   return { text: seen(u), on: u?.online };
 }
 export function renderHead() {
   const c = S.chats[S.current]; if (!c) return;
   $('#whoAv').innerHTML = chatAvatar(c, 'md');
-  $('#whoName').innerHTML = esc(chatTitle(c)) + (c.ttl ? ` <span class="ttl-chip">${icon('timer')}${ttlShort(c.ttl)}</span>` : '');
+  const peer = c.type === 'direct' ? S.users[peerId(c)] : null;
+  $('#whoName').innerHTML = esc(chatTitle(c)) + botChip(peer) + (c.ttl ? ` <span class="ttl-chip">${icon('timer')}${ttlShort(c.ttl)}</span>` : '');
   const st = statusOf(c);
   const s = $('#whoStatus');
   s.textContent = st.text;
   s.className = 'who-status' + (st.live ? ' live' : st.on ? ' on' : '');
-  const direct = c.type === 'direct';
+  const direct = c.type === 'direct' && !peer?.bot;
   $('#audioCallBtn').classList.toggle('hidden', !direct);
   $('#videoCallBtn').classList.toggle('hidden', !direct);
   $('#detailsBtn').classList.toggle('on', S.details);
@@ -194,7 +198,7 @@ function messageHtml(c, m, prev, next) {
         ${group && !out && first ? `<button class="sender" data-person="${m.from}" style="--c:${u.color}">${esc(u.name)}</button>` : ''}
         ${content}${meta}
       </div>
-      ${reactionsHtml(m)}
+      ${inlineKb(m)}${reactionsHtml(m)}
     </div>${tools}</div>`;
 }
 
@@ -221,6 +225,7 @@ export function renderFeed({ jump, keep } = {}) {
   const fresh = patch(feed(), items);
   for (const n of fresh) M.hydrate(n, id => msgById(Number(id))?.p?.file);
   M.repaintVoice();
+  renderReplyKb();
   if (jump === 'unread') {
     const sep = $('.unread-sep', feed());
     if (sep) sc.scrollTop = sep.offsetTop - 80; else sc.scrollTop = sc.scrollHeight;
@@ -229,6 +234,11 @@ export function renderFeed({ jump, keep } = {}) {
   updateJump();
 }
 function introHtml(c) {
+  const bot = c.type === 'direct' && S.users[peerId(c)]?.bot ? S.users[peerId(c)] : null;
+  if (bot) return `<div class="intro bot">${avatar(bot, 'lg', { ring: false })}<b>${esc(bot.name)}</b>
+    <p>${esc(bot.botInfo?.description || 'Это бот. Отправьте команду, чтобы начать.')}</p>
+    <p class="small">${icon('info', 'xs')} Сообщения в этой беседе получает сервер владельца бота.</p>
+    ${(S.msgs[c.id] || []).length ? '' : '<button class="btn primary" data-start>Начать</button>'}</div>`;
   if (c.type === 'self') return `<div class="intro">${icon('sparkle')}<b>Заметки</b><p>Сохраняйте сюда мысли, ссылки, голосовые и файлы. Всё шифруется так же, как переписка.</p></div>`;
   if (S.config.escrow) return `<div class="intro warn">${icon('shield')}<b>Шифрование со служебным доступом</b><p>Сообщения и файлы шифруются на ваших устройствах. Кроме ${c.type === 'group' ? 'участников' : 'вас двоих'}, их может расшифровать администрация сервиса — только по законному запросу и с записью в журнал. Звонки не записываются.</p></div>`;
   return `<div class="intro">${icon('lock')}<b>Сквозное шифрование</b><p>Сообщения, файлы и звонки в этой беседе шифруются на ваших устройствах. Ключей нет ни у кого, кроме ${c.type === 'group' ? 'участников' : 'вас двоих'}.</p></div>`;
@@ -281,7 +291,7 @@ async function loadMore() {
 
 export function markRead() {
   const c = S.chats[S.current];
-  if (!c || document.hidden || !atBottom()) return;
+  if (!c || hidden() || !atBottom()) return;
   const list = (S.msgs[c.id] || []).filter(m => typeof m.id === 'number');
   const last = list[list.length - 1]; if (!last) return;
   if ((c.reads[S.me.id] || 0) < last.id) {
@@ -299,6 +309,39 @@ async function jumpTo(id) {
   if (!node) return toast('Сообщение слишком далеко или удалено');
   node.scrollIntoView({ block: 'center', behavior: 'smooth' });
   node.classList.remove('flash'); void node.offsetWidth; node.classList.add('flash');
+}
+
+// ================= bot keyboards & commands =================
+const rkHidden = {}; // chatId -> message id whose one-time keyboard was used
+function renderReplyKb() {
+  const box = $('#replyKb'), c = S.chats[S.current];
+  const list = S.msgs[c?.id] || [];
+  const last = [...list].reverse().find(m => m.p?.rk && S.users[m.from]?.bot);
+  if (!last || last.p.rk.remove || rkHidden[c.id] === last.id) { box.classList.add('hidden'); box.innerHTML = ''; input().placeholder = c?.type === 'self' ? 'Заметка для себя' : 'Сообщение'; return; }
+  box.classList.remove('hidden');
+  box.dataset.msg = last.id;
+  box.innerHTML = last.p.rk.rows.map(r => `<div class="kb-row">${r.map(t => `<button class="kb-btn" data-rk="${esc(t)}">${esc(t)}</button>`).join('')}</div>`).join('');
+  if (last.p.rk.ph) input().placeholder = last.p.rk.ph;
+}
+function botCommands() {
+  const c = S.chats[S.current]; if (!c) return [];
+  const out = [];
+  for (const id of c.members) {
+    const u = S.users[id];
+    if (u?.bot) for (const cmd of u.botInfo?.commands || []) out.push({ ...cmd, bot: u, suffix: c.type === 'group' ? '@' + u.username : '' });
+  }
+  return out;
+}
+function renderCmds() {
+  const box = $('#cmdList'), v = input().value;
+  const m = /^\/([a-z0-9_]*)$/i.exec(v);
+  const list = m ? botCommands().filter(x => x.command.startsWith(m[1].toLowerCase())).slice(0, 8) : [];
+  box.classList.toggle('hidden', !list.length);
+  box.innerHTML = list.map(x => `<button data-cmd="/${esc(x.command + x.suffix)}"><b>/${esc(x.command)}</b><span>${esc(x.description)}</span>${S.chats[S.current].type === 'group' ? `<small>${esc(x.bot.name)}</small>` : ''}</button>`).join('');
+}
+async function sendText(text) {
+  const c = S.chats[S.current]; if (!c) return;
+  await sendPayload(c, { t: text }, {});
 }
 
 // ================= composer =================
@@ -345,7 +388,7 @@ async function submit() {
     return;
   }
   if (!text) return startRecording();
-  input().value = ''; drafts[c.id] = ''; autoGrow();
+  input().value = ''; drafts[c.id] = ''; autoGrow(); renderCmds();
   const replyTo = S.reply?.id; setCtx(null);
   lastTyping = 0;
   await sendPayload(c, { t: text }, { replyTo });
@@ -533,9 +576,13 @@ export async function renderDetails() {
   d.innerHTML = `
     <header class="d-head"><b>${direct ? 'Профиль' : group ? 'Группа' : 'Заметки'}</b><button class="icon-btn" data-d="close" title="Закрыть">${icon('close')}</button></header>
     <div class="d-scroll">
-      <div class="d-hero">${chatAvatar(c, 'xl')}<h2>${esc(chatTitle(c))}</h2><p class="${st.on ? 'online' : ''}">${esc(direct ? '@' + peer.username + ' · ' + st.text : st.text)}</p>
+      <div class="d-hero">${chatAvatar(c, 'xl')}<h2>${esc(chatTitle(c))}${botChip(peer)}</h2><p class="${st.on ? 'online' : ''}">${esc(direct ? '@' + peer.username + ' · ' + st.text : st.text)}</p>
         ${peer?.bio ? `<p class="bio">${esc(peer.bio)}</p>` : ''}</div>
-      ${direct ? `<div class="d-actions">
+      ${direct && peer?.bot ? `<section class="d-card"><div class="d-title">${icon('sparkle')}<b>Бот</b></div>
+        <p class="muted small">${esc(peer.botInfo?.description || 'Описание не задано.')}</p>
+        ${peer.botInfo?.commands?.length ? `<div class="d-cmds">${peer.botInfo.commands.map(x => `<button data-dcmd="/${esc(x.command)}"><b>/${esc(x.command)}</b> ${esc(x.description)}</button>`).join('')}</div>` : ''}
+        <p class="muted small">Сообщения в этой беседе получает сервер владельца бота.</p></section>` : ''}
+      ${direct && !peer?.bot ? `<div class="d-actions">
         <button class="act" data-d="call">${icon('phone')}<span>Звонок</span></button>
         <button class="act" data-d="video">${icon('video')}<span>Видео</span></button>
         <button class="act" data-d="person">${icon('me')}<span>Профиль</span></button></div>` : ''}
@@ -618,6 +665,7 @@ export function initConversation() {
     autoGrow(); updateSendBtn();
     if (S.current) drafts[S.current] = t.value;
     if (t.value.trim() && !S.edit) typingPing();
+    renderCmds();
   });
   t.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && fine()) { e.preventDefault(); if (t.value.trim() || S.edit) submit(); }
@@ -632,6 +680,14 @@ export function initConversation() {
     if (files.length) { e.preventDefault(); sendFiles(files); }
   });
   $('#sendBtn').onclick = () => submit();
+  $('#cmdList').onclick = e => { const b = e.target.closest('[data-cmd]'); if (b) { t.value = ''; autoGrow(); renderCmds(); updateSendBtn(); sendText(b.dataset.cmd); } };
+  $('#replyKb').onclick = e => {
+    const b = e.target.closest('[data-rk]'); if (!b) return;
+    const c = S.chats[S.current], mid = Number($('#replyKb').dataset.msg);
+    const m = msgById(mid);
+    if (m?.p?.rk?.once) rkHidden[c.id] = mid;
+    sendText(b.dataset.rk);
+  };
   $('#ctxClose').onclick = () => { if (S.edit) { t.value = ''; autoGrow(); } setCtx(null); };
   $('#recCancel').onclick = cancelRecording;
   $('#recSend').onclick = stopAndSend;
@@ -668,6 +724,7 @@ export function initConversation() {
     }
     const person = tgt.closest('[data-person]');
     if (person) return personCard(S.users[person.dataset.person]);
+    if (tgt.closest('[data-start]')) return sendText('/start');
     const recall = tgt.closest('[data-recall]');
     if (recall) return App.startCall(S.current, recall.dataset.recall === '1');
     if (!m || m.pending) return;
@@ -676,6 +733,15 @@ export function initConversation() {
     if (tool === 'reply') return startReply(m);
     if (tool === 'more') return messageMenu(m, tgt.closest('button'));
     const r = tgt.closest('[data-react]'); if (r) return react(m, r.dataset.react);
+    const cb = tgt.closest('[data-cb]');
+    if (cb) {
+      const [ri, ci] = cb.dataset.cb.split(':').map(Number);
+      const data = m.p?.kb?.[ri]?.[ci]?.d;
+      cb.classList.add('busy');
+      try { await rpc('botCallback', { chatId: m.chatId, id: m.id, data }); } catch (x) { toast(x.message, 'bad'); }
+      setTimeout(() => cb.classList.remove('busy'), 600);
+      return;
+    }
     const q = tgt.closest('[data-goto]'); if (q) return jumpTo(Number(q.dataset.goto));
     const v = tgt.closest('[data-vote]'); if (v) return vote(m, Number(v.dataset.vote));
     if (tgt.closest('[data-vspeed]')) return M.cycleSpeed();
@@ -736,6 +802,7 @@ export function initConversation() {
     const c = S.chats[S.current]; if (!c) return;
     const a = e.target.closest('[data-d]')?.dataset.d;
     if (a === 'close') return toggleDetails(false);
+    const dc = e.target.closest('[data-dcmd]'); if (dc) return sendText(dc.dataset.dcmd);
     if (a === 'call' || a === 'video') return App.startCall(c.id, a === 'video');
     if (a === 'person') return personCard(S.users[peerId(c)]);
     if (a === 'safety') return safetyModal(S.users[peerId(c)]);

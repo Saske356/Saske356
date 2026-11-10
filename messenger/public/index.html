@@ -43,6 +43,7 @@
           <div class="form-error" id="authError" role="alert"></div>
           <button class="btn primary big wide" id="authSubmit" type="submit">Войти</button>
         </form>
+        <a class="apk-link hidden" id="apkLink" href="/download/orbita.apk" download>Приложение для Android <small>APK</small></a>
         <p class="switch"><span id="switchText">Впервые здесь?</span> <button class="link" id="switchMode" type="button">Создать аккаунт</button></p>
         <div class="assure no-escrow">
           <div class="assure-ic"></div>
@@ -100,6 +101,8 @@
         <button class="jump hidden" id="jump" title="К последним"><span class="ic"></span><b class="hidden" id="jumpCount"></b></button>
 
         <footer class="composer" id="composer">
+          <div class="cmds hidden" id="cmdList"></div>
+          <div class="rk hidden" id="replyKb"></div>
           <div class="compose-ctx hidden" id="composeCtx">
             <span class="ctx-ic" id="ctxIc"></span>
             <div class="ctx-body"><b id="ctxTitle"></b><span id="ctxText"></span></div>

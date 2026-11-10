@@ -1,7 +1,7 @@
 // Encrypted media: upload, decrypt-on-demand, voice notes, UI sounds.
 import { encryptFile, decryptFile } from './crypto.js';
 import { uploadBlob, downloadBlob } from './net.js';
-import { $$, duration, toast } from './util.js';
+import { $$, duration, toast, native } from './util.js';
 
 // ---------- encrypted blobs ----------
 const urls = new Map(); // blob id -> Promise<objectURL>
@@ -56,6 +56,14 @@ export function hydrate(root, files) {
 
 export async function saveFile(f) {
   try {
+    const n = native();
+    if (n) {
+      // Android shell: hand the decrypted bytes to the native side (blob: URLs can't be downloaded from a WebView).
+      const buf = new Uint8Array(await decryptFile(await downloadBlob(f.id), f.key, f.iv));
+      let s = ''; for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+      n.saveFile(btoa(s), f.name || 'file', f.type || 'application/octet-stream');
+      return;
+    }
     const u = await blobUrl(f);
     const a = document.createElement('a'); a.href = u; a.download = f.name || 'file'; a.click();
   } catch { toast('Не удалось скачать файл', 'bad'); }

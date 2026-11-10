@@ -1,7 +1,7 @@
 // 1:1 audio/video calls over WebRTC. Media is peer-to-peer and DTLS-SRTP encrypted; the server only relays signaling.
 import { S, peerId } from './state.js';
 import { rpc } from './net.js';
-import { $, esc, icon, toast, duration, uid } from './util.js';
+import { $, esc, icon, toast, duration, uid, hidden, systemNotify } from './util.js';
 import { avatar } from './avatar.js';
 import { sounds } from './media.js';
 import { App } from './bus.js';
@@ -76,9 +76,7 @@ function incoming(evt) {
   call = { id: evt.callId, chatId: evt.chatId, peer: S.users[evt.from] || (c && S.users[peerId(c)]), video: evt.video, dir: 'in', state: 'incoming', offer: evt.offer, pendingIce: [], muted: false, camOff: false };
   build();
   sounds.ring();
-  if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
-    try { const n = new Notification(call.peer?.name || 'Звонок', { body: evt.video ? 'Входящий видеозвонок' : 'Входящий звонок', tag: 'call', requireInteraction: true }); n.onclick = () => { window.focus(); n.close(); }; } catch {}
-  }
+  if (hidden()) systemNotify(call.peer?.name || 'Звонок', evt.video ? 'Входящий видеозвонок' : 'Входящий звонок', 'call');
 }
 
 async function accept(withVideo) {

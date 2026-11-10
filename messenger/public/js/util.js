@@ -42,6 +42,7 @@ export function dayLabel(ts) {
 }
 export function seen(u) {
   if (!u) return '';
+  if (u.bot) return 'бот';
   if (u.online) return 'на связи';
   if (!u.lastSeen) return 'давно не заходил(а)';
   const diff = Date.now() - u.lastSeen;
@@ -78,6 +79,17 @@ export function toast(text, kind = '') {
 export const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 export const uid = () => crypto.randomUUID();
 export const fine = () => matchMedia('(pointer: fine)').matches;
+// Android app bridge (WebView shell). Undefined in browsers.
+export const native = () => window.OrbitaAndroid || null;
+// The Android shell keeps the page running in background and reports visibility itself.
+export const hidden = () => document.hidden || !!window.__orbitaHidden;
+// System notification: Android bridge or the Web Notification API.
+export function systemNotify(title, body, tag, onClick) {
+  const n = native();
+  if (n) { try { n.notify(String(title), String(body), String(tag)); } catch {} return; }
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try { const x = new Notification(title, { body, tag, icon: '/icon.svg' }); x.onclick = () => { window.focus(); onClick?.(); x.close(); }; } catch {}
+}
 
 // ---------- icons (24px, stroke) ----------
 const P = {

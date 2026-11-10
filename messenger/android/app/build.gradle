@@ -1,0 +1,46 @@
+plugins { id 'com.android.application' }
+
+// Адрес сервера по умолчанию: ./gradlew assembleRelease -PserverUrl=https://orbita.example.com
+// Если не задан — приложение спросит адрес при первом запуске.
+def serverUrl = project.findProperty('serverUrl') ?: ''
+
+// Подпись: файл keystore.properties рядом с build.gradle (не храните его в git):
+//   storeFile=../orbita-release.jks  storePassword=…  keyAlias=orbita  keyPassword=…
+def ksFile = rootProject.file('keystore.properties')
+def ks = new Properties()
+if (ksFile.exists()) ksFile.withInputStream { ks.load(it) }
+
+android {
+    namespace 'ru.orbita.app'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'ru.orbita.app'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+        buildConfigField 'String', 'SERVER_URL', "\"${serverUrl}\""
+    }
+    buildFeatures { buildConfig true }
+    signingConfigs {
+        if (ksFile.exists()) {
+            release {
+                storeFile rootProject.file(ks['storeFile'])
+                storePassword ks['storePassword']
+                keyAlias ks['keyAlias']
+                keyPassword ks['keyPassword']
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (ksFile.exists()) signingConfig signingConfigs.release
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

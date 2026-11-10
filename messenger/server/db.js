@@ -101,6 +101,46 @@ CREATE TABLE IF NOT EXISTS admin_audit (
   reason        TEXT NOT NULL DEFAULT '',
   ip            TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS bots (
+  user_id        INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  owner_id       INTEGER NOT NULL,
+  token_hash     TEXT NOT NULL,
+  private_key    TEXT NOT NULL,
+  description    TEXT NOT NULL DEFAULT '',
+  commands       TEXT NOT NULL DEFAULT '[]',
+  privacy        INTEGER NOT NULL DEFAULT 1,
+  webhook_url    TEXT,
+  webhook_secret TEXT,
+  webhook_error  TEXT,
+  created_at     INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS bots_owner ON bots(owner_id);
+CREATE TABLE IF NOT EXISTS bot_updates (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  bot_id        INTEGER NOT NULL,
+  payload       TEXT NOT NULL,
+  created_at    INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS bot_updates_bot ON bot_updates(bot_id, id);
+CREATE TABLE IF NOT EXISTS bot_files (
+  file_id       TEXT PRIMARY KEY,
+  bot_id        INTEGER NOT NULL,
+  blob_id       TEXT NOT NULL,
+  key           TEXT NOT NULL,
+  iv            TEXT NOT NULL,
+  name          TEXT NOT NULL,
+  type          TEXT NOT NULL,
+  size          INTEGER NOT NULL,
+  created_at    INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS bot_callbacks (
+  id            TEXT PRIMARY KEY,
+  bot_id        INTEGER NOT NULL,
+  user_id       INTEGER NOT NULL,
+  chat_id       INTEGER NOT NULL,
+  message_id    INTEGER NOT NULL,
+  created_at    INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS blobs (
   id            TEXT PRIMARY KEY,
   owner_id      INTEGER NOT NULL,

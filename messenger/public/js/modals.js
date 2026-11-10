@@ -84,10 +84,11 @@ export function personCard(u) {
       <h2>${esc(u.name)}</h2>
       <p class="muted">@${esc(u.username)} · ${esc(seen(u))}</p>
       ${u.bio ? `<p class="bio">${esc(u.bio)}</p>` : ''}
+      ${u.bot && u.botInfo?.description ? `<p class="bio">${esc(u.botInfo.description)}</p>` : ''}
       <div class="person-actions">
-        <button class="act" data-a="msg">${icon('chats')}<span>Написать</span></button>
-        <button class="act" data-a="call">${icon('phone')}<span>Позвонить</span></button>
-        <button class="act" data-a="video">${icon('video')}<span>Видео</span></button>
+        <button class="act" data-a="msg">${icon('chats')}<span>${u.bot ? 'Открыть бота' : 'Написать'}</span></button>
+        ${u.bot ? '' : `<button class="act" data-a="call">${icon('phone')}<span>Позвонить</span></button>
+        <button class="act" data-a="video">${icon('video')}<span>Видео</span></button>`}
       </div>
     </div>`, { cls: 'person-modal' });
   m.querySelector('.person-actions').onclick = async e => {

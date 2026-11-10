@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Орбита</string>
+    <string name="channel_messages">Сообщения</string>
+    <string name="channel_calls">Звонки</string>
+</resources>
