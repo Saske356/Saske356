@@ -198,7 +198,9 @@ class XrayProvider(VpnProvider):
     async def apply(self) -> bool:
         """Пишет новый конфиг, проверяет его самим Xray и только потом перезапускает."""
         cfg = json.dumps(self.build_config(), ensure_ascii=False, indent=1)
-        tmp = self.config_path + ".new"
+        # Xray определяет формат по расширению, поэтому временный файл тоже .json
+        base = self.config_path[:-5] if self.config_path.endswith(".json") else self.config_path
+        tmp = base + ".next.json"
         os.makedirs(os.path.dirname(self.config_path) or ".", exist_ok=True)
         with open(tmp, "w", encoding="utf-8") as f:
             f.write(cfg)

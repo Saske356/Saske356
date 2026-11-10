@@ -110,6 +110,21 @@ EOF
 systemctl daemon-reload
 systemctl enable -q xray
 systemctl enable -q aurora-bot
+
+say "Освобождаю порт 443 для VPN"
+busy443() { ss -tlnpH 'sport = :443' | grep -v '"xray"' || true; }
+if [ -n "$(busy443)" ]; then
+  for svc in caddy nginx apache2 httpd lighttpd haproxy; do
+    if systemctl is-active -q "$svc" 2>/dev/null; then
+      echo "Порт 443 занят службой $svc, отключаю её: этот сервер нужен под VPN."
+      systemctl disable --now "$svc" >/dev/null 2>&1 || true
+    fi
+  done
+  sleep 2
+  [ -z "$(busy443)" ] || fail "порт 443 занят другой программой: $(busy443). Остановите её или переустановите чистую Ubuntu."
+fi
+echo "Порт 443 свободен."
+
 systemctl restart aurora-bot
 
 if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
@@ -118,10 +133,23 @@ if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
 fi
 
 say "Проверка"
-sleep 8
 ok=1
+# бот при запуске пишет конфиг Xray и перезапускает его: ждём, пока Xray займёт порт 443
+for _ in $(seq 1 30); do
+  ss -tlnpH 'sport = :443' | grep -q '"xray"' && break
+  sleep 1
+done
 systemctl is-active -q aurora-bot && echo "✅ бот работает" || { echo "❌ бот не запустился"; ok=0; }
-systemctl is-active -q xray && echo "✅ Xray работает" || { echo "❌ Xray не запустился"; ok=0; }
+if ss -tlnpH 'sport = :443' | grep -q '"xray"'; then
+  echo "✅ VPN принимает подключения на порту 443"
+else
+  echo "❌ VPN не слушает порт 443"; ok=0
+fi
+if ss -tlnpH "sport = :$SUB_PORT" | grep -q python; then
+  echo "✅ подписки раздаются на порту $SUB_PORT"
+else
+  echo "❌ подписки не раздаются на порту $SUB_PORT"; ok=0
+fi
 if [ "$ok" = 1 ]; then
   echo
   echo "Готово. Откройте бота и отправьте /start, страны: /locations"
