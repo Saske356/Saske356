@@ -2,108 +2,133 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#517da2">
-  <title>Telegraph</title>
-  <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#f4f1ea">
+  <meta name="color-scheme" content="light dark">
+  <title>Орбита</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/vendor/manrope/index.css">
+  <link rel="stylesheet" href="/vendor/unbounded/index.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <script type="module" src="/js/main.js"></script>
 </head>
 <body>
-  <!-- ===== Auth ===== -->
-  <section id="auth" class="auth hidden">
-    <div class="auth-card">
-      <img src="icon.svg" class="auth-logo" alt="">
-      <h1>Telegraph</h1>
-      <p class="muted" id="authHint">Войдите, чтобы продолжить</p>
-      <div class="tabs">
-        <button class="tab active" data-tab="login">Вход</button>
-        <button class="tab" data-tab="register">Регистрация</button>
+  <div class="boot" id="boot">
+    <div class="orbit-logo spin"><i></i></div>
+  </div>
+
+  <!-- ================= Вход ================= -->
+  <section class="auth hidden" id="auth">
+    <div class="auth-art" aria-hidden="true">
+      <div class="sky">
+        <div class="ring r1"><span></span></div>
+        <div class="ring r2"><span></span></div>
+        <div class="ring r3"><span></span></div>
+        <div class="core"></div>
       </div>
-      <form id="authForm" autocomplete="on">
-        <label class="field reg-only hidden"><span>Имя</span><input name="name" maxlength="64" autocomplete="name"></label>
-        <label class="field"><span>Имя пользователя</span><input name="username" maxlength="32" autocomplete="username" required></label>
-        <label class="field"><span>Пароль</span><input name="password" type="password" minlength="6" autocomplete="current-password" required></label>
-        <div class="error" id="authError"></div>
-        <button class="btn primary wide" type="submit" id="authSubmit">Войти</button>
-      </form>
+      <blockquote>Разговор, который<br>остаётся между вами.</blockquote>
+    </div>
+    <div class="auth-side">
+      <div class="brand"><div class="orbit-logo"><i></i></div><span>Орбита</span></div>
+      <div class="auth-box">
+        <h1 id="authTitle">С возвращением</h1>
+        <p class="muted" id="authSub">Войдите, чтобы продолжить разговоры.</p>
+        <form id="authForm" autocomplete="on" novalidate>
+          <label class="field reg"><span>Как вас зовут</span><input name="name" maxlength="64" autocomplete="name" placeholder="Имя и фамилия"></label>
+          <label class="field"><span>Логин</span><input name="username" maxlength="32" autocomplete="username" placeholder="например, anna_k" autocapitalize="off" spellcheck="false"></label>
+          <label class="field"><span>Пароль</span><input name="password" type="password" autocomplete="current-password" placeholder="Не меньше 8 символов"></label>
+          <label class="field reg"><span>Ещё раз пароль</span><input name="password2" type="password" autocomplete="new-password"></label>
+          <label class="consent reg escrow-only"><input type="checkbox" name="consent"><i></i><span>Я понимаю, что администрация сервиса может получить доступ к содержимому переписки для ответа на законные запросы государственных органов.</span></label>
+          <div class="form-error" id="authError" role="alert"></div>
+          <button class="btn primary big wide" id="authSubmit" type="submit">Войти</button>
+        </form>
+        <p class="switch"><span id="switchText">Впервые здесь?</span> <button class="link" id="switchMode" type="button">Создать аккаунт</button></p>
+        <div class="assure no-escrow">
+          <div class="assure-ic"></div>
+          <p>Пароль не покидает устройство. Из него получается ключ, который шифрует ваши переписки и файлы. Сервер видит только шифротекст, поэтому пароль <b>нельзя восстановить</b>.</p>
+        </div>
+        <div class="assure warn escrow-only">
+          <div class="assure-ic"></div>
+          <p>Переписки и файлы хранятся зашифрованными, но у администрации сервиса есть <b>служебный ключ доступа</b>: по законному запросу содержимое беседы может быть раскрыто и передано правоохранительным органам. Каждый такой доступ фиксируется в журнале. Звонки не записываются. Пароль восстановить нельзя.</p>
+        </div>
+      </div>
     </div>
   </section>
 
-  <!-- ===== App ===== -->
-  <main id="app" class="app hidden">
-    <aside class="sidebar">
-      <header class="side-head">
-        <button class="icon-btn" id="menuBtn" title="Меню">
-          <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
-        </button>
-        <div class="search">
-          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-          <input id="search" placeholder="Поиск" autocomplete="off">
-        </div>
-      </header>
-      <div class="menu hidden" id="menu">
-        <div class="menu-me" id="menuMe"></div>
-        <button data-act="saved"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg>Избранное</button>
-        <button data-act="group"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-7 7-7s7 3 7 7M17 11a3 3 0 1 0 0-6M22 21c0-3-2-5.5-5-6"/></svg>Создать группу</button>
-        <button data-act="profile"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>Мой профиль</button>
-        <button data-act="theme"><svg viewBox="0 0 24 24"><path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"/></svg>Ночной режим</button>
-        <button data-act="logout" class="danger"><svg viewBox="0 0 24 24"><path d="M15 4h4v16h-4M10 17l5-5-5-5M15 12H3"/></svg>Выйти</button>
-      </div>
-      <div class="conn hidden" id="conn">Соединение…</div>
-      <div class="chat-list" id="chatList"></div>
-      <button class="fab" id="fab" title="Новая группа">
-        <svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/></svg>
-      </button>
+  <!-- ================= Приложение ================= -->
+  <main class="app hidden" id="app">
+    <nav class="rail" id="rail">
+      <div class="rail-logo orbit-logo"><i></i></div>
+      <button class="rail-btn active" data-tab="chats"><span class="ic"></span><span class="lbl">Беседы</span><b class="dot hidden"></b></button>
+      <button class="rail-btn" data-tab="calls"><span class="ic"></span><span class="lbl">Звонки</span><b class="dot hidden"></b></button>
+      <button class="rail-btn" data-tab="people"><span class="ic"></span><span class="lbl">Люди</span></button>
+      <button class="rail-btn" data-tab="me"><span class="ic"></span><span class="lbl">Профиль</span></button>
+      <div class="rail-fill"></div>
+      <button class="rail-theme" id="themeBtn" title="Сменить тему"></button>
+    </nav>
+
+    <aside class="panel" id="panel">
+      <div class="netbar hidden" id="netbar">Восстанавливаем связь…</div>
+      <div class="panel-body" id="panelBody"></div>
     </aside>
 
-    <section class="chat" id="chat">
-      <div class="empty" id="emptyChat">
-        <div class="pill">Выберите чат, чтобы начать общение</div>
+    <section class="stage" id="stage">
+      <div class="void" id="void">
+        <div class="void-art"><div class="ring r1"><span></span></div><div class="ring r2"><span></span></div><div class="core"></div></div>
+        <h2>Выберите, с кем поговорить</h2>
+        <p class="muted">Все сообщения, файлы и звонки шифруются на ваших устройствах.</p>
       </div>
-      <div class="chat-inner hidden" id="chatInner">
-        <header class="chat-head">
-          <button class="icon-btn back" id="backBtn" title="Назад">
-            <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+
+      <div class="convo hidden" id="convo">
+        <header class="convo-head">
+          <button class="icon-btn back" id="backBtn" title="Назад"></button>
+          <button class="who" id="who">
+            <span class="who-av" id="whoAv"></span>
+            <span class="who-txt"><span class="who-name" id="whoName"></span><span class="who-status" id="whoStatus"></span></span>
           </button>
-          <div class="chat-head-info" id="chatHeadInfo">
-            <div class="avatar" id="chatAvatar"></div>
-            <div class="titles">
-              <div class="title" id="chatTitle"></div>
-              <div class="status" id="chatStatus"></div>
-            </div>
+          <div class="head-actions">
+            <button class="icon-btn" id="audioCallBtn" title="Аудиозвонок"></button>
+            <button class="icon-btn" id="videoCallBtn" title="Видеозвонок"></button>
+            <button class="icon-btn" id="detailsBtn" title="О беседе"></button>
           </div>
         </header>
-        <div class="messages" id="messages"></div>
-        <button class="to-bottom hidden" id="toBottom" title="Вниз">
-          <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
-          <span class="badge hidden" id="toBottomBadge"></span>
-        </button>
-        <footer class="composer-wrap">
+        <button class="pinbar hidden" id="pinbar"></button>
+        <div class="scroller" id="scroller">
+          <div class="feed" id="feed"></div>
+        </div>
+        <button class="jump hidden" id="jump" title="К последним"><span class="ic"></span><b class="hidden" id="jumpCount"></b></button>
+
+        <footer class="composer" id="composer">
           <div class="compose-ctx hidden" id="composeCtx">
-            <svg viewBox="0 0 24 24" id="ctxIcon"><path d="M10 9V5l-7 7 7 7v-4c5 0 8.5 1.5 11 5-1-5-4-10-11-11z"/></svg>
-            <div class="ctx-body"><div class="ctx-title" id="ctxTitle"></div><div class="ctx-text" id="ctxText"></div></div>
-            <button class="icon-btn" id="ctxClose" title="Отмена"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+            <span class="ctx-ic" id="ctxIc"></span>
+            <div class="ctx-body"><b id="ctxTitle"></b><span id="ctxText"></span></div>
+            <button class="icon-btn sm" id="ctxClose" title="Отменить"></button>
           </div>
-          <div class="composer">
-            <button class="icon-btn" id="attachBtn" title="Прикрепить файл">
-              <svg viewBox="0 0 24 24"><path d="M21 11.5 12.5 20a5 5 0 0 1-7-7L14 4.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4L15.5 8"/></svg>
-            </button>
-            <input type="file" id="fileInput" hidden>
-            <textarea id="input" rows="1" placeholder="Сообщение" maxlength="4096"></textarea>
-            <button class="icon-btn send" id="sendBtn" title="Отправить">
-              <svg viewBox="0 0 24 24"><path d="M3 20 21 12 3 4l3 8zM6 12h8"/></svg>
-            </button>
+          <div class="compose-row" id="composeRow">
+            <button class="icon-btn" id="attachBtn" title="Прикрепить"></button>
+            <div class="input-wrap">
+              <textarea id="input" rows="1" maxlength="4096" placeholder="Сообщение" enterkeyhint="send"></textarea>
+            </div>
+            <button class="send-btn" id="sendBtn" title="Записать голосовое"></button>
           </div>
+          <div class="rec-row hidden" id="recRow">
+            <button class="icon-btn danger" id="recCancel" title="Удалить запись"></button>
+            <span class="rec-dot"></span><span class="rec-time" id="recTime">0:00</span>
+            <div class="rec-wave" id="recWave"></div>
+            <button class="send-btn on" id="recSend" title="Отправить"></button>
+          </div>
+          <input type="file" id="fileInput" multiple hidden>
         </footer>
       </div>
     </section>
+
+    <aside class="details" id="details"></aside>
   </main>
 
-  <div class="ctx-menu hidden" id="ctxMenu"></div>
-  <div class="modal-back hidden" id="modalBack"><div class="modal" id="modal"></div></div>
-  <div class="lightbox hidden" id="lightbox"><img id="lightboxImg" alt=""></div>
-  <div class="toast hidden" id="toast"></div>
-
-  <script src="app.js"></script>
+  <div class="call hidden" id="call"></div>
+  <audio id="remoteAudio" autoplay playsinline></audio>
+  <div id="layer"></div>
+  <div class="toast" id="toast" role="status"></div>
 </body>
 </html>

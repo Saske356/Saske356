@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Орбита · служебный доступ</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/vendor/manrope/index.css">
+  <link rel="stylesheet" href="/vendor/unbounded/index.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <script type="module" src="/js/admin.js"></script>
+</head>
+<body class="adm-body">
+  <section class="adm-gate hidden" id="gate">
+    <div class="adm-gate-box">
+      <div class="brand"><div class="orbit-logo"><i></i></div><span>Орбита</span></div>
+      <h1 id="gateTitle">Служебный доступ</h1>
+      <p class="muted" id="gateSub">Введите фразу доступа администратора.</p>
+      <form id="gateForm" novalidate>
+        <label class="field"><span>Фраза доступа</span><input type="password" name="pass" autocomplete="current-password"></label>
+        <label class="field setup-only"><span>Повторите фразу</span><input type="password" name="pass2" autocomplete="new-password"></label>
+        <div class="assure warn setup-only"><div class="assure-ic"></div><p>Фраза защищает служебный ключ. Её <b>нельзя восстановить</b>: если забыть, доступ к переписке будет утрачен. Используйте не меньше 12 символов и храните в сейфе.</p></div>
+        <div class="form-error" id="gateErr"></div>
+        <button class="btn primary big wide" id="gateBtn">Войти</button>
+      </form>
+    </div>
+  </section>
+
+  <main class="adm hidden" id="adm">
+    <header class="adm-head">
+      <div class="brand sm"><div class="orbit-logo"><i></i></div><span>Служебный доступ</span></div>
+      <nav class="seg" id="admTabs"><button data-t="users" class="on">Пользователи</button><button data-t="audit">Журнал доступа</button></nav>
+      <button class="btn ghost sm" id="admOut">Выйти</button>
+    </header>
+    <div class="adm-grid" id="admUsers">
+      <section class="adm-col">
+        <label class="search-field"><svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg><input id="admQ" placeholder="Логин или имя"></label>
+        <div class="list" id="admUserList"></div>
+      </section>
+      <section class="adm-col" id="admUser"><div class="empty-note">Выберите пользователя</div></section>
+      <section class="adm-col wide" id="admChat"><div class="empty-note">Откройте беседу, чтобы увидеть переписку. Каждое открытие записывается в журнал вместе с основанием.</div></section>
+    </div>
+    <div class="adm-audit hidden" id="admAudit"></div>
+  </main>
+  <div id="layer"></div>
+  <div class="toast" id="toast" role="status"></div>
+</body>
+</html>

@@ -1,13 +1,15 @@
 {
-  "name": "telegraph-messenger",
-  "version": "1.0.0",
-  "description": "Real-time messenger in the style of Telegram: private chats, groups, files, read receipts",
-  "main": "server.js",
+  "name": "orbita",
+  "version": "2.0.0",
+  "description": "Орбита — мессенджер со сквозным шифрованием, звонками, голосовыми сообщениями и реакциями",
+  "main": "server/index.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node --disable-warning=ExperimentalWarning server/index.js"
   },
-  "engines": { "node": ">=18" },
+  "engines": { "node": ">=22.13" },
   "dependencies": {
+    "@fontsource-variable/manrope": "^5.2.0",
+    "@fontsource-variable/unbounded": "^5.2.0",
     "ws": "^8.18.0"
   }
 }
