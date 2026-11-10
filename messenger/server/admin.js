@@ -18,7 +18,7 @@ function createAdmin({ db, fail, json, readJson, hashAuth, b64, checkSealed, mes
   if (setupToken) {
     console.log('────────────────────────────────────────────────────────────');
     console.log(' Служебный доступ ещё не настроен. Откройте один раз:');
-    console.log(` http://localhost:${port}/admin#setup=${setupToken}`);
+    console.log(` ${(process.env.PUBLIC_URL || `http://localhost:${port}`).replace(/\/+$/, '')}/admin#setup=${setupToken}`);
     console.log(' (ссылка действует до перезапуска сервера)');
     console.log('────────────────────────────────────────────────────────────');
   }

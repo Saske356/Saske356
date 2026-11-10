@@ -1,2 +1,2 @@
-{ "name": "Орбита", "short_name": "Орбита", "start_url": "/", "display": "standalone", "background_color": "#f4f1ea", "theme_color": "#f4f1ea",
+{ "name": "Орбита", "short_name": "Орбита", "start_url": "/", "display": "standalone", "background_color": "#07070d", "theme_color": "#07070d",
   "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }] }

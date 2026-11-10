@@ -11,6 +11,7 @@ const { open } = require('./db');
 const { createCalls } = require('./calls');
 const { createAdmin } = require('./admin');
 const { createBots } = require('./bots');
+const { stampApk } = require('./apkstamp');
 
 const PORT = Number(process.env.PORT) || 3000;
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, '..', 'data'));
@@ -649,6 +650,33 @@ function safeJoin(root, rel) {
   return p.startsWith(root + path.sep) ? p : null;
 }
 
+// The APK handed out by this server knows this server's address, so the app opens straight to login.
+const apkCache = new Map();
+function publicOrigin(req) {
+  if (process.env.PUBLIC_URL) return process.env.PUBLIC_URL.replace(/\/+$/, '');
+  const proto = (req.headers['x-forwarded-proto'] || '').split(',')[0].trim() || (req.socket.encrypted ? 'https' : 'http');
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+  return /^[a-z0-9.:\[\]-]+$/i.test(host) ? `${proto === 'https' ? 'https' : 'http'}://${host}` : null;
+}
+function serveApk(req, res) {
+  const file = path.join(PUBLIC_DIR, 'download', 'orbita.apk');
+  fs.stat(file, (err, st) => {
+    if (err) { res.writeHead(404, SECURITY_HEADERS); return res.end('Not found'); }
+    const origin = publicOrigin(req);
+    const key = origin + '|' + st.mtimeMs;
+    let data = apkCache.get(key);
+    if (!data) {
+      const raw = fs.readFileSync(file);
+      try { data = origin ? stampApk(raw, origin) : raw; } catch (e) { console.error('apk stamp', e.message); data = raw; }
+      if (apkCache.size > 20) apkCache.clear();
+      apkCache.set(key, data);
+    }
+    res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': 'application/vnd.android.package-archive', 'Content-Length': data.length,
+      'Content-Disposition': 'attachment; filename="orbita.apk"', 'Cache-Control': 'no-cache' });
+    res.end(req.method === 'HEAD' ? undefined : data);
+  });
+}
+
 const VENDOR = { manrope: '@fontsource-variable/manrope', unbounded: '@fontsource-variable/unbounded' };
 
 bots = createBots({ db, fail, UserError, toUser, toChat, memberIds, chatRow, insertMessage, messageView, publicUser, userById, pushChat, storeKeys, removeMessages,
@@ -679,6 +707,7 @@ const server = http.createServer(async (req, res) => {
       if (!/^[a-f0-9]{24}\.(webp|png|jpg)$/.test(name)) return json(res, 404, { error: 'Not found' });
       return serveFile(req, res, path.join(AVATAR_DIR, name), { 'Content-Type': MIME[path.extname(name)] || 'image/jpeg', 'Cache-Control': 'public, max-age=31536000, immutable' });
     }
+    if (p === '/download/orbita.apk') return serveApk(req, res);
     const vendor = /^\/vendor\/(\w+)\/(.+)$/.exec(p);
     if (vendor && VENDOR[vendor[1]]) {
       const root = path.join(MODULES_DIR, VENDOR[vendor[1]]);

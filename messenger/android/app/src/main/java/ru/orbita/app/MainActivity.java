@@ -98,7 +98,7 @@ public class MainActivity extends Activity {
             v.setPadding(l, t, r, b);
             return Build.VERSION.SDK_INT >= 30 ? WindowInsets.CONSUMED : insets.consumeSystemWindowInsets();
         });
-        applyBars(false, Color.parseColor("#F4F1EA"));
+        applyBars(true, Color.parseColor("#07070D"));
     }
 
     private void applyBars(boolean dark, int color) {
@@ -186,8 +186,18 @@ public class MainActivity extends Activity {
         });
     }
 
+    private String stamped;
+
+    /** Server address: chosen by the user > written into the APK by the server it came from > build-time default. */
     private String server() {
         String s = prefs.getString("server", "");
+        if (s.isEmpty()) {
+            if (stamped == null) {
+                String v = ApkStamp.read(new File(getApplicationInfo().sourceDir));
+                stamped = v == null ? "" : v.replaceAll("/+$", "");
+            }
+            s = stamped;
+        }
         if (s.isEmpty() && !BuildConfig.SERVER_URL.isEmpty()) s = BuildConfig.SERVER_URL;
         return s;
     }
@@ -297,7 +307,7 @@ public class MainActivity extends Activity {
         PendingIntent pi = PendingIntent.getActivity(this, tag.hashCode(), i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         Notification n = new Notification.Builder(this, "call".equals(tag) ? "calls" : "messages")
             .setSmallIcon(R.drawable.ic_notify)
-            .setColor(Color.parseColor("#FF5F3A"))
+            .setColor(Color.parseColor("#FF5D7A"))
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(new Notification.BigTextStyle().bigText(body))

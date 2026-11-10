@@ -12,15 +12,15 @@ import { sounds } from './media.js';
 import { showBotAnswer } from './botsui.js';
 
 // ================= theme =================
-const themeMode = () => localStorage.getItem('orbita.theme') || 'auto';
-const accent = () => localStorage.getItem('orbita.accent') || '#ff5f3a';
+const themeMode = () => localStorage.getItem('orbita.theme') || 'dark';
+const accent = () => localStorage.getItem('orbita.accent') || '#ff5d7a';
 function applyTheme() {
   const m = themeMode();
   const dark = m === 'dark' || (m === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   document.documentElement.style.setProperty('--accent', accent());
-  document.querySelector('meta[name=theme-color]').content = dark ? '#121116' : '#f4f1ea';
-  try { native()?.setTheme(dark ? 'dark' : 'light', dark ? '#121116' : '#f4f1ea'); } catch {}
+  document.querySelector('meta[name=theme-color]').content = dark ? '#07070d' : '#eef0f7';
+  try { native()?.setTheme(dark ? 'dark' : 'light', dark ? '#07070d' : '#eef0f7'); } catch {}
   if (S.me) updateRail();
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);

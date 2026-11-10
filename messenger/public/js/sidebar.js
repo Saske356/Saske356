@@ -242,7 +242,7 @@ function drawPeople() {
 }
 
 // ================= me =================
-const ACCENTS = ['#ff5f3a', '#e0a100', '#2fb67c', '#00a6b4', '#3d7bfd', '#c04de0', '#f2557b'];
+const ACCENTS = ['#ff5d7a', '#ff7a45', '#f5b301', '#22c55e', '#06b6d4', '#4f7dff', '#a855f7'];
 function meSkeleton() {
   body().innerHTML = `<header class="p-head"><h1>Профиль</h1></header><div class="me" id="meBox"></div>`;
   const box = $('#meBox');
