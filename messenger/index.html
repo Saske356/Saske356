@@ -16,6 +16,7 @@
   --active:#e7effa;
   --danger:#d64545;
   --online:#3cb46e;
+  --lock:#8a6d1a;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
@@ -23,7 +24,7 @@
     --accent:#5b9bd9; --accent-fg:#ffffff;
     --bubble-in:#182533; --bubble-out:#2b5278;
     --border:#0b131c; --hover:#202b36; --active:#2b3a4a;
-    --danger:#e06c6c; --online:#4ecb84;
+    --danger:#e06c6c; --online:#4ecb84; --lock:#d8b24a;
     color-scheme: dark;
   }
 }
@@ -32,7 +33,7 @@
   --accent:#5b9bd9; --accent-fg:#ffffff;
   --bubble-in:#182533; --bubble-out:#2b5278;
   --border:#0b131c; --hover:#202b36; --active:#2b3a4a;
-  --danger:#e06c6c; --online:#4ecb84;
+  --danger:#e06c6c; --online:#4ecb84; --lock:#d8b24a;
   color-scheme: dark;
 }
 html,body{height:100%}
@@ -49,14 +50,16 @@ input,textarea{font:inherit; color:var(--fg)}
 
 /* ---- sidebar ---- */
 .sidebar{width:340px; min-width:280px; display:flex; flex-direction:column; border-right:1px solid var(--border); background:var(--panel)}
-.side-head{display:flex; align-items:center; gap:10px; padding-block:10px;
+.side-head{display:flex; align-items:center; gap:8px; padding-block:10px;
   padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(12px, env(safe-area-inset-right, 0px));
   border-bottom:1px solid var(--border)}
 .side-head .me-ava{width:34px;height:34px;border-radius:50%;flex:none}
 .side-title{font-weight:700; font-size:16px; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-.btn-new{width:36px;height:36px;border-radius:50%;background:var(--accent);color:var(--accent-fg);
-  font-size:22px; line-height:1; display:flex;align-items:center;justify-content:center; flex:none}
-.btn-new:hover{filter:brightness(1.08)}
+.enc-badge{font-size:11px; color:var(--online); display:flex; align-items:center; gap:3px; font-weight:600}
+.icon-btn{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center; flex:none; font-size:18px}
+.icon-btn:hover{background:var(--hover)}
+.btn-new{background:var(--accent);color:var(--accent-fg); font-size:22px; line-height:1}
+.btn-new:hover{filter:brightness(1.08); background:var(--accent)}
 .chat-list{flex:1; overflow-y:auto; padding-block:4px;
   padding-left:max(6px, env(safe-area-inset-left, 0px)); padding-right:max(6px, env(safe-area-inset-right, 0px))}
 .chat-item{display:flex; gap:10px; align-items:center; width:100%; text-align:left;
@@ -90,6 +93,7 @@ input,textarea{font:inherit; color:var(--fg)}
 .ch-status{font-size:12.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .ch-status.online{color:var(--online)}
 .ch-status.typing{color:var(--accent)}
+.ch-lock{font-size:12px; color:var(--muted); display:flex; align-items:center; gap:3px; flex:none}
 .msgs{flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:2px; padding-block:12px;
   padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px))}
 .day-sep{align-self:center; margin:10px 0 6px; font-size:12.5px; color:var(--muted);
@@ -106,7 +110,7 @@ input,textarea{font:inherit; color:var(--fg)}
 .row.theirs .bubble{background:var(--bubble-in); border-bottom-left-radius:5px}
 .b-sender{font-size:12.5px; font-weight:700; margin-bottom:1px}
 .b-text{white-space:pre-wrap; overflow-wrap:break-word}
-.b-text.deleted{color:var(--muted); font-style:italic}
+.b-text.deleted,.b-text.locked{color:var(--muted); font-style:italic}
 .b-meta{float:right; margin:7px -4px -2px 8px; font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums}
 .row.mine .bubble{cursor:pointer}
 .msg-actions{align-self:flex-end; margin:2px 4px 6px}
@@ -121,7 +125,7 @@ input,textarea{font:inherit; color:var(--fg)}
   flex:none; display:flex; align-items:center; justify-content:center}
 .btn-send:disabled{opacity:.4; cursor:default}
 .btn-send svg{width:20px;height:20px;fill:currentColor; margin-left:2px}
-.ro-note{padding:10px 16px; text-align:center; color:var(--muted); font-size:13.5px;
+.note-bar{padding:10px 16px; text-align:center; color:var(--muted); font-size:13.5px;
   background:var(--panel); border-top:1px solid var(--border)}
 
 /* empty / status screens */
@@ -130,16 +134,16 @@ input,textarea{font:inherit; color:var(--fg)}
   padding-left:max(24px, env(safe-area-inset-left, 0px)); padding-right:max(24px, env(safe-area-inset-right, 0px))}
 .placeholder .big{font-size:40px}
 .placeholder h2{margin:0; font-size:17px; color:var(--fg)}
-.placeholder p{margin:0; max-width:34ch; font-size:14px}
+.placeholder p{margin:0; max-width:36ch; font-size:14px}
 .conn-note{position:absolute; top:62px; left:50%; transform:translateX(-50%); z-index:5;
   background:var(--panel); border:1px solid var(--border); color:var(--muted);
   font-size:13px; padding:6px 14px; border-radius:999px; box-shadow:0 2px 8px rgba(0,0,0,.12)}
 
-/* ---- modal: new chat ---- */
+/* ---- modal ---- */
 .overlay{position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:20;
   display:flex; align-items:center; justify-content:center;
   padding-block:20px; padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px))}
-.modal{background:var(--panel); border-radius:14px; width:420px; max-width:100%; max-height:min(80vh,560px);
+.modal{background:var(--panel); border-radius:14px; width:440px; max-width:100%; max-height:min(84vh,620px);
   display:flex; flex-direction:column; box-shadow:0 10px 40px rgba(0,0,0,.3)}
 .modal-head{display:flex; align-items:center; gap:8px; padding:14px 16px 8px}
 .modal-head h2{margin:0; font-size:17px; flex:1}
@@ -160,9 +164,19 @@ input,textarea{font:inherit; color:var(--fg)}
 .person:hover{background:var(--hover)}
 .person .ava{width:38px;height:38px;font-size:15px}
 .person .p-name{font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-.btn-primary{background:var(--accent); color:var(--accent-fg); border-radius:10px; padding:10px 16px; font-weight:600}
+.btn-primary{background:var(--accent); color:var(--accent-fg); border-radius:10px; padding:10px 16px; font-weight:600; text-align:center}
 .btn-primary:disabled{opacity:.45; cursor:default}
+.btn-outline{border:1px solid var(--border); border-radius:10px; padding:9px 14px; font-weight:600; text-align:center; background:var(--bg)}
+.btn-outline:hover{background:var(--hover)}
 .hint{font-size:12.5px; color:var(--muted)}
+.admin-box{border:1px solid var(--border); border-radius:12px; padding:12px; display:flex; flex-direction:column; gap:8px}
+.admin-box h3{margin:0; font-size:14px}
+.admin-warn{background:color-mix(in srgb, var(--lock) 16%, transparent); border:1px solid color-mix(in srgb, var(--lock) 40%, transparent);
+  color:var(--fg); border-radius:10px; padding:10px 12px; font-size:13px}
+.exp-row{display:flex; align-items:center; gap:10px}
+.exp-row .ava{width:34px;height:34px;font-size:14px}
+.exp-row .n{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px}
+.exp-row .btn-outline{padding:6px 12px; font-size:13px; flex:none}
 
 .toast{position:fixed; bottom:calc(20px + env(safe-area-inset-bottom,0px)); left:50%; transform:translateX(-50%);
   background:var(--fg); color:var(--bg); padding:9px 18px; border-radius:10px; font-size:14px; z-index:40;
@@ -184,19 +198,23 @@ input,textarea{font:inherit; color:var(--fg)}
   <div class="sidebar">
     <div class="side-head">
       <span class="ava me-ava" id="meAva" style="width:34px;height:34px;font-size:13px"></span>
-      <div class="side-title">Saske Messenger</div>
-      <button class="btn-new" id="btnNew" title="Новый чат" aria-label="Новый чат" hidden>+</button>
+      <div style="flex:1;min-width:0">
+        <div class="side-title">Saske Messenger</div>
+        <div class="enc-badge">🔒 сквозное шифрование</div>
+      </div>
+      <button class="icon-btn" id="btnAdmin" title="Админ-панель" aria-label="Админ-панель" hidden>🛡️</button>
+      <button class="icon-btn btn-new" id="btnNew" title="Новый чат" aria-label="Новый чат" hidden>+</button>
     </div>
     <div class="chat-list" id="chatList">
-      <div class="list-note" id="listNote">Загрузка чатов…</div>
+      <div class="list-note" id="listNote">Настраиваем шифрование…</div>
     </div>
   </div>
 
   <div class="chatpane" id="chatPane">
     <div class="placeholder" id="welcome">
-      <div class="big">💬</div>
+      <div class="big">🔐</div>
       <h2 id="wTitle">Saske Messenger</h2>
-      <p id="wText">Выберите чат слева или создайте новый, чтобы начать переписку.</p>
+      <p id="wText">Выберите чат слева или создайте новый. Все сообщения шифруются на вашем устройстве.</p>
     </div>
 
     <div class="chat-head" id="chatHead" hidden>
@@ -206,6 +224,7 @@ input,textarea{font:inherit; color:var(--fg)}
         <div class="ch-name" id="chName"></div>
         <div class="ch-status" id="chStatus"></div>
       </div>
+      <div class="ch-lock" title="Сообщения зашифрованы">🔒</div>
     </div>
     <div class="msgs" id="msgs" hidden></div>
     <div class="composer" id="composer" hidden>
@@ -214,11 +233,12 @@ input,textarea{font:inherit; color:var(--fg)}
         <svg viewBox="0 0 24 24"><path d="M2.5 21.5l19-9.5-19-9.5v7.6l13 1.9-13 1.9z"/></svg>
       </button>
     </div>
-    <div class="ro-note" id="roNote" hidden>У вас доступ только для чтения. Писать могут участники, добавленные как редакторы.</div>
+    <div class="note-bar" id="noteBar" hidden></div>
     <div class="conn-note" id="connNote" hidden>Подключаемся… данные могут быть неактуальны</div>
   </div>
 </div>
 
+<!-- New chat -->
 <div class="overlay" id="overlay" hidden>
   <div class="modal">
     <div class="modal-head">
@@ -232,7 +252,7 @@ input,textarea{font:inherit; color:var(--fg)}
     <div class="modal-body" id="dmBody">
       <input type="text" id="dmSearch" placeholder="Поиск людей по имени…" autocomplete="off">
       <div class="ppl" id="dmResults"></div>
-      <div class="hint">Найдите человека и нажмите на него — откроется личный чат.</div>
+      <div class="hint">Найдите человека и нажмите на него — откроется зашифрованный личный чат.</div>
     </div>
     <div class="modal-body" id="groupBody" hidden>
       <input type="text" id="groupName" placeholder="Название группы" autocomplete="off">
@@ -244,6 +264,33 @@ input,textarea{font:inherit; color:var(--fg)}
   </div>
 </div>
 
+<!-- Admin / law-enforcement export -->
+<div class="overlay" id="adminOverlay" hidden>
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Админ-панель</h2>
+      <button class="btn-close" id="btnAdminClose" aria-label="Закрыть">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="admin-warn" id="adminWarn" hidden></div>
+      <div class="admin-box">
+        <h3>Выдача переписки по запросу</h3>
+        <p class="hint">Вы — владелец сервиса и держите escrow-ключ. Здесь можно расшифровать любой чат и сохранить переписку в файл. Используйте это только для законных запросов.</p>
+        <div id="exportList"><div class="hint">Загрузка чатов…</div></div>
+      </div>
+      <div class="admin-box">
+        <h3>Резервная копия escrow-ключа</h3>
+        <p class="hint">Без этого ключа расшифровать переписку будет невозможно. Сохраните файл в надёжном месте. Файл даёт полный доступ к содержимому всех чатов — храните его как пароль.</p>
+        <button class="btn-outline" id="btnBackupKey">Сохранить резервную копию ключа</button>
+        <label class="btn-outline" style="cursor:pointer">
+          Восстановить ключ из файла
+          <input type="file" id="restoreKey" accept="application/json,.json" hidden>
+        </label>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 "use strict";
 (function(){
@@ -251,31 +298,50 @@ input,textarea{font:inherit; color:var(--fg)}
   const app=$("app"), chatList=$("chatList"), listNote=$("listNote"),
         welcome=$("welcome"), chatHead=$("chatHead"), msgsEl=$("msgs"),
         composer=$("composer"), input=$("input"), btnSend=$("btnSend"),
-        roNote=$("roNote"), connNote=$("connNote");
+        noteBar=$("noteBar"), connNote=$("connNote");
 
-  let db=null, user=null, room=null, myId=null;
-  let readOnly=false;
-  const chats = new Map();          // chatId -> chat doc data
-  let activeId = null;
-  let unsubChats = [];
-  let unsubBlocks = null;
-  let blocks = new Map();           // blockId -> data
-  let blockLimit = 4;
-  let selectedMsgKey = null;
-  let onlineIds = new Set();
-  let typingByChat = new Map();     // chatId -> Set of user ids
-  let lastRead = {};
-  try{ lastRead = JSON.parse(localStorage.getItem("sm_lastRead")||"{}")||{}; }catch(e){}
+  let db=null, user=null, room=null, myId=null, downloads=null;
+  let readOnly=false, isOwner=false;
+  let myPriv=null, myPub=null;                 // this viewer's RSA identity
+  let escrowPubKey=null, escrowPriv=null;      // owner escrow keypair (priv only on owner)
+  let encReady=false;                          // identity loaded and escrow pub known
+  const pubCache=new Map();                    // uid -> CryptoKey|null  (false = checked, none)
+  const chatKeys=new Map();                    // chatId -> {key:CryptoKey, raw:Uint8Array}
+  const chats=new Map();                       // chatId -> data
+  let activeId=null, unsubChats=[], unsubBlocks=null;
+  let blocks=new Map(), blockLimit=4, selectedMsgKey=null;
+  let onlineIds=new Set(), typingByChat=new Map();
+  let privBase="";                             // data/users/<myId>
+  let lastRead={};
+  try{ lastRead=JSON.parse(localStorage.getItem("sm_lastRead")||"{}")||{}; }catch(e){}
   function saveLastRead(){ try{ localStorage.setItem("sm_lastRead", JSON.stringify(lastRead)); }catch(e){} }
 
-  /* ---------- helpers ---------- */
-  function toast(t){
-    const el=document.createElement("div"); el.className="toast"; el.textContent=t;
-    document.body.appendChild(el); setTimeout(()=>el.remove(), 3500);
+  /* ---------- crypto helpers ---------- */
+  const enc=new TextEncoder(), dec=new TextDecoder();
+  const subtle=(window.crypto&&window.crypto.subtle)||null;
+  function b64(buf){ let s=""; const a=new Uint8Array(buf); for(let i=0;i<a.length;i++) s+=String.fromCharCode(a[i]); return btoa(s); }
+  function unb64(s){ const bin=atob(s); const a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i); return a; }
+  const RSA={name:"RSA-OAEP", modulusLength:2048, publicExponent:new Uint8Array([1,0,1]), hash:"SHA-256"};
+  function genRSA(){ return subtle.generateKey(RSA, true, ["encrypt","decrypt"]); }
+  function expJwk(k){ return subtle.exportKey("jwk", k); }
+  function impPub(j){ return subtle.importKey("jwk", j, {name:"RSA-OAEP", hash:"SHA-256"}, true, ["encrypt"]); }
+  function impPriv(j){ return subtle.importKey("jwk", j, {name:"RSA-OAEP", hash:"SHA-256"}, true, ["decrypt"]); }
+  function impAes(raw){ return subtle.importKey("raw", raw, {name:"AES-GCM"}, false, ["encrypt","decrypt"]); }
+  async function wrapTo(rawBytes, pubKey){ return b64(await subtle.encrypt({name:"RSA-OAEP"}, pubKey, rawBytes)); }
+  async function unwrapWith(b64s, privKey){ return new Uint8Array(await subtle.decrypt({name:"RSA-OAEP"}, privKey, unb64(b64s))); }
+  async function aesEnc(text, key){
+    const iv=crypto.getRandomValues(new Uint8Array(12));
+    const ct=new Uint8Array(await subtle.encrypt({name:"AES-GCM", iv}, key, enc.encode(text)));
+    const out=new Uint8Array(12+ct.length); out.set(iv,0); out.set(ct,12); return b64(out);
   }
-  function msgKey(){
-    return Date.now().toString(36).padStart(9,"0")+"_"+Math.random().toString(36).slice(2,6);
+  async function aesDec(b64s, key){
+    const d=unb64(b64s); const iv=d.slice(0,12), ct=d.slice(12);
+    return dec.decode(await subtle.decrypt({name:"AES-GCM", iv}, key, ct));
   }
+
+  /* ---------- misc helpers ---------- */
+  function toast(t){ const el=document.createElement("div"); el.className="toast"; el.textContent=t; document.body.appendChild(el); setTimeout(()=>el.remove(),3800); }
+  function msgKey(){ return Date.now().toString(36).padStart(9,"0")+"_"+Math.random().toString(36).slice(2,6); }
   function blockId(seq){ return "b"+String(seq).padStart(6,"0"); }
   function hash(s){ let x=5381; for(let i=0;i<s.length;i++){ x=((x*33)^s.charCodeAt(i))>>>0; } return x.toString(36); }
   function dmIdFor(a,b){ const p=[a,b].sort(); return "dm_"+hash(p[0])+"_"+hash(p[1]); }
@@ -284,7 +350,7 @@ input,textarea{font:inherit; color:var(--fg)}
     const d=new Date(ts), now=new Date();
     if(d.toDateString()===now.toDateString()) return fmtTime(ts);
     const days=["вс","пн","вт","ср","чт","пт","сб"];
-    if(now-d < 6*864e5) return days[d.getDay()];
+    if(now-d<6*864e5) return days[d.getDay()];
     return String(d.getDate()).padStart(2,"0")+"."+String(d.getMonth()+1).padStart(2,"0")+"."+String(d.getFullYear()).slice(2);
   }
   function fmtDay(ts){
@@ -294,121 +360,152 @@ input,textarea{font:inherit; color:var(--fg)}
     const m=["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
     return d.getDate()+" "+m[d.getMonth()]+(d.getFullYear()!==now.getFullYear()?" "+d.getFullYear():"");
   }
-  function avaEl(profile, label, online){
+  function fmtStamp(ts){ const d=new Date(ts);
+    const p=n=>String(n).padStart(2,"0");
+    return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes()); }
+  function avaEl(profile,label,online){
     const s=document.createElement("span"); s.className="ava";
-    if(profile && profile.avatarUrl){ const img=document.createElement("img"); img.alt=""; img.src=profile.avatarUrl; s.appendChild(img); }
+    if(profile&&profile.avatarUrl){ const img=document.createElement("img"); img.alt=""; img.src=profile.avatarUrl; s.appendChild(img); }
     else { s.textContent=(label||"?").trim().charAt(0).toUpperCase()||"?"; if(profile&&profile.color) s.style.background=profile.color; }
     if(online){ const d=document.createElement("span"); d.className="dot"; s.appendChild(d); }
     return s;
   }
-  async function resolveProfiles(ids){
-    if(!user || !ids.length) return {};
-    try{ return await user.profiles(ids); }catch(e){ return {}; }
-  }
-  const nameOf=(ps,id)=> (ps && ps[id] && ps[id].name) || "Кто-то";
+  async function resolveProfiles(ids){ if(!user||!ids.length) return {}; try{ return await user.profiles(ids); }catch(e){ return {}; } }
+  const nameOf=(ps,id)=>(ps&&ps[id]&&ps[id].name)||"Кто-то";
+  function otherMember(c){ return c.kind==="dm"?((c.members||[]).find(m=>m!==myId)||null):null; }
 
-  function chatTitle(chat, ps){
-    if(chat.kind==="dm"){
-      const other=(chat.members||[]).find(m=>m!==myId);
-      if(!other) return "Избранное";
-      return nameOf(ps, other);
-    }
-    return chat.name || "Группа";
+  /* ---------- key management ---------- */
+  async function loadPub(uid){
+    if(pubCache.has(uid)) return pubCache.get(uid);
+    try{
+      const d=await db.doc("pubkeys/"+uid).get();
+      if(d.exists&&d.data().jwk){ const k=await impPub(d.data().jwk); pubCache.set(uid,k); return k; }
+    }catch(e){}
+    pubCache.set(uid,null); return null;
   }
-  function otherMember(chat){
-    if(chat.kind!=="dm") return null;
-    return (chat.members||[]).find(m=>m!==myId) || null;
+  // get the AES key for a chat using MY wrap; caches raw bytes so we can re-wrap for others
+  async function getChatKey(c){
+    if(chatKeys.has(c._id)) return chatKeys.get(c._id);
+    const w=c.wraps&&c.wraps[myId];
+    if(!w||!myPriv) return null;
+    try{ const raw=await unwrapWith(w, myPriv); const key=await impAes(raw); const o={key,raw}; chatKeys.set(c._id,o); return o; }
+    catch(e){ return null; }
+  }
+  // make sure every member with a published pubkey (and the escrow key) has a wrap
+  async function ensureMemberWraps(c, o){
+    if(!o) return;
+    const have=c.wraps||{}; const updates={};
+    for(const uid of (c.members||[])){
+      if(uid===myId||have[uid]) continue;
+      const pk=await loadPub(uid); if(pk) updates[uid]=await wrapTo(o.raw, pk);
+    }
+    if(!have.__escrow__ && escrowPubKey) updates.__escrow__=await wrapTo(o.raw, escrowPubKey);
+    if(Object.keys(updates).length){
+      try{ await db.doc("chats/"+c._id).update({wraps:updates}); }catch(e){}
+    }
   }
 
   /* ---------- screens ---------- */
-  function showSignedOut(){
-    listNote.textContent="";
-    $("wTitle").textContent="Нужен вход в Claude";
-    $("wText").textContent="Войдите в свой аккаунт Claude и откройте страницу заново — тогда появятся ваши чаты.";
-    listNote.textContent="Войдите, чтобы увидеть чаты";
+  function stuck(title,text,note){
+    $("wTitle").textContent=title; $("wText").textContent=text;
+    listNote.textContent=note||""; chatList.textContent=""; const n=document.createElement("div");
+    n.className="list-note"; n.textContent=note||""; chatList.appendChild(n);
   }
 
   /* ---------- chat list ---------- */
-  let renderListToken=0;
+  let listTok=0;
   async function renderChatList(){
-    const tok=++renderListToken;
+    const tok=++listTok;
     const arr=[...chats.values()].sort((a,b)=>((b.last&&b.last.at)||b.createdAt||0)-((a.last&&a.last.at)||a.createdAt||0));
     const ids=new Set();
     arr.forEach(c=>{ const o=otherMember(c); if(o) ids.add(o); if(c.last&&c.last.by) ids.add(c.last.by); });
     const ps=await resolveProfiles([...ids]);
-    if(tok!==renderListToken) return;
+    // precompute title + preview (needs chat key)
+    const info=new Map();
+    for(const c of arr){
+      const o=await getChatKey(c);
+      let title, last="";
+      if(c.kind==="dm"){ const ot=otherMember(c); title=ot?nameOf(ps,ot):"Избранное"; }
+      else { title=o&&c.nameC? await safeDec(c.nameC,o.key,"🔒 Группа") : (c.nameC?"🔒 Группа":(c.name||"Группа")); }
+      if(c.last&&c.last.c){ last=o? await safeDec(c.last.c,o.key,"🔒 зашифровано") : "🔒 зашифровано"; }
+      else if(c.last&&c.last.t){ last=c.last.t; }
+      info.set(c._id,{title,last,hasKey:!!o});
+    }
+    if(tok!==listTok) return;
     chatList.textContent="";
     if(!arr.length){
       const n=document.createElement("div"); n.className="list-note";
-      n.textContent="Пока нет чатов. Нажмите «+», чтобы написать кому-нибудь или создать группу.";
+      n.textContent=encReady?"Пока нет чатов. Нажмите «+», чтобы написать кому-нибудь.":"Настраиваем шифрование…";
       chatList.appendChild(n); return;
     }
     for(const c of arr){
-      const btn=document.createElement("button");
-      btn.className="chat-item"+(c._id===activeId?" active":"");
-      const other=otherMember(c);
-      const online=other?onlineIds.has(other):false;
-      btn.appendChild(avaEl(other?ps[other]:null, chatTitle(c,ps), online));
+      const inf=info.get(c._id)||{};
+      const btn=document.createElement("button"); btn.className="chat-item"+(c._id===activeId?" active":"");
+      const other=otherMember(c); const online=other?onlineIds.has(other):false;
+      btn.appendChild(avaEl(other?ps[other]:null, inf.title, online));
       const body=document.createElement("div"); body.className="ci-body";
       const top=document.createElement("div"); top.className="ci-top";
-      const nm=document.createElement("div"); nm.className="ci-name"; nm.textContent=chatTitle(c,ps);
-      top.appendChild(nm);
+      const nm=document.createElement("div"); nm.className="ci-name"; nm.textContent=inf.title||"Чат"; top.appendChild(nm);
       if(c.last&&c.last.at){ const t=document.createElement("div"); t.className="ci-time"; t.textContent=fmtListTime(c.last.at); top.appendChild(t); }
       body.appendChild(top);
       const bot=document.createElement("div"); bot.className="ci-bottom";
-      const lastEl=document.createElement("div"); lastEl.className="ci-last";
-      if(c.last){
-        const pre=c.last.by===myId?"Вы: ":(c.kind!=="dm"?nameOf(ps,c.last.by).split(" ")[0]+": ":"");
-        lastEl.textContent=pre+(c.last.t||"");
-      } else lastEl.textContent="Нет сообщений";
-      bot.appendChild(lastEl);
-      if(c.last && c.last.by!==myId && (lastRead[c._id]||0) < c.last.at && c._id!==activeId){
-        const u=document.createElement("span"); u.className="ci-unread"; bot.appendChild(u);
-      }
-      body.appendChild(bot);
-      btn.appendChild(body);
+      const le=document.createElement("div"); le.className="ci-last";
+      if(c.last){ const pre=c.last.by===myId?"Вы: ":(c.kind!=="dm"&&inf.hasKey?nameOf(ps,c.last.by).split(" ")[0]+": ":""); le.textContent=pre+(inf.last||""); }
+      else le.textContent="Нет сообщений";
+      bot.appendChild(le);
+      if(c.last&&c.last.by!==myId&&(lastRead[c._id]||0)<c.last.at&&c._id!==activeId){ const u=document.createElement("span"); u.className="ci-unread"; bot.appendChild(u); }
+      body.appendChild(bot); btn.appendChild(body);
       btn.addEventListener("click",()=>openChat(c._id));
       chatList.appendChild(btn);
     }
   }
+  async function safeDec(b64s,key,fallback){ try{ return await aesDec(b64s,key); }catch(e){ return fallback; } }
 
   function subscribeChats(){
     unsubChats.forEach(u=>u()); unsubChats=[];
     let loaded=false;
-    const timer=setTimeout(()=>{ if(!loaded){ connNote.hidden=false; } },10000);
-    const handle=snap=>{
+    const timer=setTimeout(()=>{ if(!loaded) connNote.hidden=false; },10000);
+    unsubChats.push(db.collection("chats").where("members","array-contains",myId).onSnapshot(snap=>{
       if(!snap.metadata.fromCache){ loaded=true; clearTimeout(timer); connNote.hidden=true; }
       snap.docChanges().forEach(ch=>{
-        if(ch.type==="removed"){ chats.delete(ch.doc.id); }
+        if(ch.type==="removed"){ chats.delete(ch.doc.id); chatKeys.delete(ch.doc.id); }
         else { const d=ch.doc.data()||{}; d._id=ch.doc.id; chats.set(ch.doc.id,d); }
       });
-      listNote.remove?.();
       renderChatList();
-      if(activeId && chats.has(activeId)) renderHead();
-    };
-    const err=e=>{ clearTimeout(timer); if(e.code!=="revoked") toast("Не удалось загрузить чаты"); };
-    unsubChats.push(db.collection("chats").where("members","array-contains",myId).onSnapshot(handle,err));
-    unsubChats.push(db.collection("chats").where("public","==",true).onSnapshot(handle,err));
+      if(activeId&&chats.has(activeId)) renderHead();
+    },e=>{ clearTimeout(timer); if(e.code!=="revoked") toast("Не удалось загрузить чаты"); }));
   }
 
-  /* ---------- open chat / messages ---------- */
-  function openChat(id){
-    if(activeId===id && app.classList.contains("show-chat")) return;
+  /* ---------- open chat ---------- */
+  async function openChat(id){
+    if(activeId===id&&app.classList.contains("show-chat")) return;
     activeId=id; selectedMsgKey=null; blockLimit=4;
     lastRead[id]=Date.now(); saveLastRead();
-    app.classList.add("show-chat");
-    welcome.hidden=true; chatHead.hidden=false; msgsEl.hidden=false;
-    composer.hidden=readOnly; roNote.hidden=!readOnly;
+    app.classList.add("show-chat"); welcome.hidden=true; chatHead.hidden=false; msgsEl.hidden=false;
     msgsEl.textContent=""; blocks=new Map();
     renderHead(); renderChatList();
+    const c=chats.get(id)||{};
+    const o=await getChatKey(c);
+    if(!o){
+      composer.hidden=true; noteBar.hidden=false;
+      noteBar.textContent="🔒 Нет ключа для этого чата. Он выдастся автоматически, когда участник с доступом откроет чат.";
+      if(unsubBlocks){unsubBlocks();unsubBlocks=null;}
+      msgsEl.textContent="";
+      const ph=document.createElement("div"); ph.className="placeholder";
+      const h=document.createElement("h2"); h.textContent="Чат зашифрован"; const p=document.createElement("p");
+      p.textContent="У вас пока нет ключа от этого чата."; ph.appendChild(h); ph.appendChild(p); msgsEl.appendChild(ph);
+      return;
+    }
+    ensureMemberWraps(c,o);                 // distribute key to other members (fire and forget)
+    composer.hidden=readOnly; noteBar.hidden=!readOnly;
+    if(readOnly) noteBar.textContent="Доступ только для чтения. Писать могут участники, добавленные как редакторы.";
     subscribeBlocks();
     if(!readOnly) input.focus();
   }
   function closeChat(){
-    app.classList.remove("show-chat");
-    activeId=null; selectedMsgKey=null;
+    app.classList.remove("show-chat"); activeId=null; selectedMsgKey=null;
     if(unsubBlocks){unsubBlocks();unsubBlocks=null;}
-    chatHead.hidden=true; msgsEl.hidden=true; composer.hidden=true; roNote.hidden=true; welcome.hidden=false;
+    chatHead.hidden=true; msgsEl.hidden=true; composer.hidden=true; noteBar.hidden=true; welcome.hidden=false;
     renderChatList();
   }
   $("btnBack").addEventListener("click",closeChat);
@@ -417,317 +514,364 @@ input,textarea{font:inherit; color:var(--fg)}
     const c=chats.get(activeId); if(!c) return;
     const other=otherMember(c);
     const ps=await resolveProfiles(other?[other]:[]);
-    const online=other?onlineIds.has(other):false;
-    const old=$("chAva"); const nv=avaEl(other?ps[other]:null, chatTitle(c,ps), false);
-    nv.id="chAva"; nv.classList.add("ch-ava"); old.replaceWith(nv);
-    $("chName").textContent=chatTitle(c,ps);
+    const o=await getChatKey(c);
+    let title;
+    if(c.kind==="dm") title=other?nameOf(ps,other):"Избранное";
+    else title=o&&c.nameC? await safeDec(c.nameC,o.key,"🔒 Группа") : (c.name||"Группа");
+    const old=$("chAva"); const nv=avaEl(other?ps[other]:null,title,false); nv.id="chAva"; nv.classList.add("ch-ava"); old.replaceWith(nv);
+    $("chName").textContent=title;
     const st=$("chStatus"); st.className="ch-status";
     const typers=[...(typingByChat.get(activeId)||new Set())].filter(t=>t!==myId);
     if(typers.length){
       const tps=await resolveProfiles(typers);
-      st.textContent=(c.kind==="dm"?"печатает…":nameOf(tps,typers[0])+" печатает…");
-      st.classList.add("typing");
+      st.textContent=c.kind==="dm"?"печатает…":nameOf(tps,typers[0])+" печатает…"; st.classList.add("typing");
     } else if(c.kind==="dm"){
-      st.textContent=online?"в сети":"не в сети";
-      if(online) st.classList.add("online");
+      const online=other?onlineIds.has(other):false;
+      st.textContent=online?"в сети":"не в сети"; if(online) st.classList.add("online");
     } else {
       const n=(c.members||[]).length;
-      st.textContent=c.public?"публичный чат":n+" "+(n%10===1&&n%100!==11?"участник":(n%10>=2&&n%10<=4&&(n%100<10||n%100>=20)?"участника":"участников"));
+      st.textContent=n+" "+(n%10===1&&n%100!==11?"участник":(n%10>=2&&n%10<=4&&(n%100<10||n%100>=20)?"участника":"участников"));
     }
   }
 
   function subscribeBlocks(){
     if(unsubBlocks){unsubBlocks();unsubBlocks=null;}
-    const cid=activeId;
-    let loaded=false;
-    const timer=setTimeout(()=>{ if(!loaded && activeId===cid) connNote.hidden=false; },10000);
-    unsubBlocks=db.doc("chats/"+cid).collection("blocks")
-      .orderBy("seq","desc").limit(blockLimit)
+    const cid=activeId; let loaded=false;
+    const timer=setTimeout(()=>{ if(!loaded&&activeId===cid) connNote.hidden=false; },10000);
+    unsubBlocks=db.doc("chats/"+cid).collection("blocks").orderBy("seq","desc").limit(blockLimit)
       .onSnapshot(snap=>{
         if(activeId!==cid) return;
         if(!snap.metadata.fromCache){ loaded=true; clearTimeout(timer); connNote.hidden=true; }
-        blocks=new Map();
-        snap.docs.forEach(d=>blocks.set(d.id,d.data()||{}));
+        blocks=new Map(); snap.docs.forEach(d=>blocks.set(d.id,d.data()||{}));
         renderMsgs(snap.size>=blockLimit);
       },e=>{ clearTimeout(timer); if(e.code!=="revoked") toast("Не удалось загрузить сообщения"); });
   }
 
-  let renderMsgsToken=0;
+  let msgsTok=0;
   async function renderMsgs(mayHaveEarlier){
-    const tok=++renderMsgsToken;
+    const tok=++msgsTok;
+    const c=chats.get(activeId)||{}; const o=await getChatKey(c); if(!o) return;
     const all=[];
-    for(const b of blocks.values()){
-      const m=b.msgs||{};
-      for(const k in m){ if(m[k]&&typeof m[k]==="object") all.push([k,m[k]]); }
-    }
+    for(const b of blocks.values()){ const m=b.msgs||{}; for(const k in m){ if(m[k]&&typeof m[k]==="object") all.push([k,m[k]]); } }
     all.sort((a,b)=>a[0]<b[0]?-1:1);
-    const c=chats.get(activeId)||{};
     const senderIds=[...new Set(all.map(x=>x[1].by).filter(Boolean))];
     const ps=await resolveProfiles(senderIds);
-    if(tok!==renderMsgsToken) return;
+    // decrypt all texts
+    const texts=new Map();
+    for(const [k,m] of all){ if(m.del) texts.set(k,null); else texts.set(k, m.c? await safeDec(m.c,o.key,"🔒 не удалось расшифровать") : (m.t||"")); }
+    if(tok!==msgsTok) return;
 
-    const nearBottom = msgsEl.scrollHeight - msgsEl.scrollTop - msgsEl.clientHeight < 120;
+    const nearBottom=msgsEl.scrollHeight-msgsEl.scrollTop-msgsEl.clientHeight<120;
     msgsEl.textContent="";
-
-    if(mayHaveEarlier){
-      const b=document.createElement("button"); b.className="btn-earlier"; b.textContent="Показать более ранние";
-      b.addEventListener("click",()=>{ blockLimit+=4; subscribeBlocks(); });
-      msgsEl.appendChild(b);
-    }
-    if(!all.length){
-      const ph=document.createElement("div"); ph.className="placeholder";
-      ph.innerHTML=""; const h=document.createElement("h2"); h.textContent="Сообщений пока нет";
-      const p=document.createElement("p"); p.textContent="Напишите первое сообщение!";
-      ph.appendChild(h); ph.appendChild(p); msgsEl.appendChild(ph);
-    }
+    if(mayHaveEarlier){ const b=document.createElement("button"); b.className="btn-earlier"; b.textContent="Показать более ранние";
+      b.addEventListener("click",()=>{ blockLimit+=4; subscribeBlocks(); }); msgsEl.appendChild(b); }
+    if(!all.length){ const ph=document.createElement("div"); ph.className="placeholder";
+      const h=document.createElement("h2"); h.textContent="Сообщений пока нет"; const p=document.createElement("p"); p.textContent="Напишите первое сообщение!";
+      ph.appendChild(h); ph.appendChild(p); msgsEl.appendChild(ph); }
 
     let lastDay="", lastBy=null;
     for(const [key,m] of all){
       const day=new Date(m.at||0).toDateString();
-      if(day!==lastDay){
-        lastDay=day; lastBy=null;
-        const s=document.createElement("div"); s.className="day-sep"; s.textContent=fmtDay(m.at||0);
-        msgsEl.appendChild(s);
-      }
+      if(day!==lastDay){ lastDay=day; lastBy=null; const s=document.createElement("div"); s.className="day-sep"; s.textContent=fmtDay(m.at||0); msgsEl.appendChild(s); }
       const mine=m.by===myId;
       const row=document.createElement("div"); row.className="row "+(mine?"mine":"theirs");
-      if(!mine && c.kind!=="dm"){
-        const showAva=lastBy!==m.by;
-        const a=avaEl(ps[m.by], nameOf(ps,m.by), false); a.classList.add("m-ava");
-        if(!showAva) a.classList.add("ghost");
-        row.appendChild(a);
-      }
+      if(!mine&&c.kind!=="dm"){ const show=lastBy!==m.by; const a=avaEl(ps[m.by],nameOf(ps,m.by),false); a.classList.add("m-ava"); if(!show) a.classList.add("ghost"); row.appendChild(a); }
       const bub=document.createElement("div"); bub.className="bubble";
-      if(!mine && c.kind!=="dm" && lastBy!==m.by){
-        const sn=document.createElement("div"); sn.className="b-sender";
-        sn.textContent=nameOf(ps,m.by);
-        if(ps[m.by]&&ps[m.by].color) sn.style.color=ps[m.by].color;
-        bub.appendChild(sn);
-      }
+      if(!mine&&c.kind!=="dm"&&lastBy!==m.by){ const sn=document.createElement("div"); sn.className="b-sender"; sn.textContent=nameOf(ps,m.by); if(ps[m.by]&&ps[m.by].color) sn.style.color=ps[m.by].color; bub.appendChild(sn); }
       const tx=document.createElement("div"); tx.className="b-text";
+      const t=texts.get(key);
       if(m.del){ tx.classList.add("deleted"); tx.textContent="Сообщение удалено"; }
-      else tx.textContent=m.t||"";
-      const meta=document.createElement("span"); meta.className="b-meta"; meta.textContent=fmtTime(m.at||0);
-      tx.appendChild(meta);
+      else if(t==="🔒 не удалось расшифровать"){ tx.classList.add("locked"); tx.textContent=t; }
+      else tx.textContent=t;
+      const meta=document.createElement("span"); meta.className="b-meta"; meta.textContent=fmtTime(m.at||0); tx.appendChild(meta);
       bub.appendChild(tx);
-      if(mine && !m.del){
-        bub.addEventListener("click",()=>{ selectedMsgKey=selectedMsgKey===key?null:key; renderMsgs(mayHaveEarlier); });
-      }
-      row.appendChild(bub);
-      msgsEl.appendChild(row);
-      if(mine && selectedMsgKey===key && !m.del){
-        const act=document.createElement("div"); act.className="msg-actions";
-        const del=document.createElement("button"); del.textContent="Удалить сообщение";
-        del.addEventListener("click",()=>deleteMsg(key));
-        act.appendChild(del); msgsEl.appendChild(act);
-      }
+      if(mine&&!m.del){ bub.addEventListener("click",()=>{ selectedMsgKey=selectedMsgKey===key?null:key; renderMsgs(mayHaveEarlier); }); }
+      row.appendChild(bub); msgsEl.appendChild(row);
+      if(mine&&selectedMsgKey===key&&!m.del){ const act=document.createElement("div"); act.className="msg-actions";
+        const del=document.createElement("button"); del.textContent="Удалить сообщение"; del.addEventListener("click",()=>deleteMsg(key)); act.appendChild(del); msgsEl.appendChild(act); }
       lastBy=m.by;
     }
     if(nearBottom) msgsEl.scrollTop=msgsEl.scrollHeight;
     lastRead[activeId]=Date.now(); saveLastRead();
   }
-
-  function findBlockOfMsg(key){
-    for(const [bid,b] of blocks){ if(b.msgs&&b.msgs[key]) return bid; }
-    return null;
-  }
+  function findBlockOfMsg(key){ for(const [bid,b] of blocks){ if(b.msgs&&b.msgs[key]) return bid; } return null; }
   async function deleteMsg(key){
-    const bid=findBlockOfMsg(key); if(!bid) return;
-    selectedMsgKey=null;
-    try{ await db.doc("chats/"+activeId).collection("blocks").doc(bid).update({msgs:{[key]:{del:true}}}); }
-    catch(e){ toast("Не удалось удалить"); }
+    const bid=findBlockOfMsg(key); if(!bid) return; selectedMsgKey=null;
+    try{ await db.doc("chats/"+activeId).collection("blocks").doc(bid).update({msgs:{[key]:{del:true}}}); }catch(e){ toast("Не удалось удалить"); }
   }
 
-  /* ---------- sending ---------- */
-  function setReadOnly(){
-    readOnly=true;
-    composer.hidden=true;
-    if(activeId) roNote.hidden=false;
-    $("btnNew").hidden=true;
-  }
+  /* ---------- send ---------- */
+  function setReadOnly(){ readOnly=true; composer.hidden=true; if(activeId){ noteBar.hidden=false; noteBar.textContent="Доступ только для чтения."; } $("btnNew").hidden=true; }
   async function send(){
-    const text=input.value.replace(/\s+$/,"");
-    if(!text.trim()||!activeId) return;
-    const cid=activeId;
-    const c=chats.get(cid)||{};
-    const seq=c.seq||1;
-    const key=msgKey();
-    const msg={t:text, by:myId, at:Date.now()};
-    input.value=""; autoGrow(); btnSend.disabled=true;
-    sendTyping(null);
+    const text=input.value.replace(/\s+$/,""); if(!text.trim()||!activeId) return;
+    const cid=activeId; const c=chats.get(cid)||{}; const o=await getChatKey(c); if(!o){ toast("Нет ключа для этого чата"); return; }
+    const seq=c.seq||1; const key=msgKey(); const at=Date.now();
+    let c_enc, last_enc;
+    try{ c_enc=await aesEnc(text,o.key); last_enc=await aesEnc(text.slice(0,90),o.key); }
+    catch(e){ toast("Ошибка шифрования"); return; }
+    const msg={c:c_enc, by:myId, at};
+    input.value=""; autoGrow(); btnSend.disabled=true; sendTyping(null);
     const bref=db.doc("chats/"+cid).collection("blocks").doc(blockId(seq));
     try{
-      try{ await bref.update({seq:seq, msgs:{[key]:msg}}); }
-      catch(e){
-        if(e&&e.code==="invalid_argument"){ await bref.set({seq:seq, msgs:{[key]:msg}}); }
-        else throw e;
-      }
+      try{ await bref.update({seq, msgs:{[key]:msg}}); }
+      catch(e){ if(e&&e.code==="invalid_argument"){ await bref.set({seq, msgs:{[key]:msg}}); } else throw e; }
     }catch(e){
       if(e&&e.code==="invalid_argument"){ setReadOnly(); toast("Похоже, у вас нет прав писать здесь"); }
       else if(e&&e.code==="quota_exceeded"){ toast("Хранилище переполнено — удалите старые чаты"); }
       else toast("Не удалось отправить, попробуйте ещё раз");
-      input.value=text; autoGrow(); btnSend.disabled=false;
-      return;
+      input.value=text; autoGrow(); btnSend.disabled=false; return;
     }
-    const cur=blocks.get(blockId(seq));
-    const count=cur&&cur.msgs?Object.keys(cur.msgs).length+1:1;
-    const patch={last:{t:text.slice(0,90), by:myId, at:msg.at}};
-    if(count>=64) patch.seq=seq+1;
+    const cur=blocks.get(blockId(seq)); const count=cur&&cur.msgs?Object.keys(cur.msgs).length+1:1;
+    const patch={last:{c:last_enc, by:myId, at}}; if(count>=64) patch.seq=seq+1;
     try{ await db.doc("chats/"+cid).update(patch); }catch(e){}
   }
   btnSend.addEventListener("click",send);
-  const coarse = matchMedia("(pointer:coarse)").matches;
-  input.addEventListener("keydown",e=>{
-    if(e.key==="Enter"&&!e.shiftKey&&!coarse){ e.preventDefault(); send(); }
-  });
-  function autoGrow(){
-    input.style.height="auto";
-    input.style.height=Math.min(input.scrollHeight,140)+"px";
-    btnSend.disabled=!input.value.trim();
-  }
+  const coarse=matchMedia("(pointer:coarse)").matches;
+  input.addEventListener("keydown",e=>{ if(e.key==="Enter"&&!e.shiftKey&&!coarse){ e.preventDefault(); send(); } });
+  function autoGrow(){ input.style.height="auto"; input.style.height=Math.min(input.scrollHeight,140)+"px"; btnSend.disabled=!input.value.trim(); }
   input.addEventListener("input",()=>{ autoGrow(); sendTyping(activeId); });
 
-  /* ---------- presence: online + typing ---------- */
+  /* ---------- presence ---------- */
   let typingTimer=null, lastTypingSent=0;
   function sendTyping(chatId){
-    if(!room) return;
-    const now=Date.now();
-    if(chatId){
-      if(now-lastTypingSent>2000){ lastTypingSent=now; room.presence({typing:chatId}).catch(()=>{}); }
-      clearTimeout(typingTimer);
-      typingTimer=setTimeout(()=>room.presence({typing:null}).catch(()=>{}),4000);
-    } else {
-      clearTimeout(typingTimer); lastTypingSent=0;
-      room.presence({typing:null}).catch(()=>{});
-    }
+    if(!room) return; const now=Date.now();
+    if(chatId){ if(now-lastTypingSent>2000){ lastTypingSent=now; room.presence({typing:chatId}).catch(()=>{}); }
+      clearTimeout(typingTimer); typingTimer=setTimeout(()=>room.presence({typing:null}).catch(()=>{}),4000); }
+    else { clearTimeout(typingTimer); lastTypingSent=0; room.presence({typing:null}).catch(()=>{}); }
   }
   function startPresence(){
     if(!room) return;
     room.onPeers(ch=>{
       onlineIds=new Set(); typingByChat=new Map();
-      for(const p of ch.peers){
-        if(p.by) onlineIds.add(p.by);
+      for(const p of ch.peers){ if(p.by) onlineIds.add(p.by);
         const t=p.presence&&p.presence.typing;
-        if(t&&typeof t==="string"&&!p.isMe){
-          if(!typingByChat.has(t)) typingByChat.set(t,new Set());
-          if(p.by) typingByChat.get(t).add(p.by);
-        }
-      }
-      renderChatList();
-      if(activeId) renderHead();
-    },()=>{ /* room unavailable: page keeps working without online status */ });
+        if(t&&typeof t==="string"&&!p.isMe){ if(!typingByChat.has(t)) typingByChat.set(t,new Set()); if(p.by) typingByChat.get(t).add(p.by); } }
+      renderChatList(); if(activeId) renderHead();
+    },()=>{});
   }
 
   /* ---------- new chat modal ---------- */
   const overlay=$("overlay"), dmBody=$("dmBody"), groupBody=$("groupBody");
-  const groupMembers=new Map(); // id -> name
-  $("btnNew").addEventListener("click",()=>{ overlay.hidden=false; $("dmSearch").value=""; renderPeople("dmResults",[],pickDm); $("dmSearch").focus(); searchInto("", "dmResults", pickDm); });
+  const groupMembers=new Map();
+  $("btnNew").addEventListener("click",()=>{ if(!encReady){ toast("Шифрование ещё настраивается, подождите секунду"); return; }
+    overlay.hidden=false; $("dmSearch").value=""; searchInto("","dmResults",pickDm); $("dmSearch").focus(); });
   $("btnClose").addEventListener("click",()=>overlay.hidden=true);
   overlay.addEventListener("click",e=>{ if(e.target===overlay) overlay.hidden=true; });
   $("tabDm").addEventListener("click",()=>{ $("tabDm").classList.add("on"); $("tabGroup").classList.remove("on"); dmBody.hidden=false; groupBody.hidden=true; });
   $("tabGroup").addEventListener("click",()=>{ $("tabGroup").classList.add("on"); $("tabDm").classList.remove("on"); groupBody.hidden=false; dmBody.hidden=true; $("groupName").focus(); });
 
-  async function searchInto(q, targetId, onPick){
-    if(!user) return;
-    const hits=await user.search(q);
-    renderPeople(targetId, hits.filter(h=>h.id!==myId), onPick);
-  }
-  function renderPeople(targetId, hits, onPick){
-    const el=$(targetId); el.textContent="";
-    if(!hits.length){
-      const n=document.createElement("div"); n.className="hint";
-      n.textContent="Никого не нашлось. Введите имя человека из вашей организации.";
-      el.appendChild(n); return;
-    }
-    for(const h of hits){
-      const b=document.createElement("button"); b.className="person";
-      b.appendChild(avaEl(h,h.name,false));
-      const nm=document.createElement("div"); nm.className="p-name"; nm.textContent=h.name;
-      b.appendChild(nm);
-      b.addEventListener("click",()=>onPick(h));
-      el.appendChild(b);
-    }
+  async function searchInto(q,target,onPick){ if(!user) return; let hits=[]; try{ hits=await user.search(q); }catch(e){} renderPeople(target,hits.filter(h=>h.id!==myId),onPick); }
+  function renderPeople(target,hits,onPick){
+    const el=$(target); el.textContent="";
+    if(!hits.length){ const n=document.createElement("div"); n.className="hint"; n.textContent="Никого не нашлось. Введите имя человека из вашей организации."; el.appendChild(n); return; }
+    for(const h of hits){ const b=document.createElement("button"); b.className="person"; b.appendChild(avaEl(h,h.name,false));
+      const nm=document.createElement("div"); nm.className="p-name"; nm.textContent=h.name; b.appendChild(nm); b.addEventListener("click",()=>onPick(h)); el.appendChild(b); }
   }
   $("dmSearch").addEventListener("input",e=>searchInto(e.target.value,"dmResults",pickDm));
   $("dmSearch").addEventListener("focus",()=>searchInto($("dmSearch").value,"dmResults",pickDm));
   $("groupSearch").addEventListener("input",e=>searchInto(e.target.value,"groupResults",pickGroupMember));
   $("groupSearch").addEventListener("focus",()=>searchInto($("groupSearch").value,"groupResults",pickGroupMember));
 
+  // build wraps map for a fresh chat key over the given member ids (+ me + escrow)
+  async function buildWraps(raw, memberIds){
+    const w={}; w[myId]=await wrapTo(raw,myPub);
+    if(escrowPubKey) w.__escrow__=await wrapTo(raw,escrowPubKey);
+    for(const uid of memberIds){ if(uid===myId) continue; const pk=await loadPub(uid); if(pk) w[uid]=await wrapTo(raw,pk); }
+    return w;
+  }
   async function pickDm(h){
     overlay.hidden=true;
+    if(!escrowPubKey){ toast("Администратор ещё не настроил шифрование. Пусть владелец откроет приложение."); return; }
     const id=dmIdFor(myId,h.id);
     try{
       const snap=await db.doc("chats/"+id).get();
       if(!snap.exists){
-        await db.doc("chats/"+id).set({kind:"dm", members:[myId,h.id], createdBy:myId, createdAt:Date.now(), seq:1});
+        const raw=crypto.getRandomValues(new Uint8Array(32)); const key=await impAes(raw);
+        const wraps=await buildWraps(raw,[h.id]);
+        chatKeys.set(id,{key,raw});
+        await db.doc("chats/"+id).set({kind:"dm", members:[myId,h.id], wraps, enc:true, createdBy:myId, createdAt:Date.now(), seq:1});
       }
       openChat(id);
-    }catch(e){
-      if(e&&e.code==="invalid_argument"){ setReadOnly(); toast("У вас нет прав создавать чаты"); }
-      else toast("Не удалось открыть чат");
-    }
+    }catch(e){ if(e&&e.code==="invalid_argument"){ setReadOnly(); toast("У вас нет прав создавать чаты"); } else toast("Не удалось открыть чат"); }
   }
-  function pickGroupMember(h){
-    groupMembers.set(h.id,h.name||"Кто-то");
-    $("groupSearch").value="";
-    renderChips(); updateGroupBtn();
-  }
-  function renderChips(){
-    const el=$("groupChips"); el.textContent="";
-    for(const [id,name] of groupMembers){
-      const c=document.createElement("span"); c.className="chip";
-      const t=document.createElement("span"); t.textContent=name; c.appendChild(t);
-      const x=document.createElement("button"); x.textContent="✕"; x.setAttribute("aria-label","Убрать");
-      x.addEventListener("click",()=>{ groupMembers.delete(id); renderChips(); updateGroupBtn(); });
-      c.appendChild(x); el.appendChild(c);
-    }
-  }
+  function pickGroupMember(h){ groupMembers.set(h.id,h.name||"Кто-то"); $("groupSearch").value=""; renderChips(); updateGroupBtn(); }
+  function renderChips(){ const el=$("groupChips"); el.textContent="";
+    for(const [id,name] of groupMembers){ const c=document.createElement("span"); c.className="chip"; const t=document.createElement("span"); t.textContent=name; c.appendChild(t);
+      const x=document.createElement("button"); x.textContent="✕"; x.setAttribute("aria-label","Убрать"); x.addEventListener("click",()=>{ groupMembers.delete(id); renderChips(); updateGroupBtn(); }); c.appendChild(x); el.appendChild(c); } }
   function updateGroupBtn(){ $("btnCreateGroup").disabled=!($("groupName").value.trim()&&groupMembers.size); }
   $("groupName").addEventListener("input",updateGroupBtn);
   $("btnCreateGroup").addEventListener("click",async()=>{
     const name=$("groupName").value.trim(); if(!name||!groupMembers.size) return;
+    if(!escrowPubKey){ toast("Администратор ещё не настроил шифрование."); return; }
     overlay.hidden=true;
     try{
-      const ref=await db.collection("chats").add({
-        kind:"group", name:name, members:[myId,...groupMembers.keys()],
-        createdBy:myId, createdAt:Date.now(), seq:1
-      });
+      const members=[myId,...groupMembers.keys()];
+      const raw=crypto.getRandomValues(new Uint8Array(32)); const key=await impAes(raw);
+      const wraps=await buildWraps(raw,[...groupMembers.keys()]);
+      const nameC=await aesEnc(name,key);
+      const ref=await db.collection("chats").add({kind:"group", nameC, members, wraps, enc:true, createdBy:myId, createdAt:Date.now(), seq:1});
+      chatKeys.set(ref.id,{key,raw});
       groupMembers.clear(); renderChips(); $("groupName").value="";
       openChat(ref.id);
-    }catch(e){
-      if(e&&e.code==="invalid_argument"){ setReadOnly(); toast("У вас нет прав создавать чаты"); }
-      else toast("Не удалось создать группу");
-    }
+    }catch(e){ if(e&&e.code==="invalid_argument"){ setReadOnly(); toast("У вас нет прав создавать чаты"); } else toast("Не удалось создать группу"); }
   });
+
+  /* ---------- admin / law-enforcement export ---------- */
+  const adminOverlay=$("adminOverlay");
+  $("btnAdmin").addEventListener("click",openAdmin);
+  $("btnAdminClose").addEventListener("click",()=>adminOverlay.hidden=true);
+  adminOverlay.addEventListener("click",e=>{ if(e.target===adminOverlay) adminOverlay.hidden=true; });
+  async function openAdmin(){
+    adminOverlay.hidden=false;
+    const warn=$("adminWarn");
+    if(!escrowPriv){ warn.hidden=false; warn.textContent="⚠ На этом устройстве нет escrow-ключа. Восстановите его из резервной копии, иначе расшифровать переписку нельзя."; }
+    else warn.hidden=true;
+    renderExportList();
+  }
+  async function renderExportList(){
+    const el=$("exportList"); el.textContent="";
+    const arr=[...chats.values()].sort((a,b)=>((b.last&&b.last.at)||b.createdAt||0)-((a.last&&a.last.at)||a.createdAt||0));
+    if(!arr.length){ const n=document.createElement("div"); n.className="hint"; n.textContent="Чатов пока нет."; el.appendChild(n); return; }
+    const ids=new Set(); arr.forEach(c=>{ const o=otherMember(c); if(o) ids.add(o); });
+    const ps=await resolveProfiles([...ids]);
+    for(const c of arr){
+      const row=document.createElement("div"); row.className="exp-row";
+      const o=await ownerChatKey(c);
+      let title;
+      if(c.kind==="dm"){ const ot=otherMember(c); title="Личный: "+(ot?nameOf(ps,ot):"—"); }
+      else title="Группа: "+(o&&c.nameC? await safeDec(c.nameC,o,"🔒") : "🔒");
+      const other=otherMember(c); row.appendChild(avaEl(other?ps[other]:null,title,false));
+      const n=document.createElement("div"); n.className="n"; n.textContent=title; row.appendChild(n);
+      const b=document.createElement("button"); b.className="btn-outline"; b.textContent="Экспорт";
+      b.disabled=!escrowPriv; b.addEventListener("click",()=>exportChat(c,title)); row.appendChild(b);
+      el.appendChild(row);
+    }
+  }
+  // owner recovers a chat's AES key via the escrow wrap
+  async function ownerChatKey(c){
+    if(!escrowPriv||!c.wraps||!c.wraps.__escrow__) return null;
+    try{ const raw=await unwrapWith(c.wraps.__escrow__, escrowPriv); return await impAes(raw); }catch(e){ return null; }
+  }
+  async function exportChat(c,title){
+    const key=await ownerChatKey(c); if(!key){ toast("Нет escrow-ключа для этого чата"); return; }
+    toast("Расшифровываем переписку…");
+    let msgs=[];
+    try{
+      const snap=await db.doc("chats/"+c._id).collection("blocks").orderBy("seq","asc").limit(1000).get();
+      for(const d of snap.docs){ const m=(d.data()||{}).msgs||{}; for(const k in m){ if(m[k]&&typeof m[k]==="object") msgs.push([k,m[k]]); } }
+    }catch(e){ toast("Не удалось прочитать сообщения"); return; }
+    msgs.sort((a,b)=>a[0]<b[0]?-1:1);
+    const sids=[...new Set([...(c.members||[]), ...msgs.map(x=>x[1].by)].filter(Boolean))];
+    const ps=await resolveProfiles(sids);
+    const lines=[];
+    lines.push("Переписка — Saske Messenger");
+    lines.push("Чат ID: "+c._id+"  ("+(c.kind==="dm"?"личный":"группа")+")");
+    lines.push("Экспортировано: "+fmtStamp(Date.now()));
+    lines.push("Участники:");
+    for(const uid of (c.members||[])) lines.push("  - "+nameOf(ps,uid)+"  ["+uid+"]");
+    lines.push("".padEnd(48,"-"));
+    for(const [k,m] of msgs){
+      const who=nameOf(ps,m.by);
+      let body;
+      if(m.del) body="(сообщение удалено)";
+      else body=m.c? await safeDec(m.c,key,"(не удалось расшифровать)") : (m.t||"");
+      lines.push("["+fmtStamp(m.at||0)+"] "+who+": "+body);
+    }
+    const text=lines.join("\n");
+    const fname="perepiska_"+c._id+".txt";
+    if(downloads){ try{ await downloads.save({filename:fname, data:text}); toast("Файл сохранён"); return; }catch(e){} }
+    // fallback: show in a new window is blocked in artifacts; put on clipboard
+    try{ await navigator.clipboard.writeText(text); toast("Скопировано в буфер обмена"); }
+    catch(e){ toast("Не удалось сохранить файл"); }
+  }
+  $("btnBackupKey").addEventListener("click",async()=>{
+    if(!escrowPriv){ toast("Нет ключа для резервной копии"); return; }
+    try{
+      const jwk=await expJwk(escrowPriv);
+      const data=JSON.stringify({type:"saske-messenger-escrow-key", jwk, exportedAt:new Date().toISOString()},null,2);
+      if(downloads){ await downloads.save({filename:"saske-escrow-key-backup.json", data}); toast("Резервная копия сохранена"); }
+      else { await navigator.clipboard.writeText(data); toast("Ключ скопирован в буфер обмена"); }
+    }catch(e){ toast("Не удалось сохранить ключ"); }
+  });
+  $("restoreKey").addEventListener("change",async e=>{
+    const f=e.target.files&&e.target.files[0]; if(!f) return;
+    try{
+      const txt=await f.text(); const obj=JSON.parse(txt); if(!obj.jwk) throw 0;
+      const priv=await impPriv(obj.jwk); escrowPriv=priv;
+      await db.doc(privBase+"/escrow").set({jwk:obj.jwk}).catch(()=>{});
+      toast("Ключ восстановлен"); openAdmin();
+    }catch(err){ toast("Неверный файл ключа"); }
+    e.target.value="";
+  });
+
+  /* ---------- identity & escrow setup ---------- */
+  async function ensureIdentity(){
+    // load or create this viewer's RSA identity in their private subtree
+    const idoc=db.doc(privBase+"/identity");
+    let snap; try{ snap=await idoc.get(); }catch(e){ snap={exists:false}; }
+    if(snap.exists&&snap.data().priv&&snap.data().pub){
+      try{ myPriv=await impPriv(snap.data().priv); myPub=await impPub(snap.data().pub); }catch(e){}
+    }
+    if(!myPriv||!myPub){
+      const kp=await genRSA(); const [pj,sj]=await Promise.all([expJwk(kp.publicKey),expJwk(kp.privateKey)]);
+      myPriv=kp.privateKey; myPub=kp.publicKey;
+      try{ await idoc.set({pub:pj, priv:sj, at:Date.now()}); }catch(e){}
+    }
+    // publish my public key so others can wrap chat keys to me
+    try{
+      const pd=await db.doc("pubkeys/"+myId).get();
+      const myJwk=await expJwk(myPub);
+      if(!pd.exists || JSON.stringify(pd.data().jwk)!==JSON.stringify(myJwk)) await db.doc("pubkeys/"+myId).set({jwk:myJwk, at:Date.now()});
+      pubCache.set(myId,myPub);
+    }catch(e){}
+  }
+  async function loadEscrow(){
+    let pub; try{ pub=await db.doc("escrow/pub").get(); }catch(e){ pub={exists:false}; }
+    if(pub.exists&&pub.data().jwk){ try{ escrowPubKey=await impPub(pub.data().jwk); }catch(e){} }
+    if(isOwner){
+      // load owner's private escrow key from private subtree
+      try{ const pd=await db.doc(privBase+"/escrow").get(); if(pd.exists&&pd.data().jwk) escrowPriv=await impPriv(pd.data().jwk); }catch(e){}
+      if(!escrowPubKey){
+        // first-time setup: generate the escrow keypair
+        try{
+          const kp=await genRSA(); const [pj,sj]=await Promise.all([expJwk(kp.publicKey),expJwk(kp.privateKey)]);
+          await db.doc(privBase+"/escrow").set({jwk:sj, at:Date.now()});
+          await db.doc("escrow/pub").set({jwk:pj, at:Date.now()});
+          escrowPriv=kp.privateKey; escrowPubKey=kp.publicKey;
+        }catch(e){}
+      }
+    }
+  }
 
   /* ---------- boot ---------- */
   async function boot(){
-    const [d,u,r]=await Promise.all([claude.use("db"), claude.use("user"), claude.use("room")]);
-    db=d; user=u; room=r;
-    if(!db||!user){ showSignedOut(); return; }
+    if(!subtle){ stuck("Нет поддержки шифрования","Откройте приложение в обычном браузере (нужен защищённый контекст https).","Шифрование недоступно"); return; }
+    const [d,u,r,dl]=await Promise.all([claude.use("db"), claude.use("user"), claude.use("room"), claude.use("downloads")]);
+    db=d; user=u; room=r; downloads=dl;
+    if(!db||!user){ stuck("Нужен вход в Claude","Войдите в аккаунт Claude и откройте страницу заново — тогда появятся ваши чаты.","Войдите, чтобы увидеть чаты"); return; }
     myId=await user.id();
-    if(!myId){ showSignedOut(); return; }
-    try{
-      const me=await user.me();
-      const old=$("meAva"); const nv=avaEl(me, me.name||"Я", false);
-      nv.id="meAva"; nv.classList.add("me-ava");
-      nv.style.width="34px"; nv.style.height="34px"; nv.style.fontSize="13px";
-      old.replaceWith(nv);
-    }catch(e){}
+    if(!myId){ stuck("Нужен вход в Claude","Войдите в аккаунт, чтобы пользоваться мессенджером.","Войдите, чтобы увидеть чаты"); return; }
+    privBase="data/users/"+myId;
+    isOwner=await user.isOwner();
     const cw=await user.can("data.write");
+    // avatar
+    try{ const me=await user.me(); const old=$("meAva"); const nv=avaEl(me,me.name||"Я",false); nv.id="meAva"; nv.classList.add("me-ava"); nv.style.width="34px"; nv.style.height="34px"; nv.style.fontSize="13px"; old.replaceWith(nv); }catch(e){}
     if(cw===false){ setReadOnly(); }
-    else $("btnNew").hidden=false;
+    try{
+      await ensureIdentity();
+      await loadEscrow();
+    }catch(e){}
+    encReady=!!(myPriv&&escrowPubKey);
+    if(isOwner) $("btnAdmin").hidden=false;
+    if(!readOnly && encReady) $("btnNew").hidden=false;
+    if(isOwner && !escrowPubKey){ toast("Не удалось настроить escrow-ключ. Проверьте доступ на запись."); }
+    if(!isOwner && !escrowPubKey){ noteBarInfo("Администратор ещё не настроил шифрование — создание новых чатов недоступно."); }
     subscribeChats();
     startPresence();
   }
+  function noteBarInfo(t){ /* shown only inside a chat; keep as toast hint for now */ toast(t); }
+
   if(window.claude&&window.claude.use) boot();
-  else {
-    // the runtime attaches shortly after load; retry briefly
-    let tries=0;
-    const iv=setInterval(()=>{
-      if(window.claude&&window.claude.use){ clearInterval(iv); boot(); }
-      else if(++tries>50){ clearInterval(iv); showSignedOut(); }
-    },200);
-  }
+  else { let tries=0; const iv=setInterval(()=>{ if(window.claude&&window.claude.use){ clearInterval(iv); boot(); } else if(++tries>50){ clearInterval(iv); stuck("Нужен вход в Claude","Откройте страницу в приложении Claude и войдите в аккаунт.","Войдите, чтобы увидеть чаты"); } },200); }
 })();
 </script>
