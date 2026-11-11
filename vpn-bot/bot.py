@@ -10,6 +10,7 @@ import html
 import io
 import json
 import logging
+import re
 import secrets
 import sqlite3
 import time
@@ -1417,6 +1418,24 @@ def auto_status_text() -> str:
             "/autoproxy include nl: снова разрешить страну, убранную через /delloc")
 
 
+async def _send_report(bot, chat_id: int, text: str) -> None:
+    """Отчёт должен дойти в любом случае: если Telegram не принял оформление, уходит простой текст."""
+    try:
+        await bot.send_message(chat_id, text)
+    except TelegramError as e:
+        log.exception("отчёт не отправлен с оформлением")
+        plain = html.unescape(re.sub(r"<[^>]+>", "", text))[:3500]
+        await bot.send_message(chat_id, f"{plain}\n\n(оформление убрано: {e})", parse_mode=None)
+
+
+async def _report_failure(bot, chat_id: int, what: str, e: Exception) -> None:
+    log.exception("авто-страны: %s", what)
+    try:
+        await bot.send_message(chat_id, f"{what}: {type(e).__name__}: {e}"[:1000], parse_mode=None)
+    except TelegramError:
+        pass
+
+
 async def _auto_refresh_and_report(bot, chat_id: int) -> None:
     """Проверка идёт в фоне, чтобы бот в это время отвечал остальным."""
     try:
@@ -1424,13 +1443,9 @@ async def _auto_refresh_and_report(bot, chat_id: int) -> None:
         if not msg:
             msg = (f"⚠️ Проверка не выполнена: {esc(auto_mgr.last_note)}." if auto_mgr.last_note
                    else "Готово, изменений нет.")
-        await bot.send_message(chat_id, msg + "\n\n" + locations_text())
-    except Exception:
-        log.exception("авто-страны: сбой проверки по команде")
-        try:
-            await bot.send_message(chat_id, "Проверка не удалась, подробности в журнале бота.")
-        except TelegramError:
-            pass
+        await _send_report(bot, chat_id, msg + "\n\n" + locations_text())
+    except Exception as e:
+        await _report_failure(bot, chat_id, "Проверка прокси не удалась", e)
 
 
 async def _auto_selftest_and_report(bot, chat_id: int) -> None:
@@ -1457,13 +1472,9 @@ async def _auto_selftest_and_report(bot, chat_id: int) -> None:
         elif all(r for _, r in results) and not vpn.apply_error:
             lines.append("\nСо стороны сервера всё работает. Если страна не открывается в приложении, "
                          "обновите в нём подписку и проверьте основную страну: она идёт без прокси.")
-        await bot.send_message(chat_id, "\n".join(lines))
-    except Exception:
-        log.exception("авто-страны: сбой самопроверки")
-        try:
-            await bot.send_message(chat_id, "Проверка не удалась, подробности в журнале бота.")
-        except TelegramError:
-            pass
+        await _send_report(bot, chat_id, "\n".join(lines))
+    except Exception as e:
+        await _report_failure(bot, chat_id, "Проверка стран не удалась", e)
 
 
 @admin_only

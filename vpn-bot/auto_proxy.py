@@ -198,6 +198,7 @@ class AutoProxy:
                 added.append(cc)
                 have.add(cc)
 
+        swapped = [c for c in swapped if c not in lost and c not in removed]
         self.sync_routes()
         if added or removed:
             vpn.schedule_apply()  # один перезапуск Xray на весь цикл и только при смене набора стран
