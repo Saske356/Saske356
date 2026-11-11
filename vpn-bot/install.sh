@@ -21,8 +21,42 @@ ask()  { local q="$1" def="${2:-}" v; read -rp "$q${def:+ [$def]}: " v </dev/tty
 . /etc/os-release
 case "$ID" in ubuntu|debian) ;; *) fail "нужен Ubuntu или Debian, а здесь $ID" ;; esac
 
-say "Ставлю пакеты"
 export DEBIAN_FRONTEND=noninteractive
+
+# ---------- режим моста: российский сервер пересылает порт 443 на основной ----------
+# Запуск на сервере-мосте:  bash <(curl -fsSL .../install.sh) bridge
+if [ "${1:-}" = "bridge" ]; then
+  MAIN=$(ask "IP основного VPN-сервера")
+  printf '%s' "$MAIN" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' || fail "нужен IP вида 1.2.3.4"
+  say "Ставлю пересылку 443 → $MAIN:443"
+  apt-get update -qq
+  apt-get install -y -qq nftables >/dev/null
+  echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/99-aurora-bridge.conf
+  sysctl -q -p /etc/sysctl.d/99-aurora-bridge.conf
+  cat > /etc/nftables.conf <<EOF
+#!/usr/sbin/nft -f
+flush ruleset
+table ip aurora {
+  chain prerouting {
+    type nat hook prerouting priority dstnat; policy accept;
+    tcp dport 443 dnat to $MAIN:443
+  }
+  chain postrouting {
+    type nat hook postrouting priority srcnat; policy accept;
+    ip daddr $MAIN tcp dport 443 masquerade
+  }
+}
+EOF
+  nft -f /etc/nftables.conf
+  systemctl enable -q nftables
+  BRIDGE_IP=$(curl -fsS4 --max-time 10 https://api.ipify.org || echo "IP_ЭТОГО_СЕРВЕРА")
+  say "Мост готов"
+  echo "Теперь в боте отправьте:"
+  echo "  /addbridge ru1 🇷🇺 Обход | $BRIDGE_IP"
+  exit 0
+fi
+
+say "Ставлю пакеты"
 apt-get update -qq
 apt-get install -y -qq curl git python3 python3-venv python3-pip openssl ca-certificates >/dev/null
 

@@ -63,6 +63,7 @@ class XrayProvider(VpnProvider):
         st.setdefault("secret", secrets.token_hex(16))
         st.setdefault("users", {})
         st.setdefault("locations", [{"code": "main", "name": default_location, "proxy": ""}])
+        st.setdefault("bridges", [])
         return st
 
     def _save(self) -> None:
@@ -76,6 +77,14 @@ class XrayProvider(VpnProvider):
     @property
     def locations(self) -> list[dict]:
         return self.state["locations"]
+
+    @property
+    def bridges(self) -> list[dict]:
+        return self.state["bridges"]
+
+    def direct_location(self) -> dict:
+        """Страна самого сервера (без прокси): через неё выходит трафик мостов."""
+        return next((l for l in self.locations if not l["proxy"]), self.locations[0])
 
     def user_uuid(self, user_id: int, code: str) -> str:
         return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{self.state['secret']}:{user_id}:{code}"))
@@ -124,16 +133,73 @@ class XrayProvider(VpnProvider):
         self.schedule_apply()
         return True
 
+    def add_bridge(self, code: str, name: str, address: str, sni: str = "") -> None:
+        """Мост: российский сервер, который пересылает порт 443 на этот сервер."""
+        code = code.lower()
+        if not CODE_RE.match(code):
+            raise ValueError("код моста: латиница и цифры, до 8 символов, например ru1")
+        host, _, port = address.strip().partition(":")
+        if not re.fullmatch(r"[A-Za-z0-9.-]+", host or "") or (port and not port.isdigit()):
+            raise ValueError("адрес моста: IP или домен, можно с портом, например 1.2.3.4 или 1.2.3.4:443")
+        sni = sni.strip().lower()
+        if sni and not re.fullmatch(r"[a-z0-9.-]+\.[a-z]{2,}", sni):
+            raise ValueError("маскировка: домен сайта, например vk.com")
+        self.state["bridges"] = [b for b in self.bridges if b["code"] != code]
+        self.state["bridges"].append({"code": code, "name": name.strip(), "host": host,
+                                      "port": int(port or 443), "sni": sni})
+        self._save()
+        self.schedule_apply()  # новый домен маскировки должен попасть в конфиг
+
+    def remove_bridge(self, code: str) -> bool:
+        keep = [b for b in self.bridges if b["code"] != code.lower()]
+        if len(keep) == len(self.bridges):
+            return False
+        self.state["bridges"] = keep
+        self._save()
+        self.schedule_apply()
+        return True
+
+    async def check_proxies(self, timeout: float = 6.0) -> list[tuple[dict, bool]]:
+        """Проверяет, отвечают ли прокси стран. Нерабочие страны прячутся из подписки.
+        Возвращает список изменившихся стран: (страна, работает_ли_теперь)."""
+        changes = []
+        for loc in self.locations:
+            if not loc["proxy"]:
+                continue
+            ob = parse_proxy(loc["proxy"])["settings"]["servers"][0]
+            try:
+                _, w = await asyncio.wait_for(asyncio.open_connection(ob["address"], ob["port"]), timeout)
+                w.close()
+                alive = True
+            except (OSError, asyncio.TimeoutError):
+                alive = False
+            if bool(loc.get("down")) == alive:
+                loc["down"] = not alive
+                changes.append((loc, alive))
+        if changes:
+            self._save()
+        return changes
+
     # ---------- конфиг Xray ----------
 
+    def _link(self, uid: str, host: str, port: int, sni: str, name: str) -> str:
+        q = (f"encryption=none&flow=xtls-rprx-vision&security=reality&sni={sni}"
+             f"&fp=chrome&pbk={self.public_key}&sid={self.short_id}&type=tcp")
+        return f"vless://{uid}@{host}:{port}?{q}#{quote(name)}"
+
     def links(self, user_id: int) -> list[str]:
-        out = []
-        for loc in self.locations:
-            q = (f"encryption=none&flow=xtls-rprx-vision&security=reality&sni={self.sni}"
-                 f"&fp=chrome&pbk={self.public_key}&sid={self.short_id}&type=tcp")
-            out.append(f"vless://{self.user_uuid(user_id, loc['code'])}@{self.host}:{self.port}"
-                       f"?{q}#{quote(loc['name'])}")
+        out = [self._link(self.user_uuid(user_id, loc["code"]), self.host, self.port, self.sni, loc["name"])
+               for loc in self.locations if not loc.get("down")]
+        direct = self.user_uuid(user_id, self.direct_location()["code"])
+        out += [self._link(direct, b["host"], b["port"], b["sni"] or self.sni, b["name"]) for b in self.bridges]
         return out
+
+    def server_names(self) -> list[str]:
+        names = [self.sni]
+        for b in self.bridges:
+            if b["sni"] and b["sni"] not in names:
+                names.append(b["sni"])
+        return names
 
     def build_config(self) -> dict:
         now = time.time()
@@ -166,7 +232,7 @@ class XrayProvider(VpnProvider):
                 "streamSettings": {
                     "network": "tcp", "security": "reality",
                     "realitySettings": {"show": False, "dest": f"{self.sni}:443", "xver": 0,
-                                        "serverNames": [self.sni], "privateKey": self.private_key,
+                                        "serverNames": self.server_names(), "privateKey": self.private_key,
                                         "shortIds": [self.short_id]},
                 },
                 "sniffing": {"enabled": True, "destOverride": ["http", "tls", "quic"]},

@@ -1056,7 +1056,7 @@ def admin_text() -> str:
             "/give <code>id</code> <code>дней</code>: начислить дни\n"
             "/addpromo <code>КОД</code> <code>дней</code> <code>активаций</code>\n"
             "/payments <code>id</code> или <code>@ник</code>: платежи гостя\n"
-            "/locations: страны VPN\n"
+            "/locations: страны и мосты для обхода\n"
             f"/testpay: тестовая оплата на {config.TEST_PLAN[2]} ⭐\n"
             "Тикеты: ответьте на сообщение гостя, и ответ уйдёт ему")
 
@@ -1244,11 +1244,18 @@ def locations_text() -> str:
     lines = []
     for l in getattr(vpn, "locations", []):
         how = "через прокси" if l["proxy"] else "напрямую с сервера"
-        lines.append(f"◆ <code>{esc(l['code'])}</code> · {esc(l['name'])} · <i>{how}</i>")
+        state = " · ❌ прокси не отвечает, скрыта" if l.get("down") else ""
+        lines.append(f"◆ <code>{esc(l['code'])}</code> · {esc(l['name'])} · <i>{how}</i>{state}")
+    bridges = [f"◆ <code>{esc(b['code'])}</code> · {esc(b['name'])} · {esc(b['host'])}:{b['port']}"
+               + (f" · маскировка {esc(b['sni'])}" if b["sni"] else "")
+               for b in getattr(vpn, "bridges", [])]
     return ("<b>Страны</b>\n\n" + "\n".join(lines) + "\n\n"
             "Добавить: /addloc <code>код</code> <code>Название</code> | <code>socks5://логин:пароль@ip:порт</code>\n"
-            "Пример: <code>/addloc nl 🇳🇱 Нидерланды | socks5://user:pass@1.2.3.4:1080</code>\n"
-            "Удалить: /delloc <code>код</code>")
+            "Удалить: /delloc <code>код</code>\n\n"
+            "<b>Мосты для обхода</b>\n\n" + ("\n".join(bridges) if bridges else "<i>пока нет</i>") + "\n\n"
+            "Добавить: /addbridge <code>код</code> <code>Название</code> | <code>IP моста</code>\n"
+            "Пример: <code>/addbridge ru1 🇷🇺 Обход | 1.2.3.4</code>\n"
+            "Удалить: /delbridge <code>код</code>")
 
 
 @admin_only
@@ -1277,6 +1284,45 @@ async def addloc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "Страна добавлена. Через пару секунд Xray перезапустится, и она появится у всех клиентов "
         "после обновления подписки.\n\n" + locations_text())
+
+
+@admin_only
+async def addbridge(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not hasattr(vpn, "add_bridge"):
+        await update.message.reply_text("Мосты настраиваются, когда подключён настоящий VPN (VPN_MODE=xray).")
+        return
+    fmt = ("Формат: /addbridge <code>код</code> <code>Название</code> | <code>IP моста</code>\n"
+           "Можно указать сайт для маскировки третьим полем: <code>| vk.com</code>")
+    try:
+        parts = [p.strip() for p in update.message.text.split(maxsplit=1)[1].split("|")]
+        code, name = parts[0].split(maxsplit=1)
+        vpn.add_bridge(code, name, parts[1], parts[2] if len(parts) > 2 else "")
+    except (IndexError, ValueError) as e:
+        hint = f"\n\nОшибка: {esc(str(e))}" if isinstance(e, ValueError) and str(e) else ""
+        await update.message.reply_text(fmt + hint)
+        return
+    await update.message.reply_text("Мост добавлен. Он появится у всех клиентов после обновления подписки.\n\n"
+                                    + locations_text())
+
+
+@admin_only
+async def delbridge(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not hasattr(vpn, "remove_bridge") or not context.args:
+        await update.message.reply_text("Формат: /delbridge <code>код</code>")
+        return
+    ok = vpn.remove_bridge(context.args[0])
+    await update.message.reply_text(("Удалено.\n\n" if ok else "Такого моста нет.\n\n") + locations_text())
+
+
+async def proxy_health_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Раз в 10 минут проверяет прокси стран и сообщает админам об изменениях."""
+    if not hasattr(vpn, "check_proxies"):
+        return
+    for loc, alive in await vpn.check_proxies():
+        await notify_admins(context, (f"✅ Прокси «{esc(loc['name'])}» снова работает, страна вернулась в подписку."
+                                      if alive else
+                                      f"❌ Прокси «{esc(loc['name'])}» не отвечает. Страна скрыта из подписки, "
+                                      "пока прокси не оживёт. Проверьте его у продавца."))
 
 
 @admin_only
@@ -1377,7 +1423,8 @@ def build_app(token: str) -> Application:
     for cmd, fn in [("start", start), ("terms", terms), ("paysupport", paysupport), ("promo", promo_cmd),
                     ("admin", admin), ("give", give), ("addpromo", addpromo), ("refund", refund),
                     ("testpay", testpay), ("payments", payments), ("locations", locations),
-                    ("addloc", addloc), ("delloc", delloc)]:
+                    ("addloc", addloc), ("delloc", delloc), ("addbridge", addbridge),
+                    ("delbridge", delbridge)]:
         app.add_handler(CommandHandler(cmd, fn))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(PreCheckoutQueryHandler(precheckout))
@@ -1385,6 +1432,7 @@ def build_app(token: str) -> Application:
     app.add_handler(MessageHandler(filters.ChatType.PRIVATE & ~filters.COMMAND, on_message))
     app.add_error_handler(on_error)
     app.job_queue.run_repeating(lifecycle_job, interval=3600, first=30)
+    app.job_queue.run_repeating(proxy_health_job, interval=600, first=60)
     return app
 
 
