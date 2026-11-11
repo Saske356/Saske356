@@ -10,8 +10,11 @@ import html
 import io
 import json
 import logging
+import os
 import secrets
+import shutil
 import sqlite3
+import tempfile
 import time
 
 import qrcode
@@ -38,6 +41,7 @@ esc = html.escape
 CONFETTI = "5046509860389126442"   # встроенный эффект Telegram «🎉»
 MONTH = 2592000                    # Telegram Stars списывает подписку раз в 30 дней
 STATE: dict = {"username": ""}     # заполняется при запуске
+STARTED = time.time()
 KIND_NAMES = {"buy": "покупка", "ext": "продление", "auto": "автопродление",
               "renew": "автосписание", "gift": "подарок"}
 
@@ -245,6 +249,23 @@ def howto_text(platform: str) -> str:
             "Готово. Если что-то не получилось, консьерж поможет.")
 
 
+def fix_text() -> str:
+    steps = ["Обновите подписку в приложении: потяните список вниз или нажмите «Обновить».",
+             "Отключитесь и подключитесь заново."]
+    if len(location_names()) > 1:
+        steps.append("Выберите другую страну в списке.")
+    bridges = [b["name"] for b in getattr(vpn, "bridges", [])]
+    if bridges:
+        steps.append(f"Если мобильный интернет ограничен, выберите «{bridges[0]}».")
+    steps += ["Переключитесь между Wi-Fi и мобильным интернетом: так станет ясно, в какой сети проблема.",
+              "Проверьте в «Мои подписки», что срок не закончился.",
+              "Удалите профиль в приложении и добавьте ключ заново."]
+    body = "\n".join(f"{i}. {esc(t)}" for i, t in enumerate(steps, 1))
+    return ("<b>VPN не работает?</b>\n<i>Попробуйте по порядку, обычно хватает первых шагов.</i>\n\n"
+            f"<blockquote>{body}</blockquote>\n\n"
+            "Не помогло? Напишите консьержу: укажите устройство, оператора и что именно не открывается.")
+
+
 def sub_line(s) -> str:
     st = f"до {fmt_date(s['expires_at'])}" if sub_active(s) else "<i>истекла</i>"
     auto = " · 🔁" if s["auto_active"] and sub_active(s) else ""
@@ -289,6 +310,8 @@ def sub_kb(s) -> InlineKeyboardMarkup:
     rows.append([B("◆ Продлить", f"ext:{s['id']}"), B("✏️ Переименовать", f"ren:{s['id']}")])
     if s["auto_active"] and sub_active(s):
         rows.append([B("🔁 Отключить автопродление", f"noauto:{s['id']}")])
+    if sub_active(s):
+        rows.append([B("🛠 Не работает?", "fix")])
     rows.append([B("‹ Мои подписки", "subs")])
     return InlineKeyboardMarkup(rows)
 
@@ -860,7 +883,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     elif data == "chk" and config.CHANNEL:
         await check_channel(update, context, row)
     elif data == "support":
-        rows = [[B("✍️ Написать консьержу", "tk")]]
+        rows = [[B("🛠 VPN не работает?", "fix")], [B("✍️ Написать консьержу", "tk")]]
         if config.CHANNEL:
             rows.append([B("📣 Канал с новостями", url=channel_link())])
         rows.append([BACK])
@@ -871,6 +894,9 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                    f"Возврат звёзд в течение {plural_days(config.REFUND_DAYS)}, если VPN не заработал."
                    "</blockquote>\n\nУсловия: /terms",
                    InlineKeyboardMarkup(rows), banner="support")
+    elif data == "fix":
+        await show(update, context, fix_text(),
+                   KB([B("🗝 Мои подписки", "subs"), B("✍️ Консьержу", "tk")], [BACK]), banner="support")
     elif data == "tk":
         context.user_data["await"] = "ticket"
         await show(update, context,
@@ -1057,13 +1083,112 @@ def admin_text() -> str:
             "/addpromo <code>КОД</code> <code>дней</code> <code>активаций</code>\n"
             "/payments <code>id</code> или <code>@ник</code>: платежи гостя\n"
             "/locations: страны и мосты для обхода\n"
+            "/server: состояние сервера, /backup: резервная копия\n"
             f"/testpay: тестовая оплата на {config.TEST_PLAN[2]} ⭐\n"
             "Тикеты: ответьте на сообщение гостя, и ответ уйдёт ему")
 
 
 def admin_kb() -> InlineKeyboardMarkup:
     return KB([B("💳 Платежи", "adm:pays"), B("📢 Рассылка", "adm:bc")],
+              [B("🖥 Сервер", "adm:srv"), B("💾 Резервная копия", "adm:bak")],
               [B("🔄 Обновить", "adm:stats"), BACK])
+
+
+def fmt_span(sec: float) -> str:
+    sec = int(sec)
+    d, h, m = sec // 86400, sec % 86400 // 3600, sec % 3600 // 60
+    return f"{d} д {h} ч" if d else (f"{h} ч {m} мин" if h else f"{m} мин")
+
+
+def fmt_gb(n: float) -> str:
+    return f"{n / 2**30:.1f} ГБ"
+
+
+async def port_open(port: int) -> bool:
+    try:
+        _, w = await asyncio.wait_for(asyncio.open_connection("127.0.0.1", port), 2)
+        w.close()
+        return True
+    except (OSError, asyncio.TimeoutError):
+        return False
+
+
+async def server_text() -> str:
+    """Состояние сервера, бота и VPN одним экраном, чтобы не заходить по SSH."""
+    lines = [f"◆ Бот работает {fmt_span(time.time() - STARTED)}"]
+    if vpn.is_demo:
+        lines.append("◇ VPN: демо-режим, сервер не подключён")
+    else:
+        vpn_ok, sub_ok = await port_open(vpn.port), await port_open(vpn.sub_port)
+        lines.append(f"{'✅' if vpn_ok else '❌'} VPN (порт {vpn.port}): "
+                     + ("принимает подключения" if vpn_ok else "не отвечает"))
+        lines.append(f"{'✅' if sub_ok else '❌'} Подписки (порт {vpn.sub_port}): "
+                     + ("раздаются" if sub_ok else "не раздаются"))
+        if vpn.last_error:
+            lines.append("❌ Последняя ошибка VPN:\n<code>" + esc(vpn.last_error[:300]) + "</code>")
+        elif vpn.last_apply:
+            lines.append(f"◆ Настройки VPN применены {fmt_span(time.time() - vpn.last_apply)} назад")
+        hidden = sum(1 for l in vpn.locations if l.get("down"))
+        lines.append(f"◆ Стран: {len(vpn.locations)}" + (f" (скрыто: {hidden})" if hidden else "")
+                     + f", мостов: {len(vpn.bridges)}")
+    try:
+        load = os.getloadavg()[0]
+        lines.append(f"◆ Нагрузка: {load:.2f} на {os.cpu_count() or 1} яд.")
+    except OSError:
+        pass
+    try:
+        with open("/proc/meminfo") as f:
+            mem = {k: int(v.split()[0]) * 1024 for k, v in (line.split(":", 1) for line in f)}
+        used = mem["MemTotal"] - mem["MemAvailable"]
+        lines.append(f"◆ Память: {fmt_gb(used)} из {fmt_gb(mem['MemTotal'])}")
+    except (OSError, KeyError, ValueError):
+        pass
+    du = shutil.disk_usage("/")
+    lines.append(f"◆ Диск: {fmt_gb(du.used)} из {fmt_gb(du.total)}")
+    st = db.stats()
+    lines.append(f"◆ Гостей: {st['users']}, активных подписок: {st['subs']}")
+    return "<b>Сервер</b>\n\n<blockquote>" + "\n".join(lines) + "</blockquote>"
+
+
+def make_backup() -> list[tuple[str, bytes]]:
+    """Согласованная копия базы и настроек VPN (секрет, страны, мосты)."""
+    files = []
+    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    tmp.close()
+    try:
+        dst = sqlite3.connect(tmp.name)
+        db.conn.backup(dst)
+        dst.close()
+        with open(tmp.name, "rb") as f:
+            files.append(("bot.db", f.read()))
+    finally:
+        os.unlink(tmp.name)
+    state = getattr(vpn, "state_path", None)
+    if state and os.path.exists(state):
+        with open(state, "rb") as f:
+            files.append(("vpn.json", f.read()))
+    return files
+
+
+async def send_backup(bot, chat_id: int) -> int:
+    stamp = datetime.datetime.now().strftime("%Y-%m-%d")
+    files = make_backup()
+    for i, (name, data) in enumerate(files):
+        await bot.send_document(
+            chat_id, document=io.BytesIO(data), filename=f"aurora-{stamp}-{name}",
+            caption=("💾 <b>Резервная копия</b> от " + stamp + ".\nХраните файлы у себя и никому не "
+                     "пересылайте: в них данные гостей. Как восстановить, написано в README.") if i == 0 else None)
+    return len(files)
+
+
+async def backup_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    if db.stats()["users"] == 0:
+        return
+    for admin_id in config.ADMIN_IDS:
+        try:
+            await send_backup(context.bot, admin_id)
+        except TelegramError as e:
+            log.warning("резервная копия админу %s: %s", admin_id, e)
 
 
 def who_paid(p) -> str:
@@ -1142,8 +1267,15 @@ async def admin_button(update: Update, context: ContextTypes.DEFAULT_TYPE, row, 
         text, kb = payments_view()
         await show(update, context, text, kb)
         return
-    await q.answer("Обновлено" if act in ("stats", "pays") else None)
-    if act == "stats":
+    if act == "bak":
+        await q.answer("Отправляю копию 👇")
+        await send_backup(context.bot, row["id"])
+        return
+    await q.answer("Обновлено" if act in ("stats", "pays", "srv") else None)
+    if act == "srv":
+        await show(update, context, await server_text(),
+                   KB([B("🔄 Обновить", "adm:srv"), B("‹ Админ-панель", "adm:stats")]))
+    elif act == "stats":
         await show(update, context, admin_text(), admin_kb())
     elif act == "pays":
         text, kb = payments_view()
@@ -1168,6 +1300,18 @@ def admin_only(func):
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     current_user(update)
     await show(update, context, admin_text(), admin_kb())
+
+
+@admin_only
+async def server(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    current_user(update)
+    await show(update, context, await server_text(),
+               KB([B("🔄 Обновить", "adm:srv"), B("‹ Админ-панель", "adm:stats")]))
+
+
+@admin_only
+async def backup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await send_backup(context.bot, update.effective_user.id)
 
 
 @admin_only
@@ -1377,6 +1521,15 @@ async def setup_profile(app: Application) -> None:
         STATE["username"] = (await bot.get_me()).username or ""
     except TelegramError as e:
         log.warning("get_me: %s", e)
+    if hasattr(vpn, "on_problem"):
+        async def alert(text: str) -> None:
+            for admin_id in config.ADMIN_IDS:
+                try:
+                    await bot.send_message(admin_id, "⚠️ <b>Проблема с VPN</b>\n\n<code>"
+                                           + esc(text[:3000]) + "</code>\n\nПодробности: /server")
+                except TelegramError:
+                    pass
+        vpn.on_problem = alert
     if hasattr(vpn, "sync"):
         active = db.all_active_subs()
         await vpn.sync(active)
@@ -1424,7 +1577,7 @@ def build_app(token: str) -> Application:
                     ("admin", admin), ("give", give), ("addpromo", addpromo), ("refund", refund),
                     ("testpay", testpay), ("payments", payments), ("locations", locations),
                     ("addloc", addloc), ("delloc", delloc), ("addbridge", addbridge),
-                    ("delbridge", delbridge)]:
+                    ("delbridge", delbridge), ("server", server), ("backup", backup)]:
         app.add_handler(CommandHandler(cmd, fn))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(PreCheckoutQueryHandler(precheckout))
@@ -1433,6 +1586,8 @@ def build_app(token: str) -> Application:
     app.add_error_handler(on_error)
     app.job_queue.run_repeating(lifecycle_job, interval=3600, first=30)
     app.job_queue.run_repeating(proxy_health_job, interval=600, first=60)
+    if config.BACKUP_DAILY:
+        app.job_queue.run_repeating(backup_job, interval=86400, first=3600)
     return app
 
 

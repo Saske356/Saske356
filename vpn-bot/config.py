@@ -65,6 +65,9 @@ AUTO_RENEW = os.environ.get("AUTO_RENEW", "1") == "1"
 CHANNEL = os.environ.get("CHANNEL", "").strip()
 CHANNEL_BONUS_DAYS = int(os.environ.get("CHANNEL_BONUS_DAYS", "1"))
 
+# Раз в сутки присылать админам резервную копию базы
+BACKUP_DAILY = os.environ.get("BACKUP_DAILY", "1") == "1"
+
 # Скрытый тариф для проверки оплаты и возврата. Доступен только админам: /testpay
 TEST_PLAN = ("Тестовая оплата", 1, int(os.environ.get("TEST_PLAN_STARS", "5")))
 

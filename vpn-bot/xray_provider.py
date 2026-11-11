@@ -51,6 +51,9 @@ class XrayProvider(VpnProvider):
         self.state = self._load(default_location)
         self._pending: asyncio.Task | None = None
         self._server: asyncio.base_events.Server | None = None
+        self.on_problem = None      # async-функция(текст): бот подставляет сюда оповещение админов
+        self.last_error = ""        # текст последней проблемы, пусто — всё в порядке
+        self.last_apply = 0.0       # когда конфиг последний раз успешно применён
 
     # ---------- состояние ----------
 
@@ -261,6 +264,17 @@ class XrayProvider(VpnProvider):
         out, _ = await proc.communicate()
         return proc.returncode, out.decode(errors="replace")
 
+    async def _problem(self, text: str) -> None:
+        """Запоминает проблему и один раз сообщает о ней (повтор той же ошибки не шлём)."""
+        log.error(text)
+        repeated = text == self.last_error
+        self.last_error = text
+        if self.on_problem and not repeated:
+            try:
+                await self.on_problem(text)
+            except Exception as e:  # оповещение не должно ронять применение конфига
+                log.warning("не удалось сообщить о проблеме: %s", e)
+
     async def apply(self) -> bool:
         """Пишет новый конфиг, проверяет его самим Xray и только потом перезапускает."""
         cfg = json.dumps(self.build_config(), ensure_ascii=False, indent=1)
@@ -272,17 +286,18 @@ class XrayProvider(VpnProvider):
             f.write(cfg)
         os.chmod(tmp, 0o644)
         if not os.path.exists(self.xray_bin):
-            log.error("Xray не найден: %s. Конфиг не применён.", self.xray_bin)
+            await self._problem(f"Xray не найден: {self.xray_bin}. Конфиг не применён.")
             return False
         code, out = await self._run(self.xray_bin, "run", "-test", "-c", tmp)
         if code != 0:
-            log.error("Xray отклонил конфиг, оставляю прежний:\n%s", out[-1500:])
+            await self._problem("Xray отклонил конфиг, оставляю прежний:\n" + out[-700:].strip())
             return False
         os.replace(tmp, self.config_path)
         code, out = await self._run(*self.restart_cmd)
         if code != 0:
-            log.error("Не удалось перезапустить Xray: %s", out[-500:])
+            await self._problem("Не удалось перезапустить Xray: " + out[-500:].strip())
             return False
+        self.last_error, self.last_apply = "", time.time()
         log.info("Xray обновлён: %d клиентов, стран: %d", len(self.state["users"]), len(self.locations))
         return True
 
