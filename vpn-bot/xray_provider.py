@@ -48,7 +48,7 @@ class XrayProvider(VpnProvider):
                  auto_enabled: bool = False, auto_countries: tuple = (), auto_max: int = 8,
                  relay_port: int = 20808):
         self.state_path, self.config_path, self.xray_bin = state_path, config_path, xray_bin
-        self.host, self.port, self.sni = public_host, port, sni
+        self.host, self.port, self.env_sni = public_host, port, sni
         self.private_key, self.public_key, self.short_id = private_key, public_key, short_id
         self.sub_port, self.brand, self.restart_cmd = sub_port, brand, restart_cmd
         self.relay_port = relay_port
@@ -79,6 +79,10 @@ class XrayProvider(VpnProvider):
                                "max": int(auto_max)})
         st["auto"].setdefault("notify", True)
         st["auto"].setdefault("exclude", [])
+        # Сайт маскировки: пока его не меняли из бота, действует значение из .env.
+        m = st.setdefault("masking", {})
+        for key, value in (("site", ""), ("prev", []), ("auto", True), ("every", 0), ("changed", 0)):
+            m.setdefault(key, value)
         for loc in st["locations"]:
             if loc.get("auto"):
                 loc.setdefault("country", loc["code"])
@@ -312,8 +316,66 @@ class XrayProvider(VpnProvider):
         out += [self._link(direct, b["host"], b["port"], b["sni"] or self.sni, b["name"]) for b in self.bridges]
         return out
 
+    # ---------- сайт маскировки ----------
+
+    @property
+    def masking(self) -> dict:
+        return self.state["masking"]
+
+    @property
+    def sni(self) -> str:
+        return self.masking["site"] or self.env_sni
+
+    def set_masking(self, *, auto=None, every=None) -> None:
+        if auto is not None:
+            self.masking["auto"] = bool(auto)
+        if every is not None:
+            self.masking["every"] = max(0, int(every))
+        self._save()
+
+    def grace_names(self) -> list[str]:
+        """Прежние сайты, ключи с которыми ещё принимаются, пока клиенты обновляют подписку."""
+        now = time.time()
+        return [p["name"] for p in self.masking["prev"] if p["until"] > now and p["name"] != self.sni]
+
+    async def site_flagged(self, site: str) -> bool | None:
+        """Предупреждает ли Xray, что под этот сайт маскироваться рискованно.
+        None — проверить не удалось или Xray не принимает конфиг с этим сайтом."""
+        if not os.path.exists(self.xray_bin):
+            return None
+        base = self.config_path[:-5] if self.config_path.endswith(".json") else self.config_path
+        tmp = base + ".site.json"
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self.build_config(site=site), f)
+            code, out = await self._run(self.xray_bin, "run", "-test", "-c", tmp)
+        except OSError:
+            return None
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+        return None if code != 0 else "increase the likelihood" in out
+
+    async def change_sni(self, site: str, grace: bool = False) -> bool:
+        """Меняет сайт маскировки и сразу применяет конфиг. Если Xray его не принял,
+        возвращает прежний сайт. grace: сутки принимать и ключи с прежним сайтом."""
+        old = self.sni
+        if site == old:
+            return True
+        backup = json.loads(json.dumps(self.masking))
+        # Без grace новый сайт не отвечает на чужие имена, так что прежние ключи не сработают вовсе.
+        keep = [p for p in self.masking["prev"] if p["name"] not in (old, site)][:2]
+        self.masking["prev"] = [{"name": old, "until": time.time() + 86400}] + keep if grace else []
+        self.masking["site"], self.masking["changed"] = site, time.time()
+        self._save()
+        if await self.apply():
+            return True
+        self.state["masking"] = backup
+        self._save()
+        return False
+
     def server_names(self) -> list[str]:
-        names = [self.sni]
+        names = [self.sni] + [n for n in self.grace_names()]
         for b in self.bridges:
             if b["sni"] and b["sni"] not in names:
                 names.append(b["sni"])
@@ -325,7 +387,7 @@ class XrayProvider(VpnProvider):
             "address": "127.0.0.1", "port": self.relay_port,
             "users": [{"user": code, "pass": self.relay_password}]}]}}
 
-    def build_config(self, with_auto: bool = True) -> dict:
+    def build_config(self, with_auto: bool = True, site: str | None = None) -> dict:
         locations = [l for l in self.locations if with_auto or not l.get("auto")]
         now = time.time()
         active = [int(u) for u, exp in self.state["users"].items() if exp > now]
@@ -366,8 +428,8 @@ class XrayProvider(VpnProvider):
                 "settings": {"clients": clients, "decryption": "none"},
                 "streamSettings": {
                     "network": "tcp", "security": "reality",
-                    "realitySettings": {"show": False, "dest": f"{self.sni}:443", "xver": 0,
-                                        "serverNames": self.server_names(), "privateKey": self.private_key,
+                    "realitySettings": {"show": False, "dest": f"{site or self.sni}:443", "xver": 0,
+                                        "serverNames": [site] if site else self.server_names(), "privateKey": self.private_key,
                                         "shortIds": [self.short_id]},
                 },
                 "sniffing": {"enabled": True, "destOverride": ["http", "tls", "quic"]},
@@ -467,7 +529,7 @@ class XrayProvider(VpnProvider):
             "Content-Type": "text/plain; charset=utf-8",
             "profile-title": f"base64:{title}",
             "subscription-userinfo": f"upload=0; download=0; total=0; expire={int(exp)}",
-            "profile-update-interval": "12",
+            "profile-update-interval": "1",
         }
         return body, headers
 

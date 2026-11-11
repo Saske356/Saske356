@@ -25,7 +25,9 @@ addons.mozilla.org www.speedtest.net www.lovelive-anime.jp"
 
 [ "$(id -u)" -eq 0 ] || { echo "Запустите от root."; exit 1; }
 [ -f "$ENVF" ] && [ -f "$CFG" ] || { echo "Не найдены настройки бота или конфиг Xray: сначала установите бота."; exit 1; }
-CUR=$(grep -E '^REALITY_SNI=' "$ENVF" | tail -1 | cut -d= -f2)
+# Действующий сайт берём из работающего конфига Xray: бот мог сменить его сам (команда /sni).
+CUR=$(grep -o '"dest": "[^"]*' "$CFG" | head -1 | sed -E 's/.*"//; s/:[0-9]+$//')
+[ -n "$CUR" ] || CUR=$(grep -E '^REALITY_SNI=' "$ENVF" | tail -1 | cut -d= -f2)
 CUR=${CUR:-www.microsoft.com}
 echo "Сейчас сервер маскируется под: $CUR"
 
@@ -110,13 +112,33 @@ echo "Подходят (сайт, время ответа с сервера):"
 head -8 "$TMP/good" | awk '{printf "  %-24s %s мс\n", $2, $1}'
 [ "$MODE" = "list" ] && exit 0
 
-set_site() {  # записать сайт в настройки бота и перезапустить его; бот сам обновит конфиг Xray
+set_site() {  # записать сайт в настройки бота и запустить его заново; бот сам обновит конфиг Xray
+  systemctl stop aurora-bot
   if grep -qE '^REALITY_SNI=' "$ENVF"; then
     sed -i -E "s|^REALITY_SNI=.*|REALITY_SNI=$1|" "$ENVF"
   else
     echo "REALITY_SNI=$1" >>"$ENVF"
   fi
-  systemctl restart aurora-bot
+  # Новые версии бота хранят сайт маскировки в своём состоянии (команда /sni): правим и там.
+  STATE=$(grep -E '^VPN_STATE=' "$ENVF" | tail -1 | cut -d= -f2); STATE=${STATE:-/var/lib/aurora/vpn.json}
+  if [ -f "$STATE" ]; then
+    python3 - "$STATE" "$1" <<'PY'
+import json, os, sys, time
+path, site = sys.argv[1:]
+try:
+    state = json.load(open(path, encoding="utf-8"))
+except ValueError:
+    sys.exit(0)
+if "masking" in state:
+    state["masking"].update(site=site, prev=[], changed=time.time())
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=1)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+PY
+  fi
+  systemctl start aurora-bot
   for _ in $(seq 1 45); do
     grep -q "\"$1:443\"" "$CFG" 2>/dev/null && systemctl is-active -q xray && return 0
     sleep 1

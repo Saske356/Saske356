@@ -28,6 +28,7 @@ from telegram.ext import (Application, CallbackQueryHandler, CommandHandler, Con
 
 import config
 import make_banner
+import masking
 import public_proxies
 from auto_proxy import AutoProxy
 from db import DAY, DB
@@ -1093,6 +1094,7 @@ def admin_text() -> str:
             "/locations: страны и мосты для обхода\n"
             "/server: состояние сервера, /backup: резервная копия\n"
             "/autoproxy: страны из бесплатных публичных прокси\n"
+            "/sni: сайт маскировки и его смена\n"
             f"/testpay: тестовая оплата на {config.TEST_PLAN[2]} ⭐\n"
             "Тикеты: ответьте на сообщение гостя, и ответ уйдёт ему")
 
@@ -1678,6 +1680,152 @@ async def autoproxy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await reply(auto_status_text())
 
 
+# ---------------------------------------------------------------- сайт маскировки
+
+MASK = {"fails": 0}
+mask_lock = asyncio.Lock()
+
+
+async def pick_masking_site(avoid=()) -> str | None:
+    """Самый быстрый с сервера сайт из списка, о котором Xray не предупреждает."""
+    for host, _ in await masking.ranked(h for h in masking.SITES if h not in avoid):
+        if await vpn.site_flagged(host) is False:
+            return host
+    return None
+
+
+async def switch_masking(reason: str, site: str | None = None) -> str:
+    """Меняет сайт маскировки и возвращает сообщение для админа."""
+    async with mask_lock:
+        old = vpn.sni
+        note = ""
+        if site:
+            if await masking.check(site) is None:
+                return (f"Сайт {site} не подходит: с сервера он не отвечает по TLS 1.3 и HTTP/2. "
+                        f"Остался {old}.")
+            flagged = await vpn.site_flagged(site)
+            if flagged is None:
+                return f"Xray не принимает конфиг с сайтом {site}. Остался {old}."
+            if flagged:
+                note = "\n⚠️ Xray предупреждает: под этот сайт маскироваться рискованно, сервер проще распознать."
+            new = site
+        else:
+            recent = {old} | {p["name"] for p in vpn.masking["prev"]}
+            new = await pick_masking_site(recent) or await pick_masking_site({old})
+            if not new:
+                return (f"Подходящий сайт маскировки не нашёлся: с сервера не отвечает ни один из списка. "
+                        f"Остался {old}.")
+        if new == old:
+            return f"Сайт маскировки уже {old}."
+        grace = await masking.tolerates(new, old)
+        if not await vpn.change_sni(new, grace=grace):
+            return f"Xray не принял конфиг с сайтом {new}. Остался {old}."
+        MASK["fails"] = 0
+        keys = ("Ключи с прежним сайтом принимаются ещё сутки." if grace
+                else "Ключи с прежним сайтом больше не работают.")
+        return (f"🎭 Сайт маскировки изменён: {old} → {new}\nПричина: {reason}.{note}\n\n{keys} "
+                "Приложения сами обновляют подписку раз в час. Чтобы не ждать, в приложении нужно "
+                "нажать обновление подписки.")
+
+
+async def masking_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Раз в 10 минут: если сайт маскировки перестал отвечать с сервера, бот ставит другой.
+    Плановая смена раз в N часов включается командой /sni every."""
+    if not hasattr(vpn, "masking") or not vpn.masking.get("auto", True):
+        return
+    try:
+        m = vpn.masking
+        if await masking.check(vpn.sni) is not None:
+            MASK["fails"] = 0
+        elif await public_proxies.direct_ok():  # сайт молчит, а интернет у сервера есть
+            MASK["fails"] += 1
+        reason = None
+        if MASK["fails"] >= 3:
+            reason = f"{vpn.sni} перестал отвечать с сервера"
+        elif m.get("every"):
+            if not m.get("changed"):
+                m["changed"] = time.time()
+                vpn.set_masking()
+            elif time.time() - m["changed"] > m["every"] * 3600:
+                reason = "плановая смена"
+        if reason:
+            await send_admins(context.bot, esc(await switch_masking(reason)))
+    except Exception:
+        log.exception("сайт маскировки: сбой проверки")
+
+
+def masking_status_text() -> str:
+    m = vpn.masking
+    since = f", с {fmt_date(m['changed'])}" if m.get("changed") and m.get("site") else ", из настроек сервера"
+    lines = [f"Сейчас: <code>{esc(vpn.sni)}</code>{since}",
+             f"Замена при сбое: {'включена' if m.get('auto', True) else 'выключена'}",
+             "Плановая смена: " + (f"раз в {m['every']} ч" if m.get("every") else "выключена")]
+    if vpn.grace_names():
+        lines.append("Ещё принимаются ключи с: " + ", ".join(esc(n) for n in vpn.grace_names()))
+    return (xray_warning() + "<b>Сайт маскировки</b>\n\n" + "\n".join(lines) + "\n\n"
+            "VPN выдаёт себя за обращение к обычному сайту, и его имя видно оператору. Раз в 10 минут бот "
+            "проверяет, что сайт отвечает с сервера, и если нет, ставит другой из своего списка.\n"
+            "В списке нет Microsoft, Apple и других самых известных сайтов: их адреса наперечёт, чужой "
+            "сервер под таким именем заметен сразу, и Xray сам об этом предупреждает.\n"
+            "После смены клиентам нужна обновлённая подписка: приложения обновляют её сами раз в час.\n\n"
+            "<b>Команды</b>\n"
+            "/sni next: подобрать и поставить другой сайт сейчас\n"
+            "/sni list: какие сайты подходят с этого сервера\n"
+            "/sni www.example.com: поставить этот сайт\n"
+            "/sni every 24: менять сайт каждые 24 часа, /sni every off: не менять по расписанию\n"
+            "/sni auto off: не менять сайт при сбое")
+
+
+async def _masking_report(bot, chat_id: int, action: str, site: str | None = None) -> None:
+    """Проверка сайтов занимает время, поэтому идёт в фоне, а итог приходит сообщением."""
+    try:
+        if action == "list":
+            good = []
+            for host, ms in await masking.ranked(masking.SITES):
+                if await vpn.site_flagged(host) is False:
+                    good.append(f"◆ <code>{esc(host)}</code> · {ms:.0f} мс")
+            text = ("<b>Подходят с этого сервера</b>\n\n" + "\n".join(good[:12]) if good
+                    else "Ни один сайт из списка сейчас не подходит.")
+        else:
+            text = esc(await switch_masking("команда администратора", site))
+        await _send_report(bot, chat_id, text)
+    except Exception as e:
+        await _report_failure(bot, chat_id, "Смена сайта маскировки не удалась", e)
+
+
+@admin_only
+async def sni_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not hasattr(vpn, "masking"):
+        await update.message.reply_text("Сайт маскировки настраивается, когда подключён настоящий VPN (VPN_MODE=xray).")
+        return
+    args = [a.lower() for a in context.args]
+    sub = args[0] if args else ""
+    reply = update.message.reply_text
+    run = lambda action, site=None: context.application.create_task(
+        _masking_report(context.bot, update.effective_chat.id, action, site))
+    if sub == "next":
+        await reply("Подбираю сайт и переключаю сервер. Результат пришлю сообщением.")
+        run("switch")
+    elif sub == "list":
+        await reply("Проверяю сайты с сервера. Результат пришлю сообщением.")
+        run("list")
+    elif sub == "auto" and len(args) > 1 and args[1] in ("on", "off"):
+        vpn.set_masking(auto=args[1] == "on")
+        await reply("Замена сайта при сбое " + ("включена." if args[1] == "on"
+                                                 else "выключена. Плановая смена тоже не работает."))
+    elif sub == "every" and len(args) > 1 and (args[1] == "off" or (args[1].isdigit() and 1 <= int(args[1]) <= 720)):
+        hours = 0 if args[1] == "off" else int(args[1])
+        vpn.masking["changed"] = time.time()
+        vpn.set_masking(every=hours)
+        await reply(f"Сайт маскировки будет меняться каждые {hours} ч." if hours
+                    else "Плановая смена сайта выключена.")
+    elif masking.valid_name(sub):
+        await reply(f"Проверяю {esc(sub)} и переключаю сервер. Результат пришлю сообщением.")
+        run("switch", sub)
+    else:
+        await reply(masking_status_text())
+
+
 # ---------------------------------------------------------------- фоновые задачи
 
 async def lifecycle_job(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1780,7 +1928,7 @@ def build_app(token: str) -> Application:
                     ("testpay", testpay), ("payments", payments), ("locations", locations),
                     ("addloc", addloc), ("delloc", delloc), ("addbridge", addbridge),
                     ("delbridge", delbridge), ("server", server), ("backup", backup),
-                    ("autoproxy", autoproxy)]:
+                    ("autoproxy", autoproxy), ("sni", sni_cmd)]:
         app.add_handler(CommandHandler(cmd, fn))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(PreCheckoutQueryHandler(precheckout))
@@ -1792,6 +1940,7 @@ def build_app(token: str) -> Application:
     if config.BACKUP_DAILY:
         app.job_queue.run_repeating(backup_job, interval=86400, first=3600)
     app.job_queue.run_repeating(auto_proxy_job, interval=300, first=45)
+    app.job_queue.run_repeating(masking_job, interval=600, first=150)
     return app
 
 
