@@ -66,8 +66,12 @@ async def main():
     tags = [ob["tag"] for ob in cfg["outbounds"]]
     assert tags[0] == "direct" and "out-nl" in tags and "out-us" in tags
     rules = {r.get("outboundTag"): r for r in cfg["routing"]["rules"] if "user" in r}
-    assert sorted(rules["out-nl"]["user"]) == ["u10.nl", "u11.nl"]
-    assert sorted(rules["out-us"]["user"]) == ["u10.us", "u11.us"]
+    assert sorted(rules["out-nl"]["user"]) == ["regexp:^u[0-9]+\\.nl$", "u10.nl", "u11.nl"]
+    assert sorted(rules["out-us"]["user"]) == ["regexp:^u[0-9]+\\.us$", "u10.us", "u11.us"]
+    # API для ключей без перезапуска: только на 127.0.0.1 и первым правилом
+    api_in = next(i for i in cfg["inbounds"] if i["tag"] == "api")
+    assert api_in["listen"] == "127.0.0.1" and cfg["routing"]["rules"][0]["inboundTag"] == ["api"]
+    assert cfg["policy"]["levels"]["0"]["statsUserOnline"] and "StatsService" in cfg["api"]["services"]
     assert "direct" not in rules  # основная страна идёт по умолчанию напрямую
     assert any(r.get("protocol") == ["bittorrent"] for r in cfg["routing"]["rules"])
     assert cfg["log"]["access"] == "none"

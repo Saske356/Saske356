@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Установщик Aurora VPN: Xray (VLESS Reality) + бот + раздача подписок.
+# Установщик Aurora VPN: Xray (VLESS Reality) + Hysteria2 + бот + раздача подписок.
 # Запуск на чистом сервере Ubuntu/Debian от root:
 #   bash <(curl -fsSL https://raw.githubusercontent.com/Saske356/Saske356/claude/android-usage-ql87m8/vpn-bot/install.sh)
 # Повторный запуск обновляет код и сохраняет настройки.
@@ -12,6 +12,9 @@ BOT="$DIR/vpn-bot"
 ENV="$BOT/.env"
 XRAY=/usr/local/bin/xray
 SUB_PORT="${SUB_PORT:-2096}"
+HY_BIN=/usr/local/bin/hysteria
+HY_DIR=/etc/hysteria
+HY2="${HY2:-1}"   # HY2=0 — не ставить Hysteria2
 
 say()  { printf '\n\033[1;33m== %s\033[0m\n' "$*"; }
 fail() { printf '\n\033[1;31mОшибка: %s\033[0m\n' "$*" >&2; exit 1; }
@@ -112,6 +115,36 @@ install_xray() {
   return $rc
 }
 
+hy_arch() {
+  case "$(uname -m)" in
+    x86_64|amd64) echo amd64 ;;
+    aarch64|arm64) echo arm64 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Hysteria2 с GitHub. Файл принимается, только если его SHA-256 совпал с hashes.txt того же релиза.
+install_hysteria() {
+  local arch tmp sum got base=https://github.com/apernet/hysteria/releases/latest/download
+  arch=$(hy_arch) || { echo "Hysteria2 не поддерживает процессор $(uname -m)"; return 1; }
+  tmp=$(mktemp -d)
+  if ! grab "$tmp/hashes.txt" "$base/hashes.txt"; then rm -rf "$tmp"; return 1; fi
+  sum=$(awk -v f="build/hysteria-linux-$arch" '$2 == f {print $1; exit}' "$tmp/hashes.txt")
+  if [ -z "$sum" ]; then echo "Нет контрольной суммы Hysteria2"; rm -rf "$tmp"; return 1; fi
+  if [ -x "$HY_BIN" ] && [ "$(sha256sum "$HY_BIN" | cut -d' ' -f1)" = "$sum" ]; then
+    echo "Hysteria2 последней версии уже установлен"; rm -rf "$tmp"; return 0
+  fi
+  echo "Качаю Hysteria2..."
+  if ! grab "$tmp/hysteria" "$base/hysteria-linux-$arch"; then rm -rf "$tmp"; return 1; fi
+  got=$(sha256sum "$tmp/hysteria" | cut -d' ' -f1)
+  if [ "$got" != "$sum" ]; then echo "Файл повреждён (контрольная сумма не совпала)"; rm -rf "$tmp"; return 1; fi
+  install -m 755 "$tmp/hysteria" "$HY_BIN"
+  rm -rf "$tmp"
+}
+
+# Значение из .env или пусто. Не падает под set -e, если ключа нет.
+envget() { { grep -m1 "^$1=" "$ENV" 2>/dev/null || true; } | cut -d= -f2- | sed 's/^"//; s/"$//'; }
+
 get_code() {
   if [ -d "$DIR/.git" ]; then
     git -C "$DIR" fetch -q origin "$BRANCH" && git -C "$DIR" checkout -q -B "$BRANCH" "origin/$BRANCH"
@@ -164,6 +197,8 @@ say "Ставлю пакеты"
 retry apt-get update -qq || fail "не удалось обновить список пакетов"
 retry apt-get install -y -qq curl unzip git python3 python3-venv python3-pip openssl ca-certificates >/dev/null \
   || fail "не удалось поставить пакеты"
+# rclone нужен только для копий в облако (BACKUP_RCLONE), поэтому без него установка продолжается
+apt-get install -y -qq rclone >/dev/null 2>&1 || echo "rclone не поставился: копии в облако работать не будут"
 
 say "Ставлю Xray"
 if ! retry3 install_xray; then
@@ -225,9 +260,96 @@ else
 fi
 mkdir -p /var/lib/aurora
 
-say "Ускорение сети (BBR)"
+# ---------- Hysteria2: быстрый способ по UDP на том же порту 443 ----------
+HY_OK=0
+if [ "$HY2" = "1" ]; then
+  say "Ставлю Hysteria2 (быстрый режим по UDP)"
+  if retry3 install_hysteria; then
+    id hysteria >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin hysteria
+    mkdir -p "$HY_DIR"
+    HY_SNI=$(envget HY2_SNI); [ -n "$HY_SNI" ] || HY_SNI=$(envget REALITY_SNI); [ -n "$HY_SNI" ] || HY_SNI=www.microsoft.com
+    if [ ! -f "$HY_DIR/server.crt" ]; then
+      # Свой сертификат: приложение сверяет его отпечаток из ссылки, домен для этого не нужен.
+      openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -days 3650 \
+        -keyout "$HY_DIR/server.key" -out "$HY_DIR/server.crt" -subj "/CN=$HY_SNI" \
+        -addext "subjectAltName=DNS:$HY_SNI" >/dev/null 2>&1 || fail "не удалось создать сертификат Hysteria2"
+    fi
+    chown root:hysteria "$HY_DIR/server.key"; chmod 640 "$HY_DIR/server.key"; chmod 644 "$HY_DIR/server.crt"
+    if [ -z "$(envget HY2_PORT)" ]; then
+      umask 077
+      cat >> "$ENV" <<EOF
+HY2_PORT=443
+HY2_CERT=$HY_DIR/server.crt
+HY2_SNI=$HY_SNI
+HY2_AUTH_PORT=20809
+HY2_STATS_PORT=20810
+HY2_STATS_SECRET=$(openssl rand -hex 16)
+EOF
+      umask 022
+    fi
+    HY_PORT=$(envget HY2_PORT); HY_AUTH=$(envget HY2_AUTH_PORT); HY_STATS=$(envget HY2_STATS_PORT)
+    HY_SECRET=$(envget HY2_STATS_SECRET); HY_OBFS=$(envget HY2_OBFS_PASSWORD)
+    umask 027
+    cat > "$HY_DIR/config.yaml" <<EOF
+# Создано установщиком Aurora VPN. Ключи проверяет бот: при подключении Hysteria спрашивает его.
+listen: :${HY_PORT:-443}
+tls:
+  cert: $HY_DIR/server.crt
+  key: $HY_DIR/server.key
+  sniGuard: disable
+auth:
+  type: http
+  http:
+    url: http://127.0.0.1:${HY_AUTH:-20809}/auth
+masquerade:
+  type: proxy
+  proxy:
+    url: https://$HY_SNI/
+    rewriteHost: true
+trafficStats:
+  listen: 127.0.0.1:${HY_STATS:-20810}
+  secret: $HY_SECRET
+EOF
+    if [ -n "$HY_OBFS" ]; then
+      printf 'obfs:\n  type: salamander\n  salamander:\n    password: %s\n' "$HY_OBFS" >> "$HY_DIR/config.yaml"
+    fi
+    umask 022
+    chown root:hysteria "$HY_DIR/config.yaml"
+    cat > /etc/systemd/system/hysteria-server.service <<EOF
+[Unit]
+Description=Hysteria2 server (Aurora VPN)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=hysteria
+ExecStart=$HY_BIN server -c $HY_DIR/config.yaml
+Restart=always
+RestartSec=3
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload
+    systemctl enable -q hysteria-server
+    systemctl restart hysteria-server
+    HY_OK=1
+  else
+    echo "Hysteria2 не скачался. VPN работает и без него, повторный запуск установщика попробует снова."
+  fi
+fi
+
+say "Ускорение сети (BBR и буферы UDP)"
 if ! grep -q "tcp_congestion_control=bbr" /etc/sysctl.conf 2>/dev/null; then
   printf 'net.core.default_qdisc=fq\nnet.ipv4.tcp_congestion_control=bbr\n' >> /etc/sysctl.conf
+fi
+# Большие буферы UDP: без них QUIC (Hysteria2) упирается в скорость на быстрых каналах.
+if ! grep -q "net.core.rmem_max=16777216" /etc/sysctl.conf 2>/dev/null; then
+  printf 'net.core.rmem_max=16777216\nnet.core.wmem_max=16777216\n' >> /etc/sysctl.conf
 fi
 sysctl -p >/dev/null 2>&1 || true
 
@@ -272,6 +394,7 @@ systemctl restart aurora-bot
 if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
   ufw allow 443/tcp >/dev/null
   ufw allow "$SUB_PORT"/tcp >/dev/null
+  if [ "$HY_OK" = 1 ]; then ufw allow "$(envget HY2_PORT)"/udp >/dev/null; fi
 fi
 
 say "Проверка"
@@ -294,6 +417,14 @@ if ss -tlnpH "sport = :$SUB_PORT" | grep -q python; then
 else
   echo "❌ подписки не раздаются на порту $SUB_PORT"; ok=0
 fi
+if [ "$HY_OK" = 1 ]; then
+  if systemctl is-active -q hysteria-server && ss -ulnpH "sport = :$(envget HY2_PORT)" | grep -q hysteria; then
+    echo "✅ Hysteria2 принимает подключения на UDP $(envget HY2_PORT)"
+  else
+    echo "⚠️ Hysteria2 не запустился: journalctl -u hysteria-server -n 40 --no-pager"
+    echo "   Reality работает и без него."
+  fi
+fi
 if [ "$ok" = 1 ]; then
   echo
   echo "Готово. Откройте бота и отправьте /start, страны: /locations"
@@ -302,4 +433,5 @@ else
   echo "Пришлите вывод этих команд:"
   echo "  journalctl -u aurora-bot -n 40 --no-pager"
   echo "  journalctl -u xray -n 40 --no-pager"
+  if [ "$HY_OK" = 1 ]; then echo "  journalctl -u hysteria-server -n 40 --no-pager"; fi
 fi

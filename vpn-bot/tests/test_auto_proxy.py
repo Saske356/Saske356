@@ -13,6 +13,7 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -344,6 +345,29 @@ class RelayTests(Base):
         self.assertEqual(self.demoted, [("nl", dead.url)])  # после двух отказов подряд
         self.assertEqual(self.relay.routes["nl"], [good.url, dead.url])
 
+    async def test_slow_proxy_loses_race_and_faster_backup_becomes_active(self):
+        promoted = []
+        self.relay.on_promote = lambda code, pool: promoted.append(pool)
+        self.relay.RACE_DEFAULT = 0.15
+        slow, fast = await self.proxy(delay=1.5), await self.proxy("http")
+        self.relay.set_route("nl", [slow.url, fast.url])
+        t0 = time.monotonic()
+        self.assertEqual((await pp.probe(self.via())).country, "nl")
+        self.assertLess(time.monotonic() - t0, 1.5, "запасной ответил раньше зависшего рабочего")
+        self.assertGreaterEqual(self.relay.races, 1)
+        for _ in range(2):
+            await pp.probe(self.via())
+        self.assertEqual(self.relay.routes["nl"][0], fast.url)
+        self.assertEqual(promoted[-1], [fast.url, slow.url])
+        self.assertEqual(self.demoted, [], "медленный прокси не считается мёртвым")
+
+    async def test_fast_active_proxy_needs_no_race(self):
+        a, b = await self.proxy(), await self.proxy("http")
+        self.relay.set_route("nl", [a.url, b.url])
+        for _ in range(3):
+            self.assertEqual((await pp.probe(self.via())).country, "nl")
+        self.assertEqual((self.relay.races, b.tunnels, self.relay.routes["nl"][0]), (0, 0, a.url))
+
     async def test_refused_target_does_not_blame_proxy(self):
         p = await self.proxy(mode="refuse")
         self.relay.set_route("nl", [p.url])
@@ -467,7 +491,7 @@ class ManagerTests(Base):
         server = out["out-nl"]["settings"]["servers"][0]
         self.assertEqual((out["out-nl"]["protocol"], server["address"], server["users"][0]["user"]),
                          ("socks", "127.0.0.1", "nl"))
-        nl_rules = [r for r in cfg["routing"]["rules"] if r.get("user") == ["u7.nl"]]
+        nl_rules = [r for r in cfg["routing"]["rules"] if r.get("user") == ["u7.nl", "regexp:^u[0-9]+\\.nl$"]]
         self.assertEqual([(r.get("network"), r.get("port"), r["outboundTag"]) for r in nl_rules],
                          [("udp", "53", "direct"), ("udp", None, "block"), (None, None, "out-nl")])
         self.assertEqual(len(self.vpn.links(7)), 3)
@@ -619,7 +643,7 @@ class ManagerTests(Base):
         await self.manager()
         xray = os.path.join(self.dir, "xray")
         with open(xray, "w") as f:  # «Xray», которому не нравится выход через ретранслятор
-            f.write('#!/bin/sh\ngrep -q \'"127.0.0.1"\' "$4" && { echo "infra/conf: bad outbound"; exit 23; }\nexit 0\n')
+            f.write(f'#!/bin/sh\ngrep -q \'{self.vpn.relay_password}\' "$4" && {{ echo "infra/conf: bad outbound"; exit 23; }}\nexit 0\n')
         os.chmod(xray, 0o755)
         self.vpn.xray_bin, self.vpn.restart_cmd = xray, ("true",)
         problems = []

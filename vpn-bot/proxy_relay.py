@@ -4,11 +4,17 @@ Xray для каждой авто-страны подключается сюда
 а ретранслятор сам выбирает живой публичный прокси и пересылает данные через него.
 Поэтому замена упавшего прокси не требует перезапуска Xray и не рвёт чужие подключения:
 если прокси не отвечает, это же подключение сразу уходит через запасной.
+
+Подключение идёт наперегонки: если рабочий прокси не ответил за обычное для него время,
+параллельно запускается запасной, и побеждает тот, кто ответил первым. Так зависший прокси
+не стоит клиенту секунд ожидания. По реальным подключениям ретранслятор считает скорость
+каждого прокси и делает рабочим тот запасной, который стабильно заметно быстрее.
 """
 
 import asyncio
 import hmac
 import logging
+import time
 
 from public_proxies import ProxyDown, TunnelRefused, open_tunnel
 
@@ -20,15 +26,22 @@ class Relay:
     TRIES = 3           # сколько прокси пробуем на одно подключение
     HANDSHAKE_TIMEOUT = 10.0
     LINGER = 15.0       # сколько ждём вторую сторону после закрытия первой
+    RACE_MIN, RACE_MAX, RACE_DEFAULT = 0.4, 2.5, 1.2  # через сколько секунд запускать запасной
+    PROMOTE_SAMPLES = 3      # столько замеров нужно, чтобы сравнивать скорость
+    PROMOTE_RATIO = 0.6      # запасной должен быть хотя бы на 40% быстрее рабочего
+    PROMOTE_MIN_GAIN = 250   # и выигрывать не меньше этих миллисекунд
 
     def __init__(self, port: int, password: str, host: str = "127.0.0.1", on_demote=None,
-                 connect_timeout: float = 6.0):
+                 connect_timeout: float = 6.0, on_promote=None):
         self.host, self.port, self.password = host, port, password
-        self.on_demote = on_demote
+        self.on_demote, self.on_promote = on_demote, on_promote
         self.connect_timeout = connect_timeout
         self.routes: dict[str, list[str]] = {}
         self.fails: dict[str, int] = {}
         self.active: dict[str, int] = {}
+        self.latency: dict[str, float] = {}   # прокси -> скользящее среднее времени подключения, мс
+        self.samples: dict[str, int] = {}
+        self.races = 0                         # сколько раз запасной запускался параллельно
         self._server: asyncio.base_events.Server | None = None
         self._conns: set[asyncio.Task] = set()
 
@@ -114,18 +127,7 @@ class Relay:
             await writer.drain()
             return
         code, host, port = req
-        sock, refused = None, False
-        for url in list(self.routes.get(code, []))[:self.TRIES]:
-            try:
-                sock = await open_tunnel(url, host, port, self.connect_timeout)
-                self.fails.pop(url, None)
-                break
-            except TunnelRefused:
-                refused = True  # прокси жив, просто не дошёл до этого адреса
-            except ProxyDown:
-                self._failed(code, url)
-            except ValueError:
-                continue
+        sock, refused = await self._connect(code, host, port)
         if sock is None:
             writer.write((b"\x05\x05" if refused else b"\x05\x01") + b"\x00\x01" + bytes(6))
             await writer.drain()
@@ -142,6 +144,111 @@ class Relay:
         finally:
             self.active[code] -= 1
             up_writer.close()
+
+    # ---------- подключение наперегонки ----------
+
+    def _race_delay(self, url: str) -> float:
+        """Сколько ждать рабочий прокси, прежде чем параллельно запустить запасной."""
+        ms = self.latency.get(url)
+        if ms is None:
+            return self.RACE_DEFAULT
+        return min(self.RACE_MAX, max(self.RACE_MIN, ms * 2.0 / 1000))
+
+    async def _open(self, url: str, host: str, port: int):
+        t0 = time.monotonic()
+        sock = await open_tunnel(url, host, port, self.connect_timeout)
+        return sock, (time.monotonic() - t0) * 1000
+
+    def _record(self, url: str, ms: float) -> None:
+        old = self.latency.get(url)
+        self.latency[url] = ms if old is None else old * 0.7 + ms * 0.3
+        self.samples[url] = self.samples.get(url, 0) + 1
+
+    async def _connect(self, code: str, host: str, port: int):
+        """Открывает туннель через прокси страны. Возвращает (сокет или None, был_ли_отказ_адреса)."""
+        urls = list(self.routes.get(code, []))[:self.TRIES]
+        pending: dict[asyncio.Task, tuple[str, float]] = {}
+        refused, nxt, winner = False, 0, None
+
+        def launch() -> None:
+            nonlocal nxt
+            url = urls[nxt]
+            nxt += 1
+            pending[asyncio.create_task(self._open(url, host, port))] = (url, time.monotonic())
+
+        if not urls:
+            return None, False
+        launch()
+        try:
+            while pending and winner is None:
+                delay = self._race_delay(urls[nxt - 1]) if nxt < len(urls) else None
+                done, _ = await asyncio.wait(pending, timeout=delay, return_when=asyncio.FIRST_COMPLETED)
+                if not done:  # рабочий задумался: запускаем запасной, не бросая рабочий
+                    self.races += 1
+                    launch()
+                    continue
+                for t in done:
+                    url, _ = pending.pop(t)
+                    try:
+                        sock, ms = t.result()
+                    except TunnelRefused:
+                        refused = True  # прокси жив, просто не дошёл до этого адреса
+                        continue
+                    except ProxyDown:
+                        self._failed(code, url)
+                        continue
+                    except ValueError:
+                        continue
+                    self.fails.pop(url, None)
+                    self._record(url, ms)
+                    if winner is None:
+                        winner = sock
+                    else:
+                        sock.close()
+                if winner is None and not pending and nxt < len(urls):
+                    launch()
+        finally:
+            for t in pending:
+                t.cancel()
+            if pending:
+                now = time.monotonic()
+                results = await asyncio.gather(*pending, return_exceptions=True)
+                for (url, t0), res in zip(pending.values(), results):
+                    if isinstance(res, tuple):  # успел подключиться, но опоздал
+                        res[0].close()
+                        self._record(url, res[1])
+                    elif winner is not None and isinstance(res, asyncio.CancelledError):
+                        # Проиграл гонку: его время не меньше, чем он успел проработать.
+                        self._record(url, (now - t0) * 1000)
+        if winner is not None:
+            self._maybe_promote(code)
+        return winner, refused
+
+    def _maybe_promote(self, code: str) -> None:
+        """Запасной стабильно быстрее рабочего — он становится рабочим."""
+        route = self.routes.get(code) or []
+        if len(route) < 2:
+            return
+        cur = route[0]
+        cur_ms = self.latency.get(cur)
+        if cur_ms is None or self.samples.get(cur, 0) < self.PROMOTE_SAMPLES:
+            return
+        best = min((u for u in route[1:] if self.samples.get(u, 0) >= self.PROMOTE_SAMPLES and u in self.latency),
+                   key=lambda u: self.latency[u], default=None)
+        if best is None:
+            return
+        best_ms = self.latency[best]
+        if best_ms > cur_ms * self.PROMOTE_RATIO or cur_ms - best_ms < self.PROMOTE_MIN_GAIN:
+            return
+        route.remove(best)
+        route.insert(0, best)
+        log.info("авто-страна %s: прокси %s быстрее (%.0f мс против %.0f), он теперь рабочий",
+                 code, best, best_ms, cur_ms)
+        if self.on_promote:
+            try:
+                self.on_promote(code, list(route))
+            except Exception:
+                log.exception("on_promote")
 
     def _failed(self, code: str, url: str) -> None:
         self.fails[url] = self.fails.get(url, 0) + 1

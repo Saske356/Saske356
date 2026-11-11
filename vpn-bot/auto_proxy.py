@@ -31,7 +31,8 @@ class AutoProxy:
     def __init__(self, vpn, notify=None):
         self.vpn = vpn
         self.notify = notify  # async-функция (текст): сообщение админам
-        self.relay = Relay(vpn.relay_port, vpn.relay_password, on_demote=self._on_demote)
+        self.relay = Relay(vpn.relay_port, vpn.relay_password, on_demote=self._on_demote,
+                           on_promote=self._on_promote)
         self.lock = asyncio.Lock()
         self.bad: dict[str, float] = {}
         self.failover: set[str] = set()
@@ -64,6 +65,10 @@ class AutoProxy:
         self.failover.add(code)
         if self.vpn.auto.get("enabled") and (self._kick is None or self._kick.done()):
             self._kick = asyncio.get_running_loop().create_task(self._kick_soon())
+
+    def _on_promote(self, code: str, pool: list[str]) -> None:
+        """Ретранслятор нашёл более быстрый запасной: запоминаем новый порядок."""
+        self.vpn.reorder_auto_pool(code, pool)
 
     async def _kick_soon(self) -> None:
         await asyncio.sleep(3)
@@ -179,7 +184,12 @@ class AutoProxy:
             if len(alive) < POOL_SIZE:
                 alive += await self._find(pool, cc, POOL_SIZE - len(alive), exclude=known)
             if alive:
-                if alive[0][0] != was_active:   # рабочий умер: берём самый быстрый из живых
+                active_ms = next((ms for u, ms in alive if u == was_active), None)
+                best_ms = min(ms for _, ms in alive)
+                much_faster = (active_ms is not None and best_ms < active_ms * 0.6
+                               and active_ms - best_ms > 300)
+                if alive[0][0] != was_active or much_faster:
+                    # рабочий умер или живой запасной намного быстрее: рабочим становится самый быстрый
                     alive.sort(key=lambda x: x[1])
                 res = vpn.set_auto_location(cc, nm(cc), [u for u, _ in alive], ms=alive[0][1])
                 if was_down:

@@ -3,6 +3,11 @@
 Каждый клиент получает отдельный ключ под каждую страну. Сервер по ключу понимает,
 через какую страну выпустить трафик: напрямую (страна самого сервера) или через прокси.
 Клиенту выдаётся одна ссылка-подписка, в приложении она превращается в список стран.
+
+Выдача и отключение ключей идут через API Xray на 127.0.0.1 без перезапуска, поэтому
+подключения остальных клиентов не рвутся. Перезапуск нужен только при смене стран, мостов
+или сайта маскировки. Если API не ответил, бот по-старому применяет конфиг целиком.
+Через тот же API бот берёт трафик и адреса, с которых сейчас подключены ключи.
 """
 
 import asyncio
@@ -19,11 +24,13 @@ import uuid
 from urllib.parse import quote, unquote, urlparse
 
 import public_proxies
+from hysteria import Hysteria
 from vpn import VpnProvider
 
 log = logging.getLogger("vpn-bot.xray")
 
 CODE_RE = re.compile(r"^[a-z0-9]{1,8}$")
+EMAIL_RE = re.compile(r"u(\d+)\.[a-z0-9]+")
 
 
 def parse_proxy(url: str) -> dict:
@@ -46,13 +53,19 @@ class XrayProvider(VpnProvider):
                  sub_port: int, brand: str = "VPN", default_location: str = "🌍 Основной",
                  restart_cmd: tuple = ("systemctl", "restart", "xray"),
                  auto_enabled: bool = False, auto_countries: tuple = (), auto_max: int = 8,
-                 relay_port: int = 20808):
+                 relay_port: int = 20808, api_port: int = 10085, hy2: dict | None = None):
         self.state_path, self.config_path, self.xray_bin = state_path, config_path, xray_bin
         self.host, self.port, self.env_sni = public_host, port, sni
         self.private_key, self.public_key, self.short_id = private_key, public_key, short_id
         self.sub_port, self.brand, self.restart_cmd = sub_port, brand, restart_cmd
-        self.relay_port = relay_port
+        self.relay_port, self.api_port = relay_port, api_port
         self.state = self._load(default_location, auto_enabled, list(auto_countries), auto_max)
+        # Hysteria2 по UDP рядом с Reality: только для страны самого сервера.
+        self.hy2 = Hysteria(host=public_host, secret=self.state["secret"], is_allowed=self.allowed,
+                            **hy2) if hy2 else None
+        self.live: set[str] = set()  # подписки, которые сейчас есть в запущенном Xray
+        self._api_lock = asyncio.Lock()  # изменения через API по одному, чтобы не мешали друг другу
+        self.usage = None            # функция(подписка) -> (отдано, получено): бот берёт из базы
         self._pending: asyncio.Task | None = None
         self._server: asyncio.base_events.Server | None = None
         self.on_problem = None      # async-функция(текст): бот подставляет сюда оповещение админов
@@ -72,6 +85,8 @@ class XrayProvider(VpnProvider):
         st.setdefault("users", {})
         st.setdefault("locations", [{"code": "main", "name": default_location, "proxy": ""}])
         st.setdefault("bridges", [])
+        st.setdefault("devices", {})     # подписка -> сколько устройств оплачено
+        st.setdefault("suspended", {})   # подписка -> до какого времени отключена за превышение
         # Настройки авто-стран берутся из окружения только при первом запуске,
         # дальше ими управляет команда /autoproxy.
         st.setdefault("auto", {"enabled": bool(auto_enabled),
@@ -181,6 +196,16 @@ class XrayProvider(VpnProvider):
             self._save()
         return list(pool)
 
+    def reorder_auto_pool(self, code: str, pool: list[str]) -> None:
+        """Новый порядок прокси авто-страны (первый — рабочий) без перезапуска Xray."""
+        loc = next((l for l in self.auto_locations() if l["code"] == code), None)
+        if not loc or sorted(pool) != sorted(loc.get("pool") or []):
+            return
+        if loc["proxy"] != pool[0]:
+            loc.update(proxy=pool[0], since=time.time(), ms=None)
+        loc["pool"] = list(pool)
+        self._save()
+
     def set_auto_down(self, code: str, down: bool) -> None:
         for loc in self.auto_locations():
             if loc["code"] == code and bool(loc.get("down")) != down:
@@ -218,22 +243,80 @@ class XrayProvider(VpnProvider):
 
     # ---------- интерфейс для бота ----------
 
-    async def issue(self, user_id: int, expires_at: float) -> str:
-        self.state["users"][str(user_id)] = expires_at
+    def allowed(self, sid: int) -> bool:
+        """Пускать ли подписку: срок не истёк и она не отключена за превышение устройств."""
+        key = str(sid)
+        return self.state["users"].get(key, 0) > time.time() and not self.is_suspended(sid)
+
+    def is_suspended(self, sid: int) -> bool:
+        return self.state["suspended"].get(str(sid), 0) > time.time()
+
+    def _apply_pending(self) -> bool:
+        return bool(self._pending and not self._pending.done())
+
+    async def issue(self, user_id: int, expires_at: float, devices: int | None = None) -> str:
+        key = str(user_id)
+        self.state["users"][key] = expires_at
+        if devices:
+            self.state["devices"][key] = int(devices)
         self._save()
-        self.schedule_apply()
+        # Ключ уже есть в Xray (продление) — ничего делать не нужно. Новый ключ добавляется
+        # на ходу, а если API не ответил, конфиг применяется целиком.
+        if key not in self.live and self.allowed(user_id) and not self._apply_pending():
+            if not await self._hot_add([user_id]):
+                self.schedule_apply()
         return self.sub_url(user_id)
 
     async def revoke(self, user_id: int) -> None:
-        if self.state["users"].pop(str(user_id), None) is not None:
-            self._save()
-            self.schedule_apply()
+        key = str(user_id)
+        if self.state["users"].pop(key, None) is None:
+            return
+        self.state["devices"].pop(key, None)
+        self.state["suspended"].pop(key, None)
+        self._save()
+        if self._apply_pending():
+            pass  # ожидающее применение и так соберёт конфиг без этого ключа
+        elif key in self.live:
+            if not await self._hot_remove([user_id]):
+                self.schedule_apply()
+        elif not self.last_apply:
+            self.schedule_apply()  # что сейчас в Xray, неизвестно: применяем целиком
+        if self.hy2:
+            await self.hy2.kick([user_id])
 
-    async def sync(self, active: dict[int, float]) -> None:
+    async def sync(self, active: dict[int, float], devices: dict[int, int] | None = None) -> None:
         """При запуске бота: сервер получает ровно тех, у кого доступ активен."""
         self.state["users"] = {str(k): v for k, v in active.items()}
+        if devices is not None:
+            self.state["devices"] = {str(k): int(v) for k, v in devices.items() if k in active}
+        now = time.time()
+        self.state["suspended"] = {k: t for k, t in self.state["suspended"].items()
+                                   if t > now and k in self.state["users"]}
         self._save()
         await self.apply()
+
+    # ---------- отключение за превышение устройств ----------
+
+    async def suspend(self, sid: int, seconds: float) -> None:
+        """Временно отключает подписку: Xray убирает её ключи, Hysteria разрывает подключения."""
+        self.state["suspended"][str(sid)] = time.time() + seconds
+        self._save()
+        if str(sid) in self.live and not await self._hot_remove([sid]):
+            self.schedule_apply()
+        if self.hy2:
+            await self.hy2.kick([sid])
+
+    def due_resume(self) -> list[int]:
+        """Подписки, у которых закончилось отключение за превышение: их пора вернуть в Xray."""
+        now = time.time()
+        return [int(k) for k, t in self.state["suspended"].items() if t <= now]
+
+    async def resume(self, sid: int) -> None:
+        if self.state["suspended"].pop(str(sid), None) is None:
+            return
+        self._save()
+        if self.allowed(sid) and str(sid) not in self.live and not await self._hot_add([sid]):
+            self.schedule_apply()
 
     def add_location(self, code: str, name: str, proxy: str) -> None:
         code = code.lower()
@@ -309,10 +392,17 @@ class XrayProvider(VpnProvider):
         return f"vless://{uid}@{host}:{port}?{q}#{quote(name)}"
 
     def links(self, user_id: int) -> list[str]:
-        out = [self._link(self.user_uuid(user_id, loc["code"]), self.host, self.port, self.sni, loc["name"])
-               for loc in self.locations
-               if not loc.get("down") and not (loc.get("auto") and self.auto_rejected)]
-        direct = self.user_uuid(user_id, self.direct_location()["code"])
+        direct_loc = self.direct_location()
+        out = []
+        for loc in self.locations:
+            if loc.get("down") or (loc.get("auto") and self.auto_rejected):
+                continue
+            out.append(self._link(self.user_uuid(user_id, loc["code"]), self.host, self.port, self.sni, loc["name"]))
+            if self.hy2 and loc is direct_loc:
+                # Сразу после основной страны: приложения с автовыбором берут то, где пинг ниже,
+                # а приложения без него по-прежнему стартуют с надёжного Reality.
+                out.append(self.hy2.link(user_id, f"{loc['name']} ⚡ Hysteria2"))
+        direct = self.user_uuid(user_id, direct_loc["code"])
         out += [self._link(direct, b["host"], b["port"], b["sni"] or self.sni, b["name"]) for b in self.bridges]
         return out
 
@@ -387,26 +477,53 @@ class XrayProvider(VpnProvider):
             "address": "127.0.0.1", "port": self.relay_port,
             "users": [{"user": code, "pass": self.relay_password}]}]}}
 
+    def _clients(self, sids, locations) -> list[dict]:
+        return [{"id": self.user_uuid(uid, loc["code"]), "flow": "xtls-rprx-vision",
+                 "email": f"u{uid}.{loc['code']}"}
+                for uid in sids for loc in locations]
+
+    def _inbound(self, clients: list[dict], site: str | None = None) -> dict:
+        return {
+            "tag": "in", "listen": "0.0.0.0", "port": self.port, "protocol": "vless",
+            "settings": {"clients": clients, "decryption": "none"},
+            "streamSettings": {
+                "network": "tcp", "security": "reality",
+                "realitySettings": {"show": False, "dest": f"{site or self.sni}:443", "xver": 0,
+                                    "serverNames": [site] if site else self.server_names(),
+                                    "privateKey": self.private_key, "shortIds": [self.short_id]},
+            },
+            "sniffing": {"enabled": True, "destOverride": ["http", "tls", "quic"]},
+        }
+
+    def active_sids(self) -> list[int]:
+        now = time.time()
+        return [int(u) for u, exp in self.state["users"].items() if exp > now and not self.is_suspended(int(u))]
+
     def build_config(self, with_auto: bool = True, site: str | None = None) -> dict:
         locations = [l for l in self.locations if with_auto or not l.get("auto")]
-        now = time.time()
-        active = [int(u) for u, exp in self.state["users"].items() if exp > now]
-        clients, by_loc = [], {}
-        for uid in active:
-            for loc in locations:
-                email = f"u{uid}.{loc['code']}"
-                clients.append({"id": self.user_uuid(uid, loc["code"]), "flow": "xtls-rprx-vision",
-                                "email": email})
-                by_loc.setdefault(loc["code"], []).append(email)
+        active = self.active_sids()
+        clients = self._clients(active, locations)
+
+        def users_of(code: str) -> list[str]:
+            # Явный список и шаблон: ключи, добавленные через API после запуска, тоже
+            # попадают в свою страну. Старый Xray без шаблонов обходится явным списком.
+            return [f"u{uid}.{code}" for uid in active] + [f"regexp:^u[0-9]+\\.{code}$"]
 
         outbounds = [{"tag": "direct", "protocol": "freedom"},
                      {"tag": "block", "protocol": "blackhole"}]
         rules = [{"type": "field", "ip": ["geoip:private"], "outboundTag": "block"},
                  {"type": "field", "protocol": ["bittorrent"], "outboundTag": "block"}]
+        inbounds = [self._inbound(clients, site)]
+        if self.api_port:
+            # API только для самого сервера: им бот добавляет ключи и берёт статистику.
+            inbounds.append({"tag": "api", "listen": "127.0.0.1", "port": self.api_port,
+                             "protocol": "dokodemo-door", "settings": {"address": "127.0.0.1"}})
+            outbounds.append({"tag": "api", "protocol": "freedom"})
+            rules.insert(0, {"type": "field", "inboundTag": ["api"], "outboundTag": "api"})
         for loc in locations:
             if not loc["proxy"]:
                 continue
-            users = by_loc.get(loc["code"])
+            users = users_of(loc["code"])
             if loc.get("auto"):
                 outbounds.append({"tag": f"out-{loc['code']}", **self.relay_outbound(loc["code"])})
                 if users:
@@ -421,22 +538,18 @@ class XrayProvider(VpnProvider):
             if users:
                 rules.append({"type": "field", "user": users, "outboundTag": f"out-{loc['code']}"})
 
-        return {
+        cfg = {
             "log": {"loglevel": "warning", "access": "none"},
-            "inbounds": [{
-                "tag": "in", "listen": "0.0.0.0", "port": self.port, "protocol": "vless",
-                "settings": {"clients": clients, "decryption": "none"},
-                "streamSettings": {
-                    "network": "tcp", "security": "reality",
-                    "realitySettings": {"show": False, "dest": f"{site or self.sni}:443", "xver": 0,
-                                        "serverNames": [site] if site else self.server_names(), "privateKey": self.private_key,
-                                        "shortIds": [self.short_id]},
-                },
-                "sniffing": {"enabled": True, "destOverride": ["http", "tls", "quic"]},
-            }],
+            "inbounds": inbounds,
             "outbounds": outbounds,
             "routing": {"domainStrategy": "AsIs", "rules": rules},
         }
+        if self.api_port:
+            cfg["api"] = {"tag": "api", "services": ["HandlerService", "StatsService"]}
+            cfg["stats"] = {}
+            cfg["policy"] = {"levels": {"0": {"statsUserUplink": True, "statsUserDownlink": True,
+                                              "statsUserOnline": True}}}
+        return cfg
 
     def schedule_apply(self, delay: float = 2.0) -> None:
         """Несколько изменений подряд применяются одним перезапуском."""
@@ -501,6 +614,7 @@ class XrayProvider(VpnProvider):
             await self._problem("Не удалось перезапустить Xray: " + out[-500:].strip())
             return False
         self.last_apply = time.time()
+        self.live = {str(u) for u in self.active_sids()}
         self.auto_rejected = has_auto and not with_auto
         log.info("Xray обновлён: %d клиентов, стран: %d", len(self.state["users"]), len(self.locations))
         if self.auto_rejected:
@@ -509,6 +623,125 @@ class XrayProvider(VpnProvider):
         else:
             self.last_error = ""
         return True
+
+    # ---------- API Xray: ключи без перезапуска, трафик и устройства ----------
+
+    async def _xapi(self, cmd: str, *args) -> tuple[int, str]:
+        # Флаги до имён и файлов: разбор флагов в Xray останавливается на первом обычном аргументе.
+        try:
+            return await asyncio.wait_for(
+                self._run(self.xray_bin, "api", cmd, f"--server=127.0.0.1:{self.api_port}", *args), 15)
+        except (OSError, asyncio.TimeoutError) as e:
+            return 1, str(e)
+
+    def _emails(self, sids) -> list[str]:
+        return [f"u{s}.{l['code']}" for s in sids for l in self.locations]
+
+    async def _hot_add(self, sids) -> bool:
+        """Добавляет ключи в работающий Xray. False — не вышло, нужен полный перезапуск."""
+        if not self.api_port or not self.last_apply or not os.path.exists(self.xray_bin):
+            return False
+        async with self._api_lock:
+            return await self._hot_add_locked(sids)
+
+    async def _hot_add_locked(self, sids) -> bool:
+        locations = [l for l in self.locations if not (l.get("auto") and self.auto_rejected)]
+        clients = self._clients(sids, locations)
+        if not clients:
+            return True
+        # Сначала убираем те же ключи: повторное добавление Xray считает ошибкой.
+        await self._xapi("rmu", "-tag=in", *[c["email"] for c in clients])
+        base = self.config_path[:-5] if self.config_path.endswith(".json") else self.config_path
+        tmp = base + ".users.json"
+        try:
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump({"inbounds": [self._inbound(clients)]}, f)
+            code, out = await self._xapi("adu", tmp)
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+        m = re.search(r"Added (\d+) user", out)
+        if code != 0 or not m or int(m.group(1)) != len(clients):
+            log.warning("API Xray не добавил ключи %s, применяю конфиг целиком: %s", sids, out[-300:])
+            return False
+        self.live.update(str(s) for s in sids)
+        log.info("Xray: ключи %s добавлены без перезапуска", sids)
+        return True
+
+    async def _hot_remove(self, sids) -> bool:
+        if not self.api_port or not self.last_apply or not os.path.exists(self.xray_bin):
+            return False
+        async with self._api_lock:
+            code, out = await self._xapi("rmu", "-tag=in", *self._emails(sids))
+        if code != 0:
+            log.warning("API Xray не убрал ключи %s, применяю конфиг целиком: %s", sids, out[-300:])
+            return False
+        self.live.difference_update(str(s) for s in sids)
+        return True
+
+    @staticmethod
+    def _json(out: str):
+        start = out.find("{")
+        try:
+            return json.loads(out[start:]) if start >= 0 else None
+        except ValueError:
+            return None
+
+    async def traffic(self) -> dict[int, tuple[int, int]]:
+        """Трафик по подпискам с прошлого вызова: {подписка: (отдано, получено)}, Xray и Hysteria вместе."""
+        out: dict[int, list[int]] = {}
+        if self.api_port and self.last_apply and os.path.exists(self.xray_bin):
+            code, text = await self._xapi("statsquery", "-pattern=user>>>", "-reset")
+            data = self._json(text) if code == 0 else None
+            for st in (data or {}).get("stat") or []:
+                parts = str(st.get("name", "")).split(">>>")
+                m = EMAIL_RE.fullmatch(parts[1]) if len(parts) == 4 and parts[2] == "traffic" else None
+                if m:
+                    pair = out.setdefault(int(m.group(1)), [0, 0])
+                    pair[0 if parts[3] == "uplink" else 1] += int(st.get("value") or 0)
+        if self.hy2:
+            for sid, (up, down) in (await self.hy2.traffic() or {}).items():
+                pair = out.setdefault(sid, [0, 0])
+                pair[0] += up
+                pair[1] += down
+        return {k: (v[0], v[1]) for k, v in out.items() if v[0] or v[1]}
+
+    async def online(self) -> dict[int, int] | None:
+        """Сколько устройств подключено к каждой подписке сейчас. None — узнать не удалось.
+        Для Xray это число разных IP за всеми странами подписки, для Hysteria — число подключений."""
+        ips: dict[int, set[str]] = {}
+        got = False
+        if self.api_port and self.last_apply and os.path.exists(self.xray_bin):
+            code, text = await self._xapi("statsonlineiplist", "-all")
+            data = self._json(text) if code == 0 else None
+            if data is not None:
+                got = True
+                for u in data.get("users") or []:
+                    m = EMAIL_RE.fullmatch(str(u.get("email", "")))
+                    if m:
+                        ips.setdefault(int(m.group(1)), set()).update(
+                            str(e.get("ip")) for e in u.get("ips") or [] if e.get("ip"))
+            else:  # Xray до версии с -all: список онлайн и адреса по каждому ключу
+                code, text = await self._xapi("statsgetallonlineusers")
+                data = self._json(text) if code == 0 else None
+                if data is not None:
+                    got = True
+                    for name in data.get("users") or []:
+                        m = EMAIL_RE.search(str(name))
+                        if not m:
+                            continue
+                        c2, t2 = await self._xapi("statsonlineiplist", f"-email={m.group(0)}")
+                        one = self._json(t2) if c2 == 0 else None
+                        ips.setdefault(int(m.group(1)), set()).update((one or {}).get("ips") or {})
+        counts = {sid: len(v) for sid, v in ips.items()}
+        if self.hy2:
+            hy = await self.hy2.online()
+            if hy is not None:
+                got = True
+                for sid, n in hy.items():
+                    counts[sid] = counts.get(sid, 0) + n
+        return counts if got else None
 
     async def xray_running(self) -> bool:
         try:
@@ -525,10 +758,16 @@ class XrayProvider(VpnProvider):
             return None
         body = base64.b64encode("\n".join(self.links(user_id)).encode())
         title = base64.b64encode(self.brand.encode()).decode()
+        up = down = 0
+        if self.usage:
+            try:
+                up, down = self.usage(user_id)
+            except Exception:
+                log.exception("трафик для подписки %s", user_id)
         headers = {
             "Content-Type": "text/plain; charset=utf-8",
             "profile-title": f"base64:{title}",
-            "subscription-userinfo": f"upload=0; download=0; total=0; expire={int(exp)}",
+            "subscription-userinfo": f"upload={int(up)}; download={int(down)}; total=0; expire={int(exp)}",
             "profile-update-interval": "1",
         }
         return body, headers
@@ -566,6 +805,17 @@ class XrayProvider(VpnProvider):
         log.info("Подписки раздаются на порту %d", self.sub_port)
 
 
+def hy2_from_env(e) -> dict | None:
+    """Настройки Hysteria2 из .env. Установщик заполняет их сам, пусто — Hysteria2 выключен."""
+    if not e.get("HY2_PORT") or e.get("HY2", "1") == "0":
+        return None
+    return {"port": int(e["HY2_PORT"]), "cert_path": e.get("HY2_CERT", "/etc/hysteria/server.crt"),
+            "sni": e.get("HY2_SNI") or e.get("REALITY_SNI", "www.microsoft.com"),
+            "auth_port": int(e.get("HY2_AUTH_PORT", "20809")),
+            "stats_port": int(e.get("HY2_STATS_PORT", "20810")),
+            "stats_secret": e.get("HY2_STATS_SECRET", ""), "obfs_password": e.get("HY2_OBFS_PASSWORD", "")}
+
+
 def from_env() -> XrayProvider:
     e = os.environ
     need = ["PUBLIC_HOST", "REALITY_PRIVATE_KEY", "REALITY_PUBLIC_KEY", "REALITY_SHORT_ID"]
@@ -585,4 +835,6 @@ def from_env() -> XrayProvider:
         auto_countries=[c.strip().lower() for c in e.get("AUTO_PROXY_COUNTRIES", "").replace(" ", "").split(",") if c.strip()],
         auto_max=int(e.get("AUTO_PROXY_MAX", "8")),
         relay_port=int(e.get("AUTO_RELAY_PORT", "20808")),
+        api_port=int(e.get("XRAY_API_PORT", "10085")),
+        hy2=hy2_from_env(e),
     )

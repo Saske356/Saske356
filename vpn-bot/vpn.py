@@ -11,8 +11,9 @@ import uuid
 class VpnProvider:
     is_demo = False
 
-    async def issue(self, user_id: int, expires_at: float) -> str:
-        """Создать или продлить доступ пользователю. Вернуть ссылку-ключ."""
+    async def issue(self, user_id: int, expires_at: float, devices: int | None = None) -> str:
+        """Создать или продлить доступ пользователю. Вернуть ссылку-ключ.
+        devices — сколько устройств оплачено: по нему сервер проверяет лимит."""
         raise NotImplementedError
 
     async def revoke(self, user_id: int) -> None:
@@ -23,7 +24,7 @@ class VpnProvider:
 class DemoProvider(VpnProvider):
     is_demo = True
 
-    async def issue(self, user_id: int, expires_at: float) -> str:
+    async def issue(self, user_id: int, expires_at: float, devices: int | None = None) -> str:
         uid = uuid.uuid5(uuid.NAMESPACE_OID, f"demo-{user_id}")
         return (f"vless://{uid}@demo.example.com:443"
                 f"?type=tcp&security=reality&fp=chrome#DEMO-{user_id}")
