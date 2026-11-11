@@ -163,6 +163,12 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Saske356/Saske356/claude/and
 bash <(curl -fsSL https://raw.githubusercontent.com/Saske356/Saske356/claude/android-usage-ql87m8/vpn-bot/diag.sh)
 ```
 
+Если сервер исправен, а телефон не подключается, запусти её с параметром `watch` и за минуту подключись к VPN в приложении. Она покажет, доходят ли подключения телефона до порта VPN:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/Saske356/Saske356/claude/android-usage-ql87m8/vpn-bot/diag.sh) watch
+```
+
 Перед любым изменением кода прогоняй общий набор тестов из папки бота:
 
 ```bash

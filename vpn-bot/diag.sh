@@ -2,6 +2,7 @@
 # Диагностика Aurora VPN. Запуск на сервере от root:
 #   bash <(curl -fsSL https://raw.githubusercontent.com/Saske356/Saske356/claude/android-usage-ql87m8/vpn-bot/diag.sh)
 # Подключается к VPN с самого сервера так же, как клиент, и говорит, где проблема.
+# С параметром watch следит, доходят ли подключения телефона до порта VPN.
 # Ничего не меняет в настройках. Токен, ключи и пароли не печатает.
 set -u
 
@@ -15,6 +16,40 @@ ok()   { printf '✅ %s\n' "$*"; }
 bad()  { printf '❌ %s\n' "$*"; PROBLEMS=$((PROBLEMS+1)); }
 note() { printf '◆ %s\n' "$*"; }
 PROBLEMS=0
+
+# Режим наблюдения:  bash <(curl -fsSL .../diag.sh) watch [секунд]
+# Показывает, доходят ли подключения телефона до порта VPN, пока вы подключаетесь в приложении.
+if [ "${1:-}" = "watch" ]; then
+  SECS="${2:-60}"
+  WPORT=$(grep -E '^VPN_PORT=' "$ENVF" 2>/dev/null | cut -d= -f2); WPORT=${WPORT:-443}
+  echo "Слежу за портом $WPORT $SECS секунд."
+  echo "Сейчас откройте приложение VPN на телефоне и подключитесь (или запустите проверку пинга)."
+  END=$((SECONDS + SECS))
+  while [ "$SECONDS" -lt "$END" ]; do
+    ss -Htn "( sport = :$WPORT )" 2>/dev/null | awk '{print $1, $NF}' >>"$TMP/seen"
+    sleep 0.2
+  done
+  # состояние, адрес и порт клиента; подключения с самого сервера не считаем
+  awk '{a=$2; p=a; sub(/.*:/, "", p); sub(/:[0-9]+$/, "", a); gsub(/^\[(::ffff:)?|\]$/, "", a); print $1, a, p}' \
+    "$TMP/seen" 2>/dev/null | grep -Ev ' (127\.|::1 )' | sort -u >"$TMP/peers"
+  echo
+  if [ ! -s "$TMP/peers" ]; then
+    echo "ИТОГ: за $SECS секунд на порт $WPORT не пришло ни одного подключения."
+    echo "Телефон до порта VPN не доходит, хотя сервер доступен: оператор режет именно этот порт или протокол."
+    exit 0
+  fi
+  if grep -q '^ESTAB ' "$TMP/peers"; then
+    echo "Кто подключался (адрес и число подключений):"
+    awk '$1 == "ESTAB" {n[$2]++} END {for (a in n) printf "  %s  %d\n", a, n[a]}' "$TMP/peers" | sort
+    echo
+    echo "ИТОГ: подключения до порта $WPORT доходят."
+    echo "Если в приложении при этом нет связи, обрывается само VPN-соединение после установки связи:"
+    echo "оператор распознаёт протокол, либо приложение на телефоне устарело."
+  else
+    echo "ИТОГ: подключения начинаются, но не устанавливаются: их обрывают по дороге к серверу."
+  fi
+  exit 0
+fi
 
 echo "== Версии"
 note "Код бота: $(git -C /opt/aurora rev-parse --abbrev-ref HEAD 2>/dev/null) $(git -C /opt/aurora log -1 --format='%h %cd' --date=format:'%d.%m %H:%M' 2>/dev/null)"
