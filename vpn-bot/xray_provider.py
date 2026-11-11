@@ -18,6 +18,7 @@ import time
 import uuid
 from urllib.parse import quote, unquote, urlparse
 
+import public_proxies
 from vpn import VpnProvider
 
 log = logging.getLogger("vpn-bot.xray")
@@ -44,11 +45,13 @@ class XrayProvider(VpnProvider):
                  port: int, sni: str, private_key: str, public_key: str, short_id: str,
                  sub_port: int, brand: str = "VPN", default_location: str = "🌍 Основной",
                  restart_cmd: tuple = ("systemctl", "restart", "xray"),
-                 auto_enabled: bool = False, auto_countries: tuple = (), auto_max: int = 8):
+                 auto_enabled: bool = False, auto_countries: tuple = (), auto_max: int = 8,
+                 relay_port: int = 20808):
         self.state_path, self.config_path, self.xray_bin = state_path, config_path, xray_bin
         self.host, self.port, self.sni = public_host, port, sni
         self.private_key, self.public_key, self.short_id = private_key, public_key, short_id
         self.sub_port, self.brand, self.restart_cmd = sub_port, brand, restart_cmd
+        self.relay_port = relay_port
         self.state = self._load(default_location, auto_enabled, list(auto_countries), auto_max)
         self._pending: asyncio.Task | None = None
         self._server: asyncio.base_events.Server | None = None
@@ -65,11 +68,17 @@ class XrayProvider(VpnProvider):
         st.setdefault("users", {})
         st.setdefault("locations", [{"code": "main", "name": default_location, "proxy": ""}])
         st.setdefault("bridges", [])
-        # Настройки авто-режима (публичные прокси) берутся из окружения только при
-        # первом запуске; дальше ими управляют команды /autoproxy и состояние на диске.
+        # Настройки авто-стран берутся из окружения только при первом запуске,
+        # дальше ими управляет команда /autoproxy.
         st.setdefault("auto", {"enabled": bool(auto_enabled),
                                "countries": [c.lower() for c in auto_countries],
                                "max": int(auto_max)})
+        st["auto"].setdefault("notify", True)
+        st["auto"].setdefault("exclude", [])
+        for loc in st["locations"]:
+            if loc.get("auto"):
+                loc.setdefault("country", loc["code"])
+                loc.setdefault("pool", [loc["proxy"]] if loc.get("proxy") else [])
         return st
 
     def _save(self) -> None:
@@ -88,19 +97,27 @@ class XrayProvider(VpnProvider):
     def bridges(self) -> list[dict]:
         return self.state["bridges"]
 
-    # ---------- авто-режим: публичные прокси ----------
+    # ---------- авто-страны: публичные прокси ----------
 
     @property
     def auto(self) -> dict:
         return self.state["auto"]
 
-    def set_auto(self, *, enabled=None, countries=None, max=None) -> None:
+    @property
+    def relay_password(self) -> str:
+        return hmac.new(self.state["secret"].encode(), b"relay", hashlib.sha256).hexdigest()[:24]
+
+    def set_auto(self, *, enabled=None, countries=None, max=None, notify=None, exclude=None) -> None:
+        if exclude is not None:
+            self.auto["exclude"] = [str(c).lower() for c in exclude]
         if enabled is not None:
             self.auto["enabled"] = bool(enabled)
         if countries is not None:
             self.auto["countries"] = [str(c).lower() for c in countries]
         if max is not None:
             self.auto["max"] = int(max)
+        if notify is not None:
+            self.auto["notify"] = bool(notify)
         self._save()
 
     def auto_locations(self) -> list[dict]:
@@ -109,34 +126,67 @@ class XrayProvider(VpnProvider):
     def manual_codes(self) -> set:
         return {l["code"] for l in self.locations if not l.get("auto")}
 
-    def set_auto_location(self, code: str, name: str, proxy: str) -> bool:
-        """Добавить/обновить авто-локацию (прокси из публичного списка).
-        Не трогает страну, добавленную вручную тем же кодом. True — применено."""
+    def set_auto_location(self, code: str, name: str, pool: list[str], ms: int | None = None) -> str:
+        """Задаёт авто-стране список прокси: первый рабочий, остальные запасные.
+        Возвращает "added", "swapped", "kept" или "" (код занят страной, добавленной вручную).
+        Xray перезапускается только при появлении новой страны: смена прокси идёт через ретранслятор."""
         code = code.lower()
         if not CODE_RE.match(code):
             raise ValueError("код страны: латиница и цифры, до 8 символов")
-        parse_proxy(proxy)  # проверка формата
-        existing = next((l for l in self.locations if l["code"] == code), None)
-        if existing and not existing.get("auto"):
-            return False  # ручную локацию не перетираем
-        self.state["locations"] = [l for l in self.locations if l["code"] != code]
-        self.state["locations"].append({"code": code, "name": name.strip(), "proxy": proxy.strip(),
-                                        "auto": True, "country": code, "down": False})
+        if not pool:
+            raise ValueError("нужен хотя бы один прокси")
+        for url in pool:
+            public_proxies.split_proxy(url)
+        loc = next((l for l in self.locations if l["code"] == code), None)
+        if loc and not loc.get("auto"):
+            return ""
+        if loc is None:
+            self.state["locations"].append({
+                "code": code, "name": name.strip(), "proxy": pool[0], "auto": True, "country": code,
+                "pool": list(pool), "down": False, "since": time.time(), "swaps": 0, "ms": ms})
+            self._save()
+            self.schedule_apply()
+            return "added"
+        result = "kept"
+        if loc["proxy"] != pool[0]:
+            loc["swaps"] = loc.get("swaps", 0) + 1
+            loc["since"] = time.time()
+            result = "swapped"
+        loc.update(proxy=pool[0], pool=list(pool), down=False, ms=ms)
         self._save()
-        self.schedule_apply()
-        return True
+        return result
+
+    def rotate_auto_upstream(self, code: str, url: str) -> list[str]:
+        """Прокси перестал отвечать: он уходит в конец списка, рабочим становится следующий."""
+        loc = next((l for l in self.auto_locations() if l["code"] == code), None)
+        if not loc:
+            return []
+        pool = loc.setdefault("pool", [])
+        if url in pool and len(pool) > 1:
+            pool.remove(url)
+            pool.append(url)
+            if loc["proxy"] != pool[0]:
+                loc.update(proxy=pool[0], since=time.time(), ms=None, swaps=loc.get("swaps", 0) + 1)
+            self._save()
+        return list(pool)
+
+    def set_auto_down(self, code: str, down: bool) -> None:
+        for loc in self.auto_locations():
+            if loc["code"] == code and bool(loc.get("down")) != down:
+                loc["down"] = down
+                self._save()
 
     def clear_auto_locations(self) -> int:
-        """Удаляет все авто-локации (ручные и мосты остаются). Возвращает число удалённых."""
-        auto = self.auto_locations()
-        if not auto:
+        """Удаляет все авто-страны. Страны, добавленные вручную, и мосты остаются."""
+        n = len(self.auto_locations())
+        if not n:
             return 0
         self.state["locations"] = [l for l in self.locations if not l.get("auto")]
-        if not self.locations:  # не оставляем сервер без единой локации
+        if not self.locations:
             self.state["locations"] = [{"code": "main", "name": "🌍 Основной", "proxy": ""}]
         self._save()
         self.schedule_apply()
-        return len(auto)
+        return n
 
     def direct_location(self) -> dict:
         """Страна самого сервера (без прокси): через неё выходит трафик мостов."""
@@ -215,23 +265,22 @@ class XrayProvider(VpnProvider):
         self.schedule_apply()
         return True
 
-    async def check_proxies(self, timeout: float = 6.0) -> list[tuple[dict, bool]]:
-        """Проверяет, отвечают ли прокси стран. Нерабочие страны прячутся из подписки.
-        Возвращает список изменившихся стран: (страна, работает_ли_теперь)."""
+    async def check_proxies(self) -> list[tuple[dict, bool]]:
+        """Проверяет прокси стран, добавленных вручную: через каждый открывается настоящее
+        HTTPS-подключение, так что ловится и истёкший логин, а не только закрытый порт.
+        Нерабочие страны прячутся из подписки. Возвращает изменения: (страна, работает_ли)."""
+        manual = [l for l in self.locations if l["proxy"] and not l.get("auto")]
+        if not manual or not await public_proxies.direct_ok():
+            return []  # сервер сам не дошёл до проверочного сайта: прокси тут ни при чём
+
+        async def alive(loc):
+            return bool(await public_proxies.probe(loc["proxy"]) or await public_proxies.probe(loc["proxy"]))
+
         changes = []
-        for loc in self.locations:
-            if not loc["proxy"] or loc.get("auto"):
-                continue  # авто-локации проверяет и подменяет auto_proxy_job
-            ob = parse_proxy(loc["proxy"])["settings"]["servers"][0]
-            try:
-                _, w = await asyncio.wait_for(asyncio.open_connection(ob["address"], ob["port"]), timeout)
-                w.close()
-                alive = True
-            except (OSError, asyncio.TimeoutError):
-                alive = False
-            if bool(loc.get("down")) == alive:
-                loc["down"] = not alive
-                changes.append((loc, alive))
+        for loc, ok in zip(manual, await asyncio.gather(*(alive(l) for l in manual))):
+            if bool(loc.get("down")) == ok:
+                loc["down"] = not ok
+                changes.append((loc, ok))
         if changes:
             self._save()
         return changes
@@ -257,6 +306,12 @@ class XrayProvider(VpnProvider):
                 names.append(b["sni"])
         return names
 
+    def relay_outbound(self, code: str) -> dict:
+        """Авто-страна выходит через локальный ретранслятор: он сам выбирает живой прокси."""
+        return {"protocol": "socks", "settings": {"servers": [{
+            "address": "127.0.0.1", "port": self.relay_port,
+            "users": [{"user": code, "pass": self.relay_password}]}]}}
+
     def build_config(self) -> dict:
         now = time.time()
         active = [int(u) for u, exp in self.state["users"].items() if exp > now]
@@ -275,10 +330,20 @@ class XrayProvider(VpnProvider):
         for loc in self.locations:
             if not loc["proxy"]:
                 continue
-            outbounds.append({"tag": f"out-{loc['code']}", **parse_proxy(loc["proxy"])})
-            if by_loc.get(loc["code"]):
-                rules.append({"type": "field", "user": by_loc[loc["code"]],
-                              "outboundTag": f"out-{loc['code']}"})
+            users = by_loc.get(loc["code"])
+            if loc.get("auto"):
+                outbounds.append({"tag": f"out-{loc['code']}", **self.relay_outbound(loc["code"])})
+                if users:
+                    # Публичные прокси UDP не пересылают: запросы DNS уходят с самого сервера,
+                    # остальной UDP отклоняется, и приложения сразу переходят на TCP.
+                    rules.append({"type": "field", "user": users, "network": "udp", "port": "53",
+                                  "outboundTag": "direct"})
+                    rules.append({"type": "field", "user": users, "network": "udp",
+                                  "outboundTag": "block"})
+            else:
+                outbounds.append({"tag": f"out-{loc['code']}", **parse_proxy(loc["proxy"])})
+            if users:
+                rules.append({"type": "field", "user": users, "outboundTag": f"out-{loc['code']}"})
 
         return {
             "log": {"loglevel": "warning", "access": "none"},
@@ -409,4 +474,5 @@ def from_env() -> XrayProvider:
         auto_enabled=e.get("AUTO_PROXY", "0") == "1",
         auto_countries=[c.strip().lower() for c in e.get("AUTO_PROXY_COUNTRIES", "").replace(" ", "").split(",") if c.strip()],
         auto_max=int(e.get("AUTO_PROXY_MAX", "8")),
+        relay_port=int(e.get("AUTO_RELAY_PORT", "20808")),
     )

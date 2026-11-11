@@ -1,30 +1,32 @@
-"""Бесплатные публичные прокси из открытых источников.
+"""Бесплатные публичные прокси из открытых источников: сбор, туннель и проверка.
 
-Качает списки прокси с нескольких открытых источников, группирует по странам
-и умеет проверять, что прокси реально пропускает трафик (а не просто принимает
-соединение). Этим пользуется авто-режим в боте: он сам добавляет страны из
-публичных прокси и подменяет упавший прокси на живой.
+Проверка прокси настоящая: через него открывается туннель до HTTPS-сайта, проверяется
+сертификат (прокси, который подменяет шифрование, не проходит) и читается страна,
+из которой сайт видит подключение. Так отсеиваются мёртвые прокси, «пустышки» без
+поддержки туннелей и прокси, которые выходят в интернет не из заявленной страны.
 
-Важно: публичные прокси нестабильны и небезопасны — через них идёт трафик
-клиентов. Это запасной/бесплатный вариант, а не замена платным прокси страны.
-Поэтому авто-режим по умолчанию выключен (AUTO_PROXY=0).
+Публичные прокси нестабильны, и их владельцы видят, к каким адресам идут подключения.
+Это бесплатный запасной вариант, а не замена платным прокси.
 """
 
 import asyncio
+import base64
+import ipaddress
 import json
 import logging
 import random
+import re
+import socket
+import ssl
 import time
 import urllib.request
-from urllib.parse import urlparse
+from typing import NamedTuple
+from urllib.parse import unquote, urlparse
 
 log = logging.getLogger("vpn-bot.pubproxy")
 
-# Xray-выход умеет socks5 и http, поэтому берём только их (socks4/https пропускаем).
 ALLOWED = ("socks5", "http")
 
-# Открытые источники. Каждый парсер устойчив к сбоям: если источник недоступен
-# или сменил формат, он просто пропускается, а остальные работают.
 SOURCES = [
     ("proxifly", "https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/all/data.json"),
     ("proxyscrape", "https://api.proxyscrape.com/v4/free-proxy-list/get"
@@ -33,9 +35,15 @@ SOURCES = [
                 "&sort_by=lastChecked&sort_type=desc"),
 ]
 
-CACHE_TTL = 300          # секунд: как часто реально ходим за списками
-MAX_PER_COUNTRY = 120    # сколько кандидатов на страну держим в пуле
+CACHE_TTL = 900
+MAX_PER_COUNTRY = 150
 _cache = {"at": 0.0, "pool": {}}
+
+# Сайт для проверки: отвечает текстом со строкой loc=XX — страной, из которой пришли.
+CHECK_HOST = "www.cloudflare.com"
+CHECK_PORT = 443
+CHECK_PATH = "/cdn-cgi/trace"
+_ssl_ctx: ssl.SSLContext | None = None
 
 RU_NAMES = {
     "us": "США", "gb": "Британия", "uk": "Британия", "de": "Германия", "nl": "Нидерланды",
@@ -51,11 +59,11 @@ RU_NAMES = {
     "lv": "Латвия", "lt": "Литва", "ee": "Эстония", "rs": "Сербия", "hr": "Хорватия",
     "si": "Словения", "is": "Исландия", "lu": "Люксембург", "ec": "Эквадор", "pe": "Перу",
     "bd": "Бангладеш", "pk": "Пакистан", "eg": "Египет", "ng": "Нигерия", "ru": "Россия",
+    "ge": "Грузия", "am": "Армения", "cy": "Кипр", "mt": "Мальта", "cn": "Китай",
 }
 
 
 def flag(cc: str) -> str:
-    """Эмодзи-флаг из ISO-кода страны (nl -> 🇳🇱)."""
     cc = (cc or "").upper()
     if len(cc) != 2 or not cc.isalpha():
         return "🏳"
@@ -63,34 +71,27 @@ def flag(cc: str) -> str:
 
 
 def country_name(cc: str) -> str:
-    """Название страны для подписки: «🇳🇱 Нидерланды» (для неизвестных — код)."""
     cc = (cc or "").lower()
     return f"{flag(cc)} {RU_NAMES.get(cc, cc.upper())}"
 
 
-def _valid(cc, ip, port) -> bool:
-    return (isinstance(cc, str) and len(cc) == 2 and cc.isalpha()
-            and bool(ip) and bool(port) and str(port).isdigit())
-
+# ---------- сбор списков ----------
 
 def _add(pool: dict, cc, proto, ip, port) -> None:
-    proto = (proto or "").lower()
-    cc = (cc or "").lower()
-    if proto not in ALLOWED or not _valid(cc, ip, port):
+    proto, cc = (proto or "").lower(), (cc or "").lower()
+    if proto not in ALLOWED or len(cc) != 2 or not cc.isalpha() or not ip or not str(port).isdigit():
         return
     pool.setdefault(cc, set()).add(f"{proto}://{ip}:{int(port)}")
 
 
 def _parse_proxifly(data, pool) -> None:
     for p in data:
-        geo = p.get("geolocation") or {}
-        _add(pool, geo.get("country"), p.get("protocol"), p.get("ip"), p.get("port"))
+        _add(pool, (p.get("geolocation") or {}).get("country"), p.get("protocol"), p.get("ip"), p.get("port"))
 
 
 def _parse_proxyscrape(data, pool) -> None:
     for p in data.get("proxies", []):
-        _add(pool, (p.get("ip_data") or {}).get("countryCode"),
-             p.get("protocol"), p.get("ip"), p.get("port"))
+        _add(pool, (p.get("ip_data") or {}).get("countryCode"), p.get("protocol"), p.get("ip"), p.get("port"))
 
 
 def _parse_geonode(data, pool) -> None:
@@ -103,32 +104,29 @@ PARSERS = {"proxifly": _parse_proxifly, "proxyscrape": _parse_proxyscrape, "geon
 
 
 def _fetch_json(url: str, timeout: float = 25.0):
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (vpn-bot)"})
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8", "replace"))
 
 
 def _collect() -> dict[str, list[str]]:
-    """Качает все источники и собирает {код_страны: [url прокси, ...]}. Блокирующая."""
     pool: dict[str, set] = {}
     for name, url in SOURCES:
         try:
-            data = _fetch_json(url)
-            PARSERS[name](data, pool)
-        except Exception as e:  # источник недоступен или сменил формат — не роняем остальные
+            PARSERS[name](_fetch_json(url), pool)
+        except Exception as e:
             log.warning("источник прокси %s недоступен: %s", name, e)
     out = {}
     for cc, urls in pool.items():
         lst = list(urls)
         random.shuffle(lst)
         out[cc] = lst[:MAX_PER_COUNTRY]
-    log.info("публичные прокси: %d стран, всего %d адресов",
-             len(out), sum(len(v) for v in out.values()))
+    log.info("публичные прокси: %d стран, %d адресов", len(out), sum(len(v) for v in out.values()))
     return out
 
 
 async def fetch_pool(force: bool = False) -> dict[str, list[str]]:
-    """{код_страны: [url, ...]} из всех источников. Кэшируется на CACHE_TTL секунд."""
+    """{код_страны: [url, ...]}. При сбое всех источников возвращает прошлый список."""
     now = time.time()
     if not force and _cache["pool"] and now - _cache["at"] < CACHE_TTL:
         return _cache["pool"]
@@ -138,13 +136,155 @@ async def fetch_pool(force: bool = False) -> dict[str, list[str]]:
     return _cache["pool"]
 
 
-# ---------- проверка, что прокси реально работает ----------
-# Через прокси ходим на http://www.gstatic.com/generate_204 — он отвечает 204 без тела.
-# Это ловит и мёртвые прокси, и «пустышки», которые принимают соединение, но не пересылают.
+# ---------- туннель через прокси ----------
 
-_CHK_HOST = b"www.gstatic.com"
-_CHK_REQ = (b"GET /generate_204 HTTP/1.1\r\nHost: www.gstatic.com\r\n"
-            b"User-Agent: curl/8\r\nConnection: close\r\n\r\n")
+class ProxyDown(Exception):
+    """Сам прокси недоступен, не отвечает или не принял логин."""
+
+
+class TunnelRefused(Exception):
+    """Прокси жив, но не открыл подключение к запрошенному адресу."""
+
+
+def split_proxy(url: str) -> tuple[str, str, int, str, str]:
+    u = urlparse(url.strip())
+    scheme = "socks5" if u.scheme in ("socks5", "socks") else u.scheme
+    if scheme not in ALLOWED or not u.hostname or not u.port:
+        raise ValueError(f"непонятный адрес прокси: {url}")
+    return scheme, u.hostname, u.port, unquote(u.username or ""), unquote(u.password or "")
+
+
+async def _recv_exact(loop, sock, n: int) -> bytes:
+    buf = b""
+    while len(buf) < n:
+        chunk = await loop.sock_recv(sock, n - len(buf))
+        if not chunk:
+            raise ProxyDown("прокси закрыл соединение")
+        buf += chunk
+    return buf
+
+
+async def _socks5_greet(loop, sock, user: str, pwd: str) -> None:
+    await loop.sock_sendall(sock, b"\x05\x02\x00\x02" if user else b"\x05\x01\x00")
+    ver, method = await _recv_exact(loop, sock, 2)
+    if ver != 5 or method not in (0, 2) or (method == 2 and not user):
+        raise ProxyDown("прокси не говорит по SOCKS5 или требует логин")
+    if method == 2:
+        u, p = user.encode(), pwd.encode()
+        await loop.sock_sendall(sock, b"\x01" + bytes([len(u)]) + u + bytes([len(p)]) + p)
+        if (await _recv_exact(loop, sock, 2))[1] != 0:
+            raise ProxyDown("прокси не принял логин")
+
+
+async def _socks5_connect(loop, sock, host: str, port: int) -> None:
+    try:
+        ip = ipaddress.ip_address(host)
+        addr = (b"\x01" if ip.version == 4 else b"\x04") + ip.packed
+    except ValueError:
+        name = host.encode("idna")
+        addr = b"\x03" + bytes([len(name)]) + name
+    await loop.sock_sendall(sock, b"\x05\x01\x00" + addr + port.to_bytes(2, "big"))
+    rep = await _recv_exact(loop, sock, 4)
+    if rep[0] != 5 or rep[1] != 0:
+        raise TunnelRefused(f"SOCKS5 отказ {rep[1]}")
+    if rep[3] == 1:
+        await _recv_exact(loop, sock, 6)
+    elif rep[3] == 4:
+        await _recv_exact(loop, sock, 18)
+    elif rep[3] == 3:
+        await _recv_exact(loop, sock, (await _recv_exact(loop, sock, 1))[0] + 2)
+    else:
+        raise ProxyDown("непонятный ответ SOCKS5")
+
+
+async def _http_connect(loop, sock, host: str, port: int, user: str, pwd: str) -> None:
+    target = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
+    req = f"CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n"
+    if user:
+        req += "Proxy-Authorization: Basic " + base64.b64encode(f"{user}:{pwd}".encode()).decode() + "\r\n"
+    await loop.sock_sendall(sock, (req + "\r\n").encode())
+    # Читаем по байту: после заголовков сразу идут данные туннеля, лишнего забирать нельзя.
+    buf = b""
+    while not buf.endswith(b"\r\n\r\n"):
+        if len(buf) > 8192:
+            raise ProxyDown("слишком длинный ответ прокси")
+        buf += await _recv_exact(loop, sock, 1)
+    m = re.match(rb"HTTP/\d\.\d (\d{3})", buf)
+    if not m:
+        raise ProxyDown("прокси ответил не по HTTP")
+    code = int(m.group(1))
+    if code == 407:
+        raise ProxyDown("прокси не принял логин")
+    if code != 200:
+        raise TunnelRefused(f"HTTP {code}")
+
+
+async def open_tunnel(url: str, host: str, port: int, timeout: float = 6.0) -> socket.socket:
+    """Открывает через прокси подключение к host:port. Возвращает готовый сокет.
+    ProxyDown — виноват прокси, TunnelRefused — прокси жив, но до адреса не дошёл."""
+    scheme, phost, pport, user, pwd = split_proxy(url)
+    loop = asyncio.get_running_loop()
+    sock = None
+    try:
+        try:
+            info = (await asyncio.wait_for(
+                loop.getaddrinfo(phost, pport, type=socket.SOCK_STREAM), timeout))[0]
+            sock = socket.socket(info[0], socket.SOCK_STREAM)
+            sock.setblocking(False)
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            await asyncio.wait_for(loop.sock_connect(sock, info[4]), timeout)
+            if scheme == "socks5":
+                await asyncio.wait_for(_socks5_greet(loop, sock, user, pwd), timeout)
+        except (OSError, asyncio.TimeoutError) as e:
+            raise ProxyDown(str(e) or "прокси не отвечает") from None
+        try:
+            step = (_socks5_connect(loop, sock, host, port) if scheme == "socks5"
+                    else _http_connect(loop, sock, host, port, user, pwd))
+            await asyncio.wait_for(step, timeout * 2)
+        except asyncio.TimeoutError:
+            raise TunnelRefused("прокси не дождался ответа от адреса") from None
+        except OSError as e:
+            raise ProxyDown(str(e)) from None
+        return sock
+    except BaseException:
+        if sock is not None:
+            sock.close()
+        raise
+
+
+# ---------- проверка ----------
+
+class Probe(NamedTuple):
+    country: str  # код страны, из которой прокси выходит в интернет
+    ms: int       # время полного запроса через прокси
+
+
+def _ctx() -> ssl.SSLContext:
+    global _ssl_ctx
+    if _ssl_ctx is None:
+        _ssl_ctx = ssl.create_default_context()
+    return _ssl_ctx
+
+
+_TRACE_REQ = (f"GET {CHECK_PATH} HTTP/1.1\r\nHost: {{host}}\r\nUser-Agent: curl/8.5.0\r\n"
+              "Accept: */*\r\nConnection: close\r\n\r\n")
+
+
+async def _read_trace(reader, writer, timeout: float) -> str | None:
+    writer.write(_TRACE_REQ.format(host=CHECK_HOST).encode())
+    await writer.drain()
+    data = b""
+    while len(data) < 16384:
+        chunk = await asyncio.wait_for(reader.read(4096), timeout)
+        if not chunk:
+            break
+        data += chunk
+        if re.search(rb"\nloc=\w+\s", data):
+            break
+    if not data.startswith(b"HTTP/1.1 200") and not data.startswith(b"HTTP/1.0 200"):
+        return None
+    m = re.search(rb"\nloc=([A-Za-z0-9]{2})\s", data)
+    return m.group(1).decode().lower() if m else None
 
 
 async def _close(writer) -> None:
@@ -155,84 +295,76 @@ async def _close(writer) -> None:
         pass
 
 
-async def _read_status_ok(reader, timeout) -> bool:
-    line = await asyncio.wait_for(reader.readline(), timeout)
-    return b" 204" in line or b" 200" in line
-
-
-async def _check_socks5(host, port, timeout) -> bool:
-    reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout)
+async def _probe(url: str, timeout: float) -> Probe | None:
+    t0 = time.monotonic()
+    sock = await open_tunnel(url, CHECK_HOST, CHECK_PORT, timeout)
     try:
-        writer.write(b"\x05\x01\x00")              # greeting: без аутентификации
-        await writer.drain()
-        if await asyncio.wait_for(reader.readexactly(2), timeout) != b"\x05\x00":
-            return False
-        req = b"\x05\x01\x00\x03" + bytes([len(_CHK_HOST)]) + _CHK_HOST + (80).to_bytes(2, "big")
-        writer.write(req)                           # CONNECT www.gstatic.com:80
-        await writer.drain()
-        rep = await asyncio.wait_for(reader.readexactly(4), timeout)
-        if rep[1] != 0x00:                          # 0 — успех
-            return False
-        atyp = rep[3]
-        if atyp == 0x01:
-            await asyncio.wait_for(reader.readexactly(4 + 2), timeout)
-        elif atyp == 0x04:
-            await asyncio.wait_for(reader.readexactly(16 + 2), timeout)
-        elif atyp == 0x03:
-            ln = await asyncio.wait_for(reader.readexactly(1), timeout)
-            await asyncio.wait_for(reader.readexactly(ln[0] + 2), timeout)
-        writer.write(_CHK_REQ)
-        await writer.drain()
-        return await _read_status_ok(reader, timeout)
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(sock=sock, ssl=_ctx(), server_hostname=CHECK_HOST), timeout)
+    except BaseException:
+        sock.close()
+        raise
+    try:
+        country = await _read_trace(reader, writer, timeout)
     finally:
         await _close(writer)
+    return Probe(country, int((time.monotonic() - t0) * 1000)) if country else None
 
 
-async def _check_http(host, port, timeout) -> bool:
-    reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout)
+async def probe(url: str, timeout: float = 6.0) -> Probe | None:
+    """Полная проверка прокси. None — не работает. Никогда не бросает."""
     try:
-        writer.write(b"GET http://www.gstatic.com/generate_204 HTTP/1.1\r\n"
-                     b"Host: www.gstatic.com\r\nUser-Agent: curl/8\r\n"
-                     b"Proxy-Connection: close\r\nConnection: close\r\n\r\n")
-        await writer.drain()
-        return await _read_status_ok(reader, timeout)
-    finally:
-        await _close(writer)
-
-
-async def validate(url: str, timeout: float = 6.0) -> bool:
-    """True, если прокси доступен и пропускает HTTP-трафик. Никогда не бросает."""
-    try:
-        u = urlparse(url)
-        if not u.hostname or not u.port:
-            return False
-        if u.scheme == "socks5":
-            return await asyncio.wait_for(_check_socks5(u.hostname, u.port, timeout), timeout * 3)
-        if u.scheme == "http":
-            return await asyncio.wait_for(_check_http(u.hostname, u.port, timeout), timeout * 2)
-        return False
+        return await asyncio.wait_for(_probe(url, timeout), timeout * 2.5)
     except Exception:
-        return False
-
-
-async def first_working(urls, timeout: float = 6.0, concurrency: int = 20, tries: int = 50) -> str | None:
-    """Проверяет кандидатов (параллельно, с ограничением) и возвращает первый рабочий."""
-    urls = list(urls)[:tries]
-    if not urls:
         return None
+
+
+async def direct_ok(timeout: float = 8.0) -> bool:
+    """Доступен ли проверочный сайт с самого сервера. Если нет, выводы о прокси делать нельзя."""
+    async def go():
+        reader, writer = await asyncio.open_connection(
+            CHECK_HOST, CHECK_PORT, ssl=_ctx(), server_hostname=CHECK_HOST)
+        try:
+            return bool(await _read_trace(reader, writer, timeout))
+        finally:
+            await _close(writer)
+    for _ in range(2):
+        try:
+            if await asyncio.wait_for(go(), timeout):
+                return True
+        except Exception:
+            pass
+    return False
+
+
+async def pick_working(urls, country: str, need: int = 1, *, timeout: float = 6.0,
+                       concurrency: int = 20, tries: int = 30,
+                       failed: set | None = None) -> list[tuple[str, int]]:
+    """Ищет среди кандидатов прокси, которые работают и выходят из нужной страны.
+    Возвращает до need штук (url, мс), самые быстрые первыми. В failed попадают непрошедшие."""
+    urls = list(urls)[:tries]
+    if not urls or need < 1:
+        return []
     sem = asyncio.Semaphore(concurrency)
 
     async def check(u):
         async with sem:
-            return u if await validate(u, timeout) else None
+            return u, await probe(u, timeout)
 
+    good = []
     tasks = [asyncio.create_task(check(u)) for u in urls]
     try:
         for fut in asyncio.as_completed(tasks):
-            res = await fut
-            if res:
-                return res
-        return None
+            u, res = await fut
+            if res and res.country == country:
+                good.append((u, res.ms))
+                if len(good) > need:  # один запасной, чтобы было из чего выбрать быстрый
+                    break
+            elif failed is not None:
+                failed.add(u)
     finally:
         for t in tasks:
             t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+    good.sort(key=lambda x: x[1])
+    return good[:need]
