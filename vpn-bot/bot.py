@@ -24,6 +24,7 @@ from telegram.ext import (Application, CallbackQueryHandler, CommandHandler, Con
 
 import config
 import make_banner
+import public_proxies
 from db import DAY, DB
 from vpn import get_provider
 
@@ -1057,6 +1058,7 @@ def admin_text() -> str:
             "/addpromo <code>КОД</code> <code>дней</code> <code>активаций</code>\n"
             "/payments <code>id</code> или <code>@ник</code>: платежи гостя\n"
             "/locations: страны и мосты для обхода\n"
+            "/autoproxy: авто-страны из публичных прокси\n"
             f"/testpay: тестовая оплата на {config.TEST_PLAN[2]} ⭐\n"
             "Тикеты: ответьте на сообщение гостя, и ответ уйдёт ему")
 
@@ -1244,8 +1246,9 @@ def locations_text() -> str:
     lines = []
     for l in getattr(vpn, "locations", []):
         how = "через прокси" if l["proxy"] else "напрямую с сервера"
+        tag = " · 🤖 авто" if l.get("auto") else ""
         state = " · ❌ прокси не отвечает, скрыта" if l.get("down") else ""
-        lines.append(f"◆ <code>{esc(l['code'])}</code> · {esc(l['name'])} · <i>{how}</i>{state}")
+        lines.append(f"◆ <code>{esc(l['code'])}</code> · {esc(l['name'])} · <i>{how}</i>{tag}{state}")
     bridges = [f"◆ <code>{esc(b['code'])}</code> · {esc(b['name'])} · {esc(b['host'])}:{b['port']}"
                + (f" · маскировка {esc(b['sni'])}" if b["sni"] else "")
                for b in getattr(vpn, "bridges", [])]
@@ -1333,6 +1336,163 @@ async def delloc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     ok = vpn.remove_location(context.args[0])
     await update.message.reply_text(("Удалено.\n\n" if ok else "Такой страны нет, или она последняя.\n\n")
                                     + locations_text())
+
+
+# ---------------------------------------------------------------- авто-прокси (публичные)
+
+async def _auto_proxy_refresh(context: ContextTypes.DEFAULT_TYPE) -> str:
+    """Главный цикл авто-режима: добавляет страны из публичных прокси и подменяет
+    упавшие. Ничего не бросает. Возвращает краткий отчёт об изменениях (или '')."""
+    cfg = vpn.auto
+    try:
+        pool = await public_proxies.fetch_pool()
+    except Exception as e:
+        log.warning("авто-прокси: не удалось получить списки: %s", e)
+        return ""
+    if not pool:
+        return ""
+
+    manual = vpn.manual_codes()
+    wanted = [c for c in (cfg.get("countries") or []) if c not in manual]
+    maxn = max(1, int(cfg.get("max") or 8))
+    current = {l["country"]: l for l in vpn.auto_locations()}
+
+    if wanted:
+        targets = wanted
+    else:  # режим подбора: берём страны, где больше всего кандидатов
+        ranked = sorted(pool, key=lambda c: len(pool[c]), reverse=True)
+        discovered = [c for c in ranked if c not in manual]
+        targets = list(dict.fromkeys(list(current.keys()) + discovered))[:maxn]
+        targets = [c for c in targets if c not in manual]
+
+    added, swapped, removed, lost = [], [], [], []
+
+    # 1) существующие авто-страны: лишние убираем, упавшие — подменяем на живой прокси
+    for cc, loc in current.items():
+        if cc not in targets:
+            vpn.remove_location(cc)
+            removed.append(cc)
+            continue
+        alive = await public_proxies.validate(loc["proxy"]) or await public_proxies.validate(loc["proxy"])
+        if alive:
+            if loc.get("down"):              # ожил сам
+                loc["down"] = False
+                vpn._save()
+                vpn.schedule_apply()
+            continue
+        others = [u for u in pool.get(cc, []) if u != loc["proxy"]]
+        new = await public_proxies.first_working(others)
+        if new:
+            vpn.set_auto_location(cc, public_proxies.country_name(cc), new)
+            swapped.append(cc)
+        elif not loc.get("down"):            # замены нет — прячем страну до следующего раза
+            loc["down"] = True
+            vpn._save()
+            vpn.schedule_apply()
+            lost.append(cc)
+
+    # 2) добавляем недостающие целевые страны (с учётом лимита в режиме подбора)
+    for cc in targets:
+        if cc in current:
+            continue
+        if not wanted and len(vpn.auto_locations()) >= maxn:
+            break
+        new = await public_proxies.first_working(pool.get(cc, []))
+        if new and vpn.set_auto_location(cc, public_proxies.country_name(cc), new):
+            added.append(cc)
+
+    parts = []
+    nm = public_proxies.country_name
+    if added:
+        parts.append("➕ добавлены: " + ", ".join(nm(c) for c in added))
+    if swapped:
+        parts.append("🔁 заменён упавший прокси: " + ", ".join(nm(c) for c in swapped))
+    if lost:
+        parts.append("⚠️ нет живого прокси, скрыты: " + ", ".join(nm(c) for c in lost))
+    if removed:
+        parts.append("➖ убраны: " + ", ".join(nm(c) for c in removed))
+    return "🤖 Авто-прокси\n" + "\n".join(parts) if parts else ""
+
+
+async def auto_proxy_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Периодически: сам добавляет страны из публичных прокси и меняет их при отвале."""
+    if not hasattr(vpn, "auto") or not vpn.auto.get("enabled"):
+        return
+    msg = await _auto_proxy_refresh(context)
+    if msg:
+        await notify_admins(context, msg)
+
+
+def _auto_status_text() -> str:
+    cfg = vpn.auto
+    state = "включён ✅" if cfg.get("enabled") else "выключен ⛔"
+    countries = cfg.get("countries") or []
+    where = ", ".join(c.upper() for c in countries) if countries else f"подбор (до {cfg.get('max', 8)} стран)"
+    live = [l for l in vpn.auto_locations() if not l.get("down")]
+    now = ", ".join(l["name"] for l in live) or "пока нет"
+    return (f"<b>Авто-прокси (публичные)</b>\n\n"
+            f"Статус: {state}\n"
+            f"Страны: {esc(where)}\n"
+            f"Сейчас работают: {esc(now)}\n\n"
+            "Бот сам берёт бесплатные прокси из открытых списков, добавляет из них страны "
+            "и подменяет прокси, когда он отваливается.\n"
+            "⚠️ Публичные прокси нестабильны и небезопасны — через них идёт трафик клиентов. "
+            "Это бесплатный запасной вариант, а не замена платным прокси страны.\n\n"
+            "<b>Команды</b>\n"
+            "/autoproxy on — включить\n"
+            "/autoproxy off — выключить\n"
+            "/autoproxy now — проверить и обновить прямо сейчас\n"
+            "/autoproxy countries nl de us — задать страны (ISO-коды)\n"
+            "/autoproxy countries auto — режим подбора (любые страны)\n"
+            "/autoproxy max 8 — сколько стран держать в режиме подбора\n"
+            "/autoproxy clear — убрать все авто-страны")
+
+
+@admin_only
+async def autoproxy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not hasattr(vpn, "auto"):
+        await update.message.reply_text("Авто-прокси доступен при настоящем VPN (VPN_MODE=xray).")
+        return
+    args = context.args
+    if not args:
+        await update.message.reply_text(_auto_status_text())
+        return
+    sub = args[0].lower()
+    if sub in ("on", "вкл", "включить"):
+        vpn.set_auto(enabled=True)
+        await update.message.reply_text("Авто-прокси включён. Проверяю публичные списки…")
+        msg = await _auto_proxy_refresh(context)
+        await update.message.reply_text(msg or "Готово. " + _auto_status_text())
+    elif sub in ("off", "выкл", "выключить"):
+        vpn.set_auto(enabled=False)
+        await update.message.reply_text("Авто-прокси выключен. Уже добавленные авто-страны остаются "
+                                        "(убрать — /autoproxy clear).")
+    elif sub == "now":
+        await update.message.reply_text("Проверяю публичные прокси, это займёт до минуты…")
+        msg = await _auto_proxy_refresh(context)
+        await update.message.reply_text(msg or "Готово, изменений нет.\n\n" + locations_text())
+    elif sub == "clear":
+        n = vpn.clear_auto_locations()
+        await update.message.reply_text(f"Убрано авто-стран: {n}.")
+    elif sub == "countries":
+        rest = [a.lower() for a in args[1:]]
+        if not rest or rest[0] in ("auto", "any", "подбор"):
+            vpn.set_auto(countries=[])
+            await update.message.reply_text("Режим подбора: бот сам выберет страны с живыми прокси.")
+        else:
+            bad = [c for c in rest if not (len(c) == 2 and c.isalpha())]
+            if bad:
+                await update.message.reply_text("Нужны ISO-коды из 2 букв, например: nl de us. "
+                                                f"Непонятно: {esc(' '.join(bad))}")
+                return
+            vpn.set_auto(countries=rest)
+            await update.message.reply_text("Страны заданы: " + ", ".join(c.upper() for c in rest)
+                                            + ".\nОбновить сейчас — /autoproxy now")
+    elif sub == "max" and len(args) > 1 and args[1].isdigit():
+        vpn.set_auto(max=int(args[1]))
+        await update.message.reply_text(f"В режиме подбора держу до {int(args[1])} стран.")
+    else:
+        await update.message.reply_text(_auto_status_text())
 
 
 # ---------------------------------------------------------------- фоновые задачи
@@ -1424,7 +1584,7 @@ def build_app(token: str) -> Application:
                     ("admin", admin), ("give", give), ("addpromo", addpromo), ("refund", refund),
                     ("testpay", testpay), ("payments", payments), ("locations", locations),
                     ("addloc", addloc), ("delloc", delloc), ("addbridge", addbridge),
-                    ("delbridge", delbridge)]:
+                    ("delbridge", delbridge), ("autoproxy", autoproxy)]:
         app.add_handler(CommandHandler(cmd, fn))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(PreCheckoutQueryHandler(precheckout))
@@ -1433,6 +1593,7 @@ def build_app(token: str) -> Application:
     app.add_error_handler(on_error)
     app.job_queue.run_repeating(lifecycle_job, interval=3600, first=30)
     app.job_queue.run_repeating(proxy_health_job, interval=600, first=60)
+    app.job_queue.run_repeating(auto_proxy_job, interval=900, first=90)
     return app
 
 
