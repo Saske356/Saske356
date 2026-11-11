@@ -16,6 +16,110 @@ SUB_PORT="${SUB_PORT:-2096}"
 say()  { printf '\n\033[1;33m== %s\033[0m\n' "$*"; }
 fail() { printf '\n\033[1;31mОшибка: %s\033[0m\n' "$*" >&2; exit 1; }
 ask()  { local q="$1" def="${2:-}" v; read -rp "$q${def:+ [$def]}: " v </dev/tty; printf '%s' "${v:-$def}"; }
+# Связь с GitHub с некоторых серверов рвётся: каждую загрузку повторяем до 5 раз.
+retry() {
+  local n
+  for n in 1 2 3 4 5; do
+    "$@" && return 0
+    [ "$n" -lt 5 ] && { echo "Связь оборвалась, пробую ещё раз ($((n+1)) из 5)..."; sleep $((n*3)); }
+  done
+  return 1
+}
+retry3() { local n; for n in 1 2 3; do "$@" && return 0; [ "$n" -lt 3 ] && { echo "Пробую ещё раз ($((n+1)) из 3)..."; sleep 5; }; done; return 1; }
+fetch() { curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 15 "$@"; }
+
+XRAY_REPO=XTLS/Xray-core
+
+xray_arch() {
+  case "$(uname -m)" in
+    x86_64|amd64) echo 64 ;;
+    aarch64|arm64) echo arm64-v8a ;;
+    *) return 1 ;;
+  esac
+}
+
+# Загрузка, которая 30 секунд стоит на месте, считается оборванной.
+grab() {
+  curl -fsSL --retry 2 --retry-delay 3 --retry-all-errors --connect-timeout 15 \
+    --speed-limit 1024 --speed-time 30 -o "$1" "$2"
+}
+
+# Последняя версия Xray и SHA-256 её архива по данным GitHub API.
+xray_release() {
+  fetch -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$XRAY_REPO/releases/latest" \
+    | python3 -I -c '
+import json, sys
+d = json.load(sys.stdin)
+want = "Xray-linux-%s.zip" % sys.argv[1]
+digest = next((a.get("digest") or "" for a in d.get("assets", []) if a.get("name") == want), "")
+print(d["tag_name"], digest.split(":", 1)[1] if digest.startswith("sha256:") else "-")
+' "$1"
+}
+
+# С некоторых серверов архивы GitHub не скачиваются, поэтому есть запасное зеркало.
+# Архив принимается, только если его SHA-256 совпадает с опубликованным.
+download_xray_zip() {
+  local out="$1" arch info tag api_sum sum got url
+  arch=$(xray_arch) || { echo "Xray не поддерживает процессор $(uname -m)"; return 1; }
+  info=$(xray_release "$arch") || { echo "GitHub API не ответил"; return 1; }
+  read -r tag api_sum <<<"$info"
+  [ -n "$tag" ] || return 1
+  if [ -x "$XRAY" ] && "$XRAY" version 2>/dev/null | head -1 | grep -qF " ${tag#v} "; then
+    echo "Xray $tag уже установлен"
+    return 2
+  fi
+  local gh="https://github.com/$XRAY_REPO/releases/download/$tag/Xray-linux-$arch.zip"
+  # Контрольная сумма берётся только с GitHub: API или файл .dgst из официального релиза.
+  # Сумме с зеркала верить нельзя: подменённый архив пришёл бы вместе с подменённой суммой.
+  sum="$api_sum"
+  if [ "$sum" = "-" ] && grab "$out.dgst" "$gh.dgst"; then
+    sum=$(awk -F'= *' '/^SHA2-256/ {print $2; exit}' "$out.dgst")
+  fi
+  [ "$sum" = "-" ] && sum=""
+  for url in "$gh" "https://downloads.sourceforge.net/project/xray-core.mirror/$tag/Xray-linux-$arch.zip"; do
+    if [ -z "$sum" ] && [ "$url" != "$gh" ]; then
+      echo "Нет контрольной суммы с GitHub, поэтому зеркало не используем"
+      break
+    fi
+    echo "Качаю Xray $tag с $(printf '%s' "$url" | cut -d/ -f3)..."
+    rm -f "$out"
+    grab "$out" "$url" || { echo "Не скачалось, пробую другой источник"; continue; }
+    # без суммы принимаем только официальный архив с GitHub
+    [ -z "$sum" ] && return 0
+    got=$(sha256sum "$out" | cut -d' ' -f1)
+    [ -n "$sum" ] && [ "$got" = "$sum" ] && return 0
+    echo "Файл повреждён (контрольная сумма не совпала), пробую другой источник"
+  done
+  return 1
+}
+
+install_xray() {
+  local tmp rc
+  tmp=$(mktemp -d)
+  fetch -o "$tmp/install-release.sh" https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh \
+    || { rm -rf "$tmp"; return 1; }
+  # Обрезанный файл без последней строки запускать нельзя.
+  tail -n 3 "$tmp/install-release.sh" | grep -q '^main "\$@"' || { rm -rf "$tmp"; return 1; }
+  download_xray_zip "$tmp/xray.zip"
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    bash "$tmp/install-release.sh" install -l "$tmp/xray.zip" >/dev/null
+    rc=$?
+  elif [ "$rc" -eq 2 ]; then
+    rc=0
+  fi
+  rm -rf "$tmp"
+  return $rc
+}
+
+get_code() {
+  if [ -d "$DIR/.git" ]; then
+    git -C "$DIR" fetch -q origin "$BRANCH" && git -C "$DIR" checkout -q -B "$BRANCH" "origin/$BRANCH"
+  else
+    [ -f "$ENV" ] || rm -rf "$DIR"
+    git clone -q -b "$BRANCH" "$REPO" "$DIR"
+  fi
+}
 
 [ "$(id -u)" -eq 0 ] || fail "запустите от root (sudo -i)"
 . /etc/os-release
@@ -29,8 +133,8 @@ if [ "${1:-}" = "bridge" ]; then
   MAIN=$(ask "IP основного VPN-сервера")
   printf '%s' "$MAIN" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' || fail "нужен IP вида 1.2.3.4"
   say "Ставлю пересылку 443 → $MAIN:443"
-  apt-get update -qq
-  apt-get install -y -qq nftables >/dev/null
+  retry apt-get update -qq || fail "не удалось обновить список пакетов"
+  retry apt-get install -y -qq nftables >/dev/null || fail "не удалось поставить nftables"
   echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/99-aurora-bridge.conf
   sysctl -q -p /etc/sysctl.d/99-aurora-bridge.conf
   cat > /etc/nftables.conf <<EOF
@@ -57,24 +161,26 @@ EOF
 fi
 
 say "Ставлю пакеты"
-apt-get update -qq
-apt-get install -y -qq curl git python3 python3-venv python3-pip openssl ca-certificates >/dev/null
+retry apt-get update -qq || fail "не удалось обновить список пакетов"
+retry apt-get install -y -qq curl unzip git python3 python3-venv python3-pip openssl ca-certificates >/dev/null \
+  || fail "не удалось поставить пакеты"
 
 say "Ставлю Xray"
-bash -c "$(curl -fsSL https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install >/dev/null
+if ! retry3 install_xray; then
+  if [ -x "$XRAY" ]; then
+    echo "Обновить Xray не вышло, оставляю уже установленный."
+  else
+    fail "Xray не скачался ни с GitHub, ни с зеркала. Подождите пару минут и запустите команду ещё раз"
+  fi
+fi
 [ -x "$XRAY" ] || fail "Xray не установился"
 "$XRAY" version | head -1
 
 say "Скачиваю бота"
-if [ -d "$DIR/.git" ]; then
-  git -C "$DIR" fetch -q origin "$BRANCH"
-  git -C "$DIR" checkout -q -B "$BRANCH" "origin/$BRANCH"
-else
-  git clone -q -b "$BRANCH" "$REPO" "$DIR"
-fi
+retry get_code || fail "не удалось скачать бота с GitHub. Запустите команду ещё раз"
 python3 -m venv "$BOT/.venv"
-"$BOT/.venv/bin/pip" install -q --upgrade pip
-"$BOT/.venv/bin/pip" install -q -r "$BOT/requirements.txt"
+retry "$BOT/.venv/bin/pip" install -q --upgrade pip || true
+retry "$BOT/.venv/bin/pip" install -q -r "$BOT/requirements.txt" || fail "не удалось поставить библиотеки Python"
 
 if [ ! -f "$ENV" ]; then
   say "Настройка (один раз)"
