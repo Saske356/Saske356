@@ -1,0 +1,29 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    defaults:
+      run:
+        working-directory: vpn-bot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: vpn-bot/requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Shell scripts parse
+        run: for f in *.sh; do bash -n "$f"; done
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
