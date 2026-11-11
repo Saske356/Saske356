@@ -55,6 +55,10 @@ class XrayProvider(VpnProvider):
         self.state = self._load(default_location, auto_enabled, list(auto_countries), auto_max)
         self._pending: asyncio.Task | None = None
         self._server: asyncio.base_events.Server | None = None
+        self.apply_error = ""        # почему последний конфиг не применён; пусто — всё в порядке
+        self.auto_rejected = False   # Xray принял конфиг только без авто-стран
+        self.on_problem = None       # async-функция (текст): сообщить админам
+        self._reported = ""
 
     # ---------- состояние ----------
 
@@ -126,7 +130,8 @@ class XrayProvider(VpnProvider):
     def manual_codes(self) -> set:
         return {l["code"] for l in self.locations if not l.get("auto")}
 
-    def set_auto_location(self, code: str, name: str, pool: list[str], ms: int | None = None) -> str:
+    def set_auto_location(self, code: str, name: str, pool: list[str], ms: int | None = None,
+                          apply: bool = True) -> str:
         """Задаёт авто-стране список прокси: первый рабочий, остальные запасные.
         Возвращает "added", "swapped", "kept" или "" (код занят страной, добавленной вручную).
         Xray перезапускается только при появлении новой страны: смена прокси идёт через ретранслятор."""
@@ -145,7 +150,8 @@ class XrayProvider(VpnProvider):
                 "code": code, "name": name.strip(), "proxy": pool[0], "auto": True, "country": code,
                 "pool": list(pool), "down": False, "since": time.time(), "swaps": 0, "ms": ms})
             self._save()
-            self.schedule_apply()
+            if apply:
+                self.schedule_apply()
             return "added"
         result = "kept"
         if loc["proxy"] != pool[0]:
@@ -153,6 +159,7 @@ class XrayProvider(VpnProvider):
             loc["since"] = time.time()
             result = "swapped"
         loc.update(proxy=pool[0], pool=list(pool), down=False, ms=ms)
+        loc.pop("down_since", None)
         self._save()
         return result
 
@@ -174,6 +181,10 @@ class XrayProvider(VpnProvider):
         for loc in self.auto_locations():
             if loc["code"] == code and bool(loc.get("down")) != down:
                 loc["down"] = down
+                if down:
+                    loc["down_since"] = time.time()
+                else:
+                    loc.pop("down_since", None)
                 self._save()
 
     def clear_auto_locations(self) -> int:
@@ -230,13 +241,14 @@ class XrayProvider(VpnProvider):
         self._save()
         self.schedule_apply()
 
-    def remove_location(self, code: str) -> bool:
+    def remove_location(self, code: str, apply: bool = True) -> bool:
         keep = [l for l in self.locations if l["code"] != code.lower()]
         if len(keep) == len(self.locations) or not keep:
             return False
         self.state["locations"] = keep
         self._save()
-        self.schedule_apply()
+        if apply:
+            self.schedule_apply()
         return True
 
     def add_bridge(self, code: str, name: str, address: str, sni: str = "") -> None:
@@ -294,7 +306,8 @@ class XrayProvider(VpnProvider):
 
     def links(self, user_id: int) -> list[str]:
         out = [self._link(self.user_uuid(user_id, loc["code"]), self.host, self.port, self.sni, loc["name"])
-               for loc in self.locations if not loc.get("down")]
+               for loc in self.locations
+               if not loc.get("down") and not (loc.get("auto") and self.auto_rejected)]
         direct = self.user_uuid(user_id, self.direct_location()["code"])
         out += [self._link(direct, b["host"], b["port"], b["sni"] or self.sni, b["name"]) for b in self.bridges]
         return out
@@ -312,12 +325,13 @@ class XrayProvider(VpnProvider):
             "address": "127.0.0.1", "port": self.relay_port,
             "users": [{"user": code, "pass": self.relay_password}]}]}}
 
-    def build_config(self) -> dict:
+    def build_config(self, with_auto: bool = True) -> dict:
+        locations = [l for l in self.locations if with_auto or not l.get("auto")]
         now = time.time()
         active = [int(u) for u, exp in self.state["users"].items() if exp > now]
         clients, by_loc = [], {}
         for uid in active:
-            for loc in self.locations:
+            for loc in locations:
                 email = f"u{uid}.{loc['code']}"
                 clients.append({"id": self.user_uuid(uid, loc["code"]), "flow": "xtls-rprx-vision",
                                 "email": email})
@@ -327,7 +341,7 @@ class XrayProvider(VpnProvider):
                      {"tag": "block", "protocol": "blackhole"}]
         rules = [{"type": "field", "ip": ["geoip:private"], "outboundTag": "block"},
                  {"type": "field", "protocol": ["bittorrent"], "outboundTag": "block"}]
-        for loc in self.locations:
+        for loc in locations:
             if not loc["proxy"]:
                 continue
             users = by_loc.get(loc["code"])
@@ -383,29 +397,60 @@ class XrayProvider(VpnProvider):
         return proc.returncode, out.decode(errors="replace")
 
     async def apply(self) -> bool:
-        """Пишет новый конфиг, проверяет его самим Xray и только потом перезапускает."""
-        cfg = json.dumps(self.build_config(), ensure_ascii=False, indent=1)
+        """Пишет новый конфиг, проверяет его самим Xray и только потом перезапускает.
+        Если Xray не принимает конфиг с авто-странами, применяется конфиг без них:
+        основная страна, купленные прокси и новые клиенты не должны от них зависеть."""
         # Xray определяет формат по расширению, поэтому временный файл тоже .json
         base = self.config_path[:-5] if self.config_path.endswith(".json") else self.config_path
         tmp = base + ".next.json"
         os.makedirs(os.path.dirname(self.config_path) or ".", exist_ok=True)
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(cfg)
-        os.chmod(tmp, 0o644)
         if not os.path.exists(self.xray_bin):
-            log.error("Xray не найден: %s. Конфиг не применён.", self.xray_bin)
-            return False
-        code, out = await self._run(self.xray_bin, "run", "-test", "-c", tmp)
-        if code != 0:
-            log.error("Xray отклонил конфиг, оставляю прежний:\n%s", out[-1500:])
-            return False
+            return await self._problem(f"Xray не найден: {self.xray_bin}. Конфиг не применён.")
+        has_auto = bool(self.auto_locations())
+        rejected = ""
+        for with_auto in ((True, False) if has_auto else (True,)):
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(json.dumps(self.build_config(with_auto), ensure_ascii=False, indent=1))
+            os.chmod(tmp, 0o644)
+            code, out = await self._run(self.xray_bin, "run", "-test", "-c", tmp)
+            if code == 0:
+                break
+            rejected = rejected or out.strip()[-600:]
+            log.error("Xray отклонил конфиг%s:\n%s", " с авто-странами" if with_auto and has_auto else "",
+                      out[-1500:])
+        else:
+            return await self._problem("Xray отклонил новый конфиг, работает прежний. Новые клиенты и страны "
+                                       "не подключены.\n" + rejected)
         os.replace(tmp, self.config_path)
         code, out = await self._run(*self.restart_cmd)
         if code != 0:
-            log.error("Не удалось перезапустить Xray: %s", out[-500:])
-            return False
+            return await self._problem("Не удалось перезапустить Xray: " + out.strip()[-400:])
+        self.auto_rejected = has_auto and not with_auto
         log.info("Xray обновлён: %d клиентов, стран: %d", len(self.state["users"]), len(self.locations))
+        if self.auto_rejected:
+            await self._problem("Xray не принял настройки авто-стран, поэтому они отключены и скрыты "
+                                "из подписки. Остальные страны работают.\n" + rejected)
+            return True
+        self.apply_error = self._reported = ""
         return True
+
+    async def _problem(self, text: str) -> bool:
+        log.error(text)
+        self.apply_error = text
+        if self.on_problem and text != self._reported:  # одно и то же не повторяем
+            self._reported = text
+            try:
+                await self.on_problem("⚠️ " + text)
+            except Exception:
+                log.exception("on_problem")
+        return False
+
+    async def xray_running(self) -> bool:
+        try:
+            code, _ = await self._run("systemctl", "is-active", "--quiet", "xray")
+        except OSError:
+            return False
+        return code == 0
 
     # ---------- раздача подписки ----------
 

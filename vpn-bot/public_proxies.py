@@ -2,7 +2,7 @@
 
 Проверка прокси настоящая: через него открывается туннель до HTTPS-сайта, проверяется
 сертификат (прокси, который подменяет шифрование, не проходит) и читается страна,
-из которой сайт видит подключение. Так отсеиваются мёртвые прокси, «пустышки» без
+из которой сайт видит подключение. Затем проверяется, что прокси пускает и на порт 80. Так отсеиваются мёртвые прокси, «пустышки» без
 поддержки туннелей и прокси, которые выходят в интернет не из заявленной страны.
 
 Публичные прокси нестабильны, и их владельцы видят, к каким адресам идут подключения.
@@ -42,6 +42,7 @@ _cache = {"at": 0.0, "pool": {}}
 # Сайт для проверки: отвечает текстом со строкой loc=XX — страной, из которой пришли.
 CHECK_HOST = "www.cloudflare.com"
 CHECK_PORT = 443
+CHECK_HTTP_PORT = 80
 CHECK_PATH = "/cdn-cgi/trace"
 _ssl_ctx: ssl.SSLContext | None = None
 
@@ -308,13 +309,34 @@ async def _probe(url: str, timeout: float) -> Probe | None:
         country = await _read_trace(reader, writer, timeout)
     finally:
         await _close(writer)
-    return Probe(country, int((time.monotonic() - t0) * 1000)) if country else None
+    ms = int((time.monotonic() - t0) * 1000)
+    if not country or not await _plain_ok(url, timeout):
+        return None
+    return Probe(country, ms)
+
+
+async def _plain_ok(url: str, timeout: float) -> bool:
+    """Многие HTTP-прокси пускают только на порт 443. Через такой не откроются обычные сайты
+    и часть приложений, поэтому прокси должен открывать подключение и на порт 80."""
+    sock = await open_tunnel(url, CHECK_HOST, CHECK_HTTP_PORT, timeout)
+    try:
+        reader, writer = await asyncio.open_connection(sock=sock)
+    except BaseException:
+        sock.close()
+        raise
+    try:
+        writer.write(f"GET / HTTP/1.1\r\nHost: {CHECK_HOST}\r\nUser-Agent: curl/8.5.0\r\n"
+                     "Connection: close\r\n\r\n".encode())
+        await writer.drain()
+        return (await asyncio.wait_for(reader.readline(), timeout)).startswith(b"HTTP/")
+    finally:
+        await _close(writer)
 
 
 async def probe(url: str, timeout: float = 6.0) -> Probe | None:
     """Полная проверка прокси. None — не работает. Никогда не бросает."""
     try:
-        return await asyncio.wait_for(_probe(url, timeout), timeout * 2.5)
+        return await asyncio.wait_for(_probe(url, timeout), timeout * 4)
     except Exception:
         return None
 

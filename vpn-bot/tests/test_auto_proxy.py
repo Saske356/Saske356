@@ -86,8 +86,31 @@ class TraceSite:
         self.server.close()
 
 
+class PlainSite:
+    """Обычный сайт без шифрования (порт 80 в настоящей проверке)."""
+
+    async def start(self):
+        self.server = await asyncio.start_server(self._handle, "127.0.0.1", 0)
+        self.port = self.server.sockets[0].getsockname()[1]
+        return self
+
+    async def _handle(self, reader, writer):
+        try:
+            await reader.readuntil(b"\r\n\r\n")
+            writer.write(b"HTTP/1.1 301 Moved Permanently\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+            await writer.drain()
+        except (ConnectionError, asyncio.IncompleteReadError):
+            pass
+        finally:
+            writer.close()
+
+    def close(self):
+        self.server.close()
+
+
 class FakeProxy:
-    """Тестовый прокси. mode: ok, blackhole (молчит), refuse (не открывает туннель), mitm."""
+    """Тестовый прокси. mode: ok, blackhole (молчит), refuse (не открывает туннель), mitm,
+    only443 (пускает только на проверочный HTTPS-сайт)."""
 
     def __init__(self, kind: str, country: str, auth=None, mode: str = "ok", delay: float = 0.0):
         self.kind, self.country, self.auth, self.mode, self.delay = kind, country, auth, mode, delay
@@ -120,6 +143,10 @@ class FakeProxy:
             if not target:
                 return
             host, port = target
+            if self.mode == "only443" and (host, port) != (pp.CHECK_HOST, pp.CHECK_PORT):
+                writer.write(b"\x05\x02\x00\x01" + bytes(6) if self.kind == "socks5"
+                             else b"HTTP/1.1 403 Forbidden\r\n\r\n")
+                return
             if (host, port) == (pp.CHECK_HOST, pp.CHECK_PORT):
                 host, port = "127.0.0.1", self.site.port  # «выход в интернет» из страны прокси
             await asyncio.sleep(self.delay)
@@ -185,13 +212,14 @@ class Base(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.things = []
         self.direct = await TraceSite("pl").start()
-        self.things.append(self.direct)
-        self._saved = (pp.CHECK_HOST, pp.CHECK_PORT, pp._ssl_ctx)
-        pp.CHECK_HOST, pp.CHECK_PORT = "localhost", self.direct.port
+        self.plain = await PlainSite().start()
+        self.things += [self.direct, self.plain]
+        self._saved = (pp.CHECK_HOST, pp.CHECK_PORT, pp._ssl_ctx, pp.CHECK_HTTP_PORT)
+        pp.CHECK_HOST, pp.CHECK_PORT, pp.CHECK_HTTP_PORT = "localhost", self.direct.port, self.plain.port
         pp._ssl_ctx = ssl.create_default_context(cafile=os.path.join(CERT_DIR, "good.crt"))
 
     async def asyncTearDown(self):
-        pp.CHECK_HOST, pp.CHECK_PORT, pp._ssl_ctx = self._saved
+        pp.CHECK_HOST, pp.CHECK_PORT, pp._ssl_ctx, pp.CHECK_HTTP_PORT = self._saved
         for t in self.things:
             t.kill() if isinstance(t, FakeProxy) else t.close()
         await asyncio.sleep(0)
@@ -209,7 +237,11 @@ class ProbeTests(Base):
             res = await pp.probe(p.url)
             self.assertIsNotNone(res, kind)
             self.assertEqual(res.country, "nl")
-            self.assertEqual(p.tunnels, 1)
+            self.assertEqual(p.tunnels, 2)  # HTTPS-сайт и обычный сайт
+
+    async def test_proxy_limited_to_port_443_fails(self):
+        for kind in ("socks5", "http"):
+            self.assertIsNone(await pp.probe((await self.proxy(kind, mode="only443")).url), kind)
 
     async def test_login_and_password(self):
         for kind in ("socks5", "http"):
@@ -269,7 +301,7 @@ class RelayTests(Base):
             p = await self.proxy(kind, "nl")
             self.relay.set_route("nl", [p.url])
             self.assertEqual((await pp.probe(self.via())).country, "nl")
-            self.assertEqual(p.tunnels, 1)
+            self.assertEqual(p.tunnels, 2)
 
     async def test_rejects_wrong_password_and_unknown_country(self):
         p = await self.proxy()
@@ -283,9 +315,7 @@ class RelayTests(Base):
         dead.kill()
         self.relay.set_route("nl", [dead.url, good.url])
         self.assertEqual((await pp.probe(self.via())).country, "nl")  # первое же подключение прошло
-        self.assertEqual(self.demoted, [])
-        self.assertIsNotNone(await pp.probe(self.via()))
-        self.assertEqual(self.demoted, [("nl", dead.url)])
+        self.assertEqual(self.demoted, [("nl", dead.url)])  # после двух отказов подряд
         self.assertEqual(self.relay.routes["nl"], [good.url, dead.url])
 
     async def test_refused_target_does_not_blame_proxy(self):
@@ -403,7 +433,8 @@ class ManagerTests(Base):
         self.assertIn("Добавлены", report)
         self.assertEqual(sorted(self.loc("nl")["pool"]), sorted(p.url for p in nl))
         self.assertEqual(self.loc("de")["pool"], [de[0].url])
-        self.assertEqual(self.applies, 2)
+        self.assertEqual(self.applies, 1)  # один перезапуск Xray на обе страны
+        self.assertEqual([(l["code"], r.country) for l, r in await mgr.selftest()], [("nl", "nl"), ("de", "de")])
 
         cfg = self.vpn.build_config()
         out = {o["tag"]: o for o in cfg["outbounds"]}
@@ -482,10 +513,18 @@ class ManagerTests(Base):
         self.assertEqual(await mgr.refresh(), "")
         self.assertEqual([l["code"] for l in self.vpn.auto_locations()], ["nl", "us"])
 
-        px["nl"].kill()  # при подборе страна без прокси уступает место другой
+        applies = self.applies
+        px["nl"].kill()  # страна без прокси сначала только прячется: Xray не перезапускается
+        self.assertIn("скрыты", await mgr.refresh())
+        self.assertEqual([l["code"] for l in self.vpn.auto_locations()], ["nl", "us"])
+        self.assertEqual((len(self.vpn.links(7)), self.applies), (3, applies))
+        self.assertEqual((await mgr.selftest())[0][1], None)
+
+        self.loc("nl")["down_since"] -= 7 * 3600  # долго без прокси: место занимает другая страна
         report = await mgr.refresh()
-        self.assertIn("убраны", report)
+        self.assertIn("Убраны", report)
         self.assertEqual(sorted(l["code"] for l in self.vpn.auto_locations()), ["bd", "us"])
+        self.assertEqual(self.applies, applies + 1)
 
     async def test_no_changes_when_server_itself_is_offline(self):
         a = await self.proxy("socks5", "nl")
@@ -530,6 +569,38 @@ class ManagerTests(Base):
         self.assertEqual([(l["code"], ok) for l, ok in changes], [("it", False)])
         self.loc("it")["proxy"] = f"socks5://u:p@127.0.0.1:{good.port}"
         self.assertEqual([(l["code"], ok) for l, ok in await self.vpn.check_proxies()], [("it", True)])
+
+    async def test_xray_rejecting_auto_countries_keeps_the_rest_working(self):
+        await self.manager()
+        xray = os.path.join(self.dir, "xray")
+        with open(xray, "w") as f:  # «Xray», которому не нравится выход через ретранслятор
+            f.write('#!/bin/sh\ngrep -q \'"127.0.0.1"\' "$4" && { echo "infra/conf: bad outbound"; exit 23; }\nexit 0\n')
+        os.chmod(xray, 0o755)
+        self.vpn.xray_bin, self.vpn.restart_cmd = xray, ("true",)
+        problems = []
+
+        async def on_problem(text):
+            problems.append(text)
+        self.vpn.on_problem = on_problem
+        self.vpn.add_location("fr", "🇫🇷 Франция", "socks5://u:p@203.0.113.1:1080")
+        self.assertTrue(await self.vpn.apply())
+        self.assertEqual((problems, self.vpn.apply_error), ([], ""))
+
+        self.vpn.set_auto_location("nl", "🇳🇱 Нидерланды", ["socks5://203.0.113.5:1080"])
+        self.assertTrue(await self.vpn.apply())
+        self.assertTrue(self.vpn.auto_rejected)
+        self.assertIn("bad outbound", problems[0])
+        with open(self.vpn.config_path) as f:
+            applied = f.read()
+        self.assertIn("u7.fr", applied)      # купленная страна и клиенты применены
+        self.assertNotIn("u7.nl", applied)   # авто-страна в конфиг не попала
+        self.assertEqual(len(self.vpn.links(7)), 2)  # и скрыта из подписки
+        await self.vpn.apply()
+        self.assertEqual(len(problems), 1)   # повторно об одном и том же не пишем
+
+        self.vpn.clear_auto_locations()
+        self.assertTrue(await self.vpn.apply())
+        self.assertEqual((self.vpn.auto_rejected, self.vpn.apply_error), (False, ""))
 
     async def test_state_from_previous_version_is_upgraded(self):
         await self.manager()

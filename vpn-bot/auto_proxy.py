@@ -18,6 +18,7 @@ POOL_SIZE = 3            # рабочий прокси + запасные на �
 BAD_DEAD = 6 * 3600      # сколько не возвращаемся к прокси, который умер в работе
 BAD_CANDIDATE = 1800     # сколько не перепроверяем кандидата, не прошедшего проверку
 EXTRA_ATTEMPTS = 5       # сколько лишних стран пробуем за цикл в режиме подбора
+HIDE_LIMIT = 6 * 3600    # при подборе страна без прокси столько ждёт, потом уступает место другой
 
 # В режиме подбора страны берутся в этом порядке, затем остальные по числу прокси.
 PREFERRED = ["nl", "de", "us", "gb", "fr", "fi", "se", "ch", "jp", "sg", "ca", "tr",
@@ -152,7 +153,7 @@ class AutoProxy:
             ok_codes = [l["code"] for l in current if l["code"] in keep]
             extra += ok_codes[maxn:]
         for cc in extra:
-            if vpn.remove_location(cc):
+            if vpn.remove_location(cc, apply=False):
                 removed.append(cc)
 
         # 2) перепроверка прокси у оставшихся стран
@@ -174,29 +175,32 @@ class AutoProxy:
                     back.append(cc)
                 elif res == "swapped" and cc not in swapped:
                     swapped.append(cc)
-            elif discovery:
-                if vpn.remove_location(cc):     # место займёт другая страна
-                    lost.append(cc)
             elif not was_down:
+                # Страна только прячется из подписки: это не требует перезапуска Xray.
                 vpn.set_auto_down(cc, True)
                 lost.append(cc)
+            elif discovery and now - loc.get("down_since", now) > HIDE_LIMIT:
+                if vpn.remove_location(cc, apply=False):
+                    removed.append(cc)
 
         # 3) недостающие страны
         have = {l["code"] for l in vpn.auto_locations()}
         attempts = 0
         for cc in targets:
-            if cc in have or cc in lost:
+            if cc in have:
                 continue
             if discovery:
                 if len(have) >= maxn or attempts >= maxn - len(have) + EXTRA_ATTEMPTS:
                     break
                 attempts += 1
             found = await self._find(pool, cc, POOL_SIZE)
-            if found and vpn.set_auto_location(cc, nm(cc), [u for u, _ in found], ms=found[0][1]):
+            if found and vpn.set_auto_location(cc, nm(cc), [u for u, _ in found], ms=found[0][1], apply=False):
                 added.append(cc)
                 have.add(cc)
 
         self.sync_routes()
+        if added or removed:
+            vpn.schedule_apply()  # один перезапуск Xray на весь цикл и только при смене набора стран
         parts = []
         if added:
             parts.append("➕ Добавлены: " + ", ".join(nm(c) for c in added))
@@ -205,8 +209,16 @@ class AutoProxy:
         if back:
             parts.append("✅ Снова работают: " + ", ".join(nm(c) for c in back))
         if lost:
-            parts.append(("➖ Нет живых прокси, убраны: " if discovery else
-                          "⚠️ Нет живых прокси, скрыты до появления: ") + ", ".join(nm(c) for c in lost))
+            parts.append("⚠️ Нет живых прокси, скрыты до появления: " + ", ".join(nm(c) for c in lost))
         if removed:
             parts.append("➖ Убраны: " + ", ".join(nm(c) for c in removed))
         return "🤖 Авто-страны\n" + "\n".join(parts) if parts else ""
+
+    async def selftest(self) -> list[tuple[dict, pp.Probe | None]]:
+        """Проходит путь настоящего клиента: ретранслятор, прокси, сайт. По одной записи на страну."""
+        async def one(loc):
+            server = self.vpn.relay_outbound(loc["code"])["settings"]["servers"][0]
+            user = server["users"][0]
+            url = f"socks5://{user['user']}:{user['pass']}@{server['address']}:{self.relay.port}"
+            return loc, await pp.probe(url) or await pp.probe(url)
+        return list(await asyncio.gather(*(one(l) for l in self.vpn.auto_locations())))

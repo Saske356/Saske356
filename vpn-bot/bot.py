@@ -24,6 +24,7 @@ from telegram.ext import (Application, CallbackQueryHandler, CommandHandler, Con
 
 import config
 import make_banner
+import public_proxies
 from auto_proxy import AutoProxy
 from db import DAY, DB
 from vpn import get_provider
@@ -1247,6 +1248,12 @@ async def addpromo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Промокод <code>{esc(code.upper())}</code>: +{plural_days(days)}, активаций: {uses}.")
 
 
+def xray_warning() -> str:
+    """Предупреждение, если Xray не принял последний конфиг."""
+    err = getattr(vpn, "apply_error", "")
+    return f"⚠️ {esc(err)}\n\n" if err else ""
+
+
 def locations_text() -> str:
     lines = []
     for l in getattr(vpn, "locations", []):
@@ -1257,7 +1264,7 @@ def locations_text() -> str:
     bridges = [f"◆ <code>{esc(b['code'])}</code> · {esc(b['name'])} · {esc(b['host'])}:{b['port']}"
                + (f" · маскировка {esc(b['sni'])}" if b["sni"] else "")
                for b in getattr(vpn, "bridges", [])]
-    return ("<b>Страны</b>\n\n" + "\n".join(lines) + "\n\n"
+    return (xray_warning() + "<b>Страны</b>\n\n" + "\n".join(lines) + "\n\n"
             "Добавить: /addloc <code>код</code> <code>Название</code> | <code>socks5://логин:пароль@ip:порт</code>\n"
             "Удалить: /delloc <code>код</code>\n\n"
             "<b>Мосты для обхода</b>\n\n" + ("\n".join(bridges) if bridges else "<i>пока нет</i>") + "\n\n"
@@ -1392,7 +1399,7 @@ def auto_status_text() -> str:
         speed = f" · {l['ms']} мс" if l.get("ms") else ""
         rows.append(f"◆ {esc(l['name'])} · <code>{esc(host)}</code>{speed} · запасных {len(l.get('pool', [])) - 1}"
                     f" · замен {l.get('swaps', 0)} · без замены {_ago(l.get('since', time.time()))}")
-    return ("<b>Авто-страны из публичных прокси</b>\n\n" + "\n".join(lines) + "\n\n"
+    return (xray_warning() + "<b>Авто-страны из публичных прокси</b>\n\n" + "\n".join(lines) + "\n\n"
             + ("\n".join(rows) if rows else "<i>Стран пока нет.</i>") + "\n\n"
             "Бот сам берёт бесплатные прокси из открытых списков, проверяет их и добавляет страны. "
             "Когда прокси перестаёт отвечать, подключения сразу идут через запасной, без перезапуска VPN.\n"
@@ -1402,6 +1409,7 @@ def auto_status_text() -> str:
             "/autoproxy on: включить\n"
             "/autoproxy off: выключить и убрать авто-страны\n"
             "/autoproxy now: проверить и обновить сейчас\n"
+            "/autoproxy test: проверить каждую страну так, как подключается клиент\n"
             "/autoproxy countries nl de us: держать эти страны\n"
             "/autoproxy countries auto: бот подбирает страны сам\n"
             "/autoproxy max 8: сколько стран держать при подборе\n"
@@ -1419,6 +1427,39 @@ async def _auto_refresh_and_report(bot, chat_id: int) -> None:
         await bot.send_message(chat_id, msg + "\n\n" + locations_text())
     except Exception:
         log.exception("авто-страны: сбой проверки по команде")
+        try:
+            await bot.send_message(chat_id, "Проверка не удалась, подробности в журнале бота.")
+        except TelegramError:
+            pass
+
+
+async def _auto_selftest_and_report(bot, chat_id: int) -> None:
+    try:
+        lines = ["<b>Проверка авто-стран</b>", ""]
+        lines.append("Xray: " + ("работает" if await vpn.xray_running() else "❌ не запущен"))
+        if vpn.apply_error:
+            lines.append(f"⚠️ {esc(vpn.apply_error)}")
+        lines.append("Ретранслятор: " + ("работает" if auto_mgr.relay.running
+                                          else f"❌ не запущен, порт {vpn.relay_port} занят"))
+        lines.append("Выход в интернет с сервера: " + ("есть" if await public_proxies.direct_ok()
+                                                        else "❌ проверочный сайт недоступен"))
+        results = await auto_mgr.selftest()
+        lines.append("")
+        for loc, res in results:
+            if res is None:
+                lines.append(f"❌ {esc(loc['name'])}: подключение через прокси не проходит")
+            elif res.country != loc["code"]:
+                lines.append(f"⚠️ {esc(loc['name'])}: прокси выходит из {res.country.upper()}, {res.ms} мс")
+            else:
+                lines.append(f"✅ {esc(loc['name'])}: работает, {res.ms} мс")
+        if not results:
+            lines.append("<i>Авто-стран пока нет.</i>")
+        elif all(r for _, r in results) and not vpn.apply_error:
+            lines.append("\nСо стороны сервера всё работает. Если страна не открывается в приложении, "
+                         "обновите в нём подписку и проверьте основную страну: она идёт без прокси.")
+        await bot.send_message(chat_id, "\n".join(lines))
+    except Exception:
+        log.exception("авто-страны: сбой самопроверки")
         try:
             await bot.send_message(chat_id, "Проверка не удалась, подробности в журнале бота.")
         except TelegramError:
@@ -1449,6 +1490,9 @@ async def autoproxy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     elif sub == "now":
         await reply("Проверяю прокси. Результат пришлю сообщением.")
         run()
+    elif sub == "test":
+        await reply("Проверяю каждую страну. Результат пришлю сообщением.")
+        context.application.create_task(_auto_selftest_and_report(context.bot, update.effective_chat.id))
     elif sub == "countries":
         codes = args[1:]
         if not codes or codes[0] in ("auto", "any", "подбор"):
@@ -1522,6 +1566,7 @@ async def setup_profile(app: Application) -> None:
     except TelegramError as e:
         log.warning("get_me: %s", e)
     if hasattr(vpn, "sync"):
+        vpn.on_problem = lambda text: send_admins(bot, esc(text))
         active = db.all_active_subs()
         await vpn.sync(active)
         for sid in active:  # ключи из демо-режима меняются на настоящие
