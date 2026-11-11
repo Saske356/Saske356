@@ -1,0 +1,452 @@
+"""Сквозные сценарии бота на имитации Telegram: python3 -m unittest discover -s tests
+
+Проходит весь путь гостя и админа: реферал, пробный период, покупка с устройствами, продление,
+автопродление, подарки, промокоды, тикеты, возвраты, фоновые задачи, мини-приложение, /server,
+резервные копии и режим настоящего VPN. Заодно проверяет каждый экран: длину подписи и HTML.
+В сеть и в Telegram тесты не ходят.
+"""
+
+import asyncio, base64, html.parser, itertools, json, os, sys, tempfile, time, unittest
+from unittest.mock import AsyncMock, MagicMock
+
+S = tempfile.mkdtemp(prefix="aurora-test-")
+BOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Все настройки задаём явно: на сервере рядом лежит настоящий .env, он не должен влиять на тесты.
+os.environ.update(DB_PATH=os.path.join(S, "test.db"), ADMIN_IDS="1", SUPPORT_USERNAME="aurora_help",
+                  BOT_TOKEN="1:x", CHANNEL="@aurora_news", MINIAPP_URL="", VPN_MODE="demo",
+                  TRIAL_DAYS="1", REF_BONUS_DAYS="3", REF_ON_JOIN="1", REFUND_DAYS="3", AUTO_RENEW="1",
+                  CHANNEL_BONUS_DAYS="1", BACKUP_DAILY="1", SET_PROFILE="1", BRAND="Aurora VPN")
+sys.path.insert(0, BOT_DIR)
+try:
+    import bot, config
+except ImportError as e:  # нет библиотек бота: pip install -r requirements.txt
+    raise unittest.SkipTest(f"не хватает библиотек бота: {e}")
+
+DAY = 86400
+BANNER_UID = "BANNER"
+captions = []
+mid = itertools.count(1000)
+
+
+class TagCheck(html.parser.HTMLParser):
+    ALLOWED = {"b", "i", "code", "blockquote", "a", "u", "s", "pre"}
+    def __init__(self):
+        super().__init__(); self.stack = []; self.bad = []
+    def handle_starttag(self, t, a):
+        if t not in self.ALLOWED: self.bad.append(t)
+        self.stack.append(t)
+    def handle_endtag(self, t):
+        if not self.stack or self.stack.pop() != t: self.bad.append("/" + t)
+
+
+def check_caption(text):
+    assert text and len(text) <= 1024, f"caption length {len(text or '')}"
+    p = TagCheck(); p.feed(text); p.close()
+    assert not p.bad and not p.stack, f"bad html {p.bad} {p.stack}: {text[:100]}"
+    captions.append(text)
+
+
+def msg_obj():
+    m = MagicMock(); m.message_id = next(mid)
+    m.photo = [MagicMock(file_id="FILE", file_unique_id=BANNER_UID)]
+    return m
+
+
+def make_ctx():
+    ctx = MagicMock()
+    ctx.bot_data = {"banners": {n: b"jpg" for n in ["main", "plans", "key", "howto", "profile", "ref",
+                                                    "support", "welcome"]},
+                    "banner_ids": {}, "banner_uids": {BANNER_UID: "main"}}
+    ctx.user_data = {}
+    ctx.args = []
+    b = ctx.bot
+    b.username = "aurora_vpn_bot"
+    async def send_photo(chat_id, photo, caption=None, reply_markup=None, message_effect_id=None):
+        if caption: check_caption(caption)
+        ctx.effects.append(message_effect_id)
+        return msg_obj()
+    ctx.effects = []
+    b.send_photo = AsyncMock(side_effect=send_photo)
+    async def send_message(chat_id, text, reply_markup=None):
+        check_caption(text)
+        return msg_obj()
+    b.send_message = AsyncMock(side_effect=send_message)
+    b.copy_message = AsyncMock(side_effect=lambda *a, **k: msg_obj())
+    b.send_invoice = AsyncMock()
+    b.create_invoice_link = AsyncMock(return_value="https://t.me/$autoinv")
+    b.refund_star_payment = AsyncMock()
+    b.edit_user_star_subscription = AsyncMock()
+    b.set_chat_menu_button = AsyncMock()
+    b.get_chat_member = AsyncMock()
+    b.send_document = AsyncMock()
+    return ctx
+
+
+def make_update(uid, name="Саша", data=None, text=None, banner=True, reply_to=None):
+    upd = MagicMock()
+    upd.effective_user.id = uid; upd.effective_user.username = f"user{uid}"
+    upd.effective_user.first_name = name
+    upd.effective_chat.id = uid
+    if data is not None:
+        q = MagicMock(); q.data = data; q.answer = AsyncMock()
+        async def edit(caption=None, reply_markup=None):
+            check_caption(caption)
+        q.edit_message_caption = AsyncMock(side_effect=edit)
+        async def edit_media(media=None, reply_markup=None):
+            check_caption(media.caption)
+            m = MagicMock(); m.photo = [MagicMock(file_id="F2", file_unique_id="U_" + str(id(media)))]
+            return m
+        q.edit_message_media = AsyncMock(side_effect=edit_media)
+        q.message.photo = [MagicMock(file_unique_id=BANNER_UID if banner else "OTHER")]
+        upd.callback_query = q
+    else:
+        upd.callback_query = None
+    m = MagicMock(); m.text = text; m.reply_text = AsyncMock()
+    m.chat_id = uid; m.message_id = next(mid)
+    m.reply_to_message = None if reply_to is None else MagicMock(message_id=reply_to)
+    upd.message = m
+    return upd
+
+
+async def press(uid, data, ctx, **kw):
+    u = make_update(uid, data=data, **kw)
+    await bot.on_button(u, ctx)
+    return u
+
+
+def alerted(u):
+    return bool(u.callback_query.answer.await_args and u.callback_query.answer.await_args.kwargs.get("show_alert"))
+
+
+async def pay(uid, ctx, payload, amount, charge, recurring=False, first=False):
+    u = make_update(uid)
+    sp = MagicMock(); sp.invoice_payload = payload; sp.total_amount = amount
+    sp.telegram_payment_charge_id = charge
+    sp.is_recurring = recurring; sp.is_first_recurring = first
+    u.message.successful_payment = sp
+    await bot.paid(u, ctx)
+
+
+async def precheck(uid, payload, amount, ctx):
+    pc = MagicMock(); pc.answer = AsyncMock(); pc.invoice_payload = payload
+    pc.currency = "XTR"; pc.total_amount = amount; pc.from_user.id = uid
+    upd = MagicMock(); upd.pre_checkout_query = pc
+    await bot.precheckout(upd, ctx)
+    return pc.answer.await_args.kwargs["ok"]
+
+
+def near(a, b, tol=10):
+    return abs(a - b) < tol
+
+
+
+def make_provider(d):
+    """Провайдер с заглушкой Xray, которая, как настоящий, отказывается от файлов без .json."""
+    import xray_provider as xp
+    p = os.path.join(d, "xray")
+    with open(p, "w") as f:
+        f.write('#!/bin/sh\ncase "$4" in *.json) exit 0;; *) echo "Failed to get format of $4"; exit 1;; esac\n')
+    os.chmod(p, 0o755)
+    return xp.XrayProvider(state_path=os.path.join(d, "s.json"), config_path=os.path.join(d, "c.json"),
+                           xray_bin=p, public_host="203.0.113.7", port=443, sni="www.microsoft.com",
+                           private_key="PRIV", public_key="PUB", short_id="00ff", sub_port=0,
+                           brand="Aurora VPN", default_location="🇸🇪 Швеция", restart_cmd=("true",))
+
+
+async def main():
+    ctx = make_ctx()
+    db = bot.db
+
+    # 1. реферал: +3 дня сразу, один раз, не за себя
+    await bot.start(make_update(100, "Реферер"), ctx)
+    ctx.args = ["ref_100"]; await bot.start(make_update(200, "Друг"), ctx)
+    s100 = db.primary_sub(100)
+    assert s100 and near(s100["expires_at"] - time.time(), 3 * DAY, 60) and s100["key_active"] == 1
+    ctx.args = ["ref_100"]; await bot.start(make_update(200, "Друг"), ctx)
+    assert db.primary_sub(100)["expires_at"] == s100["expires_at"]
+    ctx.args = ["ref_300"]; await bot.start(make_update(300, "Сам"), ctx)
+    assert not db.user_subs(300)
+    ctx.args = []
+
+    # 2. пробный период
+    u = await press(200, "trial", ctx)
+    t = db.user_subs(200)
+    assert len(t) == 1 and t[0]["name"] == "Пробный ключ" and near(t[0]["expires_at"] - time.time(), DAY, 60)
+    u = await press(200, "trial", ctx); assert alerted(u)
+    assert not bot.can_trial(db.get_user(100)), "у кого уже есть подписка, пробника нет"
+
+    # 3. экраны
+    for uid in (300, 200):
+        for data in ["menu", "plans", "subs", "howto", "how:android", "how:ios", "how:windows", "how:mac",
+                     "profile", "ref", "promo", "support", "tk", "gift", "ch", "fix"]:
+            await press(uid, data, ctx)
+    ctx.user_data.clear()
+    sid200 = db.user_subs(200)[0]["id"]
+    await press(200, f"sub:{sid200}", ctx)
+    u = await press(300, f"sub:{sid200}", ctx); assert alerted(u), "чужую подписку не открыть"
+
+    # 4. новая подписка на 3 устройства, 3 месяца
+    await press(200, "buy:m3", ctx)          # есть подписки -> выбор цели
+    await press(200, "bd:m3", ctx)           # выбор устройств
+    await press(200, "bn:m3:3", ctx)         # m3 не месячный -> сразу счёт
+    kw = ctx.bot.send_invoice.await_args.kwargs
+    price = config.plan_price("m3", 3)
+    assert kw["prices"][0].amount == price == 538 and kw["payload"] == f"v2:b:m3:90:{price}:3:0:-"
+    assert await precheck(200, kw["payload"], price, ctx)
+    assert not await precheck(200, kw["payload"], 1, ctx)
+    assert not await precheck(200, "plan:m3:90:269", 269, ctx), "старый формат счёта отклоняется"
+    u = await press(200, "bn:m3:4", ctx); assert alerted(u), "4 устройства нет в вариантах"
+    await pay(200, ctx, kw["payload"], price, "C1")
+    subs = db.user_subs(200); new = subs[-1]
+    assert len(subs) == 2 and new["devices"] == 3 and near(new["expires_at"] - time.time(), 90 * DAY, 60)
+    assert db.get_payment("C1")["sub_id"] == new["id"] and ctx.effects[-1] == bot.CONFETTI
+    await pay(200, ctx, kw["payload"], price, "C1")  # дубль
+    assert len(db.user_subs(200)) == 2
+
+    # 5. продление этой подписки разово на месяц
+    await press(200, f"ext:{new['id']}", ctx)
+    await press(200, f"bt:m1:{new['id']}", ctx)   # месячный -> выбор способа оплаты
+    await press(200, f"po:e:m1:3:{new['id']}", ctx)
+    kw = ctx.bot.send_invoice.await_args.kwargs
+    p_ext = config.plan_price("m1", 3)
+    assert kw["payload"] == f"v2:e:m1:30:{p_ext}:3:{new['id']}:-"
+    assert await precheck(200, kw["payload"], p_ext, ctx)
+    assert not await precheck(300, kw["payload"], p_ext, ctx), "чужую подписку не продлить"
+    before = db.get_sub(new["id"])["expires_at"]
+    await pay(200, ctx, kw["payload"], p_ext, "C2")
+    assert near(db.get_sub(new["id"])["expires_at"], before + 30 * DAY)
+    u = await press(300, f"po:e:m1:3:{new['id']}", ctx); assert alerted(u)
+
+    # 6. автопродление: новая подписка на 2 устройства
+    await press(300, "bn:m1:2", ctx)
+    await press(300, "pa:n:m1:2:0", ctx)
+    lk = ctx.bot.create_invoice_link.await_args.kwargs
+    p_auto = config.plan_price("m1", 2)
+    assert lk["subscription_period"] == 2592000 and lk["prices"][0].amount == p_auto
+    payload = lk["payload"]; token = payload.split(":")[-1]
+    assert payload.startswith(f"v2:a:m1:30:{p_auto}:2:0:") and len(token) == 12
+    assert await precheck(300, payload, p_auto, ctx)
+    await pay(300, ctx, payload, p_auto, "A1", recurring=True, first=True)
+    a = db.user_subs(300)[-1]
+    assert a["auto_active"] == 1 and a["auto_token"] == token and a["auto_charge_id"] == "A1"
+    exp = a["expires_at"]
+    await pay(300, ctx, payload, p_auto, "A2", recurring=True, first=False)   # следующий месяц
+    assert near(db.get_sub(a["id"])["expires_at"], exp + 30 * DAY) and db.get_payment("A2")["kind"] == "renew"
+    await pay(300, ctx, payload, p_auto, "A2", recurring=True, first=False)   # дубль
+    assert near(db.get_sub(a["id"])["expires_at"], exp + 30 * DAY)
+    assert len(db.user_subs(300)) == 1
+    await press(300, f"noauto:{a['id']}", ctx)
+    await press(300, f"noautook:{a['id']}", ctx)
+    ctx.bot.edit_user_star_subscription.assert_awaited_with(300, "A1", True)
+    assert db.get_sub(a["id"])["auto_active"] == 0
+
+    # 7. подарок
+    await press(300, "gift", ctx); await press(300, "gd:m1", ctx)
+    await press(300, "bg:m1:1", ctx)
+    kw = ctx.bot.send_invoice.await_args.kwargs
+    assert kw["payload"] == "v2:g:m1:30:99:1:0:-"
+    await pay(300, ctx, kw["payload"], 99, "G1")
+    code = db.get_payment("G1")["gift_code"]; assert code.startswith("GIFT-")
+    await bot.start(make_update(400, "Одарённый"), ctx)
+    ctx.args = [f"gift_{code}"]; await bot.start(make_update(400, "Одарённый"), ctx)
+    g = db.user_subs(400)
+    assert len(g) == 1 and near(g[0]["expires_at"] - time.time(), 30 * DAY, 60)
+    ctx.args = []
+    st, _ = db.redeem_gift(code, 500); assert st == "used"
+    assert db.redeem_gift("GIFT-NOPE", 500)[0] == "not_found"
+
+    # 8. промокоды
+    ctx.args = ["SUMMER", "5", "1"]; await bot.addpromo(make_update(1), ctx)
+    ctx.args = ["GIFT-X", "5", "1"]; u = make_update(1); await bot.addpromo(u, ctx)
+    assert "GIFT-" in u.message.reply_text.await_args.args[0]
+    ctx.args = []
+    await press(400, "promo", ctx)
+    await bot.on_message(make_update(400, text="summer"), ctx)
+    assert near(db.primary_sub(400)["expires_at"] - time.time(), 35 * DAY, 60)
+    assert db.redeem_promo("SUMMER", 400)[0] == "already"
+
+    # 9. тикеты поддержки
+    await press(400, "tk", ctx)
+    assert ctx.user_data.get("await") == "ticket"
+    ctx.bot.copy_message.reset_mock(); ctx.bot.send_message.reset_mock()
+    await bot.on_message(make_update(400, text="Не подключается"), ctx)
+    head_msg = ctx.bot.send_message.await_args_list[0]
+    assert head_msg.args[0] == 1 and "Обращение" in head_msg.args[1]
+    assert ctx.bot.copy_message.await_args_list[0].args[0] == 1
+    admin_msgs = db.qa("SELECT admin_msg FROM tickets WHERE user_id=400")
+    assert len(admin_msgs) == 2
+    ctx.bot.copy_message.reset_mock()
+    await bot.on_message(make_update(1, text="Переустановите приложение", reply_to=admin_msgs[0][0]), ctx)
+    assert ctx.bot.copy_message.await_args.args[0] == 400, "ответ ушёл гостю"
+    ctx.bot.copy_message.reset_mock()
+    await bot.on_message(make_update(1, text="привет", reply_to=999999), ctx)
+    assert ctx.bot.copy_message.await_count == 0
+
+    # 10. переименование
+    s = db.user_subs(400)[0]
+    await press(400, f"ren:{s['id']}", ctx)
+    await bot.on_message(make_update(400, text="  Мой   телефон  "), ctx)
+    assert db.get_sub(s["id"])["name"] == "Мой телефон"
+    await press(400, f"ren:{s['id']}", ctx)
+    await bot.on_message(make_update(400, text="Х" * 40), ctx)
+    assert len(db.get_sub(s["id"])["name"]) == 24
+    u = await press(300, f"ren:{s['id']}", ctx); assert alerted(u)
+
+    # 11. бонус за канал
+    ctx.bot.get_chat_member.return_value = MagicMock(status="left")
+    await press(300, "chk", ctx)
+    assert db.get_user(300)["channel_bonus"] == 0
+    ctx.bot.get_chat_member.return_value = MagicMock(status="member")
+    before = db.primary_sub(300)["expires_at"]
+    await press(300, "chk", ctx)
+    assert db.get_user(300)["channel_bonus"] == 1 and near(db.primary_sub(300)["expires_at"], before + DAY)
+    await press(300, "chk", ctx)
+    assert near(db.primary_sub(300)["expires_at"], before + DAY), "бонус один раз"
+    assert "канал" not in str([b.text for r in bot.main_kb(db.get_user(300)).inline_keyboard for b in r])
+
+    # 12. админка и возвраты
+    await bot.start(make_update(1, "Админ"), ctx)
+    await bot.admin(make_update(1), ctx)
+    st = db.stats(); assert st["auto"] == 0 and st["payments"] == 5, st
+    text, kb = bot.payments_view(); check_caption(text)
+    ctx.args = ["@user300"]; await bot.payments(make_update(1), ctx); ctx.args = []
+    pid = db.get_payment("C2")["id"]
+    await press(200, f"adm:rfok:{pid}", ctx)
+    assert ctx.bot.refund_star_payment.await_count == 0, "не админ не возвращает"
+    before = db.get_sub(new["id"])["expires_at"]
+    await press(1, f"adm:rf:{pid}", ctx)
+    await press(1, f"adm:rfok:{pid}", ctx)
+    ctx.bot.refund_star_payment.assert_awaited_with(200, "C2")
+    assert near(db.get_sub(new["id"])["expires_at"], before - 30 * DAY)
+    before = db.get_sub(g[0]["id"])["expires_at"]
+    ctx.args = ["G1"]; await bot.refund(make_update(1), ctx); ctx.args = []
+    assert db.get_gift(code)["void"] == 1 and near(db.get_sub(g[0]["id"])["expires_at"], before - 30 * DAY)
+    db.set_auto(a["id"], token, "A1", True)
+    ctx.bot.edit_user_star_subscription.reset_mock()
+    ctx.args = ["A1"]; await bot.refund(make_update(1), ctx); ctx.args = []
+    ctx.bot.edit_user_star_subscription.assert_awaited_with(300, "A1", True)
+    assert db.get_sub(a["id"])["auto_active"] == 0
+    ctx.args = ["400", "10"]; await bot.give(make_update(1), ctx); ctx.args = []
+    await bot.testpay(make_update(1), ctx)
+    kw = ctx.bot.send_invoice.await_args.kwargs
+    assert kw["prices"][0].amount == 5 and await precheck(1, kw["payload"], 5, ctx)
+    assert not await precheck(200, kw["payload"], 5, ctx)
+    ctx.user_data.clear(); ctx.bot.copy_message.reset_mock()
+    await press(1, "adm:bc", ctx)
+    await bot.on_message(make_update(1, text="Акция!"), ctx)
+    assert ctx.bot.copy_message.await_count == len(db.all_user_ids())
+
+    # 12b. сервер и резервные копии
+    await bot.server(make_update(1), ctx)
+    st_text = await bot.server_text(); check_caption(st_text)
+    assert "демо-режим" in st_text and "Диск" in st_text and "Гостей" in st_text
+    await press(1, "adm:srv", ctx)
+    n_cap = len(captions); await bot.server(make_update(200), ctx); assert len(captions) == n_cap, "не админ"
+    await bot.backup(make_update(200), ctx); assert ctx.bot.send_document.await_count == 0
+    await bot.backup(make_update(1), ctx)
+    call = ctx.bot.send_document.await_args
+    assert ctx.bot.send_document.await_count == 1 and call.args[0] == 1
+    assert call.kwargs["filename"].endswith("-bot.db") and call.kwargs["filename"].startswith("aurora-20")
+    blob = call.kwargs["document"].getvalue()
+    assert blob[:15] == b"SQLite format 3"
+    import sqlite3 as _sq
+    rp = os.path.join(S, "restored.db")
+    with open(rp, "wb") as f:
+        f.write(blob)
+    rc = _sq.connect(rp)
+    assert rc.execute("SELECT COUNT(*) FROM users").fetchone()[0] == len(db.all_user_ids())
+    assert rc.execute("SELECT COUNT(*) FROM subscriptions").fetchone()[0] == db.q1("SELECT COUNT(*) FROM subscriptions")[0]
+    rc.close(); os.remove(rp)
+    check_caption(call.kwargs["caption"])
+    await press(1, "adm:bak", ctx); assert ctx.bot.send_document.await_count == 2
+    await press(200, "adm:bak", ctx); assert ctx.bot.send_document.await_count == 2
+    await bot.backup_job(ctx); assert ctx.bot.send_document.await_count == 3
+
+    # 13. фоновые задачи
+    c = db.conn
+    s_auto, s_plain = db.user_subs(300)[0], db.user_subs(400)[0]
+    c.execute("UPDATE subscriptions SET expires_at=?, auto_active=1 WHERE id=?", (time.time() + 3600, s_auto["id"]))
+    c.execute("UPDATE subscriptions SET expires_at=? WHERE id=?", (time.time() + 3600, s_plain["id"]))
+    c.execute("UPDATE subscriptions SET expires_at=?, key_active=1 WHERE id=?", (time.time() - 5, s100["id"]))
+    c.commit()
+    ctx.bot.send_message.reset_mock()
+    await bot.lifecycle_job(ctx)
+    sent = [(call.args[0], call.args[1]) for call in ctx.bot.send_message.await_args_list]
+    assert any(uid == 400 and "закончится" in t for uid, t in sent)
+    assert not any(uid == 300 and "закончится" in t for uid, t in sent), "автопродление без напоминания"
+    assert any(uid == 100 and "закончился" in t for uid, t in sent)
+    assert db.get_sub(s100["id"])["key_active"] == 0
+    ctx.bot.send_message.reset_mock()
+    await bot.lifecycle_job(ctx)
+    assert ctx.bot.send_message.await_count == 0
+
+    # 14. мини-приложение
+    config.MINIAPP_URL = "https://example.github.io/app/"
+    bot.STATE["username"] = "aurora_vpn_bot"
+    url = bot.miniapp_url(db.get_user(200))
+    enc = url.split("#d=")[1]; enc += "=" * (-len(enc) % 4)
+    d = json.loads(base64.urlsafe_b64decode(enc))
+    assert len(d["subs"]) == 2 and d["p"][0]["id"] == "m1" and d["bu"] == "aurora_vpn_bot"
+    assert any(b.web_app for r in bot.main_kb(db.get_user(200)).inline_keyboard for b in r)
+    await bot.start(make_update(200), ctx)
+    assert ctx.bot.set_chat_menu_button.await_args.kwargs["chat_id"] == 200
+    ctx.args = ["buy_m1"]; await bot.start(make_update(200), ctx); ctx.args = []
+    config.MINIAPP_URL = ""
+
+    # 15. режим настоящего VPN
+    prov = make_provider(tempfile.mkdtemp())
+    demo, bot.vpn = bot.vpn, prov
+    app = MagicMock(); app.bot.get_me = AsyncMock(return_value=MagicMock(username="aurora_vpn_bot"))
+    for m in ["set_my_commands", "set_my_short_description", "set_my_description", "set_my_name"]:
+        setattr(app.bot, m, AsyncMock())
+    app.bot.get_my_name = AsyncMock(return_value=MagicMock(name="x"))
+    app.bot.send_message = AsyncMock()
+    await bot.setup_profile(app)
+    await prov.on_problem("Xray отклонил конфиг <тест>")
+    assert app.bot.send_message.await_args.args[0] == 1
+    check_caption(app.bot.send_message.await_args.args[1])
+    st_text = await bot.server_text(); check_caption(st_text)
+    assert "VPN (порт 443)" in st_text and "Подписки (порт" in st_text and "Стран: 1" in st_text
+    prov.last_error = "Xray отклонил конфиг <тест>"
+    st_text = await bot.server_text(); check_caption(st_text); assert "Последняя ошибка" in st_text
+    prov.last_error = ""
+    ctx.bot.send_document.reset_mock()
+    await bot.backup(make_update(1), ctx)
+    names = [c.kwargs["filename"] for c in ctx.bot.send_document.await_args_list]
+    assert len(names) == 2 and names[1].endswith("-vpn.json")
+    active = db.all_active_subs()
+    assert set(prov.state["users"]) == {str(k) for k in active}
+    some = next(iter(active)); assert db.get_sub(some)["vpn_key"] == prov.sub_url(some)
+    u = make_update(1, text="/addloc nl 🇳🇱 Нидерланды | socks5://u:p@1.2.3.4:1080")
+    await bot.addloc(u, ctx); assert len(prov.locations) == 2
+    assert "Страны:" in bot.main_text(db.get_user(200))
+    assert "другую страну" in bot.fix_text() and "Обход" not in bot.fix_text()
+    u = make_update(1, text="/addbridge ru1 🇷🇺 Обход | 198.51.100.9"); await bot.addbridge(u, ctx)
+    assert "Мост добавлен" in u.message.reply_text.await_args.args[0] and len(prov.bridges) == 1
+    check_caption(bot.locations_text())
+    check_caption(bot.fix_text()); assert "🇷🇺 Обход" in bot.fix_text()
+    u = make_update(1, text="/addbridge сломано"); await bot.addbridge(u, ctx)
+    assert "Формат" in u.message.reply_text.await_args.args[0]
+    u = make_update(200, text="/addbridge ru2 x | 1.1.1.1"); await bot.addbridge(u, ctx)
+    assert len(prov.bridges) == 1, "не админ не добавляет мосты"
+    ctx.args = ["ru1"]; await bot.delbridge(make_update(1), ctx); ctx.args = []
+    assert not prov.bridges
+    ctx.bot.send_message.reset_mock()
+    prov.add_location("dead", "🇺🇸 США", "socks5://u:p@127.0.0.1:1")
+    prov.check_proxies = AsyncMock(return_value=[(prov.locations[-1], False)])  # сама проверка покрыта в tests/
+    await bot.proxy_health_job(ctx)
+    assert any("не отвечает" in c.args[1] for c in ctx.bot.send_message.await_args_list)
+    prov._server.close()
+    bot.vpn = demo
+
+    app = bot.build_app("123:abc")
+    assert len(captions) > 90, "экраны должны были провериться"
+
+
+class BotFlows(unittest.IsolatedAsyncioTestCase):
+    async def test_all_flows(self):
+        await main()
+
+
+if __name__ == "__main__":
+    unittest.main()
