@@ -2,8 +2,9 @@
 # Диагностика Aurora VPN. Запуск на сервере от root:
 #   bash <(curl -fsSL https://raw.githubusercontent.com/Saske356/Saske356/claude/android-usage-ql87m8/vpn-bot/diag.sh)
 # Подключается к VPN с самого сервера так же, как клиент, и говорит, где проблема.
-# С параметром watch следит, доходят ли подключения телефона до порта VPN.
-# Ничего не меняет в настройках. Токен, ключи и пароли не печатает.
+# С параметром watch минуту следит за портом VPN и показывает, на каком шаге обрывается
+# подключение телефона (на это время включает подробный журнал Xray, потом возвращает как было).
+# Без параметра ничего не меняет в настройках. Токен, ключи и пароли не печатает.
 set -u
 
 XRAY="${XRAY:-/usr/local/bin/xray}"
@@ -14,35 +15,86 @@ trap 'kill "${CPID:-}" 2>/dev/null; rm -rf "$TMP"' EXIT
 : > "$TMP/fails"
 
 # Режим наблюдения:  bash <(curl -fsSL .../diag.sh) watch [секунд]
-# Показывает, доходят ли подключения телефона до порта VPN, пока вы подключаетесь в приложении.
+# Показывает, на каком шаге обрывается подключение телефона. На время наблюдения включает
+# подробный журнал Xray (Xray перезапускается дважды), в конце возвращает конфиг как был.
 if [ "${1:-}" = "watch" ]; then
   SECS="${2:-60}"
   WPORT=$(grep -E '^VPN_PORT=' "$ENVF" 2>/dev/null | cut -d= -f2); WPORT=${WPORT:-443}
+  DETAIL=0
+  restore() {
+    # возвращаем прежний конфиг, только если его за это время не обновил сам бот
+    if [ "$DETAIL" = 1 ] && cmp -s "$CFG" "$TMP/config.debug"; then
+      cp -p "$TMP/config.orig" "$CFG" && systemctl restart xray
+    fi
+    DETAIL=0
+  }
+  trap 'restore; rm -rf "$TMP"' EXIT
+  trap 'exit 1' INT TERM HUP
+  if [ -f "$CFG" ] && cp -p "$CFG" "$TMP/config.orig" && cp -p "$CFG" "$TMP/config.debug" \
+     && python3 - "$TMP/config.debug" <<'PY'
+import json, sys
+path = sys.argv[1]
+cfg = json.load(open(path))
+cfg["log"] = {"loglevel": "debug"}
+for ib in cfg.get("inbounds", []):
+    rs = (ib.get("streamSettings") or {}).get("realitySettings")
+    if rs is not None:
+        rs["show"] = True
+with open(path, "w") as f:
+    json.dump(cfg, f, ensure_ascii=False, indent=1)
+PY
+  then
+    if "$XRAY" run -test -c "$TMP/config.debug" >/dev/null 2>&1; then
+      cp -p "$TMP/config.debug" "$CFG" && DETAIL=1
+      systemctl restart xray || restore
+    fi
+  fi
+  HAD_DETAIL=$DETAIL
+  [ "$DETAIL" = 1 ] || echo "Подробный журнал Xray включить не удалось, смотрю только на подключения."
+  sleep 2
+  START=$(date '+%Y-%m-%d %H:%M:%S')
   echo "Слежу за портом $WPORT $SECS секунд."
-  echo "Сейчас откройте приложение VPN на телефоне и подключитесь (или запустите проверку пинга)."
+  echo ">>> Сейчас откройте приложение VPN на телефоне и запустите проверку пинга или подключитесь."
   END=$((SECONDS + SECS))
   while [ "$SECONDS" -lt "$END" ]; do
     ss -Htn "( sport = :$WPORT )" 2>/dev/null | awk '{print $1, $NF}' >>"$TMP/seen"
     sleep 0.2
   done
+  journalctl -u xray --since "$START" --no-pager -o cat 2>/dev/null \
+    | grep -Ev '127\.0\.0\.1|Reading config|Xray [0-9.]+ |anti-censorship|will increase the likelihood|Logger started' >"$TMP/xlog"
+  restore
   # состояние, адрес и порт клиента; подключения с самого сервера не считаем
   awk '{a=$2; p=a; sub(/.*:/, "", p); sub(/:[0-9]+$/, "", a); gsub(/^\[(::ffff:)?|\]$/, "", a); print $1, a, p}' \
     "$TMP/seen" 2>/dev/null | grep -Ev ' (127\.|::1 )' | sort -u >"$TMP/peers"
+  ESTAB=$(grep -c '^ESTAB ' "$TMP/peers")
+  HELLO=$(grep -c 'REALITY remoteAddr' "$TMP/xlog")
+  INVALID=$(grep -ciE 'invalid|failed to|rejected' "$TMP/xlog")
+  ACCEPTED=$(grep -cE ' accepted |received request for|default route for|taking detour' "$TMP/xlog")
   echo
-  if [ ! -s "$TMP/peers" ]; then
-    echo "ИТОГ: за $SECS секунд на порт $WPORT не пришло ни одного подключения."
-    echo "Телефон до порта VPN не доходит, хотя сервер доступен: оператор режет именно этот порт или протокол."
-    exit 0
+  echo "== Что видел сервер"
+  echo "Адресов, с которых открывались подключения: $(awk '{print $2}' "$TMP/peers" | sort -u | wc -l), установлено подключений: $ESTAB"
+  if [ "$HAD_DETAIL" = 1 ]; then
+    echo "Строк журнала Xray: $(wc -l <"$TMP/xlog"), приветствий VPN: $HELLO, отказов: $INVALID, принятых запросов: $ACCEPTED"
+    echo "Последние строки журнала:"
+    tail -14 "$TMP/xlog" | cut -c1-190 | sed 's/^/  /'
   fi
-  if grep -q '^ESTAB ' "$TMP/peers"; then
-    echo "Кто подключался (адрес и число подключений):"
-    awk '$1 == "ESTAB" {n[$2]++} END {for (a in n) printf "  %s  %d\n", a, n[a]}' "$TMP/peers" | sort
-    echo
-    echo "ИТОГ: подключения до порта $WPORT доходят."
-    echo "Если в приложении при этом нет связи, обрывается само VPN-соединение после установки связи:"
-    echo "оператор распознаёт протокол, либо приложение на телефоне устарело."
+  echo
+  echo "================ ИТОГ ================"
+  if [ ! -s "$TMP/peers" ] && [ "$((HELLO + INVALID + ACCEPTED))" -eq 0 ]; then
+    echo "За $SECS секунд до порта $WPORT не дошло ни одного подключения."
+    echo "Сервер доступен, но именно порт VPN для телефона закрыт по дороге: поможет другой порт."
+  elif [ "$ACCEPTED" -gt 0 ]; then
+    echo "Сервер принял подключение телефона и пустил его в интернет: со стороны сервера всё работает."
+    echo "Если в приложении всё равно «н/д», не срабатывает сам замер пинга в приложении."
+  elif [ "$INVALID" -gt 0 ]; then
+    echo "Подключение телефона дошло, но сервер его не принял (строки с отказом выше)."
+    echo "Так бывает, когда приложение и сервер не договорились: устаревшее приложение или старый ключ."
+  elif [ "$ESTAB" -gt 0 ] || [ "$HELLO" -gt 0 ]; then
+    echo "Связь с сервером устанавливается, но дальше данные от телефона не приходят."
+    echo "Так выглядит обрыв по дороге: оператор распознаёт подключение по первому пакету."
+    echo "Поможет другой сайт маскировки или другой порт."
   else
-    echo "ИТОГ: подключения начинаются, но не устанавливаются: их обрывают по дороге к серверу."
+    echo "Подключения начинаются, но не устанавливаются: их обрывают по дороге к серверу."
   fi
   exit 0
 fi

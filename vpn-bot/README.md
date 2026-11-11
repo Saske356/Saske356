@@ -163,7 +163,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Saske356/Saske356/claude/and
 bash <(curl -fsSL https://raw.githubusercontent.com/Saske356/Saske356/claude/android-usage-ql87m8/vpn-bot/diag.sh)
 ```
 
-Если сервер исправен, а телефон не подключается, запусти её с параметром `watch` и за минуту подключись к VPN в приложении. Она покажет, доходят ли подключения телефона до порта VPN:
+Если сервер исправен, а телефон не подключается, запусти её с параметром `watch` и за минуту нажми в приложении проверку пинга или подключись. Она покажет, на каком шаге обрывается подключение телефона: не доходит до порта, обрывается по дороге, отклоняется сервером или принимается. На эту минуту включается подробный журнал Xray (он дважды перезапускается), потом настройки возвращаются как были.
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/Saske356/Saske356/claude/android-usage-ql87m8/vpn-bot/diag.sh) watch
