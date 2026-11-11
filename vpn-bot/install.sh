@@ -137,6 +137,8 @@ WorkingDirectory=$BOT
 ExecStart=$BOT/.venv/bin/python bot.py
 Restart=always
 RestartSec=5
+TimeoutStopSec=15
+LimitNOFILE=65536
 
 [Install]
 WantedBy=multi-user.target

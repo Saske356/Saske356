@@ -18,6 +18,8 @@ POOL_SIZE = 3            # рабочий прокси + запасные на �
 BAD_DEAD = 6 * 3600      # сколько не возвращаемся к прокси, который умер в работе
 BAD_CANDIDATE = 1800     # сколько не перепроверяем кандидата, не прошедшего проверку
 EXTRA_ATTEMPTS = 5       # сколько лишних стран пробуем за цикл в режиме подбора
+PROBE_BUDGET = 60        # сколько новых прокси можно проверить за один цикл
+PER_COUNTRY = 12         # и сколько из них на одну страну
 HIDE_LIMIT = 6 * 3600    # при подборе страна без прокси столько ждёт, потом уступает место другой
 
 # В режиме подбора страны берутся в этом порядке, затем остальные по числу прокси.
@@ -35,6 +37,7 @@ class AutoProxy:
         self.failover: set[str] = set()
         self._kick: asyncio.Task | None = None
         self.last_run = 0.0
+        self.budget = PROBE_BUDGET
         self.last_note = ""
 
     async def start(self) -> bool:
@@ -89,8 +92,15 @@ class AutoProxy:
         return [u for u in pool.get(cc, []) if u not in skip and self.bad.get(u, 0) < now]
 
     async def _find(self, pool: dict, cc: str, need: int, exclude=()) -> list[tuple[str, int]]:
+        # Проверка идёт понемногу: сотни подключений к чужим адресам подряд хостинг может
+        # принять за сканирование сети и ограничить сервер.
+        tries = min(PER_COUNTRY, self.budget)
+        if tries <= 0:
+            return []
+        urls = self._candidates(pool, cc, exclude)[:tries]
+        self.budget -= len(urls)
         failed: set[str] = set()
-        found = await pp.pick_working(self._candidates(pool, cc, exclude), cc, need, failed=failed)
+        found = await pp.pick_working(urls, cc, need, tries=tries, failed=failed)
         until = time.time() + BAD_CANDIDATE
         for u in failed:
             self.bad[u] = until
@@ -126,6 +136,7 @@ class AutoProxy:
     async def _refresh(self) -> str:
         vpn, nm = self.vpn, pp.country_name
         self.last_run = time.time()
+        self.budget = PROBE_BUDGET
         if not await pp.direct_ok():
             self.last_note = "сервер сам не дошёл до проверочного сайта, проверка пропущена"
             log.warning("авто-страны: %s", self.last_note)

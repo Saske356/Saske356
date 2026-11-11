@@ -78,11 +78,19 @@ def country_name(cc: str) -> str:
 
 # ---------- сбор списков ----------
 
-def _add(pool: dict, cc, proto, ip, port) -> None:
+def _add(pool: dict, cc, proto, ip, port, uptime=None) -> None:
+    """Запоминает прокси с оценкой: чем выше доля успешных проверок у источника и чем больше
+    источников его знают, тем раньше мы его попробуем. Так нужно меньше попыток."""
     proto, cc = (proto or "").lower(), (cc or "").lower()
     if proto not in ALLOWED or len(cc) != 2 or not cc.isalpha() or not ip or not str(port).isdigit():
         return
-    pool.setdefault(cc, set()).add(f"{proto}://{ip}:{int(port)}")
+    try:
+        quality = min(max(float(uptime or 0), 0.0), 100.0) / 100
+    except (TypeError, ValueError):
+        quality = 0.0
+    urls = pool.setdefault(cc, {})
+    url = f"{proto}://{ip}:{int(port)}"
+    urls[url] = urls.get(url, 0.0) + 1 + quality
 
 
 def _parse_proxifly(data, pool) -> None:
@@ -92,13 +100,16 @@ def _parse_proxifly(data, pool) -> None:
 
 def _parse_proxyscrape(data, pool) -> None:
     for p in data.get("proxies", []):
-        _add(pool, (p.get("ip_data") or {}).get("countryCode"), p.get("protocol"), p.get("ip"), p.get("port"))
+        if p.get("alive") is False:
+            continue
+        _add(pool, (p.get("ip_data") or {}).get("countryCode"), p.get("protocol"), p.get("ip"), p.get("port"),
+             p.get("uptime"))
 
 
 def _parse_geonode(data, pool) -> None:
     for p in data.get("data", []):
         for proto in p.get("protocols") or []:
-            _add(pool, p.get("country"), proto, p.get("ip"), p.get("port"))
+            _add(pool, p.get("country"), proto, p.get("ip"), p.get("port"), p.get("upTime"))
 
 
 PARSERS = {"proxifly": _parse_proxifly, "proxyscrape": _parse_proxyscrape, "geonode": _parse_geonode}
@@ -111,7 +122,7 @@ def _fetch_json(url: str, timeout: float = 25.0):
 
 
 def _collect() -> dict[str, list[str]]:
-    pool: dict[str, set] = {}
+    pool: dict[str, dict] = {}
     for name, url in SOURCES:
         try:
             PARSERS[name](_fetch_json(url), pool)
@@ -120,7 +131,8 @@ def _collect() -> dict[str, list[str]]:
     out = {}
     for cc, urls in pool.items():
         lst = list(urls)
-        random.shuffle(lst)
+        random.shuffle(lst)                      # при равной оценке порядок случайный
+        lst.sort(key=lambda u: -urls[u])
         out[cc] = lst[:MAX_PER_COUNTRY]
     log.info("публичные прокси: %d стран, %d адресов", len(out), sum(len(v) for v in out.values()))
     return out
@@ -360,7 +372,7 @@ async def direct_ok(timeout: float = 8.0) -> bool:
 
 
 async def pick_working(urls, country: str, need: int = 1, *, timeout: float = 6.0,
-                       concurrency: int = 20, tries: int = 30,
+                       concurrency: int = 6, tries: int = 12,
                        failed: set | None = None) -> list[tuple[str, int]]:
     """Ищет среди кандидатов прокси, которые работают и выходят из нужной страны.
     Возвращает до need штук (url, мс), самые быстрые первыми. В failed попадают непрошедшие."""

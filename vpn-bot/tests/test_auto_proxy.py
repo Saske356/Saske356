@@ -281,6 +281,32 @@ class ProbeTests(Base):
         self.assertEqual(await pp.pick_working([other.url], "nl"), [])
 
 
+class SourceTests(unittest.TestCase):
+    def test_reliable_proxies_come_first(self):
+        data = {
+            "proxifly": [{"protocol": "socks5", "ip": "198.51.100.1", "port": 1080, "geolocation": {"country": "NL"}},
+                         {"protocol": "socks4", "ip": "198.51.100.9", "port": 1080, "geolocation": {"country": "NL"}}],
+            "proxyscrape": {"proxies": [
+                {"alive": True, "protocol": "http", "ip": "198.51.100.2", "port": 8080, "uptime": 95.0,
+                 "ip_data": {"countryCode": "NL"}},
+                {"alive": True, "protocol": "http", "ip": "198.51.100.3", "port": 8080, "uptime": 4.0,
+                 "ip_data": {"countryCode": "NL"}},
+                {"alive": False, "protocol": "http", "ip": "198.51.100.4", "port": 8080, "uptime": 99.0,
+                 "ip_data": {"countryCode": "NL"}}]},
+            "geonode": {"data": [{"ip": "198.51.100.1", "port": "1080", "protocols": ["socks5"], "country": "NL",
+                                  "upTime": 50}]},
+        }
+        real = pp._fetch_json
+        pp._fetch_json = lambda url, timeout=25.0: data[next(n for n, u in pp.SOURCES if u == url)]
+        try:
+            pool = pp._collect()
+        finally:
+            pp._fetch_json = real
+        self.assertEqual(pool, {"nl": ["socks5://198.51.100.1:1080",   # есть в двух списках
+                                       "http://198.51.100.2:8080",     # почти всегда отвечал
+                                       "http://198.51.100.3:8080"]})   # отвечал редко
+
+
 class RelayTests(Base):
     async def asyncSetUp(self):
         await super().asyncSetUp()
@@ -548,6 +574,25 @@ class ManagerTests(Base):
         self.assertIn("Убраны", report)
         self.assertEqual([l["code"] for l in self.vpn.auto_locations()], ["de"])
         self.assertNotIn("nl", mgr.relay.routes)
+
+    async def test_one_cycle_probes_a_limited_number_of_new_proxies(self):
+        import auto_proxy
+        codes = ["nl", "de", "us", "gb", "fr", "fi", "se", "ch"]
+        self.pool = {cc: [f"socks5://127.0.0.1:{1000 + i * 50 + n}" for n in range(40)]
+                     for i, cc in enumerate(codes)}
+        mgr = await self.manager(countries=tuple(codes))
+        probed, real = [], pp.probe
+
+        async def counting(url, timeout=6.0):
+            probed.append(url)
+            return None
+        pp.probe = counting
+        try:
+            await mgr.refresh()
+        finally:
+            pp.probe = real
+        self.assertEqual(len(probed), auto_proxy.PROBE_BUDGET)
+        self.assertEqual(len(set(probed)), len(probed))
 
     async def test_tick_notifies_only_when_enabled(self):
         nl = await self.proxy("socks5", "nl")
