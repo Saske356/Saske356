@@ -168,9 +168,10 @@ fi
 
 say "Проверка"
 ok=1
-# бот при запуске пишет конфиг Xray и перезапускает его: ждём, пока Xray займёт порт 443
-for _ in $(seq 1 30); do
-  ss -tlnpH 'sport = :443' | grep -q '"xray"' && break
+# Бот при запуске пишет конфиг Xray, перезапускает его и только потом открывает порт подписок.
+# При обновлении старый Xray уже слушает 443, поэтому ждём именно порт подписок.
+for _ in $(seq 1 45); do
+  ss -tlnpH "sport = :$SUB_PORT" | grep -q python && ss -tlnpH 'sport = :443' | grep -q '"xray"' && break
   sleep 1
 done
 systemctl is-active -q aurora-bot && echo "✅ бот работает" || { echo "❌ бот не запустился"; ok=0; }
