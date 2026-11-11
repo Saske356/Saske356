@@ -22,7 +22,7 @@ import qrcode
 from telegram import (BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto,
                       LabeledPrice, MenuButtonWebApp, Update, WebAppInfo)
 from telegram.constants import ParseMode
-from telegram.error import BadRequest, Forbidden, TelegramError
+from telegram.error import BadRequest, Forbidden, RetryAfter, TelegramError
 from telegram.ext import (Application, CallbackQueryHandler, CommandHandler, ContextTypes,
                           Defaults, MessageHandler, PreCheckoutQueryHandler, filters)
 
@@ -32,6 +32,7 @@ import masking
 import public_proxies
 from auto_proxy import AutoProxy
 from db import DAY, DB
+from devices import DeviceGuard
 from vpn import get_provider
 
 logging.basicConfig(format="%(asctime)s | %(levelname)s | %(message)s", level=logging.INFO)
@@ -41,6 +42,7 @@ log = logging.getLogger("vpn-bot")
 db = DB(config.DB_PATH)
 vpn = get_provider()
 auto_mgr = AutoProxy(vpn) if hasattr(vpn, "auto") else None
+guard = DeviceGuard(config.DEVICE_LIMIT, block_minutes=config.DEVICE_BLOCK_MINUTES)
 esc = html.escape
 
 CONFETTI = "5046509860389126442"   # встроенный эффект Telegram «🎉»
@@ -89,6 +91,42 @@ def plural_dev(n: int) -> str:
 
 def bullets(items) -> str:
     return "\n".join(f"◆ {x}" for x in items)
+
+
+def fmt_bytes(n: float) -> str:
+    n = float(n or 0)
+    if n >= 2**30:
+        return f"{n / 2**30:.1f} ГБ"
+    return f"{n / 2**20:.0f} МБ"
+
+
+# ---------------------------------------------------------------- цены и персональные скидки
+
+def offer_pct(uid: int | None) -> int:
+    o = db.get_offer(uid) if uid else None
+    return o["percent"] if o else 0
+
+
+def price(uid: int | None, plan: str, dev: int, once: bool = True) -> int:
+    """Цена для этого гостя. Персональная скидка действует только на разовую оплату:
+    автопродление списывало бы сниженную цену каждый месяц."""
+    full = config.plan_price(plan, dev)
+    pct = offer_pct(uid) if once and plan != "test" else 0
+    return max(1, round(full * (100 - pct) / 100)) if pct else full
+
+
+def price_tag(uid: int | None, plan: str, dev: int) -> str:
+    """«89 ⭐» или «89 ⭐ вместо 99» при скидке."""
+    p, full = price(uid, plan, dev), config.plan_price(plan, dev)
+    return f"{p} ⭐" + (f" вместо {full}" if p != full else "")
+
+
+def offer_line(uid: int | None) -> str:
+    o = db.get_offer(uid) if uid else None
+    if not o:
+        return ""
+    return (f"\n🎁 <b>Ваша скидка {o['percent']}%</b> на разовую оплату, до "
+            f"{datetime.datetime.fromtimestamp(o['until']).strftime('%d.%m %H:%M')}")
 
 
 def sub_active(sub) -> bool:
@@ -157,7 +195,9 @@ def main_text(row) -> str:
 
 def main_kb(row) -> InlineKeyboardMarkup:
     uid = row["id"]
-    rows = [[B("◆ Продлить доступ" if user_active(uid) else "◆ Оформить доступ", "plans")]]
+    pct = offer_pct(uid)
+    label = "◆ Продлить доступ" if user_active(uid) else "◆ Оформить доступ"
+    rows = [[B(label + (f" · −{pct}%" if pct else ""), "plans")]]
     if config.MINIAPP_URL:
         rows.append([B("✨ Открыть приложение", webapp=miniapp_url(row))])
     if can_trial(row):
@@ -191,12 +231,13 @@ def find_plan(plan: str, user_id: int):
     return config.PLANS.get(plan)
 
 
-def plans_text(target=None) -> str:
+def plans_text(target=None, uid: int | None = None) -> str:
+    uid = target["user_id"] if target else uid
     lines = []
-    for k, (name, days, price) in config.PLANS.items():
-        d = plan_discount(days, price)
+    for k, (name, days, base) in config.PLANS.items():
+        d = plan_discount(days, base)
         tail = f" · <i>выгода {d}%</i>" if d >= 3 else ""
-        lines.append(f"{plan_mark(k)} <b>{esc(name)}</b> · от {price} ⭐{tail}")
+        lines.append(f"{plan_mark(k)} <b>{esc(name)}</b> · от {price_tag(uid, k, min(config.DEVICE_OPTIONS))}{tail}")
     head = (f"<b>Продление «{esc(target['name'])}»</b>\n<i>{plural_dev(target['devices'])}. "
             "Выберите срок.</i>" if target else
             "<b>Выберите тариф</b>\n<i>Чем дольше срок, тем выгоднее.</i>")
@@ -204,33 +245,36 @@ def plans_text(target=None) -> str:
             any(d == 30 for _, d, _ in config.PLANS.values()) else "")
     return (f"{head}\n\n<blockquote>{chr(10).join(lines)}</blockquote>\n\n"
             "◆ Цена зависит от числа устройств\n"
-            "◆ Оплата звёздами Telegram прямо в чате" + auto)
+            "◆ Оплата звёздами Telegram прямо в чате" + auto + offer_line(uid))
 
 
-def plans_kb(target=None) -> InlineKeyboardMarkup:
+def plans_kb(target=None, uid: int | None = None) -> InlineKeyboardMarkup:
     rows = []
-    for k, (name, days, price) in config.PLANS.items():
+    for k, (name, days, base) in config.PLANS.items():
         if target:
-            p = config.plan_price(k, target["devices"])
+            p = price(target["user_id"], k, target["devices"])
             rows.append([B(f"{plan_mark(k)} {name} — {p} ⭐", f"bt:{k}:{target['id']}")])
         else:
-            rows.append([B(f"{plan_mark(k)} {name} — от {price} ⭐", f"buy:{k}")])
+            p = price(uid, k, min(config.DEVICE_OPTIONS))
+            rows.append([B(f"{plan_mark(k)} {name} — от {p} ⭐", f"buy:{k}")])
     rows.append([B("‹ Подписка", f"sub:{target['id']}") if target else BACK])
     return InlineKeyboardMarkup(rows)
 
 
-def devices_text(plan: str, gift: bool) -> str:
+def devices_text(plan: str, gift: bool, uid: int | None = None) -> str:
     name = config.PLANS[plan][0]
     what = "Подарок" if gift else "Новая подписка"
-    lines = [f"◆ {plural_dev(n)} · {config.plan_price(plan, n)} ⭐" for n in config.DEVICE_OPTIONS]
+    who_pays = None if gift else uid
+    lines = [f"◆ {plural_dev(n)} · {price_tag(who_pays, plan, n)}" for n in config.DEVICE_OPTIONS]
     return (f"<b>{what} · {esc(name)}</b>\n<i>Сколько устройств подключить?</i>\n\n"
             f"<blockquote>{chr(10).join(lines)}</blockquote>\n\n"
-            "Одна подписка работает на выбранном числе устройств одновременно.")
+            "Одна подписка работает на выбранном числе устройств одновременно."
+            + ("" if gift else offer_line(uid)))
 
 
-def devices_kb(plan: str, gift: bool) -> InlineKeyboardMarkup:
+def devices_kb(plan: str, gift: bool, uid: int | None = None) -> InlineKeyboardMarkup:
     pref = "bg" if gift else "bn"
-    rows = [[B(f"{plural_dev(n)} — {config.plan_price(plan, n)} ⭐", f"{pref}:{plan}:{n}")]
+    rows = [[B(f"{plural_dev(n)} — {price(None if gift else uid, plan, n)} ⭐", f"{pref}:{plan}:{n}")]
             for n in config.DEVICE_OPTIONS]
     rows.append([B("‹ Тарифы", "gift" if gift else "plans")])
     return InlineKeyboardMarkup(rows)
@@ -299,13 +343,17 @@ def sub_text(s) -> str:
     head = f"<b>{esc(s['name'])}</b>\n<i>{plural_dev(s['devices'])}</i>\n\n"
     if not sub_active(s):
         return head + "◇ Срок подписки закончился. Продлите, и ключ снова заработает."
-    many = len(location_names()) > 1
+    many = len(location_names()) > 1 or bool(getattr(vpn, "hy2", None))
     auto = "\n◆ Автопродление включено: звёзды спишутся сами раз в месяц" if s["auto_active"] else ""
+    used = (s["up_bytes"] or 0) + (s["down_bytes"] or 0)
+    traffic = f"\n◆ Трафик: {fmt_bytes(used)}" if not vpn.is_demo and used else ""
+    paused = ("\n⛔ <b>Временно отключена</b>: подключено больше устройств, чем в подписке"
+              if getattr(vpn, "is_suspended", None) and vpn.is_suspended(s["id"]) else "")
     return (head + f"<code>{esc(s['vpn_key'] or '')}</code>\n\n"
-            + ("<i>Нажмите на ссылку, чтобы скопировать. В ней сразу все страны.</i>\n" if many
-               else "<i>Нажмите на ключ, чтобы скопировать.</i>\n")
+            + ("<i>Нажмите на ссылку, чтобы скопировать. В ней сразу все страны и способы подключения.</i>\n"
+               if many else "<i>Нажмите на ключ, чтобы скопировать.</i>\n")
             + f"◆ Действует до <b>{fmt_date(s['expires_at'])}</b> · ещё {plural_days(days_left(s))}"
-            + auto + demo_note())
+            + traffic + auto + paused + demo_note())
 
 
 def sub_kb(s) -> InlineKeyboardMarkup:
@@ -404,7 +452,7 @@ def current_user(update: Update):
 
 async def issue_key(sub_id: int):
     sub = db.get_sub(sub_id)
-    db.set_key(sub_id, await vpn.issue(sub_id, sub["expires_at"]), True)
+    db.set_key(sub_id, await vpn.issue(sub_id, sub["expires_at"], sub["devices"]), True)
     return db.get_sub(sub_id)
 
 
@@ -474,7 +522,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await terms(update, context)
         return
     elif arg == "plans":
-        await show(update, context, plans_text(), plans_kb(), banner="plans")
+        await show(update, context, plans_text(uid=u.id), plans_kb(uid=u.id), banner="plans")
         return
     elif arg.startswith("buy_") and arg[4:] in config.PLANS:
         await choose_target(update, context, arg[4:])
@@ -509,7 +557,7 @@ async def paysupport(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def do_trial(update: Update, context: ContextTypes.DEFAULT_TYPE, row) -> None:
     uid = row["id"]
     db.mark_trial(uid)
-    sub = db.create_sub(uid, 1, "Пробный ключ")
+    sub = db.create_sub(uid, 1, "Пробный ключ", trial=True)
     db.extend_sub(sub["id"], config.TRIAL_DAYS)
     sub = await issue_key(sub["id"])
     await refresh_menu(context, uid)
@@ -526,10 +574,10 @@ async def choose_target(update: Update, context: ContextTypes.DEFAULT_TYPE, plan
     uid = update.effective_user.id
     subs = db.user_subs(uid)[-6:]
     if not subs:
-        await show(update, context, devices_text(plan, False), devices_kb(plan, False), banner="plans")
+        await show(update, context, devices_text(plan, False, uid), devices_kb(plan, False, uid), banner="plans")
         return
     name = config.PLANS[plan][0]
-    rows = [[B(f"◆ Продлить «{s['name']}» · {config.plan_price(plan, s['devices'])} ⭐",
+    rows = [[B(f"◆ Продлить «{s['name']}» · {price(uid, plan, s['devices'])} ⭐",
                f"bt:{plan}:{s['id']}")] for s in subs]
     rows.append([B("➕ Новая подписка", f"bd:{plan}"), B("🎀 В подарок", f"gd:{plan}")])
     rows.append([B("‹ Тарифы", "plans")])
@@ -543,15 +591,16 @@ async def choose_payment(update: Update, context: ContextTypes.DEFAULT_TYPE, kin
                          dev: int, sub_id: int) -> None:
     """Для тарифа на месяц предлагаем автопродление, остальное сразу в оплату."""
     name, days, _ = config.PLANS[plan]
-    price = config.plan_price(plan, dev)
+    uid = update.effective_user.id
+    full, once = config.plan_price(plan, dev), price(uid, plan, dev)
     if config.AUTO_RENEW and days == 30:
         await show(update, context,
                    f"<b>{esc(name)} · {plural_dev(dev)}</b>\n<i>Как удобнее оплачивать?</i>\n\n"
                    "<blockquote>🔁 С автопродлением: звёзды спишутся сами раз в месяц, "
                    "доступ не прервётся. Отключить можно в любой момент.\n"
-                   "⚡ Разово: оплата на один месяц.</blockquote>",
-                   KB([B(f"🔁 Автопродление — {price} ⭐/мес", f"pa:{kind}:{plan}:{dev}:{sub_id}")],
-                      [B(f"⚡ Разово — {price} ⭐", f"po:{kind}:{plan}:{dev}:{sub_id}")],
+                   "⚡ Разово: оплата на один месяц.</blockquote>" + offer_line(uid),
+                   KB([B(f"🔁 Автопродление — {full} ⭐/мес", f"pa:{kind}:{plan}:{dev}:{sub_id}")],
+                      [B(f"⚡ Разово — {once} ⭐", f"po:{kind}:{plan}:{dev}:{sub_id}")],
                       [B("‹ Тарифы", "plans")]), banner="plans")
         return
     await send_order(update, context, kind, plan, dev, sub_id, auto=False)
@@ -561,10 +610,11 @@ async def send_order(update: Update, context: ContextTypes.DEFAULT_TYPE, kind: s
                      dev: int, sub_id: int, auto: bool) -> None:
     """kind: n — новая подписка, e — продление, g — подарок."""
     name, days, _ = config.PLANS[plan]
-    price = config.plan_price(plan, dev)
+    uid = update.effective_user.id
+    amount = price(None if kind == "g" else uid, plan, dev, once=not auto)
     code = {"n": "a" if auto else "b", "e": "x" if auto else "e", "g": "g"}[kind]
     token = secrets.token_hex(6) if auto else "-"
-    payload = f"v2:{code}:{plan}:{days}:{price}:{dev}:{sub_id}:{token}"
+    payload = f"v2:{code}:{plan}:{days}:{amount}:{dev}:{sub_id}:{token}"
     if kind == "g":
         title = f"{config.BRAND} · подарок"
         desc = (f"Подарочный доступ на {plural_days(days)}, {plural_dev(dev)}. "
@@ -573,16 +623,16 @@ async def send_order(update: Update, context: ContextTypes.DEFAULT_TYPE, kind: s
         title = f"{config.BRAND} · {name}"
         desc = (f"Персональный доступ к VPN на {plural_days(days)}, {plural_dev(dev)}. "
                 + ("Продлевается автоматически каждый месяц." if auto else "Ключ придёт сразу после оплаты."))
-    prices = [LabeledPrice(name, price)]
+    prices = [LabeledPrice(name, amount)]
     chat = update.effective_chat.id
     if auto:
         link = await context.bot.create_invoice_link(
             title=title, description=desc, payload=payload, provider_token="", currency="XTR",
             prices=prices, subscription_period=MONTH)
         await context.bot.send_message(
-            chat, f"🔁 <b>Подписка с автопродлением</b>\n\n{price} ⭐ в месяц, {plural_dev(dev)}. "
+            chat, f"🔁 <b>Подписка с автопродлением</b>\n\n{amount} ⭐ в месяц, {plural_dev(dev)}. "
                   "Отключить можно в любой момент в «Мои подписки».",
-            reply_markup=KB([B(f"Оформить · {price} ⭐/мес", url=link)]))
+            reply_markup=KB([B(f"Оформить · {amount} ⭐/мес", url=link)]))
         return
     await context.bot.send_invoice(chat_id=chat, title=title, description=desc, payload=payload,
                                    provider_token="", currency="XTR", prices=prices)
@@ -605,11 +655,14 @@ async def precheckout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if not p:
         await q.answer(ok=False, error_message=stale)
         return
-    code, plan, days, price, dev, sub_id, _ = p
+    code, plan, days, amount, dev, sub_id, _ = p
     current = find_plan(plan, q.from_user.id)
-    ok = bool(current and q.currency == "XTR" and current[1] == days and q.total_amount == price
-              and (dev in config.DEVICE_OPTIONS or plan == "test")
-              and price == config.plan_price(plan, dev))
+    ok = bool(current and q.currency == "XTR" and current[1] == days and q.total_amount == amount
+              and (dev in config.DEVICE_OPTIONS or plan == "test"))
+    if ok:
+        # Полная цена, или цена со скидкой этого гостя — только для разовой оплаты себе.
+        ok = amount == config.plan_price(plan, dev) or (code in ("b", "e")
+                                                         and amount == price(q.from_user.id, plan, dev))
     if ok and code in ("e", "x"):
         sub = db.get_sub(sub_id)
         ok = bool(sub) and sub["user_id"] == q.from_user.id and sub["devices"] == dev
@@ -654,8 +707,16 @@ async def paid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     first_payment = db.payments_count(u.id) == 0
     kind = {"b": "buy", "a": "auto", "e": "ext", "x": "auto", "g": "gift"}[code]
-    if not db.add_payment(u.id, plan, sp.total_amount, days, charge, kind, None, dev):
+    try:
+        full = config.plan_price(plan, dev)
+    except KeyError:  # тариф убрали из настроек после выставления счёта
+        full = sp.total_amount
+    discounted = code in ("b", "e") and sp.total_amount < full
+    if not db.add_payment(u.id, plan, sp.total_amount, days, charge, kind, None, dev,
+                          full_price=full if discounted else None):
         return  # Telegram прислал тот же платёж повторно
+    if discounted:
+        db.use_offer(u.id)
 
     if code == "g":
         gift = db.create_gift(u.id, days, dev)
@@ -676,6 +737,7 @@ async def paid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not sub or sub["user_id"] != u.id:
         sub = db.create_sub(u.id, dev)
     db.extend_sub(sub["id"], days)
+    db.run("UPDATE subscriptions SET trial=0 WHERE id=?", sub["id"])  # оплаченная — уже не пробная
     if code in ("a", "x"):
         db.set_auto(sub["id"], token, charge, True)
     db.set_payment_target(charge, sub["id"])
@@ -746,7 +808,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await choose_target(update, context, parts[1])
         else:
             gift = parts[0] == "gd"
-            await show(update, context, devices_text(parts[1], gift), devices_kb(parts[1], gift),
+            await show(update, context, devices_text(parts[1], gift, uid), devices_kb(parts[1], gift, uid),
                        banner="plans")
         return
     if parts[0] in ("bn", "bg") and len(parts) == 3 and parts[1] in config.PLANS:
@@ -835,7 +897,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if data == "menu":
         await show(update, context, main_text(row), main_kb(row))
     elif data == "plans":
-        await show(update, context, plans_text(), plans_kb(), banner="plans")
+        await show(update, context, plans_text(uid=uid), plans_kb(uid=uid), banner="plans")
     elif data == "gift":
         rows = [[B(f"{plan_mark(k)} {n} — от {pr} ⭐", f"gd:{k}")] for k, (n, d, pr) in config.PLANS.items()]
         rows.append([BACK])
@@ -973,16 +1035,14 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     mode = context.user_data.pop("await", None)
 
     if mode == "broadcast" and uid in config.ADMIN_IDS:
-        await msg.reply_text("Рассылка началась…")
-        ok = fail = 0
-        for target in db.all_user_ids():
-            try:
-                await context.bot.copy_message(target, msg.chat_id, msg.message_id)
-                ok += 1
-            except (Forbidden, BadRequest):
-                fail += 1
-            await asyncio.sleep(0.05)
-        await msg.reply_text(f"Готово. Доставлено: {ok}, не доставлено: {fail}.")
+        task = STATE.get("broadcast")
+        if task and not task.done():
+            await msg.reply_text("Предыдущая рассылка ещё идёт. Дождитесь отчёта о ней.")
+            return
+        await msg.reply_text("Рассылка началась. Бот в это время отвечает гостям как обычно, "
+                             "отчёт придёт сюда.")
+        STATE["broadcast"] = asyncio.get_running_loop().create_task(
+            broadcast(context.bot, uid, msg.chat_id, msg.message_id))
         return
 
     if mode == "promo" and msg.text:
@@ -1004,6 +1064,50 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             return
 
     await show(update, context, main_text(row), main_kb(row))
+
+
+def retry_seconds(e: RetryAfter) -> float:
+    ra = e.retry_after
+    return ra.total_seconds() if hasattr(ra, "total_seconds") else float(ra)
+
+
+async def broadcast(bot, admin_chat: int, from_chat: int, message_id: int) -> tuple[int, int]:
+    """Рассылка в фоне: около 25 сообщений в секунду, как разрешает Telegram. Если Telegram
+    просит подождать, бот ждёт и отправляет то же сообщение ещё раз, а не теряет его."""
+    targets = db.all_user_ids()
+    ok = fail = 0
+    progress = None
+    try:
+        progress = await bot.send_message(admin_chat, f"📢 Рассылка: 0 из {len(targets)}")
+    except TelegramError:
+        pass
+    for i, target in enumerate(targets, 1):
+        for attempt in range(4):
+            try:
+                await bot.copy_message(target, from_chat, message_id)
+                ok += 1
+                break
+            except RetryAfter as e:
+                await asyncio.sleep(retry_seconds(e) + 1)
+            except (Forbidden, BadRequest):
+                fail += 1  # гость удалил чат или заблокировал бота
+                break
+            except TelegramError:
+                if attempt == 3:
+                    fail += 1
+                else:
+                    await asyncio.sleep(2 * (attempt + 1))
+        await asyncio.sleep(0.04)
+        if progress and i % 200 == 0:
+            try:
+                await progress.edit_text(f"📢 Рассылка: {i} из {len(targets)}")
+            except TelegramError:
+                pass
+    try:
+        await bot.send_message(admin_chat, f"📢 Рассылка готова. Доставлено: {ok}, не доставлено: {fail}.")
+    except TelegramError:
+        pass
+    return ok, fail
 
 
 async def send_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE, row) -> None:
@@ -1095,14 +1199,61 @@ def admin_text() -> str:
             "/server: состояние сервера, /backup: резервная копия\n"
             "/autoproxy: страны из бесплатных публичных прокси\n"
             "/sni: сайт маскировки и его смена\n"
+            "/traffic: трафик и устройства, /funnel: воронка продаж\n"
             f"/testpay: тестовая оплата на {config.TEST_PLAN[2]} ⭐\n"
             "Тикеты: ответьте на сообщение гостя, и ответ уйдёт ему")
 
 
 def admin_kb() -> InlineKeyboardMarkup:
     return KB([B("💳 Платежи", "adm:pays"), B("📢 Рассылка", "adm:bc")],
+              [B("📈 Воронка", "adm:fun"), B("📊 Трафик", "adm:trf")],
               [B("🖥 Сервер", "adm:srv"), B("💾 Резервная копия", "adm:bak")],
               [B("🔄 Обновить", "adm:stats"), BACK])
+
+
+def pct(part: int, whole: int) -> str:
+    return f"{round(part * 100 / whole)}%" if whole else "—"
+
+
+def funnel_text() -> str:
+    def block(f) -> str:
+        return (f"◆ Запустили бота: <b>{f['users']}</b>\n"
+                f"◆ Взяли пробный: {f['trial']} ({pct(f['trial'], f['users'])})\n"
+                f"◆ Оплатили: <b>{f['paid']}</b> ({pct(f['paid'], f['users'])})\n"
+                f"◆ Из пробного в оплату: {pct(f['trial_paid'], f['trial'])} "
+                f"({f['trial_paid']} из {f['trial']})\n"
+                f"◆ Платили 2 раза и больше: {f['repeat']} ({pct(f['repeat'], f['paid'])} от оплативших)\n"
+                f"◆ Оплат по персональной скидке: {f['offers_used']}")
+    return ("<b>Воронка продаж</b>\n\n<b>За всё время</b>\n<blockquote>" + block(db.funnel()) + "</blockquote>\n\n"
+            "<b>Гости за 30 дней</b>\n<blockquote>" + block(db.funnel(time.time() - 30 * DAY)) + "</blockquote>\n\n"
+            "<i>Где процент резко падает, там гости и уходят.</i>")
+
+
+def traffic_text() -> str:
+    lines = [f"◆ Всего через VPN: <b>{fmt_bytes(db.total_traffic())}</b>"]
+    mode = {"block": "предупреждение, потом отключение на "
+                     f"{config.DEVICE_BLOCK_MINUTES} мин", "warn": "только предупреждение",
+            "off": "не проверяется"}[guard.mode]
+    lines.append(f"◆ Лимит устройств: {mode}")
+    if guard.last_at:
+        online = sum(1 for n in guard.last.values() if n)
+        lines.append(f"◆ Онлайн подписок: {online} (замер {_ago(guard.last_at)} назад)")
+    if guard.blocked:
+        lines.append(f"◆ Отключены за превышение: {len(guard.blocked)}")
+    head = "<b>Трафик и устройства</b>\n\n<blockquote>" + "\n".join(lines) + "</blockquote>\n\n"
+    top = []
+    for s in db.top_traffic(10):
+        used = (s["up_bytes"] or 0) + (s["down_bytes"] or 0)
+        if not used:
+            continue
+        who_ = f"@{esc(s['username'])}" if s["username"] else esc(s["first_name"] or str(s["user_id"]))
+        dev = guard.last.get(s["id"])
+        line = (f"◆ {who_} · {esc(s['name'])} · {fmt_bytes(used)}"
+                + (f" · онлайн {dev} из {s['devices']}" if dev else ""))
+        if len(head) + len("<b>Больше всех</b>\n") + sum(len(t) + 1 for t in top) + len(line) > 1000:
+            break  # подпись к картинке в Telegram не длиннее 1024 символов
+        top.append(line)
+    return head + ("<b>Больше всех</b>\n" + "\n".join(top) if top else "<i>Трафика пока нет.</i>")
 
 
 def fmt_span(sec: float) -> str:
@@ -1181,9 +1332,53 @@ def make_backup() -> list[tuple[str, bytes]]:
     return files
 
 
+async def _run(*cmd, data: bytes | None = None, env: dict | None = None, timeout: float = 300) -> tuple[int, bytes]:
+    proc = await asyncio.create_subprocess_exec(
+        *cmd, stdin=asyncio.subprocess.PIPE if data is not None else asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+        env={**os.environ, **(env or {})})
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(data), timeout)
+    except asyncio.TimeoutError:
+        proc.kill()
+        return 1, b"timeout"
+    return proc.returncode, out
+
+
+async def pack_backup(files: list[tuple[str, bytes]], stamp: str) -> tuple[str, bytes]:
+    """Один архив с базой и настройками VPN. С паролем (BACKUP_PASSWORD) он шифруется AES-256:
+    расшифровать можно командой openssl, которая есть на любом сервере."""
+    import tarfile
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for name, data in files:
+            info = tarfile.TarInfo(name)
+            info.size, info.mtime, info.mode = len(data), int(time.time()), 0o600
+            tar.addfile(info, io.BytesIO(data))
+    name, blob = f"aurora-{stamp}.tar.gz", buf.getvalue()
+    if config.BACKUP_PASSWORD:
+        code, out = await _run("openssl", "enc", "-aes-256-cbc", "-pbkdf2", "-iter", "200000", "-salt",
+                               "-pass", "env:AURORA_BACKUP_PASSWORD", data=blob,
+                               env={"AURORA_BACKUP_PASSWORD": config.BACKUP_PASSWORD})
+        if code != 0:
+            raise RuntimeError("openssl не зашифровал копию: " + out.decode(errors="replace")[-300:])
+        name, blob = name + ".enc", out
+    return name, blob
+
+
+DECRYPT_HINT = ("openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in ФАЙЛ.tar.gz.enc | tar xz")
+
+
 async def send_backup(bot, chat_id: int) -> int:
     stamp = datetime.datetime.now().strftime("%Y-%m-%d")
     files = make_backup()
+    if config.BACKUP_PASSWORD:
+        name, blob = await pack_backup(files, stamp)
+        await bot.send_document(
+            chat_id, document=io.BytesIO(blob), filename=name,
+            caption=("💾 <b>Резервная копия</b> от " + stamp + ", зашифрована паролем из BACKUP_PASSWORD.\n"
+                     f"Расшифровать: <code>{esc(DECRYPT_HINT)}</code>\nКак восстановить, написано в README."))
+        return 1
     for i, (name, data) in enumerate(files):
         await bot.send_document(
             chat_id, document=io.BytesIO(data), filename=f"aurora-{stamp}-{name}",
@@ -1192,14 +1387,50 @@ async def send_backup(bot, chat_id: int) -> int:
     return len(files)
 
 
+async def store_backup() -> list[str]:
+    """Копия на диске сервера и, если задан BACKUP_RCLONE, в облаке. Возвращает список проблем."""
+    problems = []
+    stamp = datetime.datetime.now().strftime("%Y-%m-%d")
+    name, blob = await pack_backup(make_backup(), stamp)
+    os.makedirs(config.BACKUP_DIR, mode=0o700, exist_ok=True)
+    path = os.path.join(config.BACKUP_DIR, name)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as f:
+        f.write(blob)
+    keep = max(1, config.BACKUP_KEEP)
+    old = sorted(f for f in os.listdir(config.BACKUP_DIR) if f.startswith("aurora-") and ".tar.gz" in f)
+    for f in old[:-keep]:
+        os.unlink(os.path.join(config.BACKUP_DIR, f))
+    if config.BACKUP_RCLONE:
+        if not config.BACKUP_PASSWORD:
+            problems.append("копия уходит в облако без шифрования: задайте BACKUP_PASSWORD в .env")
+        remote = config.BACKUP_RCLONE.rstrip("/")
+        try:
+            code, out = await _run("rclone", "copyto", path, f"{remote}/{name}")
+            if code != 0:
+                problems.append("rclone не отправил копию: " + out.decode(errors="replace")[-300:])
+            else:
+                await _run("rclone", "delete", remote, "--min-age", f"{keep}d", "--include", "aurora-*")
+        except OSError as e:
+            problems.append(f"rclone не установлен: {e}")
+    return problems
+
+
 async def backup_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     if db.stats()["users"] == 0:
         return
+    try:
+        problems = await store_backup()
+    except Exception as e:
+        log.exception("резервная копия на диск")
+        problems = [f"копия на сервере не сохранилась: {e}"]
     for admin_id in config.ADMIN_IDS:
         try:
             await send_backup(context.bot, admin_id)
-        except TelegramError as e:
+        except Exception as e:
             log.warning("резервная копия админу %s: %s", admin_id, e)
+    if problems:
+        await send_admins(context.bot, "⚠️ <b>Резервная копия</b>\n\n" + "\n".join(esc(p) for p in problems))
 
 
 def who_paid(p) -> str:
@@ -1282,8 +1513,12 @@ async def admin_button(update: Update, context: ContextTypes.DEFAULT_TYPE, row, 
         await q.answer("Отправляю копию 👇")
         await send_backup(context.bot, row["id"])
         return
-    await q.answer("Обновлено" if act in ("stats", "pays", "srv") else None)
-    if act == "srv":
+    await q.answer("Обновлено" if act in ("stats", "pays", "srv", "fun", "trf") else None)
+    if act == "fun":
+        await show(update, context, funnel_text(), KB([B("🔄 Обновить", "adm:fun"), B("‹ Админ-панель", "adm:stats")]))
+    elif act == "trf":
+        await show(update, context, traffic_text(), KB([B("🔄 Обновить", "adm:trf"), B("‹ Админ-панель", "adm:stats")]))
+    elif act == "srv":
         await show(update, context, await server_text(),
                    KB([B("🔄 Обновить", "adm:srv"), B("‹ Админ-панель", "adm:stats")]))
     elif act == "stats":
@@ -1323,6 +1558,18 @@ async def server(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 @admin_only
 async def backup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await send_backup(context.bot, update.effective_user.id)
+
+
+@admin_only
+async def funnel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    current_user(update)
+    await show(update, context, funnel_text(), KB([B("🔄 Обновить", "adm:fun"), B("‹ Админ-панель", "adm:stats")]))
+
+
+@admin_only
+async def traffic(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    current_user(update)
+    await show(update, context, traffic_text(), KB([B("🔄 Обновить", "adm:trf"), B("‹ Админ-панель", "adm:stats")]))
 
 
 @admin_only
@@ -1828,8 +2075,37 @@ async def sni_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 # ---------------------------------------------------------------- фоновые задачи
 
+def buy_kb(sub=None) -> InlineKeyboardMarkup:
+    """Кнопки покупки в напоминаниях: продление этой подписки или сразу тарифы."""
+    rows = [[B("◆ Продлить", f"ext:{sub['id']}")]] if sub else []
+    keys = list(config.PLANS)[:2]
+    rows.append([B(f"{config.PLANS[k][0]}", f"buy:{k}") for k in keys])
+    rows.append([B("◆ Все тарифы", "plans")])
+    return InlineKeyboardMarkup(rows)
+
+
+async def tell(bot, uid: int, text: str, kb=None) -> bool:
+    try:
+        await bot.send_message(uid, text, reply_markup=kb)
+        return True
+    except TelegramError:
+        return False
+
+
 async def lifecycle_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     for s in db.expiring_soon(DAY):
+        if s["trial"]:
+            # Пробный период короткий: напоминаем за несколько часов, а не за сутки.
+            left = s["expires_at"] - time.time()
+            if left > config.TRIAL_REMIND_HOURS * 3600:
+                continue
+            db.mark_reminded(s["id"], s["expires_at"])
+            hours = max(1, round(left / 3600))
+            await tell(context.bot, s["user_id"],
+                       f"✦ Пробный доступ закончится через {plural(hours, 'час', 'часа', 'часов')}.\n"
+                       "Понравилось? Оформите подписку, и VPN продолжит работать без перерыва: "
+                       "ключ останется тем же.", buy_kb(s))
+            continue
         db.mark_reminded(s["id"], s["expires_at"])
         if s["auto_active"]:
             continue  # продлится само
@@ -1846,13 +2122,97 @@ async def lifecycle_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         await vpn.revoke(s["id"])
         db.set_key(s["id"], s["vpn_key"], False)
         await refresh_menu(context, s["user_id"])
-        try:
-            await context.bot.send_message(
-                s["user_id"], f"Срок «{esc(s['name'])}» закончился, VPN отключён. "
-                              "Продлите, чтобы снова пользоваться.",
-                reply_markup=KB([B("◆ Продлить", f"ext:{s['id']}")]))
-        except TelegramError:
-            pass
+        row = db.get_user(s["user_id"])
+        if s["trial"] and row and row["paid_stars"] == 0 and not db.active_subs(s["user_id"]):
+            note = ""
+            if config.TRIAL_OFFER > 0:
+                db.set_offer(s["user_id"], config.TRIAL_OFFER, config.OFFER_HOURS, "trial")
+                note = (f"\n\n🎁 Для вас скидка <b>{config.TRIAL_OFFER}%</b> на первую оплату, "
+                        f"действует {plural(config.OFFER_HOURS, 'час', 'часа', 'часов')}.")
+            await tell(context.bot, s["user_id"],
+                       "Пробный период закончился, VPN отключён.\n"
+                       "Оформите подписку, и он снова заработает с тем же ключом." + note, buy_kb(s))
+            continue
+        await tell(context.bot, s["user_id"],
+                   f"Срок «{esc(s['name'])}» закончился, VPN отключён. Продлите, чтобы снова пользоваться.",
+                   KB([B("◆ Продлить", f"ext:{s['id']}")]))
+
+    await winback_job(context)
+
+
+async def winback_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Через несколько дней после окончания всех подписок гость получает персональную скидку.
+    Этапы идут от позднего к раннему: кто ушёл давно, получает одно, последнее, предложение."""
+    steps = sorted(config.WINBACK)
+    for stage in range(len(steps), 0, -1):
+        days, percent = steps[stage - 1]
+        for r in db.winback_due(days, 30, stage):
+            uid = r["user_id"]
+            db.mark_winback(uid, r["last_exp"], stage)
+            db.set_offer(uid, percent, config.OFFER_HOURS, f"winback{stage}")
+            last = stage == len(steps) and stage > 1
+            await tell(context.bot, uid,
+                       ("🎁 <b>Последнее предложение</b>\n\n" if last else "🎁 <b>Мы скучаем</b>\n\n")
+                       + f"Вернитесь в {esc(config.BRAND)} со скидкой <b>{percent}%</b> на любой тариф. "
+                       f"Скидка действует {plural(config.OFFER_HOURS, 'час', 'часа', 'часов')}, "
+                       "ключ останется прежним.", buy_kb())
+
+
+async def traffic_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Раз в 10 минут: трафик с сервера в базу. Его видят гость, админ и приложение VPN."""
+    if vpn.is_demo or not hasattr(vpn, "traffic"):
+        return
+    try:
+        deltas = await vpn.traffic()
+    except Exception:
+        log.exception("трафик: сбой")
+        return
+    if deltas:
+        db.add_traffic(deltas)
+
+
+def dev_word(n: int) -> str:
+    return plural(n, "устройство", "устройства", "устройств")
+
+
+async def devices_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Раз в 5 минут сверяет, сколько устройств подключено, с оплаченным числом."""
+    if vpn.is_demo or not hasattr(vpn, "online") or guard.mode == "off":
+        return
+    # Отключение закончилось: по памяти бота или по сохранённому на сервере (после перезапуска бота).
+    for sid in sorted(set(guard.due_unblock()) | set(vpn.due_resume())):
+        await vpn.resume(sid)
+        sub = db.get_sub(sid)
+        if sub and sub_active(sub):
+            await tell(context.bot, sub["user_id"], f"✅ «{esc(sub['name'])}» снова работает.")
+    try:
+        seen = await vpn.online()
+    except Exception:
+        log.exception("устройства: сбой")
+        return
+    if seen is None:
+        return
+    for action, sid, n, limit in guard.check(seen, db.active_devices()):
+        sub = db.get_sub(sid)
+        if not sub:
+            continue
+        row = db.get_user(sub["user_id"])
+        if action == "warn":
+            await tell(context.bot, sub["user_id"],
+                       f"⚠️ К «{esc(sub['name'])}» сейчас подключено {dev_word(n)}, а в подписке "
+                       f"{dev_word(limit)}.\nОтключите лишние устройства или оформите ещё одну подписку. "
+                       + ("Если превышение продолжится, подписка отключится на "
+                          f"{config.DEVICE_BLOCK_MINUTES} мин." if guard.mode == "block" else ""),
+                       KB([B("➕ Ещё подписка", "plans")], [B("🛎 Консьерж", "tk")]))
+        else:
+            await vpn.suspend(sid, guard.block_seconds)
+            await tell(context.bot, sub["user_id"],
+                       f"⛔ «{esc(sub['name'])}» отключена на {config.DEVICE_BLOCK_MINUTES} мин: подключено "
+                       f"{dev_word(n)} при оплаченных {limit}. Потом она включится сама.",
+                       KB([B("➕ Ещё подписка", "plans")], [B("🛎 Консьерж", "tk")]))
+            await send_admins(context.bot, f"⛔ Превышение устройств: {who(row) if row else sub['user_id']} · "
+                                           f"«{esc(sub['name'])}» · {n} из {limit}. Отключена на "
+                                           f"{config.DEVICE_BLOCK_MINUTES} мин.")
 
 
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1879,10 +2239,13 @@ async def setup_profile(app: Application) -> None:
         vpn.on_problem = alert
     if hasattr(vpn, "sync"):
         active = db.all_active_subs()
-        await vpn.sync(active)
+        vpn.usage = db.sub_traffic
+        await vpn.sync(active, db.active_devices())
         for sid in active:  # ключи из демо-режима меняются на настоящие
             db.set_key(sid, vpn.sub_url(sid), True)
         await vpn.start_sub_server()
+        if getattr(vpn, "hy2", None):
+            await vpn.hy2.start_auth()
     if auto_mgr:
         auto_mgr.notify = lambda text: send_admins(bot, text)
         await auto_mgr.start()
@@ -1928,7 +2291,7 @@ def build_app(token: str) -> Application:
                     ("testpay", testpay), ("payments", payments), ("locations", locations),
                     ("addloc", addloc), ("delloc", delloc), ("addbridge", addbridge),
                     ("delbridge", delbridge), ("server", server), ("backup", backup),
-                    ("autoproxy", autoproxy), ("sni", sni_cmd)]:
+                    ("autoproxy", autoproxy), ("sni", sni_cmd), ("funnel", funnel), ("traffic", traffic)]:
         app.add_handler(CommandHandler(cmd, fn))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(PreCheckoutQueryHandler(precheckout))
@@ -1941,6 +2304,8 @@ def build_app(token: str) -> Application:
         app.job_queue.run_repeating(backup_job, interval=86400, first=3600)
     app.job_queue.run_repeating(auto_proxy_job, interval=300, first=45)
     app.job_queue.run_repeating(masking_job, interval=600, first=150)
+    app.job_queue.run_repeating(traffic_job, interval=600, first=90)
+    app.job_queue.run_repeating(devices_job, interval=300, first=120)
     return app
 
 

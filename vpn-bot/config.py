@@ -67,6 +67,26 @@ CHANNEL_BONUS_DAYS = int(os.environ.get("CHANNEL_BONUS_DAYS", "1"))
 
 # Раз в сутки присылать админам резервную копию базы
 BACKUP_DAILY = os.environ.get("BACKUP_DAILY", "1") == "1"
+# Пароль резервных копий: если задан, копия шифруется (AES-256) и уходит одним архивом
+BACKUP_PASSWORD = os.environ.get("BACKUP_PASSWORD", "")
+# Куда ещё отправлять копию через rclone, например yadisk:aurora (настройка: rclone config)
+BACKUP_RCLONE = os.environ.get("BACKUP_RCLONE", "").strip()
+# Сколько последних копий хранить на сервере и в облаке
+BACKUP_KEEP = int(os.environ.get("BACKUP_KEEP", "7"))
+BACKUP_DIR = os.environ.get("BACKUP_DIR", os.path.join(os.path.dirname(DB_PATH), "backups"))
+
+# Лимит устройств: block — предупредить, потом временно отключить; warn — только предупреждать; off
+DEVICE_LIMIT = os.environ.get("DEVICE_LIMIT", "block").strip().lower()
+DEVICE_BLOCK_MINUTES = int(os.environ.get("DEVICE_BLOCK_MINUTES", "30"))
+
+# Возврат ушедших: через сколько дней после окончания и какая скидка, через запятую.
+# Пусто — не предлагать. Скидка действует OFFER_HOURS часов и только на разовую оплату.
+WINBACK = [(float(d), int(p)) for d, p in
+           (x.split(":") for x in os.environ.get("WINBACK", "3:20,7:30").replace(" ", "").split(",") if ":" in x)]
+OFFER_HOURS = int(os.environ.get("OFFER_HOURS", "72"))
+# Пробный период: за сколько часов до конца напомнить и какую скидку дать, если не купил
+TRIAL_REMIND_HOURS = float(os.environ.get("TRIAL_REMIND_HOURS", "3"))
+TRIAL_OFFER = int(os.environ.get("TRIAL_OFFER", "15"))
 
 # Скрытый тариф для проверки оплаты и возврата. Доступен только админам: /testpay
 TEST_PLAN = ("Тестовая оплата", 1, int(os.environ.get("TEST_PLAN_STARS", "5")))

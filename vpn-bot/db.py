@@ -1,4 +1,5 @@
-"""Хранилище бота на SQLite: гости, подписки, платежи, промокоды, подарки, тикеты."""
+"""Хранилище бота на SQLite: гости, подписки, платежи, промокоды, подарки, тикеты,
+персональные скидки и трафик."""
 
 import secrets
 import sqlite3
@@ -73,7 +74,27 @@ CREATE TABLE IF NOT EXISTS tickets (
     created_at  REAL NOT NULL,
     PRIMARY KEY (admin_chat, admin_msg)
 );
+CREATE TABLE IF NOT EXISTS offers (
+    user_id     INTEGER PRIMARY KEY,
+    percent     INTEGER NOT NULL,
+    until       REAL NOT NULL,
+    reason      TEXT NOT NULL DEFAULT '',
+    created_at  REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS winback (
+    user_id   INTEGER PRIMARY KEY,
+    for_exp   REAL NOT NULL,
+    stage     INTEGER NOT NULL DEFAULT 0
+);
 """
+
+# Колонки, добавленные после первых версий: в старой базе они появляются при запуске.
+MIGRATIONS = {
+    "subscriptions": [("trial", "INTEGER NOT NULL DEFAULT 0"),
+                      ("up_bytes", "INTEGER NOT NULL DEFAULT 0"),
+                      ("down_bytes", "INTEGER NOT NULL DEFAULT 0")],
+    "payments": [("full_price", "INTEGER")],
+}
 
 
 class DB:
@@ -81,6 +102,11 @@ class DB:
         self.conn = sqlite3.connect(path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
+        for table, cols in MIGRATIONS.items():
+            have = {r[1] for r in self.conn.execute(f"PRAGMA table_info({table})")}
+            for name, decl in cols:
+                if name not in have:
+                    self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
         self.conn.commit()
 
     def q1(self, sql: str, *args):
@@ -132,10 +158,11 @@ class DB:
 
     # ---------- подписки ----------
 
-    def create_sub(self, user_id: int, devices: int = 1, name: str | None = None) -> sqlite3.Row:
+    def create_sub(self, user_id: int, devices: int = 1, name: str | None = None,
+                   trial: bool = False) -> sqlite3.Row:
         n = self.q1("SELECT COUNT(*) FROM subscriptions WHERE user_id=?", user_id)[0] + 1
-        sid = self.run("INSERT INTO subscriptions (user_id, name, devices, created_at) VALUES (?,?,?,?)",
-                       user_id, name or f"Ключ {n}", devices, time.time())
+        sid = self.run("INSERT INTO subscriptions (user_id, name, devices, created_at, trial) VALUES (?,?,?,?,?)",
+                       user_id, name or f"Ключ {n}", devices, time.time(), int(trial))
         return self.get_sub(sid)
 
     def get_sub(self, sub_id: int) -> sqlite3.Row | None:
@@ -180,6 +207,30 @@ class DB:
         return {r[0]: r[1] for r in self.qa("SELECT id, expires_at FROM subscriptions WHERE expires_at>?",
                                             time.time())}
 
+    def active_devices(self) -> dict[int, int]:
+        return {r[0]: r[1] for r in self.qa("SELECT id, devices FROM subscriptions WHERE expires_at>?",
+                                            time.time())}
+
+    # ---------- трафик ----------
+
+    def add_traffic(self, deltas: dict[int, tuple[int, int]]) -> None:
+        for sid, (up, down) in deltas.items():
+            self.conn.execute("UPDATE subscriptions SET up_bytes = up_bytes + ?, down_bytes = down_bytes + ? "
+                              "WHERE id=?", (int(up), int(down), sid))
+        self.conn.commit()
+
+    def sub_traffic(self, sub_id: int) -> tuple[int, int]:
+        r = self.q1("SELECT up_bytes, down_bytes FROM subscriptions WHERE id=?", sub_id)
+        return (r[0], r[1]) if r else (0, 0)
+
+    def top_traffic(self, limit: int = 10) -> list[sqlite3.Row]:
+        return self.qa("SELECT s.*, u.username, u.first_name FROM subscriptions s "
+                       "LEFT JOIN users u ON u.id = s.user_id WHERE s.expires_at > ? "
+                       "ORDER BY s.up_bytes + s.down_bytes DESC LIMIT ?", time.time(), limit)
+
+    def total_traffic(self) -> int:
+        return self.q1("SELECT COALESCE(SUM(up_bytes + down_bytes), 0) FROM subscriptions")[0]
+
     def expiring_soon(self, within: float) -> list[sqlite3.Row]:
         now = time.time()
         return self.qa("SELECT * FROM subscriptions WHERE expires_at>? AND expires_at<=? "
@@ -195,13 +246,15 @@ class DB:
 
     def add_payment(self, user_id: int, plan: str, stars: int, days: int, charge_id: str,
                     kind: str = "buy", sub_id: int | None = None, devices: int = 1,
-                    gift_code: str | None = None) -> bool:
-        """Записывает платёж. False, если такой charge_id уже был (повтор от Telegram)."""
+                    gift_code: str | None = None, full_price: int | None = None) -> bool:
+        """Записывает платёж. False, если такой charge_id уже был (повтор от Telegram).
+        full_price — цена без скидки, если оплата шла по персональному предложению."""
         try:
             self.conn.execute(
                 "INSERT INTO payments (user_id, plan, stars, days, charge_id, created_at, kind, sub_id, "
-                "devices, gift_code) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (user_id, plan, stars, days, charge_id, time.time(), kind, sub_id, devices, gift_code))
+                "devices, gift_code, full_price) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (user_id, plan, stars, days, charge_id, time.time(), kind, sub_id, devices, gift_code,
+                 full_price))
         except sqlite3.IntegrityError:
             return False
         self.conn.execute("UPDATE users SET paid_stars = paid_stars + ? WHERE id=?", (stars, user_id))
@@ -306,7 +359,55 @@ class DB:
         r = self.q1("SELECT user_id FROM tickets WHERE admin_chat=? AND admin_msg=?", admin_chat, admin_msg)
         return r[0] if r else None
 
+    # ---------- персональные скидки и возврат ушедших ----------
+
+    def set_offer(self, user_id: int, percent: int, hours: float, reason: str = "") -> None:
+        """Скидка на разовую оплату. Новое предложение заменяет прежнее, только если оно щедрее
+        или прежнее уже истекло."""
+        now = time.time()
+        cur = self.get_offer(user_id)
+        if cur and cur["percent"] >= percent:
+            return
+        self.run("INSERT OR REPLACE INTO offers (user_id, percent, until, reason, created_at) VALUES (?,?,?,?,?)",
+                 user_id, int(percent), now + hours * 3600, reason, now)
+
+    def get_offer(self, user_id: int) -> sqlite3.Row | None:
+        return self.q1("SELECT * FROM offers WHERE user_id=? AND until>?", user_id, time.time())
+
+    def use_offer(self, user_id: int) -> None:
+        self.run("DELETE FROM offers WHERE user_id=?", user_id)
+
+    def winback_due(self, after_days: float, max_days: float, stage: int) -> list[sqlite3.Row]:
+        """Гости, у которых все подписки закончились от after_days до max_days дней назад
+        и которым ещё не отправлялось предложение этого этапа за эту дату окончания."""
+        now = time.time()
+        return self.qa(
+            "SELECT s.user_id, MAX(s.expires_at) AS last_exp FROM subscriptions s "
+            "GROUP BY s.user_id HAVING last_exp <= ? AND last_exp > ? AND s.user_id NOT IN "
+            "(SELECT user_id FROM winback w WHERE w.for_exp = last_exp AND w.stage >= ?)",
+            now - after_days * DAY, now - max_days * DAY, stage)
+
+    def mark_winback(self, user_id: int, for_exp: float, stage: int) -> None:
+        self.run("INSERT OR REPLACE INTO winback (user_id, for_exp, stage) VALUES (?,?,?)",
+                 user_id, for_exp, stage)
+
     # ---------- статистика ----------
+
+    def funnel(self, since: float = 0) -> dict:
+        """Воронка: запустили бота → взяли пробный → оплатили → продлили. since — только новые гости."""
+        one = lambda sql, *a: self.q1(sql, *a)[0]
+        paid = ("SELECT DISTINCT user_id FROM payments WHERE refunded=0 AND plan != 'test'")
+        return {
+            "users": one("SELECT COUNT(*) FROM users WHERE joined_at >= ?", since),
+            "trial": one("SELECT COUNT(*) FROM users WHERE trial_used=1 AND joined_at >= ?", since),
+            "paid": one(f"SELECT COUNT(*) FROM users WHERE joined_at >= ? AND id IN ({paid})", since),
+            "trial_paid": one(f"SELECT COUNT(*) FROM users WHERE trial_used=1 AND joined_at >= ? "
+                              f"AND id IN ({paid})", since),
+            "repeat": one("SELECT COUNT(*) FROM users WHERE joined_at >= ? AND id IN (SELECT user_id FROM payments "
+                          "WHERE refunded=0 AND plan != 'test' GROUP BY user_id HAVING COUNT(*) >= 2)", since),
+            "offers_used": one("SELECT COUNT(*) FROM payments p JOIN users u ON u.id = p.user_id "
+                               "WHERE p.refunded=0 AND p.full_price IS NOT NULL AND u.joined_at >= ?", since),
+        }
 
     def stats(self) -> dict:
         now = time.time()

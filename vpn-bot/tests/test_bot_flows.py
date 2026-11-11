@@ -334,7 +334,26 @@ async def main():
     ctx.user_data.clear(); ctx.bot.copy_message.reset_mock()
     await press(1, "adm:bc", ctx)
     await bot.on_message(make_update(1, text="Акция!"), ctx)
+    await bot.STATE["broadcast"]  # рассылка идёт в фоне
     assert ctx.bot.copy_message.await_count == len(db.all_user_ids())
+    assert "Доставлено: " in ctx.bot.send_message.await_args.args[1]
+    # Telegram просит подождать: сообщение не теряется, а уходит повторно
+    from telegram.error import RetryAfter
+    calls = {"n": 0}
+    async def flaky(*a, **k):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RetryAfter(0)
+        return msg_obj()
+    ctx.bot.copy_message = AsyncMock(side_effect=flaky)
+    ok, fail = await bot.broadcast(ctx.bot, 1, 1, 5)
+    assert ok == len(db.all_user_ids()) and fail == 0 and calls["n"] == ok + 1
+    ctx.bot.copy_message = AsyncMock(side_effect=lambda *a, **k: msg_obj())
+    # воронка и трафик
+    for data in ("adm:fun", "adm:trf"):
+        await press(1, data, ctx)
+    f = db.funnel(); assert f["users"] >= 5 and f["paid"] >= 2 and f["trial"] == 1
+    check_caption(bot.funnel_text()); check_caption(bot.traffic_text())
 
     # 12b. сервер и резервные копии
     await bot.server(make_update(1), ctx)
@@ -361,6 +380,26 @@ async def main():
     await press(1, "adm:bak", ctx); assert ctx.bot.send_document.await_count == 2
     await press(200, "adm:bak", ctx); assert ctx.bot.send_document.await_count == 2
     await bot.backup_job(ctx); assert ctx.bot.send_document.await_count == 3
+    assert [f for f in os.listdir(config.BACKUP_DIR) if f.endswith(".tar.gz")], "копия на диске сервера"
+    # с паролем копия шифруется одним архивом и расшифровывается openssl
+    import shutil, subprocess, tarfile, io as _io
+    if shutil.which("openssl"):
+        config.BACKUP_PASSWORD = "s3cret pass"
+        ctx.bot.send_document.reset_mock()
+        await bot.backup(make_update(1), ctx)
+        call = ctx.bot.send_document.await_args
+        assert ctx.bot.send_document.await_count == 1 and call.kwargs["filename"].endswith(".tar.gz.enc")
+        enc = call.kwargs["document"].getvalue(); assert not enc.startswith(b"\x1f\x8b")
+        plain = subprocess.run(["openssl", "enc", "-d", "-aes-256-cbc", "-pbkdf2", "-iter", "200000",
+                                "-pass", "pass:s3cret pass"], input=enc, capture_output=True, check=True).stdout
+        names = tarfile.open(fileobj=_io.BytesIO(plain)).getnames()
+        assert names == ["bot.db"], names
+        check_caption(call.kwargs["caption"])
+        config.BACKUP_KEEP = 2
+        for _ in range(3):
+            await bot.store_backup()
+        assert len([f for f in os.listdir(config.BACKUP_DIR) if f.startswith("aurora-")]) <= 2
+        config.BACKUP_PASSWORD = ""
 
     # 13. фоновые задачи
     c = db.conn
@@ -379,6 +418,61 @@ async def main():
     ctx.bot.send_message.reset_mock()
     await bot.lifecycle_job(ctx)
     assert ctx.bot.send_message.await_count == 0
+
+    # 13b. пробный период: напоминание за несколько часов, после конца — скидка
+    trial = next(x for x in db.user_subs(200) if x["trial"])
+    c.execute("UPDATE subscriptions SET expires_at=?, reminded_for=0 WHERE id=?", (time.time() + 5 * 3600, trial["id"]))
+    c.commit(); ctx.bot.send_message.reset_mock()
+    await bot.lifecycle_job(ctx)
+    assert ctx.bot.send_message.await_count == 0, "за 5 часов до конца пробного ещё рано"
+    c.execute("UPDATE subscriptions SET expires_at=? WHERE id=?", (time.time() + 2 * 3600, trial["id"])); c.commit()
+    await bot.lifecycle_job(ctx)
+    sent = [call.args for call in ctx.bot.send_message.await_args_list]
+    assert len(sent) == 1 and sent[0][0] == 200 and "Пробный доступ закончится через 2 часа" in sent[0][1]
+    # гость без оплат: после конца пробного получает скидку на первую покупку
+    await bot.start(make_update(600, "Новичок"), ctx)
+    await press(600, "trial", ctx)
+    t600 = db.user_subs(600)[0]
+    c.execute("UPDATE subscriptions SET expires_at=? WHERE id=?", (time.time() - 5, t600["id"])); c.commit()
+    ctx.bot.send_message.reset_mock()
+    await bot.lifecycle_job(ctx)
+    sent = [call.args for call in ctx.bot.send_message.await_args_list if call.args[0] == 600]
+    assert sent and "Пробный период закончился" in sent[0][1] and "15%" in sent[0][1]
+    assert db.get_offer(600)["percent"] == 15
+    # скидка видна в тарифах, работает только на разовую оплату и тратится при оплате
+    assert "−15%" in str([b.text for r in bot.main_kb(db.get_user(600)).inline_keyboard for b in r])
+    full = config.plan_price("m1", 1); cut = bot.price(600, "m1", 1)
+    assert cut == round(full * 0.85) and bot.price(600, "m1", 1, once=False) == full
+    assert f"{cut} ⭐ вместо {full}" in bot.plans_text(uid=600)
+    await press(600, "po:n:m1:1:0", ctx)
+    kw = ctx.bot.send_invoice.await_args.kwargs
+    assert kw["prices"][0].amount == cut and kw["payload"] == f"v2:b:m1:30:{cut}:1:0:-"
+    assert await precheck(600, kw["payload"], cut, ctx)
+    assert not await precheck(300, kw["payload"], cut, ctx), "чужая скидка не работает"
+    await press(600, "pa:n:m1:1:0", ctx)
+    assert ctx.bot.create_invoice_link.await_args.kwargs["prices"][0].amount == full, "автопродление без скидки"
+    await pay(600, ctx, kw["payload"], cut, "OFF1")
+    assert db.get_offer(600) is None and db.get_payment("OFF1")["full_price"] == full
+    assert not await precheck(600, kw["payload"], cut, ctx), "после оплаты скидки нет"
+    assert db.funnel()["offers_used"] == 1
+    # возврат ушедших: через 3 дня скидка 20%, через 7 — 30%, каждая один раз
+    for x in db.user_subs(600):
+        c.execute("UPDATE subscriptions SET expires_at=?, key_active=0 WHERE id=?", (time.time() - 4 * DAY, x["id"]))
+    c.commit(); ctx.bot.send_message.reset_mock()
+    await bot.winback_job(ctx)
+    sent = [call.args for call in ctx.bot.send_message.await_args_list if call.args[0] == 600]
+    assert len(sent) == 1 and "20%" in sent[0][1] and db.get_offer(600)["percent"] == 20
+    await bot.winback_job(ctx)
+    assert len([c_ for c_ in ctx.bot.send_message.await_args_list if c_.args[0] == 600]) == 1, "один раз"
+    for x in db.user_subs(600):
+        c.execute("UPDATE subscriptions SET expires_at=? WHERE id=?", (time.time() - 8 * DAY, x["id"]))
+    c.commit(); ctx.bot.send_message.reset_mock()
+    await bot.winback_job(ctx)
+    sent = [call.args for call in ctx.bot.send_message.await_args_list if call.args[0] == 600]
+    assert len(sent) == 1 and "30%" in sent[0][1] and "Последнее" in sent[0][1]
+    for x in db.user_subs(600):
+        c.execute("UPDATE subscriptions SET expires_at=? WHERE id=?", (time.time() - 40 * DAY, x["id"]))
+    c.commit(); db.use_offer(600)
 
     # 14. мини-приложение
     config.MINIAPP_URL = "https://example.github.io/app/"
@@ -436,6 +530,27 @@ async def main():
     prov.check_proxies = AsyncMock(return_value=[(prov.locations[-1], False)])  # сама проверка покрыта в tests/
     await bot.proxy_health_job(ctx)
     assert any("не отвечает" in c.args[1] for c in ctx.bot.send_message.await_args_list)
+    # трафик и лимит устройств
+    some_sub = db.get_sub(some)
+    prov.traffic = AsyncMock(return_value={some: (3 * 2**30, 2**29)})
+    await bot.traffic_job(ctx)
+    assert db.sub_traffic(some) == (3 * 2**30, 2**29) and "Трафик: 3.5 ГБ" in bot.sub_text(db.get_sub(some))
+    check_caption(bot.traffic_text()); assert "3.5 ГБ" in bot.traffic_text()
+    prov.online = AsyncMock(return_value={some: some_sub["devices"] + 2})
+    prov.suspend, prov.resume = AsyncMock(), AsyncMock()
+    ctx.bot.send_message.reset_mock()
+    for _ in range(5):
+        await bot.devices_job(ctx)
+    texts = [(c.args[0], c.args[1]) for c in ctx.bot.send_message.await_args_list]
+    owner = some_sub["user_id"]
+    assert sum(1 for u_, t in texts if u_ == owner and "⚠️" in t) == 1, texts
+    assert any(u_ == owner and "отключена на" in t for u_, t in texts)
+    assert any(u_ == 1 and "Превышение устройств" in t for u_, t in texts)
+    prov.suspend.assert_awaited_once_with(some, bot.guard.block_seconds)
+    bot.guard.blocked[some] = time.time() - 1
+    await bot.devices_job(ctx)
+    prov.resume.assert_awaited_once_with(some)
+    bot.guard.__init__("block")
     prov._server.close()
     bot.vpn = demo
 
