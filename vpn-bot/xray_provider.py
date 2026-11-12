@@ -616,7 +616,7 @@ class XrayProvider(VpnProvider):
             return [f"u{uid}.{code}" for uid in active] + [f"regexp:^u[0-9]+\\.{code}$"]
 
         # Свой кэш DNS в Xray: адрес сайта узнаётся один раз, а не при каждом подключении.
-        outbounds = [{"tag": "direct", "protocol": "freedom", "settings": {"domainStrategy": "UseIPv4"}},
+        outbounds = [{"tag": "direct", "protocol": "freedom", "settings": {"targetStrategy": "UseIPv4"}},
                      {"tag": "block", "protocol": "blackhole"}]
         rules = [{"type": "field", "ip": ["geoip:private"], "outboundTag": "block"},
                  {"type": "field", "protocol": ["bittorrent"], "outboundTag": "block"}]
