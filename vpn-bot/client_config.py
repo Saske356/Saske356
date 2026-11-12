@@ -29,8 +29,12 @@ AURORA_QUIC = {"keepAlivePeriod": 10, "maxIdleTimeout": 60}
 # падает почти до нуля. Brutal держит заявленную скорость и досылает потерянное. Сервер шлёт
 # к гостю со скоростью brutalDown (её клиент сообщает серверу при подключении). Если реальный канал
 # медленнее заявленного, Brutal сам не разгонится сверх (потери до 20% он компенсирует, дальше нет).
-TURBO_QUIC = {"congestion": "brutal", "brutalUp": "10 mbps", "brutalDown": "30 mbps"}
-TURBO_TAG = " · турбо"
+# Два уровня: гость выбирает тот, что у него быстрее. Замер пользователя: 30 Мбит/с турбо держал
+# ровно, упираясь в потолок, поэтому потолки подняты.
+TURBO_LEVELS = [
+    (" · турбо", {"congestion": "brutal", "brutalUp": "15 mbps", "brutalDown": "50 mbps"}),
+    (" · турбо+", {"congestion": "brutal", "brutalUp": "20 mbps", "brutalDown": "100 mbps"}),
+]
 
 # Российские домены: зона .ru, .su, .рф и крупные сервисы на других зонах.
 RU_DOMAINS = [
@@ -69,7 +73,7 @@ def outbound(e: dict, tuned: bool = False) -> dict:
         if tuned:
             stream.setdefault("finalmask", {})["quicParams"] = dict(AURORA_QUIC)
         if e.get("turbo"):
-            stream.setdefault("finalmask", {}).setdefault("quicParams", {}).update(TURBO_QUIC)
+            stream.setdefault("finalmask", {}).setdefault("quicParams", {}).update(e["turbo"])
         return {"tag": "proxy", "protocol": "hysteria",
                 "settings": {"version": 2, "address": e["host"], "port": e["port"]},
                 "streamSettings": stream}
@@ -161,5 +165,6 @@ def configs(entries: list[dict], with_best: bool = True, tuned: bool = False) ->
         # турбо — для первой Hysteria (основная страна); в «Лучший сервер» он не входит
         first = next((e for e in entries if e["kind"] == "hy2"), None)
         if first:
-            out.insert(1, config({**first, "name": first["name"] + TURBO_TAG, "turbo": True}, tuned))
+            for i, (tag, quic) in enumerate(TURBO_LEVELS):
+                out.insert(1 + i, config({**first, "name": first["name"] + tag, "turbo": quic}, tuned))
     return ([best(entries, tuned=tuned)] if with_best and len(entries) > 1 else []) + out

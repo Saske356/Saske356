@@ -319,12 +319,12 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         _, _, body = await get(path, "AuroraVPN/1.0.5 v2rayNG/1.0.5")
         cfgs = json.loads(body)
         self.assertEqual([c["remarks"] for c in cfgs],
-                         ["🚀 Лучший сервер", "🇵🇱 Польша", "🇵🇱 Польша · турбо", "🇩🇪 Германия"])
-        turbo = quic([cfgs[2]])
-        self.assertEqual(turbo, [{"keepAlivePeriod": 10, "maxIdleTimeout": 60, "congestion": "brutal",
-                                  "brutalUp": "10 mbps", "brutalDown": "30 mbps"}])
+                         ["🚀 Лучший сервер", "🇵🇱 Польша", "🇵🇱 Польша · турбо", "🇵🇱 Польша · турбо+", "🇩🇪 Германия"])
+        self.assertEqual(quic([cfgs[2]]), [{"keepAlivePeriod": 10, "maxIdleTimeout": 60, "congestion": "brutal",
+                                            "brutalUp": "15 mbps", "brutalDown": "50 mbps"}])
+        self.assertEqual([q["brutalDown"] for q in quic([cfgs[3]])], ["100 mbps"])
         self.assertEqual(len(cfgs[0]["outbounds"]), 4, "турбо не входит в «Лучший сервер»")
-        cfgs = [cfgs[0], cfgs[1], cfgs[3]]
+        cfgs = [cfgs[0], cfgs[1], cfgs[4]]
         self.assertTrue(quic(cfgs) and all(q == {"keepAlivePeriod": 10, "maxIdleTimeout": 60} for q in quic(cfgs)))
         # обфускация и настройки QUIC уживаются в одном finalmask
         obfs = [o for c in cfgs for o in c["outbounds"] if o["protocol"] == "hysteria"
