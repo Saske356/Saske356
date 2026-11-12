@@ -217,6 +217,10 @@ async def main():
     bot.code_version = lambda: ("a" * 40, "Первый")
     await bot.announce_update(ctx.bot); assert sent == [], "первый запуск — без сообщения"
     await bot.announce_update(ctx.bot); assert sent == []
+    bot.bot_code_changed = lambda old, new: False
+    bot.code_version = lambda: ("c" * 40, "Только заметки")
+    await bot.announce_update(ctx.bot); assert sent == [], "код сервера не менялся — без сообщения"
+    bot.bot_code_changed = lambda old, new: True
     bot.code_version = lambda: ("b" * 40, "Новое & лучшее")
     await bot.announce_update(ctx.bot)
     assert len(sent) == 1 and "Новое &amp; лучшее" in sent[0] and "bbbbbbb" in sent[0]

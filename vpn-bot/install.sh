@@ -624,6 +624,12 @@ flock -n 9 || { echo "обновление уже идёт"; exit 0; }
 git -C "$DIR" fetch -q origin "$BRANCH" || { echo "GitHub недоступен, попробую позже"; exit 0; }
 have=$(git -C "$DIR" rev-parse HEAD); want=$(git -C "$DIR" rev-parse "origin/$BRANCH")
 if [ "$have" = "$want" ] && [ "${1:-}" != now ]; then exit 0; fi
+# Изменения только вне vpn-bot/ (приложение, заметки) серверу не нужны: тихо подтягиваем код,
+# без переустановки и перезапуска бота, чтобы не дёргать VPN и не писать админам зря.
+if [ "${1:-}" != now ] && git -C "$DIR" diff --quiet "$have" "$want" -- vpn-bot; then
+  git -C "$DIR" checkout -q -B "$BRANCH" "origin/$BRANCH"
+  exit 0
+fi
 echo "Обновляю $have -> $want"
 git -C "$DIR" checkout -q -B "$BRANCH" "origin/$BRANCH"
 AURORA_AUTO=1 BRANCH="$BRANCH" bash "$DIR/vpn-bot/install.sh" </dev/null

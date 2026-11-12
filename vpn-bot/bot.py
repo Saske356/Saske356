@@ -1686,8 +1686,21 @@ async def announce_update(bot) -> None:
         return
     with open(VERSION_FILE, "w") as f:
         f.write(sha)
-    if old:
+    if old and bot_code_changed(old, sha):
         await send_admins(bot, f"🔄 Сервер обновился сам: <b>{esc(title)}</b>\n<code>{sha[:7]}</code>")
+
+
+def bot_code_changed(old: str, new: str) -> bool:
+    """Менялся ли код сервера (vpn-bot/) между версиями. Правки приложения и заметок — нет.
+    Если git не ответил (старая версия стёрта и т. п.), считаем, что менялся."""
+    import subprocess
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        r = subprocess.run(["git", "-C", root, "diff", "--quiet", old, new, "--", "vpn-bot"],
+                           capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return True
+    return r.returncode != 0
 
 
 @admin_only
