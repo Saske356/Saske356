@@ -2572,6 +2572,9 @@ def ws_cfg() -> dict:
     return vpn.state.setdefault("webshare", {})
 
 
+WEBSHARE_DROP = 7 * 86400  # сколько купленная страна может не отвечать, прежде чем её уберут
+
+
 async def webshare_refresh() -> str:
     """Скачивает список, проверяет прокси и обновляет страны. Возвращает отчёт для админа."""
     async with WS_LOCK:
@@ -2592,10 +2595,24 @@ async def webshare_refresh() -> str:
             res = vpn.set_paid_location(cc, public_proxies.country_name(cc), [u for u, _ in items[:3]],
                                         ms=items[0][1])
             {"added": added, "swapped": swapped, "": taken}.get(res, []).append(cc)
+        hidden, now = [], time.time()
         if groups:  # ничего не нашли — скорее сбой проверки, страны не трогаем
-            for loc in vpn.paid_locations():
-                if loc["code"] not in groups and vpn.remove_location(loc["code"]):
-                    removed.append(loc["code"])
+            # Страна, не ответившая в одну проверку (прокси моргнул, бот только что перезапустился),
+            # не удаляется, а только прячется: вернётся сама, как только прокси ответит.
+            # Удаляется, только если её нет в проверках больше WEBSHARE_DROP.
+            for loc in list(vpn.paid_locations()):
+                if loc["code"] in groups:
+                    loc.pop("missing_since", None)
+                    continue
+                since = loc.setdefault("missing_since", now)
+                if now - since > WEBSHARE_DROP:
+                    if vpn.remove_location(loc["code"]):
+                        removed.append(loc["code"])
+                elif not loc.get("down"):
+                    loc["down"] = True
+                    hidden.append(loc["code"])
+            if hidden:
+                vpn.schedule_apply()
         if auto_mgr:
             auto_mgr.sync_routes()
         cfg.update(last=time.time(), total=len(urls), error="",
@@ -2610,8 +2627,10 @@ async def webshare_refresh() -> str:
             lines.append("➕ Добавлены: " + ", ".join(nm(c) for c in added))
         if swapped:
             lines.append("🔁 Прокси заменён: " + ", ".join(nm(c) for c in swapped))
+        if hidden:
+            lines.append("⏸ Не ответили, временно скрыты (вернутся сами): " + ", ".join(nm(c) for c in hidden))
         if removed:
-            lines.append("➖ Убраны (в списке больше нет живых): " + ", ".join(nm(c) for c in removed))
+            lines.append("➖ Убраны (неделю без живых прокси): " + ", ".join(nm(c) for c in removed))
         if taken:
             lines.append("Не тронуты, код занят страной, добавленной через /addloc: "
                          + ", ".join(c.upper() for c in taken))

@@ -719,6 +719,13 @@ async def main():
         assert de["src"] == "webshare" and de["pool"] == ["socks5://u:p@1.1.1.1:1", "socks5://u:p@2.2.2.2:1"]
         ws.scan = AsyncMock(return_value=[("socks5://u:p@1.1.1.1:1", "de", 90)])
         report = await bot.webshare_refresh()
+        fi = next(l for l in prov.locations if l["code"] == "fi")
+        assert "временно скрыты" in report and fi["down"], "одна неудачная проверка не удаляет страну"
+        assert not any("3.3.3.3" in l for l in prov.links(some))
+        await bot.webshare_refresh()
+        assert any(l["code"] == "fi" for l in prov.locations), "и вторая тоже"
+        fi["missing_since"] -= 8 * 86400
+        report = await bot.webshare_refresh()
         assert "Убраны" in report and not any(l["code"] == "fi" for l in prov.locations)
         ctx.args = []
         u = make_update(1); await bot.webshare_cmd(u, ctx)
