@@ -148,53 +148,57 @@ install_hysteria() {
 envget() { { grep -E "^$1=" "$ENV" || true; } | tail -1 | cut -d= -f2- | tr -d '"'; }  # нет ключа — пусто
 
 hy_config() {  # $1 — plain (похож на HTTP/3) или obfs (похож на случайный UDP)
+  # Конфиг собирает Python в формате JSON (JSON — частный случай YAML, Hysteria его читает):
+  # так в нём не бывает синтаксических ошибок, что бы ни лежало в .env.
   local name="$1" port stats
   port=$(envget HY2_PORT); [ "$name" = obfs ] && port=$(envget HY2_OBFS_PORT)
   stats=$(envget HY2_STATS_PORTS | cut -d, -f"$([ "$name" = obfs ] && echo 2 || echo 1)")
   umask 077
-  cat > "$HYDIR/hy2-$name.yaml" <<EOF
-listen: :$port
-tls:
-  cert: $HYDIR/hy2.crt
-  key: $HYDIR/hy2.key
-auth:
-  type: http
-  http:
-    url: http://127.0.0.1:$(envget HY2_AUTH_PORT)/hy2auth
-trafficStats:
-  listen: 127.0.0.1:$stats
-  secret: $(envget HY2_STATS_SECRET)
-masquerade:
-  type: proxy
-  proxy:
-    url: https://$(envget HY2_SNI)/
-    rewriteHost: true
-acl:
-  inline:
-    - reject(10.0.0.0/8)
-    - reject(172.16.0.0/12)
-    - reject(192.168.0.0/16)
-    - reject(127.0.0.0/8)
-    - reject(169.254.0.0/16)
-    - reject(100.64.0.0/10)
-    - reject(fc00::/7)
-    - reject(fe80::/10)
-    - reject(::1/128)
-    - direct(all)
-EOF
-  if [ "$name" = obfs ]; then
-    cat >> "$HYDIR/hy2-obfs.yaml" <<EOF
-obfs:
-  type: salamander
-  salamander:
-    password: $(envget HY2_OBFS)
-EOF
-  fi
+  python3 - "$HYDIR/hy2-$name.yaml" "$name" "$port" "$HYDIR" "$(envget HY2_AUTH_PORT)" "$stats" \
+    "$(envget HY2_STATS_SECRET)" "$(envget HY2_SNI)" "$(envget HY2_OBFS)" <<'PY'
+import json, sys
+out, name, port, d, auth, stats, secret, site, obfs = sys.argv[1:]
+private = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "169.254.0.0/16",
+           "100.64.0.0/10", "fc00::/7", "fe80::/10", "::1/128"]
+cfg = {
+    "listen": f":{int(port)}",
+    "tls": {"cert": f"{d}/hy2.crt", "key": f"{d}/hy2.key"},
+    "auth": {"type": "http", "http": {"url": f"http://127.0.0.1:{int(auth)}/hy2auth"}},
+    "trafficStats": {"listen": f"127.0.0.1:{int(stats)}", "secret": secret},
+    "masquerade": {"type": "proxy", "proxy": {"url": f"https://{site}/", "rewriteHost": True}},
+    "acl": {"inline": [f"reject({c})" for c in private] + ["direct(all)"]},
+}
+if name == "obfs":
+    cfg["obfs"] = {"type": "salamander", "salamander": {"password": obfs}}
+with open(out, "w") as f:
+    json.dump(cfg, f, indent=1)
+PY
   umask 022
+}
+
+hy_env_defaults() {  # дописывает в .env то, чего там не хватает (старые или неполные установки)
+  local k v
+  for kv in HY2_PORT=443 HY2_OBFS_PORT=8443 HY2_AUTH_PORT=20809 HY2_STATS_PORTS=20810,20811; do
+    k=${kv%%=*}; v=${kv#*=}
+    [ -n "$(envget "$k")" ] || { sed -i -E "/^$k=/d" "$ENV"; echo "$k=$v" >> "$ENV"; }
+  done
+  [ -n "$(envget HY2_SNI)" ] || { sed -i -E '/^HY2_SNI=/d' "$ENV"; echo "HY2_SNI=$(envget REALITY_SNI | grep . || echo www.nvidia.com)" >> "$ENV"; }
+  for k in HY2_OBFS HY2_STATS_SECRET; do
+    [ -n "$(envget "$k")" ] || { sed -i -E "/^$k=/d" "$ENV"; echo "$k=$(openssl rand -hex 16)" >> "$ENV"; }
+  done
+  if [ -f "$HYDIR/hy2.crt" ] && [ -z "$(envget HY2_PIN)" ]; then
+    sed -i -E '/^HY2_PIN=/d' "$ENV"
+    echo "HY2_PIN=$(openssl x509 -in "$HYDIR/hy2.crt" -outform der | sha256sum | cut -d' ' -f1)" >> "$ENV"
+  fi
+}
+
+env_newline() {  # .env, поправленный вручную, может кончаться без перевода строки: дописанное склеилось бы
+  [ ! -s "$ENV" ] || [ -z "$(tail -c1 "$ENV")" ] || echo >> "$ENV"
 }
 
 setup_hysteria() {
   mkdir -p "$HYDIR"
+  env_newline
   if ! grep -qE '^HY2_PORT=' "$ENV"; then
     local site pin
     site=$(envget REALITY_SNI); site=${site:-www.nvidia.com}
@@ -216,8 +220,18 @@ HY2_STATS_SECRET=$(openssl rand -hex 16)
 EOF
     umask 022
   fi
-  hy_config plain
-  hy_config obfs
+  # ключи, которых нет или которые пустые, восстанавливаются
+  if [ ! -f "$HYDIR/hy2.crt" ]; then
+    local site; site=$(envget HY2_SNI); site=${site:-www.nvidia.com}
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 \
+      -keyout "$HYDIR/hy2.key" -out "$HYDIR/hy2.crt" -subj "/CN=$site" -addext "subjectAltName=DNS:$site" \
+      >/dev/null 2>&1 || return 1
+    chmod 600 "$HYDIR/hy2.key"
+    sed -i -E '/^HY2_PIN=/d' "$ENV"
+  fi
+  hy_env_defaults
+  hy_config plain || return 1
+  hy_config obfs || return 1
   cat > /etc/systemd/system/aurora-hy2@.service <<EOF
 [Unit]
 Description=Aurora VPN Hysteria2 (%i)
@@ -387,6 +401,7 @@ else
 fi
 mkdir -p /var/lib/aurora
 
+env_newline
 # ---------- Xray или только Hysteria ----------
 if ! grep -qE '^XRAY_ENABLED=' "$ENV"; then
   say "Способ подключения"
