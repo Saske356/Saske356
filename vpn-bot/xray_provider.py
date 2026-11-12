@@ -8,6 +8,10 @@
 перезапускают Xray и не рвут подключения остальных. Перезапуск нужен только при смене
 стран, мостов или сайта маскировки.
 
+Рядом с Xray работает Hysteria2 (UDP, QUIC) на порту 443/udp. Он идёт первым в подписке:
+когда оператор режет TCP-подключения к зарубежным серверам, UDP часто проходит. Пароли клиентов
+Hysteria проверяет у бота (start_hy2_auth), поэтому её никогда не нужно перезапускать.
+
 На том же порту 443 работает запасной вход XHTTP: если оператор режет обычное подключение,
 у клиента в подписке есть вариант «· запасной» с другим видом трафика.
 """
@@ -57,13 +61,19 @@ class XrayProvider(VpnProvider):
                  restart_cmd: tuple = ("systemctl", "restart", "xray"),
                  auto_enabled: bool = False, auto_countries: tuple = (), auto_max: int = 8,
                  relay_port: int = 20808, api_port: int = 10085, bridge_port: int = 8444,
-                 xhttp: bool = True, sub_base: str = ""):
+                 xhttp: bool = True, sub_base: str = "", hy2: dict | None = None, hy2_auth_port: int = 20809):
         self.state_path, self.config_path, self.xray_bin = state_path, config_path, xray_bin
         self.host, self.port, self.env_sni = public_host, port, sni
         self.private_key, self.public_key, self.short_id = private_key, public_key, short_id
         self.sub_port, self.brand, self.restart_cmd = sub_port, brand, restart_cmd
         self.relay_port, self.api_port, self.bridge_port = relay_port, api_port, bridge_port
         self.xhttp_enabled = xhttp
+        # Hysteria2: {"port", "sni", "pin", "obfs", "obfs_port", "stats_ports", "stats_secret"}.
+        # port — обычный вариант (похож на HTTP/3), obfs_port — с обфускацией (похож на случайный UDP).
+        self.hy2 = hy2 if hy2 and (hy2.get("port") or hy2.get("obfs_port")) else None
+        self.hy2_auth_port = hy2_auth_port
+        self._hy2_server: asyncio.base_events.Server | None = None
+        self.hy2_logins = 0          # успешных входов через Hysteria с запуска бота
         self.sub_base = sub_base.strip().rstrip("/")
         self.state = self._load(default_location, auto_enabled, list(auto_countries), auto_max)
         self._pending: asyncio.Task | None = None
@@ -260,6 +270,8 @@ class XrayProvider(VpnProvider):
         if self.state["users"].pop(str(user_id), None) is not None:
             self._save()
             self.schedule_apply()
+            if self.hy2:
+                await self.hy2_kick(user_id)
 
     async def sync(self, active: dict[int, float]) -> None:
         """При запуске бота: сервер получает ровно тех, у кого доступ активен."""
@@ -399,9 +411,127 @@ class XrayProvider(VpnProvider):
         """Мост «ru» появляется в подписке, когда для него выбран сайт маскировки."""
         return [b for b in self.bridges if not b.get("ru") or self.bridge_site]
 
+    # ---------- Hysteria2 ----------
+
+    def hy2_password(self, user_id: int) -> str:
+        token = hmac.new(self.state["secret"].encode(), f"hy2:{user_id}".encode(), hashlib.sha256).hexdigest()[:20]
+        return f"{user_id}.{token}"
+
+    def hy2_check(self, password: str) -> int | None:
+        """Пароль клиента Hysteria -> номер подписки, если доступ активен."""
+        uid, _, token = (password or "").partition(".")
+        if not uid.isdigit() or not hmac.compare_digest(self.hy2_password(int(uid)), password):
+            return None
+        exp = self.state["users"].get(uid)
+        return int(uid) if exp and exp > time.time() else None
+
+    def _hy2_link(self, user_id: int, host: str, port: int, sni: str, name: str, obfs: bool = False) -> str:
+        h = self.hy2
+        q = f"sni={sni}&insecure=1"
+        if h.get("pin"):
+            q += f"&pinSHA256={h['pin']}"
+        if obfs:
+            q += f"&obfs=salamander&obfs-password={quote(h['obfs'], safe='')}"
+        return f"hysteria2://{self.hy2_password(user_id)}@{host}:{port}/?{q}#{quote(name)}"
+
+    def hy2_links(self, user_id: int) -> list[str]:
+        if not self.hy2:
+            return []
+        h, main = self.hy2, self.direct_location()["name"]
+        sni = h.get("sni") or self.sni
+        out = []
+        if h.get("port"):
+            out.append(self._hy2_link(user_id, self.host, h["port"], sni, f"{main} · Hysteria"))
+        if h.get("obfs_port") and h.get("obfs"):
+            out.append(self._hy2_link(user_id, self.host, h["obfs_port"], sni, f"{main} · Hysteria 2", obfs=True))
+        # Мост «ru» пересылает и UDP 443: Hysteria через мост маскируется под российский сайт.
+        if h.get("port") and self.bridge_site:
+            out += [self._hy2_link(user_id, b["host"], b["port"], self.bridge_site, f"{b['name']} · Hysteria")
+                    for b in self.visible_bridges() if b.get("ru")]
+        return out
+
+    async def _hy2_auth(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        """Hysteria спрашивает при каждом подключении: POST {"addr", "auth", "tx"} -> {"ok", "id"}."""
+        ok, uid = False, None
+        try:
+            head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 5)
+            m = re.search(rb"(?i)\r\ncontent-length:\s*(\d+)", head)
+            n = min(int(m.group(1)), 4096) if m else 0
+            body = json.loads(await asyncio.wait_for(reader.readexactly(n), 5) or b"{}")
+            uid = self.hy2_check(str(body.get("auth", "")))
+            ok = uid is not None
+        except (asyncio.TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError,
+                ConnectionError, ValueError, AttributeError):
+            pass
+        if ok:
+            self.hy2_logins += 1
+        data = json.dumps({"ok": ok, "id": f"u{uid}" if ok else ""}).encode()
+        try:
+            writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n"
+                         + f"Content-Length: {len(data)}\r\n\r\n".encode() + data)
+            await writer.drain()
+        except ConnectionError:
+            pass
+        finally:
+            writer.close()
+
+    async def start_hy2_auth(self) -> bool:
+        if not self.hy2:
+            return False
+        try:
+            self._hy2_server = await asyncio.start_server(self._hy2_auth, "127.0.0.1", self.hy2_auth_port)
+        except OSError as e:
+            await self._problem(f"Проверка паролей Hysteria не запустилась на порту {self.hy2_auth_port}: {e}")
+            return False
+        log.info("Пароли Hysteria проверяются на 127.0.0.1:%d", self.hy2_auth_port)
+        return True
+
+    def _hy2_stats(self, port: int, method: str, path: str, body=None):
+        import urllib.request
+        req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", method=method,
+                                     data=json.dumps(body).encode() if body is not None else None,
+                                     headers={"Authorization": (self.hy2 or {}).get("stats_secret", ""),
+                                              "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            data = r.read()
+        return json.loads(data) if data.strip() else {}
+
+    async def hy2_kick(self, user_id: int) -> None:
+        """Обрывает уже открытые сессии Hysteria у клиента, которому отключили доступ."""
+        for port in (self.hy2 or {}).get("stats_ports") or []:
+            try:
+                await asyncio.to_thread(self._hy2_stats, port, "POST", "/kick", [f"u{user_id}"])
+            except Exception as e:
+                log.warning("Hysteria: не удалось отключить u%s: %s", user_id, e)
+
+    async def hy2_online(self) -> int | None:
+        total, seen = 0, False
+        for port in (self.hy2 or {}).get("stats_ports") or []:
+            try:
+                data = await asyncio.to_thread(self._hy2_stats, port, "GET", "/online")
+            except Exception:
+                continue
+            seen = True
+            total += sum(int(v) for v in (data or {}).values())
+        return total if seen else None
+
+    async def hy2_running(self) -> bool:
+        units = [u for u, key in (("aurora-hy2@plain", "port"), ("aurora-hy2@obfs", "obfs_port"))
+                 if (self.hy2 or {}).get(key)]
+        try:
+            for unit in units:
+                code, _ = await self._run("systemctl", "is-active", "--quiet", unit)
+                if code != 0:
+                    return False
+        except OSError:
+            return False
+        return bool(units)
+
     def links(self, user_id: int) -> list[str]:
         shown = [l for l in self.locations if not l.get("down") and not (l.get("auto") and self.auto_rejected)]
-        out = [self._link(self.user_uuid(user_id, loc["code"]), self.host, self.port, self.sni, loc["name"])
+        # Hysteria первой: приложения проверяют пинг сверху вниз, и она чаще проходит.
+        out = self.hy2_links(user_id)
+        out += [self._link(self.user_uuid(user_id, loc["code"]), self.host, self.port, self.sni, loc["name"])
                for loc in shown]
         direct = self.user_uuid(user_id, self.direct_location()["code"])
         bridges = self.visible_bridges()
@@ -811,4 +941,9 @@ def from_env() -> XrayProvider:
         bridge_port=int(e.get("BRIDGE_PORT", "8444")),
         xhttp=e.get("XHTTP", "1") == "1",
         sub_base=e.get("SUB_URL", ""),
+        hy2={"port": int(e.get("HY2_PORT") or 0), "sni": e.get("HY2_SNI", ""), "pin": e.get("HY2_PIN", ""),
+             "obfs": e.get("HY2_OBFS", ""), "obfs_port": int(e.get("HY2_OBFS_PORT") or 0),
+             "stats_ports": [int(p) for p in e.get("HY2_STATS_PORTS", "").split(",") if p.strip().isdigit()],
+             "stats_secret": e.get("HY2_STATS_SECRET", "")} if e.get("HY2_PORT") or e.get("HY2_OBFS_PORT") else None,
+        hy2_auth_port=int(e.get("HY2_AUTH_PORT", "20809")),
     )

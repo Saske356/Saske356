@@ -260,6 +260,9 @@ def fix_text() -> str:
              "Отключитесь и подключитесь заново."]
     if len(location_names()) > 1:
         steps.append("Выберите другую страну в списке.")
+    if getattr(vpn, "hy2", None):
+        steps.append("Выберите в списке пункт с пометкой «· Hysteria», а если не помогло, «· Hysteria 2»: "
+                     "они идут по UDP и проходят там, где обычное подключение режется.")
     if getattr(vpn, "xhttp_on", False):
         steps.append("Выберите в списке тот же сервер с пометкой «· запасной»: "
                      "у него другой вид подключения, который оператор режет реже.")
@@ -1168,6 +1171,11 @@ async def server_text() -> str:
             lines.append(f"◆ Настройки VPN применены {fmt_span(time.time() - vpn.last_apply)} назад")
         lines.append(f"◆ Перезапусков Xray: {vpn.restarts}, изменений клиентов без перезапуска: "
                      f"{vpn.hot_updates}")
+        if vpn.hy2:
+            hy_ok, online = await vpn.hy2_running(), await vpn.hy2_online()
+            lines.append(f"{'✅' if hy_ok else '❌'} Hysteria (UDP): " + ("работает" if hy_ok else "не запущена")
+                         + (f", сейчас подключено: {online}" if online is not None else "")
+                         + f", входов с запуска бота: {vpn.hy2_logins}")
         if vpn.xhttp_enabled:
             lines.append("◆ Запасной вход XHTTP: " + ("отключён, Xray его не принял" if vpn.xhttp_off
                                                      else "работает"))
@@ -2001,6 +2009,7 @@ async def setup_profile(app: Application) -> None:
         for sid in active:  # ключи из демо-режима меняются на настоящие
             db.set_key(sid, vpn.sub_url(sid), True)
         await vpn.start_sub_server()
+        await vpn.start_hy2_auth()
     if auto_mgr:
         auto_mgr.notify = lambda text: send_admins(bot, text)
         await auto_mgr.start()

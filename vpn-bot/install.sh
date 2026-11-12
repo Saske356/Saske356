@@ -113,6 +113,134 @@ install_xray() {
   return $rc
 }
 
+# ---------- Hysteria2: подключение по UDP, проходит там, где оператор режет TCP ----------
+HY=/usr/local/bin/hysteria
+HYDIR=/etc/aurora
+
+hy_arch() {
+  case "$(uname -m)" in
+    x86_64|amd64) echo amd64 ;;
+    aarch64|arm64) echo arm64 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Бинарник принимается, только если его SHA-256 совпадает со списком из того же релиза.
+install_hysteria() {
+  local arch tmp base want got
+  arch=$(hy_arch) || { echo "Hysteria не поддерживает процессор $(uname -m)"; return 1; }
+  tmp=$(mktemp -d)
+  base=https://github.com/apernet/hysteria/releases/latest/download
+  grab "$tmp/hashes.txt" "$base/hashes.txt" || { rm -rf "$tmp"; return 1; }
+  want=$(awk -v f="build/hysteria-linux-$arch" '$2 == f {print $1; exit}' "$tmp/hashes.txt")
+  [ -n "$want" ] || { rm -rf "$tmp"; return 1; }
+  if [ -x "$HY" ] && [ "$(sha256sum "$HY" | cut -d' ' -f1)" = "$want" ]; then
+    echo "Hysteria уже последней версии"; rm -rf "$tmp"; return 0
+  fi
+  echo "Качаю Hysteria..."
+  grab "$tmp/hysteria" "$base/hysteria-linux-$arch" || { rm -rf "$tmp"; return 1; }
+  got=$(sha256sum "$tmp/hysteria" | cut -d' ' -f1)
+  [ "$got" = "$want" ] || { echo "Файл повреждён (контрольная сумма не совпала)"; rm -rf "$tmp"; return 1; }
+  install -m 755 "$tmp/hysteria" "$HY"
+  rm -rf "$tmp"
+}
+
+envget() { grep -E "^$1=" "$ENV" | tail -1 | cut -d= -f2- | tr -d '"'; }
+
+hy_config() {  # $1 — plain (похож на HTTP/3) или obfs (похож на случайный UDP)
+  local name="$1" port stats
+  port=$(envget HY2_PORT); [ "$name" = obfs ] && port=$(envget HY2_OBFS_PORT)
+  stats=$(envget HY2_STATS_PORTS | cut -d, -f"$([ "$name" = obfs ] && echo 2 || echo 1)")
+  umask 077
+  cat > "$HYDIR/hy2-$name.yaml" <<EOF
+listen: :$port
+tls:
+  cert: $HYDIR/hy2.crt
+  key: $HYDIR/hy2.key
+auth:
+  type: http
+  http:
+    url: http://127.0.0.1:$(envget HY2_AUTH_PORT)/hy2auth
+trafficStats:
+  listen: 127.0.0.1:$stats
+  secret: $(envget HY2_STATS_SECRET)
+masquerade:
+  type: proxy
+  proxy:
+    url: https://$(envget HY2_SNI)/
+    rewriteHost: true
+acl:
+  inline:
+    - reject(10.0.0.0/8)
+    - reject(172.16.0.0/12)
+    - reject(192.168.0.0/16)
+    - reject(127.0.0.0/8)
+    - reject(169.254.0.0/16)
+    - reject(100.64.0.0/10)
+    - reject(fc00::/7)
+    - reject(fe80::/10)
+    - reject(::1/128)
+    - direct(all)
+EOF
+  if [ "$name" = obfs ]; then
+    cat >> "$HYDIR/hy2-obfs.yaml" <<EOF
+obfs:
+  type: salamander
+  salamander:
+    password: $(envget HY2_OBFS)
+EOF
+  fi
+  umask 022
+}
+
+setup_hysteria() {
+  mkdir -p "$HYDIR"
+  if ! grep -qE '^HY2_PORT=' "$ENV"; then
+    local site pin
+    site=$(envget REALITY_SNI); site=${site:-www.nvidia.com}
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 \
+      -keyout "$HYDIR/hy2.key" -out "$HYDIR/hy2.crt" -subj "/CN=$site" -addext "subjectAltName=DNS:$site" \
+      >/dev/null 2>&1 || return 1
+    chmod 600 "$HYDIR/hy2.key"
+    pin=$(openssl x509 -in "$HYDIR/hy2.crt" -outform der | sha256sum | cut -d' ' -f1)
+    umask 077
+    cat >> "$ENV" <<EOF
+HY2_PORT=443
+HY2_OBFS_PORT=8443
+HY2_SNI=$site
+HY2_PIN=$pin
+HY2_OBFS=$(openssl rand -hex 16)
+HY2_AUTH_PORT=20809
+HY2_STATS_PORTS=20810,20811
+HY2_STATS_SECRET=$(openssl rand -hex 16)
+EOF
+    umask 022
+  fi
+  hy_config plain
+  hy_config obfs
+  cat > /etc/systemd/system/aurora-hy2@.service <<EOF
+[Unit]
+Description=Aurora VPN Hysteria2 (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=$HY server -c $HYDIR/hy2-%i.yaml
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  # QUIC работает быстрее с большими буферами UDP
+  printf 'net.core.rmem_max=16777216\nnet.core.wmem_max=16777216\n' > /etc/sysctl.d/99-aurora-quic.conf
+  sysctl -q -p /etc/sysctl.d/99-aurora-quic.conf 2>/dev/null || true
+  systemctl daemon-reload
+  systemctl enable -q aurora-hy2@plain aurora-hy2@obfs
+  systemctl restart aurora-hy2@plain aurora-hy2@obfs
+}
+
 get_code() {
   if [ -d "$DIR/.git" ]; then
     git -C "$DIR" fetch -q origin "$BRANCH" && git -C "$DIR" checkout -q -B "$BRANCH" "origin/$BRANCH"
@@ -149,10 +277,12 @@ table ip aurora {
   chain prerouting {
     type nat hook prerouting priority dstnat; policy accept;
     tcp dport 443 dnat to $MAIN:$TARGET
+    udp dport 443 dnat to $MAIN:443
   }
   chain postrouting {
     type nat hook postrouting priority srcnat; policy accept;
     ip daddr $MAIN tcp dport $TARGET masquerade
+    ip daddr $MAIN udp dport 443 masquerade
   }
 }
 EOF
@@ -168,7 +298,9 @@ EOF2
   sysctl -q -p /etc/sysctl.d/99-aurora-bridge-tune.conf 2>/dev/null || true
   if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
     ufw allow 443/tcp >/dev/null
+    ufw allow 443/udp >/dev/null
     ufw route allow proto tcp to "$MAIN" port "$TARGET" >/dev/null 2>&1 || true
+    ufw route allow proto udp to "$MAIN" port 443 >/dev/null 2>&1 || true
   fi
   if timeout 5 bash -c "</dev/tcp/$MAIN/$TARGET" 2>/dev/null; then
     echo "✅ основной сервер отвечает на порту $TARGET"
@@ -255,6 +387,14 @@ else
 fi
 mkdir -p /var/lib/aurora
 
+say "Ставлю Hysteria (подключение по UDP)"
+HY_OK=0
+if retry3 install_hysteria && setup_hysteria; then
+  HY_OK=1
+else
+  echo "Hysteria поставить не удалось. Xray работает и без неё; запустите установщик ещё раз позже."
+fi
+
 say "Ускорение сети (BBR)"
 if ! grep -q "tcp_congestion_control=bbr" /etc/sysctl.conf 2>/dev/null; then
   printf 'net.core.default_qdisc=fq\nnet.ipv4.tcp_congestion_control=bbr\n' >> /etc/sysctl.conf
@@ -303,6 +443,8 @@ if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
   ufw allow 443/tcp >/dev/null
   ufw allow "$SUB_PORT"/tcp >/dev/null
   ufw allow "$BRIDGE_PORT"/tcp >/dev/null
+  ufw allow 443/udp >/dev/null
+  ufw allow 8443/udp >/dev/null
 fi
 
 say "Проверка"
@@ -319,6 +461,13 @@ if ss -tlnpH 'sport = :443' | grep -q '"xray"'; then
   echo "✅ VPN принимает подключения на порту 443"
 else
   echo "❌ VPN не слушает порт 443"; ok=0
+fi
+if [ "$HY_OK" = 1 ]; then
+  if systemctl is-active -q aurora-hy2@plain && systemctl is-active -q aurora-hy2@obfs; then
+    echo "✅ Hysteria принимает подключения на портах 443/udp и 8443/udp"
+  else
+    echo "❌ Hysteria не запустилась: journalctl -u aurora-hy2@plain -n 20 --no-pager"; ok=0
+  fi
 fi
 if ss -tlnpH "sport = :$SUB_PORT" | grep -q python; then
   echo "✅ подписки раздаются на порту $SUB_PORT"

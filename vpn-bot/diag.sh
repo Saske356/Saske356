@@ -299,6 +299,45 @@ if [ -n "$BPORT" ]; then
     || bad "вход для мостов не слушает порт $BPORT"
 fi
 
+# Hysteria (UDP): пробное подключение с паролем действующего клиента
+HYBIN=/usr/local/bin/hysteria
+if grep -qE '^HY2_PORT=' "$ENVF" 2>/dev/null; then
+  echo "== Hysteria (UDP)"
+  for unit in aurora-hy2@plain aurora-hy2@obfs; do
+    systemctl is-active -q "$unit" && ok "служба $unit запущена" \
+      || bad "служба $unit не запущена: journalctl -u $unit -n 20 --no-pager"
+  done
+  ss -ulnpH 'sport = :443' 2>/dev/null | grep -q hysteria && ok "Hysteria слушает 443/udp" \
+    || bad "443/udp слушает не Hysteria"
+  STATEF=$(grep -E '^VPN_STATE=' "$ENVF" | tail -1 | cut -d= -f2); STATEF=${STATEF:-/var/lib/aurora/vpn.json}
+  HYPASS=$(python3 - "$STATEF" <<'PY' 2>/dev/null
+import hashlib, hmac, json, sys, time
+st = json.load(open(sys.argv[1]))
+uid = next((u for u, exp in st.get("users", {}).items() if exp > time.time()), None)
+if uid:
+    print(uid + "." + hmac.new(st["secret"].encode(), f"hy2:{uid}".encode(), hashlib.sha256).hexdigest()[:20])
+PY
+)
+  HYPORT=$(grep -E '^HY2_PORT=' "$ENVF" | cut -d= -f2); HYSNI=$(grep -E '^HY2_SNI=' "$ENVF" | cut -d= -f2)
+  if [ -z "$HYPASS" ]; then
+    bad "нет активного ключа для пробного подключения Hysteria"
+  elif [ -x "$HYBIN" ]; then
+    printf 'server: 127.0.0.1:%s\nauth: %s\ntls:\n  sni: %s\n  insecure: true\nsocks5:\n  listen: 127.0.0.1:10898\n' \
+      "$HYPORT" "$HYPASS" "$HYSNI" > "$TMP/hy.yaml"
+    "$HYBIN" client -c "$TMP/hy.yaml" >"$TMP/hy.log" 2>&1 &
+    CPID=$!
+    sleep 3
+    IP=$(curl -s -m 20 --socks5-hostname 127.0.0.1:10898 https://api.ipify.org 2>/dev/null)
+    if [ -n "$IP" ]; then
+      ok "через Hysteria открылся интернет"
+    else
+      { tail -n 6 "$TMP/hy.log"; journalctl -u aurora-hy2@plain -n 4 --no-pager 2>/dev/null; } > "$TMP/hyerr.log"
+      bad "подключение через Hysteria не прошло" "$TMP/hyerr.log"
+    fi
+    kill "$CPID" 2>/dev/null
+  fi
+fi
+
 echo "== Последние сообщения Xray"
 journalctl -u xray -n 6 --no-pager 2>/dev/null | cut -c1-160
 

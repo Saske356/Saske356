@@ -236,6 +236,55 @@ class XrayProvider(unittest.IsolatedAsyncioTestCase):
             if t is not asyncio.current_task():
                 t.cancel()
 
+    async def test_hysteria(self):
+        v = make(name="hy2")
+        v.hy2 = {"port": 443, "obfs_port": 8443, "sni": "www.nvidia.com", "pin": "ab" * 32, "obfs": "o/p",
+                 "stats_ports": [], "stats_secret": ""}
+        v.hy2_auth_port = 0
+        now = time.time()
+        await v.issue(5, now + 1000)
+        v.state["users"]["6"] = now - 1
+        ls = v.links(5)
+        assert ls[0].startswith("hysteria2://") and ls[1].startswith("hysteria2://"), "Hysteria идёт первой"
+        u = urlparse(ls[0]); q = parse_qs(u.query)
+        assert u.username == v.hy2_password(5) and u.password is None
+        assert (u.hostname, u.port, q["sni"], q["insecure"]) == ("203.0.113.7", 443, ["www.nvidia.com"], ["1"])
+        assert "obfs" not in q and q["pinSHA256"] == ["ab" * 32]
+        q2 = parse_qs(urlparse(ls[1]).query)
+        assert urlparse(ls[1]).port == 8443 and q2["obfs"] == ["salamander"] and q2["obfs-password"] == ["o/p"]
+        assert v.hy2_check(v.hy2_password(5)) == 5
+        assert v.hy2_check(v.hy2_password(6)) is None, "истёкший доступ"
+        assert v.hy2_check("5.000") is None and v.hy2_check("") is None and v.hy2_check("x.y") is None
+        # мост «ru» пересылает UDP: в подписке появляется Hysteria через мост с российским сайтом
+        v.add_bridge("ru1", "🇷🇺 Обход", "198.51.100.40", ru=True)
+        v.set_bridge_site("vk.com")
+        hy = [l for l in v.links(5) if l.startswith("hysteria2://")]
+        assert len(hy) == 3 and "198.51.100.40:443" in hy[2] and "sni=vk.com" in hy[2]
+
+        # проверка пароля так, как её делает Hysteria
+        assert await v.start_hy2_auth()
+        port = v._hy2_server.sockets[0].getsockname()[1]
+
+        async def ask(auth):
+            r, w = await asyncio.open_connection("127.0.0.1", port)
+            body = json.dumps({"addr": "1.2.3.4:5", "auth": auth, "tx": 0}).encode()
+            w.write(b"POST /hy2auth HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n"
+                    + f"Content-Length: {len(body)}\r\n\r\n".encode() + body)
+            await w.drain()
+            data = await r.read(); w.close()
+            assert data.startswith(b"HTTP/1.1 200")
+            return json.loads(data.partition(b"\r\n\r\n")[2])
+        assert await ask(v.hy2_password(5)) == {"ok": True, "id": "u5"}
+        assert (await ask(v.hy2_password(6)))["ok"] is False
+        assert (await ask("nonsense"))["ok"] is False
+        assert v.hy2_logins == 1
+        await v.revoke(5)
+        assert (await ask(v.hy2_password(5)))["ok"] is False, "после отключения пароль не принимается"
+        v._hy2_server.close()
+        for t in asyncio.all_tasks():
+            if t is not asyncio.current_task():
+                t.cancel()
+
     async def test_bridge_for_whitelists_and_sub_url(self):
         v = make(name="rubridge")
         now = time.time()
