@@ -19,6 +19,7 @@ import tempfile
 import time
 
 import qrcode
+from urllib.parse import unquote
 from telegram import (BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto,
                       LabeledPrice, MenuButtonWebApp, Update, WebAppInfo)
 from telegram.constants import ParseMode
@@ -259,9 +260,14 @@ def fix_text() -> str:
              "Отключитесь и подключитесь заново."]
     if len(location_names()) > 1:
         steps.append("Выберите другую страну в списке.")
-    bridges = [b["name"] for b in getattr(vpn, "bridges", [])]
+    if getattr(vpn, "xhttp_on", False):
+        steps.append("Выберите в списке тот же сервер с пометкой «· запасной»: "
+                     "у него другой вид подключения, который оператор режет реже.")
+    bridges = [b["name"] for b in (vpn.visible_bridges() if hasattr(vpn, "visible_bridges") else [])]
     if bridges:
-        steps.append(f"Если мобильный интернет ограничен, выберите «{bridges[0]}».")
+        steps.append(f"Если мобильный интернет ограничен (белые списки), выберите «{bridges[0]}».")
+    if hasattr(vpn, "links"):
+        steps.append("Если подписка не обновляется, откройте подписку в боте и нажмите «🔑 Ключи без подписки».")
     steps += ["Переключитесь между Wi-Fi и мобильным интернетом: так станет ясно, в какой сети проблема.",
               "Проверьте в «Мои подписки», что срок не закончился.",
               "Удалите профиль в приложении и добавьте ключ заново."]
@@ -316,7 +322,8 @@ def sub_kb(s) -> InlineKeyboardMarkup:
     if s["auto_active"] and sub_active(s):
         rows.append([B("🔁 Отключить автопродление", f"noauto:{s['id']}")])
     if sub_active(s):
-        rows.append([B("🛠 Не работает?", "fix")])
+        rows.append([B("🛠 Не работает?", "fix")] + ([B("🔑 Ключи без подписки", f"raw:{s['id']}")]
+                                                    if hasattr(vpn, "links") else []))
     rows.append([B("‹ Мои подписки", "subs")])
     return InlineKeyboardMarkup(rows)
 
@@ -786,9 +793,29 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     # ---- подписки
-    if parts[0] in ("sub", "qr", "ren", "ext", "noauto", "noautook") and len(parts) == 2:
+    if parts[0] in ("sub", "qr", "raw", "ren", "ext", "noauto", "noautook") and len(parts) == 2:
         sub = await own_sub(q, uid, parts[1])
         if not sub:
+            return
+        if parts[0] == "raw":
+            if not sub_active(sub) or not hasattr(vpn, "links"):
+                await q.answer("Подписка неактивна", show_alert=True)
+                return
+            await q.answer()
+            if not sub["key_active"]:
+                sub = await issue_key(sub["id"])
+            parts_out = [f"🔑 <b>Ключи «{esc(sub['name'])}» без подписки</b>\n<i>Если приложение не может "
+                         "обновить подписку, скопируйте нужный ключ и добавьте его в приложение через «+» → "
+                         "«Из буфера». Такие ключи не обновляются сами: после смены настроек сервера "
+                         "возьмите их здесь заново.</i>"]
+            for link in vpn.links(sub["id"]):
+                item = f"<b>{esc(unquote(link.rsplit('#', 1)[-1]))}</b>\n<code>{esc(link)}</code>"
+                if len(parts_out[-1]) + len(item) > 3800:
+                    parts_out.append(item)
+                else:
+                    parts_out[-1] += "\n\n" + item
+            for chunk in parts_out:
+                await context.bot.send_message(update.effective_chat.id, chunk)
             return
         if parts[0] == "qr":
             if not sub_active(sub) or not sub["vpn_key"]:
@@ -1139,6 +1166,11 @@ async def server_text() -> str:
             lines.append("❌ Последняя ошибка VPN:\n<code>" + esc(vpn.last_error[:300]) + "</code>")
         elif vpn.last_apply:
             lines.append(f"◆ Настройки VPN применены {fmt_span(time.time() - vpn.last_apply)} назад")
+        lines.append(f"◆ Перезапусков Xray: {vpn.restarts}, изменений клиентов без перезапуска: "
+                     f"{vpn.hot_updates}")
+        if vpn.xhttp_enabled:
+            lines.append("◆ Запасной вход XHTTP: " + ("отключён, Xray его не принял" if vpn.xhttp_off
+                                                     else "работает"))
         hidden = sum(1 for l in vpn.locations if l.get("down"))
         lines.append(f"◆ Стран: {len(vpn.locations)}" + (f" (скрыто: {hidden})" if hidden else "")
                      + f", мостов: {len(vpn.bridges)}")
@@ -1408,15 +1440,23 @@ def locations_text() -> str:
         tag = " · 🤖 авто" if l.get("auto") else ""
         state = " · ❌ прокси не отвечает, скрыта" if l.get("down") else ""
         lines.append(f"◆ <code>{esc(l['code'])}</code> · {esc(l['name'])} · <i>{how}</i>{tag}{state}")
-    bridges = [f"◆ <code>{esc(b['code'])}</code> · {esc(b['name'])} · {esc(b['host'])}:{b['port']}"
-               + (f" · маскировка {esc(b['sni'])}" if b["sni"] else "")
-               for b in getattr(vpn, "bridges", [])]
+    def bridge_line(b):
+        if b.get("ru"):
+            mask = (f" · белые списки, маскировка {esc(vpn.bridge_site)}" if vpn.bridge_site
+                    else " · белые списки, сайт маскировки не выбран: /bridgesite next")
+        else:
+            mask = f" · маскировка {esc(b['sni'])}" if b["sni"] else ""
+        state = " · ❌ не отвечает" if b.get("down") else ""
+        return f"◆ <code>{esc(b['code'])}</code> · {esc(b['name'])} · {esc(b['host'])}:{b['port']}{mask}{state}"
+    bridges = [bridge_line(b) for b in getattr(vpn, "bridges", [])]
     return (xray_warning() + "<b>Страны</b>\n\n" + "\n".join(lines) + "\n\n"
             "Добавить: /addloc <code>код</code> <code>Название</code> | <code>socks5://логин:пароль@ip:порт</code>\n"
             "Удалить: /delloc <code>код</code>\n\n"
             "<b>Мосты для обхода</b>\n\n" + ("\n".join(bridges) if bridges else "<i>пока нет</i>") + "\n\n"
-            "Добавить: /addbridge <code>код</code> <code>Название</code> | <code>IP моста</code>\n"
-            "Пример: <code>/addbridge ru1 🇷🇺 Обход | 1.2.3.4</code>\n"
+            "Добавить: /addbridge <code>код</code> <code>Название</code> | <code>IP моста</code> | <code>ru</code>\n"
+            "Пример: <code>/addbridge ru1 🇷🇺 Обход | 1.2.3.4 | ru</code>\n"
+            "Поле <code>ru</code> для моста, поставленного установщиком этой версии: он маскируется "
+            "под российский сайт и проходит белые списки. Сайт: /bridgesite\n"
             "Удалить: /delbridge <code>код</code>")
 
 
@@ -1453,18 +1493,80 @@ async def addbridge(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not hasattr(vpn, "add_bridge"):
         await update.message.reply_text("Мосты настраиваются, когда подключён настоящий VPN (VPN_MODE=xray).")
         return
-    fmt = ("Формат: /addbridge <code>код</code> <code>Название</code> | <code>IP моста</code>\n"
-           "Можно указать сайт для маскировки третьим полем: <code>| vk.com</code>")
+    fmt = ("Формат: /addbridge <code>код</code> <code>Название</code> | <code>IP моста</code> | <code>ru</code>\n"
+           "Третье поле <code>ru</code> — для моста от установщика этой версии (обход белых списков). "
+           "Для старого моста вместо него можно указать сайт маскировки: <code>| vk.com</code>")
     try:
         parts = [p.strip() for p in update.message.text.split(maxsplit=1)[1].split("|")]
         code, name = parts[0].split(maxsplit=1)
-        vpn.add_bridge(code, name, parts[1], parts[2] if len(parts) > 2 else "")
+        extra = parts[2].lower() if len(parts) > 2 else ""
+        ru = extra == "ru"
+        vpn.add_bridge(code, name, parts[1], "" if ru else extra, ru=ru)
     except (IndexError, ValueError) as e:
         hint = f"\n\nОшибка: {esc(str(e))}" if isinstance(e, ValueError) and str(e) else ""
         await update.message.reply_text(fmt + hint)
         return
+    if ru and not vpn.bridge_site:
+        await update.message.reply_text("Мост добавлен. Подбираю для него российский сайт маскировки, "
+                                        "результат пришлю сообщением.")
+        context.application.create_task(_bridge_site_report(context.bot, update.effective_chat.id))
+        return
     await update.message.reply_text("Мост добавлен. Он появится у всех клиентов после обновления подписки.\n\n"
                                     + locations_text())
+
+
+async def pick_bridge_site(avoid=()) -> str | None:
+    """Российский сайт для мостов, который отвечает с сервера и который Xray принимает."""
+    for host, _ in await masking.ranked(h for h in masking.RU_SITES if h not in avoid):
+        if await vpn.site_flagged(host) is not None:
+            return host
+    return None
+
+
+async def switch_bridge_site(reason: str, site: str | None = None) -> str:
+    async with mask_lock:
+        old = vpn.bridge_site
+        if site:
+            if await masking.check(site) is None:
+                return f"Сайт {site} не подходит: с сервера он не отвечает по TLS 1.3 и HTTP/2."
+            new = site
+        else:
+            new = await pick_bridge_site({old} if old else ()) or await pick_bridge_site()
+            if not new:
+                return "Ни один российский сайт из списка сейчас не отвечает с сервера. Мосты «ru» пока скрыты."
+        if new == old:
+            return f"Сайт маскировки мостов уже {old}."
+        vpn.set_bridge_site(new)
+        MASK["bridge_fails"] = 0
+        return (f"🌉 Сайт маскировки мостов: {old or 'не был выбран'} → {new}\nПричина: {reason}.\n\n"
+                "Клиенты получат новые ключи мостов при обновлении подписки.")
+
+
+async def _bridge_site_report(bot, chat_id: int, site: str | None = None) -> None:
+    try:
+        text = esc(await switch_bridge_site("новый мост" if not site else "команда администратора", site))
+        await _send_report(bot, chat_id, text + "\n\n" + locations_text())
+    except Exception as e:
+        await _report_failure(bot, chat_id, "Подбор сайта для мостов не удался", e)
+
+
+@admin_only
+async def bridgesite_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not hasattr(vpn, "bridge_site"):
+        await update.message.reply_text("Мосты настраиваются, когда подключён настоящий VPN (VPN_MODE=xray).")
+        return
+    arg = (context.args[0].lower() if context.args else "")
+    if arg == "next" or masking.valid_name(arg):
+        await update.message.reply_text("Проверяю сайт с сервера. Результат пришлю сообщением.")
+        context.application.create_task(
+            _bridge_site_report(context.bot, update.effective_chat.id, None if arg == "next" else arg))
+        return
+    await update.message.reply_text(
+        "<b>Сайт маскировки мостов</b>\n\n"
+        f"Сейчас: <code>{esc(vpn.bridge_site or 'не выбран')}</code>\n\n"
+        "Мосты «ru» выдают себя за российский сайт: при белых списках оператор пропускает только "
+        "сайты из списка. Раз в 10 минут бот проверяет сайт и при сбое ставит другой.\n\n"
+        "/bridgesite next: подобрать другой\n/bridgesite vk.com: поставить этот")
 
 
 @admin_only
@@ -1480,6 +1582,11 @@ async def proxy_health_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Раз в 10 минут проверяет прокси стран и сообщает админам об изменениях."""
     if not hasattr(vpn, "check_proxies"):
         return
+    if hasattr(vpn, "check_bridges"):
+        for b, alive in await vpn.check_bridges():
+            await notify_admins(context, (f"✅ Мост «{esc(b['name'])}» снова отвечает." if alive else
+                                          f"❌ Мост «{esc(b['name'])}» ({esc(b['host'])}) не отвечает. Проверьте, "
+                                          "что сервер моста включён: <code>systemctl status nftables</code>."))
     for loc, alive in await vpn.check_proxies():
         await notify_admins(context, (f"✅ Прокси «{esc(loc['name'])}» снова работает, страна вернулась в подписку."
                                       if alive else
@@ -1544,6 +1651,8 @@ def auto_status_text() -> str:
             continue
         host = l["proxy"].split("://", 1)[-1]
         speed = f" · {l['ms']} мс" if l.get("ms") else ""
+        if public_proxies.SPEEDS.get(l["proxy"]):
+            speed += f" · {public_proxies.SPEEDS[l['proxy']]} КБ/с"
         rows.append(f"◆ {esc(l['name'])} · <code>{esc(host)}</code>{speed} · запасных {len(l.get('pool', [])) - 1}"
                     f" · замен {l.get('swaps', 0)} · без замены {_ago(l.get('since', time.time()))}")
     return (xray_warning() + "<b>Авто-страны из публичных прокси</b>\n\n" + "\n".join(lines) + "\n\n"
@@ -1682,7 +1791,7 @@ async def autoproxy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 # ---------------------------------------------------------------- сайт маскировки
 
-MASK = {"fails": 0}
+MASK = {"fails": 0, "bridge_fails": 0}
 mask_lock = asyncio.Lock()
 
 
@@ -1750,6 +1859,15 @@ async def masking_job(context: ContextTypes.DEFAULT_TYPE) -> None:
                 reason = "плановая смена"
         if reason:
             await send_admins(context.bot, esc(await switch_masking(reason)))
+        if vpn.ru_bridges():
+            site = vpn.bridge_site
+            if site and await masking.check(site) is not None:
+                MASK["bridge_fails"] = 0
+            elif not site or await public_proxies.direct_ok():
+                MASK["bridge_fails"] += 1
+            if MASK["bridge_fails"] >= (1 if not site else 3):
+                await send_admins(context.bot, esc(await switch_bridge_site(
+                    f"{site} перестал отвечать с сервера" if site else "сайт не был выбран")))
     except Exception:
         log.exception("сайт маскировки: сбой проверки")
 
@@ -1928,7 +2046,7 @@ def build_app(token: str) -> Application:
                     ("testpay", testpay), ("payments", payments), ("locations", locations),
                     ("addloc", addloc), ("delloc", delloc), ("addbridge", addbridge),
                     ("delbridge", delbridge), ("server", server), ("backup", backup),
-                    ("autoproxy", autoproxy), ("sni", sni_cmd)]:
+                    ("autoproxy", autoproxy), ("sni", sni_cmd), ("bridgesite", bridgesite_cmd)]:
         app.add_handler(CommandHandler(cmd, fn))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(PreCheckoutQueryHandler(precheckout))

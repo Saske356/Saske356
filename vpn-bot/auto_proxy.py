@@ -3,6 +3,10 @@
 У каждой авто-страны есть рабочий прокси и до двух запасных. Ретранслятор (proxy_relay.py)
 переключается на запасной сразу, как только рабочий перестал отвечать, а этот модуль
 раз в несколько минут перепроверяет все прокси, убирает мёртвые и добирает новые.
+
+У каждого прокси копится репутация: прошёл проверку — плюс, не прошёл или умер в работе —
+минус. Кандидаты с плохой историей пробуются последними, так что со временем страны держатся
+на самых стабильных прокси. Если запасной заметно быстрее рабочего, он становится рабочим.
 """
 
 import asyncio
@@ -21,6 +25,8 @@ EXTRA_ATTEMPTS = 5       # сколько лишних стран пробуем
 PROBE_BUDGET = 60        # сколько новых прокси можно проверить за один цикл
 PER_COUNTRY = 12         # и сколько из них на одну страну
 HIDE_LIMIT = 6 * 3600    # при подборе страна без прокси столько ждёт, потом уступает место другой
+SLOW_MS = 1500           # рабочий прокси медленнее этого и вдвое медленнее запасного уступает ему
+REP_LIMIT = 5000         # сколько прокси помнить в репутации
 
 # В режиме подбора страны берутся в этом порядке, затем остальные по числу прокси.
 PREFERRED = ["nl", "de", "us", "gb", "fr", "fi", "se", "ch", "jp", "sg", "ca", "tr",
@@ -34,6 +40,7 @@ class AutoProxy:
         self.relay = Relay(vpn.relay_port, vpn.relay_password, on_demote=self._on_demote)
         self.lock = asyncio.Lock()
         self.bad: dict[str, float] = {}
+        self.rep: dict[str, float] = {}   # репутация прокси: больше — надёжнее
         self.failover: set[str] = set()
         self._kick: asyncio.Task | None = None
         self.last_run = 0.0
@@ -61,6 +68,7 @@ class AutoProxy:
         if pool:
             self.relay.set_route(code, pool)
         self.bad[url] = time.time() + BAD_DEAD
+        self._score(url, -3)
         self.failover.add(code)
         if self.vpn.auto.get("enabled") and (self._kick is None or self._kick.done()):
             self._kick = asyncio.get_running_loop().create_task(self._kick_soon())
@@ -86,10 +94,18 @@ class AutoProxy:
             except Exception:
                 log.exception("авто-страны: не удалось отправить сообщение")
 
+    def _score(self, url: str, delta: float) -> None:
+        self.rep[url] = max(-10.0, min(10.0, self.rep.get(url, 0.0) + delta))
+        if len(self.rep) > REP_LIMIT:  # забываем самых «нейтральных»
+            for u, _ in sorted(self.rep.items(), key=lambda kv: abs(kv[1]))[:len(self.rep) - REP_LIMIT]:
+                self.rep.pop(u, None)
+
     def _candidates(self, pool: dict, cc: str, exclude=()) -> list[str]:
         now = time.time()
         skip = set(exclude)
-        return [u for u in pool.get(cc, []) if u not in skip and self.bad.get(u, 0) < now]
+        urls = [u for u in pool.get(cc, []) if u not in skip and self.bad.get(u, 0) < now]
+        # Порядок из списков сохраняется, но проверенные нами хорошие идут раньше, плохие позже.
+        return sorted(urls, key=lambda u: -self.rep.get(u, 0.0))
 
     async def _find(self, pool: dict, cc: str, need: int, exclude=()) -> list[tuple[str, int]]:
         # Проверка идёт понемногу: сотни подключений к чужим адресам подряд хостинг может
@@ -104,13 +120,17 @@ class AutoProxy:
         until = time.time() + BAD_CANDIDATE
         for u in failed:
             self.bad[u] = until
+            self._score(u, -1)
+        for u, _ in found:
+            self._score(u, 1)
         return found
 
-    @staticmethod
-    async def _alive(urls: list[str], cc: str) -> list[tuple[str, int]]:
+    async def _alive(self, urls: list[str], cc: str) -> list[tuple[str, int]]:
         async def one(u):
             res = await pp.probe(u) or await pp.probe(u)
-            return (u, res.ms) if res and res.country == cc else None
+            ok = bool(res and res.country == cc)
+            self._score(u, 0.5 if ok else -2)
+            return (u, res.ms) if ok else None
         return [r for r in await asyncio.gather(*(one(u) for u in urls)) if r]
 
     def _targets(self, pool: dict) -> tuple[list[str], bool]:
@@ -179,7 +199,9 @@ class AutoProxy:
             if len(alive) < POOL_SIZE:
                 alive += await self._find(pool, cc, POOL_SIZE - len(alive), exclude=known)
             if alive:
-                if alive[0][0] != was_active:   # рабочий умер: берём самый быстрый из живых
+                best = min(alive, key=lambda x: x[1])
+                slow = alive[0][1] > SLOW_MS and alive[0][1] > 2 * best[1]
+                if alive[0][0] != was_active or slow:  # рабочий умер или тормозит: берём самый быстрый
                     alive.sort(key=lambda x: x[1])
                 res = vpn.set_auto_location(cc, nm(cc), [u for u, _ in alive], ms=alive[0][1])
                 if was_down:

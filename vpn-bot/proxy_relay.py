@@ -4,6 +4,9 @@ Xray для каждой авто-страны подключается сюда
 а ретранслятор сам выбирает живой публичный прокси и пересылает данные через него.
 Поэтому замена упавшего прокси не требует перезапуска Xray и не рвёт чужие подключения:
 если прокси не отвечает, это же подключение сразу уходит через запасной.
+
+Подключения не ждут зависший прокси: если рабочий не ответил за STAGGER секунд, параллельно
+пробуется запасной, и берётся тот, кто ответил первым.
 """
 
 import asyncio
@@ -18,6 +21,7 @@ log = logging.getLogger("vpn-bot.relay")
 class Relay:
     FAIL_LIMIT = 2      # столько отказов подряд — и прокси уступает место запасному
     TRIES = 3           # сколько прокси пробуем на одно подключение
+    STAGGER = 1.5       # через сколько секунд без ответа параллельно пробуем следующий
     HANDSHAKE_TIMEOUT = 10.0
     LINGER = 15.0       # сколько ждём вторую сторону после закрытия первой
 
@@ -114,18 +118,7 @@ class Relay:
             await writer.drain()
             return
         code, host, port = req
-        sock, refused = None, False
-        for url in list(self.routes.get(code, []))[:self.TRIES]:
-            try:
-                sock = await open_tunnel(url, host, port, self.connect_timeout)
-                self.fails.pop(url, None)
-                break
-            except TunnelRefused:
-                refused = True  # прокси жив, просто не дошёл до этого адреса
-            except ProxyDown:
-                self._failed(code, url)
-            except ValueError:
-                continue
+        sock, refused = await self._connect(code, host, port)
         if sock is None:
             writer.write((b"\x05\x05" if refused else b"\x05\x01") + b"\x00\x01" + bytes(6))
             await writer.drain()
@@ -142,6 +135,44 @@ class Relay:
         finally:
             self.active[code] -= 1
             up_writer.close()
+
+    async def _connect(self, code: str, host: str, port: int):
+        """Открывает туннель через прокси страны. Возвращает (сокет или None, отказал_ли адрес)."""
+        urls = list(self.routes.get(code, []))[:self.TRIES]
+        names: dict[asyncio.Task, str] = {}
+        pending: set[asyncio.Task] = set()
+        refused, nxt = False, 0
+        try:
+            while nxt < len(urls) or pending:
+                if nxt < len(urls):
+                    t = asyncio.create_task(open_tunnel(urls[nxt], host, port, self.connect_timeout))
+                    names[t], nxt = urls[nxt], nxt + 1
+                    pending.add(t)
+                done, pending = await asyncio.wait(
+                    pending, timeout=self.STAGGER if nxt < len(urls) else None,
+                    return_when=asyncio.FIRST_COMPLETED)
+                winner = None
+                for t in done:
+                    exc = t.exception()
+                    if exc is None:
+                        if winner is None:
+                            winner = t
+                        else:
+                            t.result().close()  # ответили сразу двое: лишний туннель закрываем
+                    elif isinstance(exc, TunnelRefused):
+                        refused = True  # прокси жив, просто не дошёл до этого адреса
+                    elif isinstance(exc, ProxyDown):
+                        self._failed(code, names[t])
+                if winner is not None:
+                    self.fails.pop(names[winner], None)
+                    return winner.result(), refused
+            return None, refused
+        finally:
+            for t in pending:
+                t.cancel()
+            for res in await asyncio.gather(*pending, return_exceptions=True):
+                if hasattr(res, "close") and not isinstance(res, BaseException):
+                    res.close()
 
     def _failed(self, code: str, url: str) -> None:
         self.fails[url] = self.fails.get(url, 0) + 1

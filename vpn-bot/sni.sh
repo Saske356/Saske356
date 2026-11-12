@@ -87,7 +87,7 @@ src, site, dst = sys.argv[1:]
 cfg = json.load(open(src))
 for ib in cfg.get("inbounds", []):
     rs = (ib.get("streamSettings") or {}).get("realitySettings")
-    if rs is not None:
+    if rs is not None and ib.get("tag", "in") == "in":  # вход мостов маскируется под свой сайт
         rs.pop("target", None)
         rs["dest"] = site + ":443"
         rs["serverNames"] = [site]

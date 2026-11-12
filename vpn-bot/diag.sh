@@ -258,6 +258,47 @@ else
   fi
 fi
 
+# Запасной вход XHTTP на том же порту: в подписке он идёт с пометкой «· запасной».
+XPATH=$(python3 -c '
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+print(next((ib["streamSettings"].get("xhttpSettings", {}).get("path", "") for ib in cfg.get("inbounds", [])
+            if (ib.get("streamSettings") or {}).get("network") == "xhttp"), ""))' "$CFG" 2>/dev/null)
+if [ -n "$XPATH" ] && [ -n "${UUID:-}" ] && [ -n "${STARTED:-}" ]; then
+  echo "== Запасное подключение XHTTP"
+  make_client vnext
+  python3 - "$TMP/client.json" "$XPATH" <<'PY'
+import json, sys
+path, xpath = sys.argv[1:]
+cfg = json.load(open(path))
+ob = cfg["outbounds"][0]
+for u in ob["settings"]["vnext"][0]["users"]:
+    u.pop("flow", None)
+ob["streamSettings"]["network"] = "xhttp"
+ob["streamSettings"]["xhttpSettings"] = {"path": xpath, "mode": "auto"}
+json.dump(cfg, open(path, "w"))
+PY
+  "$XRAY" run -c "$TMP/client.json" >"$TMP/client.x.log" 2>&1 &
+  CPID=$!
+  sleep 3
+  IP=$(curl -s -m 20 --socks5-hostname "127.0.0.1:$SOCKS" https://api.ipify.org 2>"$TMP/curl.err")
+  if [ -n "$IP" ]; then
+    ok "запасное подключение XHTTP работает"
+  else
+    { echo "curl: $(cat "$TMP/curl.err")"; tail -n 4 "$TMP/client.x.log"; } > "$TMP/xhttp.log"
+    bad "запасное подключение XHTTP не прошло" "$TMP/xhttp.log"
+  fi
+  kill "$CPID" 2>/dev/null
+fi
+BPORT=$(python3 -c '
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+print(next((ib["port"] for ib in cfg.get("inbounds", []) if ib.get("tag") == "in-b"), ""))' "$CFG" 2>/dev/null)
+if [ -n "$BPORT" ]; then
+  listen "$BPORT" | grep -q xray && ok "вход для мостов слушает порт $BPORT" \
+    || bad "вход для мостов не слушает порт $BPORT"
+fi
+
 echo "== Последние сообщения Xray"
 journalctl -u xray -n 6 --no-pager 2>/dev/null | cut -c1-160
 

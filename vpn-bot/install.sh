@@ -12,6 +12,7 @@ BOT="$DIR/vpn-bot"
 ENV="$BOT/.env"
 XRAY=/usr/local/bin/xray
 SUB_PORT="${SUB_PORT:-2096}"
+BRIDGE_PORT="${BRIDGE_PORT:-8444}"   # вход для мостов, которые проходят белые списки
 
 say()  { printf '\n\033[1;33m== %s\033[0m\n' "$*"; }
 fail() { printf '\n\033[1;31mОшибка: %s\033[0m\n' "$*" >&2; exit 1; }
@@ -129,10 +130,14 @@ export DEBIAN_FRONTEND=noninteractive
 
 # ---------- режим моста: российский сервер пересылает порт 443 на основной ----------
 # Запуск на сервере-мосте:  bash <(curl -fsSL .../install.sh) bridge
+# Мост пересылает подключения на отдельный вход основного сервера (порт 8444), который
+# маскируется под российский сайт. Так подключение к мосту проходит и белые списки.
 if [ "${1:-}" = "bridge" ]; then
   MAIN=$(ask "IP основного VPN-сервера")
   printf '%s' "$MAIN" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' || fail "нужен IP вида 1.2.3.4"
-  say "Ставлю пересылку 443 → $MAIN:443"
+  TARGET=$(ask "Порт входа для мостов на основном сервере" "$BRIDGE_PORT")
+  printf '%s' "$TARGET" | grep -Eq '^[0-9]{1,5}$' || fail "порт: число"
+  say "Ставлю пересылку 443 → $MAIN:$TARGET"
   retry apt-get update -qq || fail "не удалось обновить список пакетов"
   retry apt-get install -y -qq nftables >/dev/null || fail "не удалось поставить nftables"
   echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/99-aurora-bridge.conf
@@ -143,20 +148,39 @@ flush ruleset
 table ip aurora {
   chain prerouting {
     type nat hook prerouting priority dstnat; policy accept;
-    tcp dport 443 dnat to $MAIN:443
+    tcp dport 443 dnat to $MAIN:$TARGET
   }
   chain postrouting {
     type nat hook postrouting priority srcnat; policy accept;
-    ip daddr $MAIN tcp dport 443 masquerade
+    ip daddr $MAIN tcp dport $TARGET masquerade
   }
 }
 EOF
   nft -f /etc/nftables.conf
   systemctl enable -q nftables
+  # Мост держит много пересылаемых подключений: BBR и большая таблица соединений.
+  cat > /etc/sysctl.d/99-aurora-bridge-tune.conf <<'EOF2'
+net.core.default_qdisc=fq
+net.ipv4.tcp_congestion_control=bbr
+net.netfilter.nf_conntrack_max=262144
+net.ipv4.tcp_keepalive_time=300
+EOF2
+  sysctl -q -p /etc/sysctl.d/99-aurora-bridge-tune.conf 2>/dev/null || true
+  if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
+    ufw allow 443/tcp >/dev/null
+    ufw route allow proto tcp to "$MAIN" port "$TARGET" >/dev/null 2>&1 || true
+  fi
+  if timeout 5 bash -c "</dev/tcp/$MAIN/$TARGET" 2>/dev/null; then
+    echo "✅ основной сервер отвечает на порту $TARGET"
+  else
+    echo "⚠️ основной сервер не ответил на порту $TARGET. Обновите его установщиком этой версии"
+    echo "   и проверьте, что порт $TARGET открыт у хостинга."
+  fi
   BRIDGE_IP=$(curl -fsS4 --max-time 10 https://api.ipify.org || echo "IP_ЭТОГО_СЕРВЕРА")
   say "Мост готов"
   echo "Теперь в боте отправьте:"
-  echo "  /addbridge ru1 🇷🇺 Обход | $BRIDGE_IP"
+  echo "  /addbridge ru1 🇷🇺 Обход | $BRIDGE_IP | ru"
+  echo "Бот сам подберёт российский сайт для маскировки моста."
   exit 0
 fi
 
@@ -189,7 +213,13 @@ if [ ! -f "$ENV" ]; then
   ADMIN=$(ask "Ваш Telegram ID (узнать у @userinfobot)")
   SUPPORT=$(ask "Ник поддержки без @ (можно пусто)" "")
   LOC=$(ask "Название страны этого сервера" "🇸🇪 Швеция")
-  SNI=$(ask "Сайт для маскировки Reality" "www.microsoft.com")
+  # Сайт маскировки: самый быстрый с этого сервера из списка бота. Microsoft и подобные
+  # самые известные сайты не предлагаем: под них маскируются слишком многие, и Xray об этом предупреждает.
+  SNI_DEF=$(cd "$BOT" && timeout 90 "$BOT/.venv/bin/python" -c '
+import asyncio, masking
+r = asyncio.run(masking.ranked(masking.SITES))
+print(r[0][0] if r else "www.nvidia.com")' 2>/dev/null || echo "www.nvidia.com")
+  SNI=$(ask "Сайт для маскировки Reality" "${SNI_DEF:-www.nvidia.com}")
   MINI=$(ask "Адрес мини-приложения (пусто — без него)" "https://saske356.github.io/Saske356/")
 
   KEYS=$("$XRAY" x25519)
@@ -272,6 +302,7 @@ systemctl restart aurora-bot
 if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
   ufw allow 443/tcp >/dev/null
   ufw allow "$SUB_PORT"/tcp >/dev/null
+  ufw allow "$BRIDGE_PORT"/tcp >/dev/null
 fi
 
 say "Проверка"

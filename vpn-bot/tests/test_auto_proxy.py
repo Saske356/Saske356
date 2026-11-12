@@ -57,6 +57,17 @@ async def pipe(reader, writer):
         writer.close()
 
 
+async def slow_pipe(reader, writer):
+    try:
+        while data := await reader.read(4096):
+            writer.write(data)
+            await writer.drain()
+            await asyncio.sleep(0.25)
+        writer.write_eof()
+    except (ConnectionError, OSError):
+        writer.close()
+
+
 class TraceSite:
     """HTTPS-сайт, который отвечает как cloudflare.com/cdn-cgi/trace."""
 
@@ -72,7 +83,13 @@ class TraceSite:
 
     async def _handle(self, reader, writer):
         try:
-            await reader.readuntil(b"\r\n\r\n")
+            head = await reader.readuntil(b"\r\n\r\n")
+            if b"/__down?bytes=" in head:  # замер скорости, как speed.cloudflare.com
+                n = int(head.split(b"bytes=", 1)[1].split()[0])
+                writer.write(b"HTTP/1.1 200 OK\r\nConnection: close\r\n"
+                             + f"Content-Length: {n}\r\n\r\n".encode() + bytes(n))
+                await writer.drain()
+                return
             body = f"fl=1\nh=localhost\nip=203.0.113.9\nloc={self.country.upper()}\ntls=TLSv1.3\n".encode()
             writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n"
                          + f"Content-Length: {len(body)}\r\n\r\n".encode() + body)
@@ -110,7 +127,7 @@ class PlainSite:
 
 class FakeProxy:
     """Тестовый прокси. mode: ok, blackhole (молчит), refuse (не открывает туннель), mitm,
-    only443 (пускает только на проверочный HTTPS-сайт)."""
+    only443 (пускает только на проверочный HTTPS-сайт), slow (отдаёт данные по 16 КБ/с)."""
 
     def __init__(self, kind: str, country: str, auth=None, mode: str = "ok", delay: float = 0.0):
         self.kind, self.country, self.auth, self.mode, self.delay = kind, country, auth, mode, delay
@@ -156,7 +173,8 @@ class FakeProxy:
                          else b"HTTP/1.1 200 Connection established\r\n\r\n")
             self.tunnels += 1
             try:
-                await asyncio.gather(pipe(reader, up_writer), pipe(up_reader, writer))
+                down = slow_pipe(up_reader, writer) if self.mode == "slow" else pipe(up_reader, writer)
+                await asyncio.gather(pipe(reader, up_writer), down)
             finally:
                 self.writers.discard(up_writer)
                 up_writer.close()
@@ -214,12 +232,16 @@ class Base(unittest.IsolatedAsyncioTestCase):
         self.direct = await TraceSite("pl").start()
         self.plain = await PlainSite().start()
         self.things += [self.direct, self.plain]
-        self._saved = (pp.CHECK_HOST, pp.CHECK_PORT, pp._ssl_ctx, pp.CHECK_HTTP_PORT)
+        self._saved = (pp.CHECK_HOST, pp.CHECK_PORT, pp._ssl_ctx, pp.CHECK_HTTP_PORT,
+                       pp.SPEED_HOST, pp.SPEED_PORT, pp.SPEED_BYTES)
         pp.CHECK_HOST, pp.CHECK_PORT, pp.CHECK_HTTP_PORT = "localhost", self.direct.port, self.plain.port
+        # замер скорости идёт на тот же тестовый сайт, его прокси подменяет на сайт своей страны
+        pp.SPEED_HOST, pp.SPEED_PORT, pp.SPEED_BYTES = pp.CHECK_HOST, pp.CHECK_PORT, 65536
         pp._ssl_ctx = ssl.create_default_context(cafile=os.path.join(CERT_DIR, "good.crt"))
 
     async def asyncTearDown(self):
-        pp.CHECK_HOST, pp.CHECK_PORT, pp._ssl_ctx, pp.CHECK_HTTP_PORT = self._saved
+        (pp.CHECK_HOST, pp.CHECK_PORT, pp._ssl_ctx, pp.CHECK_HTTP_PORT,
+         pp.SPEED_HOST, pp.SPEED_PORT, pp.SPEED_BYTES) = self._saved
         for t in self.things:
             t.kill() if isinstance(t, FakeProxy) else t.close()
         await asyncio.sleep(0)
@@ -282,6 +304,27 @@ class ProbeTests(Base):
 
 
 class SourceTests(unittest.TestCase):
+    async def test_slow_proxy_is_not_picked(self):
+        slow, fast = await self.proxy("socks5", "nl", mode="slow"), await self.proxy("http", "nl")
+        self.assertIsNotNone(await pp.probe(slow.url))  # сама проверка проходит
+        self.assertLess(await pp.speed(slow.url), pp.MIN_KBPS)
+        self.assertGreater(await pp.speed(fast.url), pp.MIN_KBPS)
+        failed = set()
+        self.assertEqual([u for u, _ in await pp.pick_working([slow.url, fast.url], "nl", need=2, failed=failed)],
+                         [fast.url])
+        self.assertEqual(failed, {slow.url})
+
+    def test_monosans_list(self):
+        data = [{"protocol": "socks5", "username": None, "host": "198.51.100.7", "port": 1080, "timeout": 0.5,
+                 "geolocation": {"country": {"iso_code": "DE"}}},
+                {"protocol": "http", "username": "u", "password": "p", "host": "198.51.100.8", "port": 80,
+                 "geolocation": {"country": {"iso_code": "DE"}}},
+                {"protocol": "socks4", "host": "198.51.100.9", "port": 1, "geolocation": {"country": {"iso_code": "DE"}}}]
+        pool = {}
+        pp._parse_monosans(data, pool)
+        self.assertEqual(list(pool), ["de"])
+        self.assertEqual(list(pool["de"]), ["socks5://198.51.100.7:1080"])
+
     def test_reliable_proxies_come_first(self):
         data = {
             "proxifly": [{"protocol": "socks5", "ip": "198.51.100.1", "port": 1080, "geolocation": {"country": "NL"}},
@@ -343,6 +386,14 @@ class RelayTests(Base):
         self.assertEqual((await pp.probe(self.via())).country, "nl")  # первое же подключение прошло
         self.assertEqual(self.demoted, [("nl", dead.url)])  # после двух отказов подряд
         self.assertEqual(self.relay.routes["nl"], [good.url, dead.url])
+
+    async def test_hanging_proxy_does_not_stall_connection(self):
+        hang, ok = await self.proxy("socks5", "nl", mode="blackhole"), await self.proxy("http", "nl")
+        self.relay.connect_timeout, self.relay.STAGGER = 10.0, 0.2
+        self.relay.set_route("nl", [hang.url, ok.url])
+        t0 = asyncio.get_running_loop().time()
+        self.assertEqual((await pp.probe(self.via())).country, "nl")
+        self.assertLess(asyncio.get_running_loop().time() - t0, 5.0)  # не ждали 10 секунд зависшего
 
     async def test_refused_target_does_not_blame_proxy(self):
         p = await self.proxy(mode="refuse")
@@ -424,7 +475,7 @@ class ManagerTests(Base):
             state_path=os.path.join(self.dir, "vpn.json"), config_path=os.path.join(self.dir, "config.json"),
             xray_bin="/nonexistent", public_host="198.51.100.1", port=443, sni="www.microsoft.com",
             private_key="priv", public_key="pub", short_id="ab", sub_port=0,
-            auto_enabled=True, auto_countries=countries, auto_max=maxn, relay_port=0)
+            auto_enabled=True, auto_countries=countries, auto_max=maxn, relay_port=0, xhttp=False)
         self.applies = 0
 
         def count(delay=2.0):
@@ -467,7 +518,7 @@ class ManagerTests(Base):
         server = out["out-nl"]["settings"]["servers"][0]
         self.assertEqual((out["out-nl"]["protocol"], server["address"], server["users"][0]["user"]),
                          ("socks", "127.0.0.1", "nl"))
-        nl_rules = [r for r in cfg["routing"]["rules"] if r.get("user") == ["u7.nl"]]
+        nl_rules = [r for r in cfg["routing"]["rules"] if r.get("user") == ["regexp:^u[0-9]+\\.nl$"]]
         self.assertEqual([(r.get("network"), r.get("port"), r["outboundTag"]) for r in nl_rules],
                          [("udp", "53", "direct"), ("udp", None, "block"), (None, None, "out-nl")])
         self.assertEqual(len(self.vpn.links(7)), 3)

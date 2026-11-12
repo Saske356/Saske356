@@ -3,10 +3,18 @@
 Каждый клиент получает отдельный ключ под каждую страну. Сервер по ключу понимает,
 через какую страну выпустить трафик: напрямую (страна самого сервера) или через прокси.
 Клиенту выдаётся одна ссылка-подписка, в приложении она превращается в список стран.
+
+Клиенты добавляются и убираются через API Xray на лету: выдача и отключение доступа не
+перезапускают Xray и не рвут подключения остальных. Перезапуск нужен только при смене
+стран, мостов или сайта маскировки.
+
+На том же порту 443 работает запасной вход XHTTP: если оператор режет обычное подключение,
+у клиента в подписке есть вариант «· запасной» с другим видом трафика.
 """
 
 import asyncio
 import base64
+import copy
 import hashlib
 import hmac
 import json
@@ -24,6 +32,8 @@ from vpn import VpnProvider
 log = logging.getLogger("vpn-bot.xray")
 
 CODE_RE = re.compile(r"^[a-z0-9]{1,8}$")
+XHTTP_SOCKET = "@aurora-xhttp"   # вход XHTTP за основным входом, наружу не открыт
+API_CHUNK = 150                  # сколько клиентов за один вызов API
 
 
 def parse_proxy(url: str) -> dict:
@@ -46,12 +56,15 @@ class XrayProvider(VpnProvider):
                  sub_port: int, brand: str = "VPN", default_location: str = "🌍 Основной",
                  restart_cmd: tuple = ("systemctl", "restart", "xray"),
                  auto_enabled: bool = False, auto_countries: tuple = (), auto_max: int = 8,
-                 relay_port: int = 20808):
+                 relay_port: int = 20808, api_port: int = 10085, bridge_port: int = 8444,
+                 xhttp: bool = True, sub_base: str = ""):
         self.state_path, self.config_path, self.xray_bin = state_path, config_path, xray_bin
         self.host, self.port, self.env_sni = public_host, port, sni
         self.private_key, self.public_key, self.short_id = private_key, public_key, short_id
         self.sub_port, self.brand, self.restart_cmd = sub_port, brand, restart_cmd
-        self.relay_port = relay_port
+        self.relay_port, self.api_port, self.bridge_port = relay_port, api_port, bridge_port
+        self.xhttp_enabled = xhttp
+        self.sub_base = sub_base.strip().rstrip("/")
         self.state = self._load(default_location, auto_enabled, list(auto_countries), auto_max)
         self._pending: asyncio.Task | None = None
         self._server: asyncio.base_events.Server | None = None
@@ -59,6 +72,14 @@ class XrayProvider(VpnProvider):
         self.last_error = ""        # текст последней проблемы, пусто — всё в порядке
         self.last_apply = 0.0       # когда конфиг последний раз успешно применён
         self.auto_rejected = False  # Xray принял конфиг только без авто-стран
+        self.xhttp_off = False      # Xray не принял запасной вход XHTTP (слишком старая версия)
+        # Что сейчас загружено в работающий Xray: клиенты по входам и «форма» конфига без клиентов.
+        # Если форма не изменилась, клиенты меняются через API без перезапуска.
+        self._live: dict | None = None
+        self._live_shape = ""
+        self._live_flags = (True, True)
+        self.restarts = 0           # перезапусков Xray с запуска бота
+        self.hot_updates = 0        # изменений клиентов без перезапуска
 
     # ---------- состояние ----------
 
@@ -72,6 +93,7 @@ class XrayProvider(VpnProvider):
         st.setdefault("users", {})
         st.setdefault("locations", [{"code": "main", "name": default_location, "proxy": ""}])
         st.setdefault("bridges", [])
+        st.setdefault("bridge_site", "")  # российский сайт маскировки для мостов «ru»
         # Настройки авто-стран берутся из окружения только при первом запуске,
         # дальше ими управляет команда /autoproxy.
         st.setdefault("auto", {"enabled": bool(auto_enabled),
@@ -214,7 +236,17 @@ class XrayProvider(VpnProvider):
         return hmac.new(self.state["secret"].encode(), str(user_id).encode(), hashlib.sha256).hexdigest()[:24]
 
     def sub_url(self, user_id: int) -> str:
-        return f"http://{self.host}:{self.sub_port}/sub/{user_id}/{self.sub_token(user_id)}"
+        # SUB_URL: свой адрес раздачи, например домен за Cloudflare, если оператор режет порт подписки
+        base = self.sub_base or f"http://{self.host}:{self.sub_port}"
+        return f"{base}/sub/{user_id}/{self.sub_token(user_id)}"
+
+    @property
+    def xhttp_path(self) -> str:
+        return "/" + hmac.new(self.state["secret"].encode(), b"xhttp", hashlib.sha256).hexdigest()[:12]
+
+    @property
+    def xhttp_on(self) -> bool:
+        return self.xhttp_enabled and not self.xhttp_off
 
     # ---------- интерфейс для бота ----------
 
@@ -255,8 +287,10 @@ class XrayProvider(VpnProvider):
             self.schedule_apply()
         return True
 
-    def add_bridge(self, code: str, name: str, address: str, sni: str = "") -> None:
-        """Мост: российский сервер, который пересылает порт 443 на этот сервер."""
+    def add_bridge(self, code: str, name: str, address: str, sni: str = "", ru: bool = False) -> None:
+        """Мост: российский сервер, который пересылает порт 443 на этот сервер.
+        ru: мост пересылает на отдельный вход с российским сайтом маскировки (порт BRIDGE_PORT).
+        Так подключение к мосту выглядит как обращение к сайту из белого списка."""
         code = code.lower()
         if not CODE_RE.match(code):
             raise ValueError("код моста: латиница и цифры, до 8 символов, например ru1")
@@ -268,7 +302,7 @@ class XrayProvider(VpnProvider):
             raise ValueError("маскировка: домен сайта, например vk.com")
         self.state["bridges"] = [b for b in self.bridges if b["code"] != code]
         self.state["bridges"].append({"code": code, "name": name.strip(), "host": host,
-                                      "port": int(port or 443), "sni": sni})
+                                      "port": int(port or 443), "sni": "" if ru else sni, "ru": bool(ru)})
         self._save()
         self.schedule_apply()  # новый домен маскировки должен попасть в конфиг
 
@@ -280,6 +314,52 @@ class XrayProvider(VpnProvider):
         self._save()
         self.schedule_apply()
         return True
+
+    # ---------- мосты для белых списков ----------
+
+    def ru_bridges(self) -> list[dict]:
+        return [b for b in self.bridges if b.get("ru")]
+
+    @property
+    def bridge_site(self) -> str:
+        return self.state.get("bridge_site", "")
+
+    def set_bridge_site(self, site: str) -> None:
+        if site != self.bridge_site:
+            self.state["bridge_site"] = site
+            self._save()
+            self.schedule_apply()
+
+    async def check_bridges(self) -> list[tuple[dict, bool]]:
+        """Отвечает ли каждый мост: настоящее TLS-подключение через мост до этого сервера.
+        Возвращает изменения (мост, работает_ли)."""
+        import ssl
+
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.check_hostname, ctx.verify_mode = False, ssl.CERT_NONE
+
+        async def alive(b) -> bool:
+            sni = self.bridge_site if b.get("ru") else (b["sni"] or self.sni)
+            for _ in range(2):
+                try:
+                    _, w = await asyncio.wait_for(asyncio.open_connection(
+                        b["host"], b["port"], ssl=ctx, server_hostname=sni or None), 8)
+                    w.close()
+                    return True
+                except Exception:
+                    await asyncio.sleep(1)
+            return False
+
+        if not self.bridges:
+            return []
+        changes = []
+        for b, ok in zip(list(self.bridges), await asyncio.gather(*(alive(b) for b in self.bridges))):
+            if bool(b.get("down")) == ok:
+                b["down"] = not ok
+                changes.append((b, ok))
+        if changes:
+            self._save()
+        return changes
 
     async def check_proxies(self) -> list[tuple[dict, bool]]:
         """Проверяет прокси стран, добавленных вручную: через каждый открывается настоящее
@@ -303,17 +383,37 @@ class XrayProvider(VpnProvider):
 
     # ---------- конфиг Xray ----------
 
-    def _link(self, uid: str, host: str, port: int, sni: str, name: str) -> str:
-        q = (f"encryption=none&flow=xtls-rprx-vision&security=reality&sni={sni}"
-             f"&fp=chrome&pbk={self.public_key}&sid={self.short_id}&type=tcp")
+    def _link(self, uid: str, host: str, port: int, sni: str, name: str, xhttp: bool = False) -> str:
+        if xhttp:
+            q = (f"encryption=none&security=reality&sni={sni}&fp=chrome&pbk={self.public_key}"
+                 f"&sid={self.short_id}&type=xhttp&path={quote(self.xhttp_path, safe='')}&mode=auto")
+        else:
+            q = (f"encryption=none&flow=xtls-rprx-vision&security=reality&sni={sni}"
+                 f"&fp=chrome&pbk={self.public_key}&sid={self.short_id}&type=tcp")
         return f"vless://{uid}@{host}:{port}?{q}#{quote(name)}"
 
+    def _bridge_sni(self, b: dict) -> str:
+        return self.bridge_site if b.get("ru") else (b["sni"] or self.sni)
+
+    def visible_bridges(self) -> list[dict]:
+        """Мост «ru» появляется в подписке, когда для него выбран сайт маскировки."""
+        return [b for b in self.bridges if not b.get("ru") or self.bridge_site]
+
     def links(self, user_id: int) -> list[str]:
+        shown = [l for l in self.locations if not l.get("down") and not (l.get("auto") and self.auto_rejected)]
         out = [self._link(self.user_uuid(user_id, loc["code"]), self.host, self.port, self.sni, loc["name"])
-               for loc in self.locations
-               if not loc.get("down") and not (loc.get("auto") and self.auto_rejected)]
+               for loc in shown]
         direct = self.user_uuid(user_id, self.direct_location()["code"])
-        out += [self._link(direct, b["host"], b["port"], b["sni"] or self.sni, b["name"]) for b in self.bridges]
+        bridges = self.visible_bridges()
+        out += [self._link(direct, b["host"], b["port"], self._bridge_sni(b), b["name"]) for b in bridges]
+        if self.xhttp_on:
+            # Запасной вид подключения для своих стран и мостов. Авто-странам он не нужен:
+            # их публичные прокси и так медленные, а список в приложении не должен разрастаться.
+            out += [self._link(self.user_uuid(user_id, loc["code"]), self.host, self.port, self.sni,
+                               loc["name"] + " · запасной", xhttp=True)
+                    for loc in shown if not loc.get("auto")]
+            out += [self._link(direct, b["host"], b["port"], self._bridge_sni(b), b["name"] + " · запасной",
+                               xhttp=True) for b in bridges]
         return out
 
     # ---------- сайт маскировки ----------
@@ -387,17 +487,27 @@ class XrayProvider(VpnProvider):
             "address": "127.0.0.1", "port": self.relay_port,
             "users": [{"user": code, "pass": self.relay_password}]}]}}
 
-    def build_config(self, with_auto: bool = True, site: str | None = None) -> dict:
+    def _reality(self, site: str, names: list[str]) -> dict:
+        return {"show": False, "dest": f"{site}:443", "xver": 0, "serverNames": names,
+                "privateKey": self.private_key, "shortIds": [self.short_id]}
+
+    def build_config(self, with_auto: bool = True, site: str | None = None, with_xhttp: bool | None = None) -> dict:
+        if with_xhttp is None:
+            with_xhttp = self.xhttp_on
         locations = [l for l in self.locations if with_auto or not l.get("auto")]
+        direct_code = self.direct_location()["code"]
         now = time.time()
         active = [int(u) for u, exp in self.state["users"].items() if exp > now]
-        clients, by_loc = [], {}
+        clients, x_clients, b_clients = [], [], []
         for uid in active:
             for loc in locations:
-                email = f"u{uid}.{loc['code']}"
-                clients.append({"id": self.user_uuid(uid, loc["code"]), "flow": "xtls-rprx-vision",
-                                "email": email})
-                by_loc.setdefault(loc["code"], []).append(email)
+                email, cid = f"u{uid}.{loc['code']}", self.user_uuid(uid, loc["code"])
+                c = {"id": cid, "flow": "xtls-rprx-vision", "email": email}
+                clients.append(c)
+                if not loc.get("auto"):
+                    x_clients.append({"id": cid, "email": email})  # XHTTP не работает с flow
+                if loc["code"] == direct_code:
+                    b_clients.append(dict(c))
 
         outbounds = [{"tag": "direct", "protocol": "freedom"},
                      {"tag": "block", "protocol": "blackhole"}]
@@ -406,34 +516,55 @@ class XrayProvider(VpnProvider):
         for loc in locations:
             if not loc["proxy"]:
                 continue
-            users = by_loc.get(loc["code"])
+            # Правило по шаблону имени клиента, а не по списку: новые клиенты попадают в свою
+            # страну сразу, и при выдаче доступа правила менять не нужно.
+            users = [f"regexp:^u[0-9]+\\.{loc['code']}$"]
             if loc.get("auto"):
                 outbounds.append({"tag": f"out-{loc['code']}", **self.relay_outbound(loc["code"])})
-                if users:
-                    # Публичные прокси UDP не пересылают: запросы DNS уходят с самого сервера,
-                    # остальной UDP отклоняется, и приложения сразу переходят на TCP.
-                    rules.append({"type": "field", "user": users, "network": "udp", "port": "53",
-                                  "outboundTag": "direct"})
-                    rules.append({"type": "field", "user": users, "network": "udp",
-                                  "outboundTag": "block"})
+                # Публичные прокси UDP не пересылают: запросы DNS уходят с самого сервера,
+                # остальной UDP отклоняется, и приложения сразу переходят на TCP.
+                rules.append({"type": "field", "user": users, "network": "udp", "port": "53",
+                              "outboundTag": "direct"})
+                rules.append({"type": "field", "user": users, "network": "udp", "outboundTag": "block"})
             else:
                 outbounds.append({"tag": f"out-{loc['code']}", **parse_proxy(loc["proxy"])})
-            if users:
-                rules.append({"type": "field", "user": users, "outboundTag": f"out-{loc['code']}"})
+            rules.append({"type": "field", "user": users, "outboundTag": f"out-{loc['code']}"})
 
+        sniffing = {"enabled": True, "destOverride": ["http", "tls", "quic"]}
+        fallback = [{"dest": XHTTP_SOCKET}] if with_xhttp else []
+        main_in = {
+            "tag": "in", "listen": "0.0.0.0", "port": self.port, "protocol": "vless",
+            "settings": {"clients": clients, "decryption": "none"},
+            "streamSettings": {"network": "tcp", "security": "reality",
+                               "realitySettings": self._reality(site or self.sni,
+                                                                [site] if site else self.server_names())},
+            "sniffing": sniffing,
+        }
+        if fallback:
+            main_in["settings"]["fallbacks"] = fallback
+        inbounds = [main_in]
+        if self.ru_bridges() and self.bridge_site and not site:
+            b_in = {
+                "tag": "in-b", "listen": "0.0.0.0", "port": self.bridge_port, "protocol": "vless",
+                "settings": {"clients": b_clients, "decryption": "none"},
+                "streamSettings": {"network": "tcp", "security": "reality",
+                                   "realitySettings": self._reality(self.bridge_site, [self.bridge_site])},
+                "sniffing": sniffing,
+            }
+            if fallback:
+                b_in["settings"]["fallbacks"] = fallback
+            inbounds.append(b_in)
+        if with_xhttp:
+            inbounds.append({
+                "tag": "in-x", "listen": XHTTP_SOCKET, "protocol": "vless",
+                "settings": {"clients": x_clients, "decryption": "none"},
+                "streamSettings": {"network": "xhttp", "xhttpSettings": {"path": self.xhttp_path}},
+                "sniffing": sniffing,
+            })
         return {
             "log": {"loglevel": "warning", "access": "none"},
-            "inbounds": [{
-                "tag": "in", "listen": "0.0.0.0", "port": self.port, "protocol": "vless",
-                "settings": {"clients": clients, "decryption": "none"},
-                "streamSettings": {
-                    "network": "tcp", "security": "reality",
-                    "realitySettings": {"show": False, "dest": f"{site or self.sni}:443", "xver": 0,
-                                        "serverNames": [site] if site else self.server_names(), "privateKey": self.private_key,
-                                        "shortIds": [self.short_id]},
-                },
-                "sniffing": {"enabled": True, "destOverride": ["http", "tls", "quic"]},
-            }],
+            "api": {"tag": "api", "listen": f"127.0.0.1:{self.api_port}", "services": ["HandlerService"]},
+            "inbounds": inbounds,
             "outbounds": outbounds,
             "routing": {"domainStrategy": "AsIs", "rules": rules},
         }
@@ -469,9 +600,75 @@ class XrayProvider(VpnProvider):
             except Exception as e:  # оповещение не должно ронять применение конфига
                 log.warning("не удалось сообщить о проблеме: %s", e)
 
+    # ---------- изменения клиентов без перезапуска ----------
+
+    @staticmethod
+    def _shape(cfg: dict) -> str:
+        """Конфиг без списков клиентов: если он не изменился, перезапуск не нужен."""
+        c = copy.deepcopy(cfg)
+        for ib in c["inbounds"]:
+            ib["settings"].pop("clients", None)
+        return json.dumps(c, sort_keys=True)
+
+    @staticmethod
+    def _clients(cfg: dict) -> dict[str, dict[str, dict]]:
+        return {ib["tag"]: {c["email"]: c for c in ib["settings"].get("clients", [])}
+                for ib in cfg["inbounds"] if "clients" in ib["settings"]}
+
+    async def _api(self, cmd: str, *args) -> tuple[int, str]:
+        return await self._run(self.xray_bin, "api", cmd, f"--server=127.0.0.1:{self.api_port}", *args)
+
+    async def _hot_update(self, cfg: dict) -> bool:
+        """Добавляет и убирает клиентов в работающем Xray. False — нужен обычный перезапуск."""
+        if self._live is None or self._shape(cfg) != self._live_shape:
+            return False
+        want = self._clients(cfg)
+        base = self.config_path[:-5] if self.config_path.endswith(".json") else self.config_path
+        tmp = base + ".users.json"
+        changed = False
+        try:
+            for tag, clients in want.items():
+                have = self._live.get(tag, {})
+                gone = [e for e, c in have.items() if clients.get(e) != c]
+                new = [c for e, c in clients.items() if have.get(e) != c]
+                for i in range(0, len(gone), API_CHUNK):
+                    code, out = await self._api("rmu", f"-tag={tag}", *gone[i:i + API_CHUNK])
+                    if code != 0:
+                        log.warning("API Xray не убрал клиентов: %s", out[-300:])
+                        return False
+                for i in range(0, len(new), API_CHUNK):
+                    part = new[i:i + API_CHUNK]
+                    with open(tmp, "w", encoding="utf-8") as f:
+                        json.dump({"inbounds": [{"tag": tag, "port": 1, "protocol": "vless",
+                                                 "settings": {"clients": part, "decryption": "none"}}]}, f)
+                    code, out = await self._api("adu", tmp)
+                    m = re.search(r"Added (\d+) user", out)
+                    if code != 0 or not m or int(m.group(1)) != len(part):
+                        log.warning("API Xray не добавил клиентов: %s", out[-300:])
+                        return False
+                changed = changed or bool(gone or new)
+                self._live[tag] = dict(clients)
+        except OSError as e:
+            log.warning("API Xray недоступен: %s", e)
+            return False
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+        # Файл конфига тоже обновляем: после перезагрузки сервера Xray поднимется с теми же клиентами.
+        nxt = base + ".next.json"
+        with open(nxt, "w", encoding="utf-8") as f:
+            f.write(json.dumps(cfg, ensure_ascii=False, indent=1))
+        os.chmod(nxt, 0o644)
+        os.replace(nxt, self.config_path)
+        if changed:
+            self.hot_updates += 1
+            log.info("Xray: клиенты обновлены без перезапуска (%d)", len(self.state["users"]))
+        return True
+
     async def apply(self) -> bool:
-        """Пишет новый конфиг, проверяет его самим Xray и только потом перезапускает.
-        Если Xray не принимает конфиг с авто-странами, применяется конфиг без них:
+        """Применяет состояние к Xray. Если поменялись только клиенты, они меняются через API
+        на лету. Иначе новый конфиг проверяется самим Xray и только потом Xray перезапускается.
+        Если Xray не принимает запасной вход или авто-страны, применяется конфиг без них:
         основная страна, купленные прокси и новые клиенты не должны от них зависеть."""
         # Xray определяет формат по расширению, поэтому временный файл тоже .json
         base = self.config_path[:-5] if self.config_path.endswith(".json") else self.config_path
@@ -481,31 +678,56 @@ class XrayProvider(VpnProvider):
             await self._problem(f"Xray не найден: {self.xray_bin}. Конфиг не применён.")
             return False
         has_auto = bool(self.auto_locations())
-        rejected = ""
-        for with_auto in ((True, False) if has_auto else (True,)):
+        if self._live is not None:
+            flags = (self._live_flags[0] or not has_auto, self._live_flags[1] and self.xhttp_enabled)
+            if await self._hot_update(self.build_config(flags[0], with_xhttp=flags[1])):
+                self.last_apply = time.time()
+                self.auto_rejected = has_auto and not flags[0]
+                if not self.auto_rejected and not self.xhttp_off:
+                    self.last_error = ""
+                return True
+        variants = [(a, x) for a in ((True, False) if has_auto else (True,))
+                    for x in ((True, False) if self.xhttp_enabled else (False,))]
+        rejected = {}
+        for with_auto, with_xhttp in variants:
+            cfg = self.build_config(with_auto, with_xhttp=with_xhttp)
             with open(tmp, "w", encoding="utf-8") as f:
-                f.write(json.dumps(self.build_config(with_auto), ensure_ascii=False, indent=1))
+                f.write(json.dumps(cfg, ensure_ascii=False, indent=1))
             os.chmod(tmp, 0o644)
             code, out = await self._run(self.xray_bin, "run", "-test", "-c", tmp)
             if code == 0:
                 break
-            rejected = rejected or out[-700:].strip()
-            log.error("Xray отклонил конфиг%s:\n%s", " с авто-странами" if with_auto and has_auto else "",
-                      out[-1500:])
+            rejected.setdefault((with_auto, with_xhttp), out[-700:].strip())
+            log.error("Xray отклонил конфиг (авто-страны: %s, запасной вход: %s):\n%s",
+                      with_auto and has_auto, with_xhttp, out[-1500:])
         else:
-            await self._problem("Xray отклонил конфиг, оставляю прежний:\n" + rejected)
+            first = next(iter(rejected.values()), "")
+            await self._problem("Xray отклонил конфиг, оставляю прежний:\n" + first)
             return False
         os.replace(tmp, self.config_path)
         code, out = await self._run(*self.restart_cmd)
         if code != 0:
+            self._live = None
             await self._problem("Не удалось перезапустить Xray: " + out[-500:].strip())
             return False
+        self.restarts += 1
+        self._live, self._live_shape = self._clients(cfg), self._shape(cfg)
+        self._live_flags = (with_auto, with_xhttp)
         self.last_apply = time.time()
         self.auto_rejected = has_auto and not with_auto
-        log.info("Xray обновлён: %d клиентов, стран: %d", len(self.state["users"]), len(self.locations))
+        self.xhttp_off = self.xhttp_enabled and not with_xhttp
+        log.info("Xray перезапущен: %d клиентов, стран: %d", len(self.state["users"]), len(self.locations))
+        problems = []
+        if self.xhttp_off:
+            problems.append("Xray не принял запасной вход XHTTP, поэтому он отключён. Основное подключение "
+                            "работает. Обновите Xray: запустите установщик ещё раз.\n"
+                            + rejected.get((with_auto, True), ""))
         if self.auto_rejected:
-            await self._problem("Xray не принял настройки авто-стран, поэтому они отключены и скрыты "
-                                "из подписки. Остальные страны работают.\n" + rejected)
+            problems.append("Xray не принял настройки авто-стран, поэтому они отключены и скрыты "
+                            "из подписки. Остальные страны работают.\n"
+                            + rejected.get((True, with_xhttp), ""))
+        if problems:
+            await self._problem("\n\n".join(problems))
         else:
             self.last_error = ""
         return True
@@ -585,4 +807,8 @@ def from_env() -> XrayProvider:
         auto_countries=[c.strip().lower() for c in e.get("AUTO_PROXY_COUNTRIES", "").replace(" ", "").split(",") if c.strip()],
         auto_max=int(e.get("AUTO_PROXY_MAX", "8")),
         relay_port=int(e.get("AUTO_RELAY_PORT", "20808")),
+        api_port=int(e.get("XRAY_API_PORT", "10085")),
+        bridge_port=int(e.get("BRIDGE_PORT", "8444")),
+        xhttp=e.get("XHTTP", "1") == "1",
+        sub_base=e.get("SUB_URL", ""),
     )

@@ -66,15 +66,23 @@ async def main():
     tags = [ob["tag"] for ob in cfg["outbounds"]]
     assert tags[0] == "direct" and "out-nl" in tags and "out-us" in tags
     rules = {r.get("outboundTag"): r for r in cfg["routing"]["rules"] if "user" in r}
-    assert sorted(rules["out-nl"]["user"]) == ["u10.nl", "u11.nl"]
-    assert sorted(rules["out-us"]["user"]) == ["u10.us", "u11.us"]
+    assert rules["out-nl"]["user"] == ["regexp:^u[0-9]+\\.nl$"]  # новые клиенты попадают сами
+    assert rules["out-us"]["user"] == ["regexp:^u[0-9]+\\.us$"]
     assert "direct" not in rules  # основная страна идёт по умолчанию напрямую
     assert any(r.get("protocol") == ["bittorrent"] for r in cfg["routing"]["rules"])
     assert cfg["log"]["access"] == "none"
 
     # ссылки
     links = v.links(10)
-    assert len(links) == 3
+    assert len(links) == 6  # 3 страны и запасной вариант XHTTP для каждой
+    x = urlparse(links[3]); xq = parse_qs(x.query)
+    assert xq["type"] == ["xhttp"] and xq["path"] == [v.xhttp_path] and "flow" not in xq
+    assert x.port == 443 and unquote(x.fragment) == "🇸🇪 Швеция · запасной"
+    names = [ib["tag"] for ib in cfg["inbounds"]]
+    assert names == ["in", "in-x"] and inb["settings"]["fallbacks"] == [{"dest": xp.XHTTP_SOCKET}]
+    xin = cfg["inbounds"][1]
+    assert xin["listen"] == xp.XHTTP_SOCKET and "flow" not in xin["settings"]["clients"][0]
+    assert cfg["api"]["listen"] == "127.0.0.1:10085"
     u = urlparse(links[1]); q = parse_qs(u.query)
     assert u.scheme == "vless" and u.hostname == "203.0.113.7" and u.port == 443
     assert q["security"] == ["reality"] and q["pbk"] == ["PUBKEY"] and q["sid"] == ["a1b2c3d4e5f60718"]
@@ -118,7 +126,7 @@ async def main():
     head, body = await get(f"/sub/10/{v.sub_token(10)}")
     assert head.startswith("HTTP/1.1 200"), head
     got = base64.b64decode(body).decode().splitlines()
-    assert got == v.links(10) and len(got) == 2  # nl и основной (us удалили)
+    assert got == v.links(10) and len(got) == 4  # nl и основной (us удалили), у каждой запасной
     assert f"expire={int(now + 100)}" in head and "profile-title: base64:" in head
     head, _ = await get(f"/sub/10/{'0' * 24}"); assert head.startswith("HTTP/1.1 404")
     head, _ = await get("/etc/passwd"); assert head.startswith("HTTP/1.1 404")
@@ -140,7 +148,7 @@ async def main():
         try: b.add_bridge(*bad); raise AssertionError(bad)
         except ValueError: pass
     ls = b.links(7)
-    assert len(ls) == 3, ls
+    assert len(ls) == 6, ls  # основной и два моста, у каждого запасной
     u1, u2 = urlparse(ls[1]), urlparse(ls[2])
     assert u1.hostname == "198.51.100.9" and u1.port == 443 and parse_qs(u1.query)["sni"] == ["www.microsoft.com"]
     assert u2.port == 8443 and parse_qs(u2.query)["sni"] == ["vk.com"]
@@ -160,6 +168,8 @@ async def main():
     al.xray_bin = fake_xray(True)
     assert await al.apply() is True and al.last_error == "" and al.last_apply > 0
     al.xray_bin = fake_xray(False)
+    assert await al.apply() is True, "только клиенты не менялись: перезапуск и проверка не нужны"
+    al.state["locations"].append({"code": "nl", "name": "NL", "proxy": "socks5://1.2.3.4:1080"})
     assert await al.apply() is False and al.on_problem.await_count == 2
     al.on_problem = AsyncMock(side_effect=RuntimeError("telegram down"))
     al.last_error = ""
@@ -168,9 +178,89 @@ async def main():
     assert await al.apply() is False and "не найден" in al.on_problem.await_args.args[0]
 
 
+def api_xray(log_path, api_ok=True):
+    """Заглушка Xray, которая понимает и проверку конфига, и вызовы API adu/rmu."""
+    p = os.path.join(T, "xray_api" + ("" if api_ok else "_down"))
+    with open(p, "w") as f:
+        f.write(f"""#!/usr/bin/env python3
+import json, sys
+a = sys.argv[1:]
+open({log_path!r}, "a").write(" ".join(a[:2]) + "\\n")
+if a[0] == "run":
+    json.load(open(a[3])); sys.exit(0)
+if not {api_ok!r}:
+    print("failed to dial 127.0.0.1:10085"); sys.exit(1)
+assert a[2].startswith("--server=127.0.0.1:"), a
+if a[1] == "adu":
+    n = sum(len(ib["settings"]["clients"]) for ib in json.load(open(a[3]))["inbounds"])
+    print(f"Added {{n}} user(s) in total.")
+elif a[1] == "rmu":
+    print(f"Removed {{len(a) - 4}} user(s) in total.")
+""")
+    os.chmod(p, 0o755)
+    return p
+
+
 class XrayProvider(unittest.IsolatedAsyncioTestCase):
     async def test_provider(self):
         await main()
+
+    async def test_clients_change_without_restart(self):
+        log_path = os.path.join(T, "api.log")
+        open(log_path, "w").close()
+        v = make(name="hot")
+        v.xray_bin = api_xray(log_path)
+        calls = lambda: open(log_path).read().split()
+        now = time.time()
+        await v.issue(1, now + 1000)
+        assert await v.apply() and v.restarts == 1 and calls() == ["run", "-test"]
+        open(log_path, "w").close()
+        await v.issue(2, now + 1000)
+        assert await v.apply() and v.restarts == 1 and v.hot_updates == 1
+        assert calls() == ["api", "adu", "api", "adu"], calls()  # основной вход и запасной
+        on_disk = read_json(v.config_path)
+        assert {c["email"] for c in on_disk["inbounds"][0]["settings"]["clients"]} == {"u1.main", "u2.main"}
+        open(log_path, "w").close()
+        await v.issue(2, now + 5000)  # продление: в Xray ничего не меняется
+        assert await v.apply() and calls() == [] and v.restarts == 1
+        await v.revoke(1)
+        assert await v.apply() and calls() == ["api", "rmu", "api", "rmu"] and v.restarts == 1
+        v.add_location("nl", "NL", "socks5://1.2.3.4:1080")  # новая страна: нужен перезапуск
+        assert await v.apply() and v.restarts == 2
+        # Xray упал или API не отвечает: бот просто перезапускает его с новым конфигом
+        v.xray_bin = api_xray(log_path, api_ok=False)
+        await v.issue(3, now + 1000)
+        assert await v.apply() and v.restarts == 3
+        assert "u3.nl" in json.dumps(read_json(v.config_path))
+        for t in asyncio.all_tasks():
+            if t is not asyncio.current_task():
+                t.cancel()
+
+    async def test_bridge_for_whitelists_and_sub_url(self):
+        v = make(name="rubridge")
+        now = time.time()
+        await v.issue(4, now + 1000)
+        v.add_bridge("ru1", "🇷🇺 Обход", "198.51.100.20", ru=True)
+        assert [ib["tag"] for ib in v.build_config()["inbounds"]] == ["in", "in-x"], "без сайта вход не нужен"
+        assert len(v.links(4)) == 2, "мост без сайта маскировки не показывается"
+        v.set_bridge_site("vk.com")
+        cfg = v.build_config()
+        b_in = next(ib for ib in cfg["inbounds"] if ib["tag"] == "in-b")
+        rs = b_in["streamSettings"]["realitySettings"]
+        assert b_in["port"] == 8444 and rs["serverNames"] == ["vk.com"] and rs["dest"] == "vk.com:443"
+        assert [c["email"] for c in b_in["settings"]["clients"]] == ["u4.main"]
+        assert "vk.com" not in cfg["inbounds"][0]["streamSettings"]["realitySettings"]["serverNames"]
+        ls = v.links(4)
+        assert len(ls) == 4
+        u = urlparse(ls[1]); q = parse_qs(u.query)
+        assert (u.hostname, u.port, q["sni"]) == ("198.51.100.20", 443, ["vk.com"])
+        assert u.username == v.user_uuid(4, "main")
+        v.sub_base = "https://sub.example.com/"
+        v.sub_base = v.sub_base.rstrip("/")
+        assert v.sub_url(4) == f"https://sub.example.com/sub/4/{v.sub_token(4)}"
+        for t in asyncio.all_tasks():
+            if t is not asyncio.current_task():
+                t.cancel()
 
 
 class InstallerKeys(unittest.TestCase):
