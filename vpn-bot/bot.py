@@ -214,6 +214,7 @@ def main_kb(row) -> InlineKeyboardMarkup:
         rows.append([B(f"✦ {plural_days(config.TRIAL_DAYS).capitalize()} бесплатно", "trial")])
     rows += [
         [B("🗝 Мои подписки", "subs"), B("📲 Подключение", "howto")],
+        *([[B(f"📱 Приложение {config.BRAND} для Android", "apk")]] if android_app else []),
         [B("👤 Профиль", "profile"), B(f"🎁 +{plural_days(config.REF_BONUS_DAYS)} за друга", "ref")],
         [B("🎀 Подарить доступ", "gift"), B("🎟 Промокод", "promo")],
     ]
@@ -2670,6 +2671,7 @@ async def setup_profile(app: Application) -> None:
         lambda: bot.set_my_commands([
             BotCommand("start", "Главное меню"),
             BotCommand("promo", "Промокод или подарок"),
+            *([BotCommand("app", "Приложение для Android")] if android_app else []),
             BotCommand("terms", "Условия"),
             BotCommand("paysupport", "Вопросы по оплате"),
         ]),
