@@ -1257,6 +1257,7 @@ def admin_text() -> str:
             "/autoproxy: страны из бесплатных публичных прокси\n"
             "/sni: сайт маскировки и его смена\n"
             "/webshare: купленные прокси списком по ссылке\n"
+            "/update: обновить сервер сейчас (сам он проверяет обновления раз в 10 минут)\n"
             "/traffic: трафик и устройства, /funnel: воронка продаж\n"
             f"/testpay: тестовая оплата на {config.TEST_PLAN[2]} ⭐\n"
             "Тикеты: ответьте на сообщение гостя, и ответ уйдёт ему")
@@ -1638,6 +1639,60 @@ async def server(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     current_user(update)
     await show(update, context, await server_text(),
                KB([B("🔄 Обновить", "adm:srv"), B("‹ Админ-панель", "adm:stats")]))
+
+
+def code_version() -> tuple[str, str]:
+    """(коммит, его заголовок) кода, который сейчас запущен, или пустые строки без git."""
+    import subprocess
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        out = subprocess.run(["git", "-C", root, "log", "-1", "--format=%H%n%s"], capture_output=True,
+                             text=True, timeout=10).stdout.split("\n", 1)
+    except (OSError, subprocess.SubprocessError):
+        return "", ""
+    return (out[0].strip(), out[1].strip()) if len(out) == 2 and out[0].strip() else ("", "")
+
+
+VERSION_FILE = os.path.join(os.path.dirname(config.DB_PATH), ".running_version")
+
+
+async def announce_update(bot) -> None:
+    """После автообновления пишет админам, что сервер обновился и на что."""
+    sha, title = code_version()
+    if not sha:
+        return
+    try:
+        with open(VERSION_FILE) as f:
+            old = f.read().strip()
+    except OSError:
+        old = ""
+    if old == sha:
+        return
+    with open(VERSION_FILE, "w") as f:
+        f.write(sha)
+    if old:
+        await send_admins(bot, f"🔄 Сервер обновился сам: <b>{esc(title)}</b>\n<code>{sha[:7]}</code>")
+
+
+@admin_only
+async def update_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обновить сервер сейчас, не дожидаясь проверки раз в 10 минут."""
+    current_user(update)
+    if not os.path.exists("/etc/systemd/system/aurora-update.service"):
+        await update.effective_chat.send_message(
+            "Автообновление ещё не настроено: один раз запустите установщик из Termius.")
+        return
+    proc = await asyncio.create_subprocess_exec("systemctl", "start", "--no-block", "aurora-update.service",
+                                                stdout=asyncio.subprocess.DEVNULL,
+                                                stderr=asyncio.subprocess.PIPE)
+    _, err = await proc.communicate()
+    if proc.returncode:
+        await update.effective_chat.send_message(f"Не удалось запустить обновление: {esc(err.decode()[-300:])}")
+        return
+    sha, _ = code_version()
+    await update.effective_chat.send_message(
+        f"🔄 Проверяю обновления (сейчас <code>{sha[:7] or '?'}</code>). Если есть новый код, сервер "
+        "поставит его за пару минут, бот перезапустится и напишет, что обновился.")
 
 
 @admin_only
@@ -2654,6 +2709,10 @@ async def setup_profile(app: Application) -> None:
                 except TelegramError:
                     pass
         vpn.on_problem = alert
+    try:
+        await announce_update(bot)
+    except Exception:
+        log.exception("версия кода")
     if hasattr(vpn, "support_url") and bot.username:
         vpn.support_url = f"https://t.me/{bot.username}"
     if hasattr(vpn, "sync"):
@@ -2748,7 +2807,7 @@ def build_app(token: str) -> Application:
                     ("delbridge", delbridge), ("server", server), ("backup", backup),
                     ("autoproxy", autoproxy), ("sni", sni_cmd), ("bridgesite", bridgesite_cmd),
                     ("funnel", funnel), ("traffic", traffic), ("webshare", webshare_cmd),
-                    ("app", app_cmd)]:
+                    ("app", app_cmd), ("update", update_cmd)]:
         app.add_handler(CommandHandler(cmd, fn))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(PreCheckoutQueryHandler(precheckout))

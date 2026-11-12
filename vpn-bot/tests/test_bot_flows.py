@@ -207,6 +207,21 @@ async def main():
     bot.android_app = None
     ctx.bot.send_document = AsyncMock()
 
+    # 3б. версия кода: первый запуск запоминает, после обновления админам приходит сообщение
+    bot.VERSION_FILE = os.path.join(tempfile.mkdtemp(), "ver")
+    sent = []
+    real_send_admins = bot.send_admins
+    async def fake_send_admins(b, text):
+        sent.append(text)
+    bot.send_admins = fake_send_admins
+    bot.code_version = lambda: ("a" * 40, "Первый")
+    await bot.announce_update(ctx.bot); assert sent == [], "первый запуск — без сообщения"
+    await bot.announce_update(ctx.bot); assert sent == []
+    bot.code_version = lambda: ("b" * 40, "Новое & лучшее")
+    await bot.announce_update(ctx.bot)
+    assert len(sent) == 1 and "Новое &amp; лучшее" in sent[0] and "bbbbbbb" in sent[0]
+    bot.send_admins = real_send_admins
+
     # 4. новая подписка на 3 устройства, 3 месяца
     await press(200, "buy:m3", ctx)          # есть подписки -> выбор цели
     await press(200, "bd:m3", ctx)           # выбор устройств

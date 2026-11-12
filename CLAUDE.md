@@ -16,6 +16,7 @@
   ```bash
   XRAY=0 BRANCH=claude/claude-md-mkcp-tf0c20 bash <(curl -fsSL https://raw.githubusercontent.com/Saske356/Saske356/<SHA>/vpn-bot/install.sh)
   ```
+- **Автообновление**: установщик ставит `/usr/local/bin/aurora-update` + `aurora-update.timer` (раз в 10 минут): `git fetch` ветки из `AURORA_BRANCH` в `.env`, при новом коммите — `AURORA_AUTO=1 install.sh` (вопросы `ask` отвечаются по умолчанию). Бот после перезапуска пишет админам «Сервер обновился сам» (`announce_update`, файл `.running_version`), `/update` — запустить сразу. **После того как пользователь один раз поставит эту версию, команды для Termius больше не нужны: достаточно запушить в ветку.** `AUTO_UPDATE=0` — выключить.
 - Установщик после скачивания кода перезапускает сам себя из свежей копии (`AURORA_REEXEC`).
 - `XRAY=0/1` в начале команды выключает/включает Xray. Внутри установщика имя `XRAY` занято путём к бинарнику, поэтому выбор хранится в `XRAY_WANT` (была ошибка: `XRAY=1` игнорировался — исправлено).
 - Диагностика: `bash <(curl -fsSL .../vpn-bot/diag.sh)` и `... diag.sh watch`.

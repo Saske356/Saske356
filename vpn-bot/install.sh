@@ -6,10 +6,12 @@
 set -euo pipefail
 
 REPO="${REPO:-https://github.com/Saske356/Saske356.git}"
-BRANCH="${BRANCH:-claude/android-usage-ql87m8}"
 DIR=/opt/aurora
 BOT="$DIR/vpn-bot"
 ENV="$BOT/.env"
+# Ветка запоминается в .env (AURORA_BRANCH): автообновление и повторный запуск берут её же.
+BRANCH="${BRANCH:-$( { grep -E '^AURORA_BRANCH=' "$ENV" 2>/dev/null || true; } | tail -1 | cut -d= -f2- | tr -d '"')}"
+BRANCH="${BRANCH:-claude/claude-md-mkcp-tf0c20}"
 # XRAY=0 или XRAY=1 при запуске выбирает, нужен ли Xray. Ниже имя XRAY занято путём к программе,
 # поэтому выбор запоминается отдельно и переживает перезапуск установщика из свежей копии.
 case "${XRAY_WANT:-${XRAY:-}}" in 0|1) export XRAY_WANT="${XRAY_WANT:-$XRAY}" ;; *) export XRAY_WANT="" ;; esac
@@ -19,7 +21,16 @@ BRIDGE_PORT="${BRIDGE_PORT:-8444}"   # вход для мостов, котор�
 
 say()  { printf '\n\033[1;33m== %s\033[0m\n' "$*"; }
 fail() { printf '\n\033[1;31mОшибка: %s\033[0m\n' "$*" >&2; exit 1; }
-ask()  { local q="$1" def="${2:-}" v; read -rp "$q${def:+ [$def]}: " v </dev/tty; printf '%s' "${v:-$def}"; }
+# Без экрана (автообновление, AURORA_AUTO=1) вопросы не задаются: берётся ответ по умолчанию.
+ask()  {
+  local q="$1" def="${2:-}" v=""
+  if [ -z "${AURORA_AUTO:-}" ] && { : </dev/tty; } 2>/dev/null; then
+    read -rp "$q${def:+ [$def]}: " v </dev/tty || true
+  else
+    echo "$q: $def (автоматически)" >&2
+  fi
+  printf '%s' "${v:-$def}"
+}
 # Связь с GitHub с некоторых серверов рвётся: каждую загрузку повторяем до 5 раз.
 retry() {
   local n
@@ -594,6 +605,56 @@ if ! grep -q "tcp_congestion_control=bbr" /etc/sysctl.conf 2>/dev/null; then
   printf 'net.core.default_qdisc=fq\nnet.ipv4.tcp_congestion_control=bbr\n' >> /etc/sysctl.conf
 fi
 sysctl -p >/dev/null 2>&1 || true
+
+say "Автообновление"
+env_newline
+env_set AURORA_BRANCH "$BRANCH"
+# Каждые 10 минут сервер сверяется с веткой на GitHub и, если там новый код, ставит его сам:
+# заходить в Termius после каждого изменения не нужно. AUTO_UPDATE=0 в .env — выключить.
+cat > /usr/local/bin/aurora-update <<'UPD'
+#!/bin/bash
+# Обновляет Aurora VPN, если в ветке на GitHub появился новый код. Запускает таймер aurora-update.
+set -uo pipefail
+DIR=/opt/aurora; ENV=$DIR/vpn-bot/.env
+get() { { grep -E "^$1=" "$ENV" 2>/dev/null || true; } | tail -1 | cut -d= -f2- | tr -d '"'; }
+[ "$(get AUTO_UPDATE)" = 0 ] && [ "${1:-}" != now ] && exit 0
+BRANCH=$(get AURORA_BRANCH); [ -n "$BRANCH" ] || exit 0
+exec 9>/run/aurora-update.lock
+flock -n 9 || { echo "обновление уже идёт"; exit 0; }
+git -C "$DIR" fetch -q origin "$BRANCH" || { echo "GitHub недоступен, попробую позже"; exit 0; }
+have=$(git -C "$DIR" rev-parse HEAD); want=$(git -C "$DIR" rev-parse "origin/$BRANCH")
+if [ "$have" = "$want" ] && [ "${1:-}" != now ]; then exit 0; fi
+echo "Обновляю $have -> $want"
+git -C "$DIR" checkout -q -B "$BRANCH" "origin/$BRANCH"
+AURORA_AUTO=1 BRANCH="$BRANCH" bash "$DIR/vpn-bot/install.sh" </dev/null
+UPD
+chmod 755 /usr/local/bin/aurora-update
+cat > /etc/systemd/system/aurora-update.service <<'UPD'
+[Unit]
+Description=Aurora VPN: обновление с GitHub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/aurora-update
+TimeoutStartSec=1800
+UPD
+cat > /etc/systemd/system/aurora-update.timer <<'UPD'
+[Unit]
+Description=Aurora VPN: проверка обновлений раз в 10 минут
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=10min
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target
+UPD
+systemctl daemon-reload
+systemctl enable -q --now aurora-update.timer
+echo "Сервер будет обновляться сам каждые 10 минут (ветка $BRANCH)."
 
 say "Автозапуск"
 cat > /etc/systemd/system/aurora-bot.service <<EOF
