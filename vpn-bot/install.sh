@@ -162,7 +162,8 @@ private = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "169.
            "100.64.0.0/10", "fc00::/7", "fe80::/10", "::1/128"]
 cfg = {
     "listen": f":{int(port)}",
-    "tls": {"cert": f"{d}/hy2.crt", "key": f"{d}/hy2.key"},
+    # sniGuard выключен: бот раз в день меняет сайт в ссылках, и прежние ссылки тоже работают
+    "tls": {"cert": f"{d}/hy2.crt", "key": f"{d}/hy2.key", "sniGuard": "disable"},
     "auth": {"type": "http", "http": {"url": f"http://127.0.0.1:{int(auth)}/hy2auth"}},
     "trafficStats": {"listen": f"127.0.0.1:{int(stats)}", "secret": secret},
     "masquerade": {"type": "proxy", "proxy": {"url": f"https://{site}/", "rewriteHost": True}},
@@ -490,6 +491,12 @@ mkdir -p /var/lib/aurora
 
 env_newline
 # ---------- Xray или только Hysteria ----------
+# XRAY=0 или XRAY=1 при запуске установщика меняет выбор, сделанный раньше.
+if [ -n "${XRAY:-}" ]; then
+  sed -i -E '/^XRAY_ENABLED=/d' "$ENV"
+  echo "XRAY_ENABLED=$([ "$XRAY" = 1 ] && echo 1 || echo 0)" >> "$ENV"
+  echo "Xray: $([ "$XRAY" = 1 ] && echo включён || echo "выключен, VPN только через Hysteria")"
+fi
 if ! grep -qE '^XRAY_ENABLED=' "$ENV"; then
   say "Способ подключения"
   echo "Hysteria (UDP) проходит там, где оператор режет обычные подключения. Xray нужен только"

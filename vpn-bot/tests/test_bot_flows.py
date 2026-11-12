@@ -585,6 +585,29 @@ async def main():
     await bot.devices_job(ctx)
     prov.resume.assert_awaited_once_with(some)
     bot.guard.__init__("block")
+    # сайт Hysteria меняется по расписанию, сообщение только админам
+    prov.hy2 = {"port": 443, "sni": "www.example.com", "pin": "", "obfs": "", "obfs_port": 0,
+                "stats_ports": [], "stats_secret": "s"}
+    prov.xray_enabled = False
+    saved_rot, saved_rank = prov.hy2_sni_rotatable, bot.masking.ranked
+    prov.hy2_sni_rotatable = lambda: True
+    bot.masking.ranked = AsyncMock(return_value=[("www.wp.pl", 50.0)])
+    try:
+        ctx.bot.send_message.reset_mock()
+        await bot.hy2_sni_job(ctx.bot)          # первый запуск: только начало отсчёта
+        assert ctx.bot.send_message.await_count == 0 and prov.state["hy2_sni_changed"]
+        prov.state["hy2_sni_changed"] = time.time() - 25 * 3600
+        await bot.hy2_sni_job(ctx.bot)
+        assert prov.hy2_sni == "www.wp.pl"
+        to = [c.args[0] for c in ctx.bot.send_message.await_args_list]
+        assert to and set(to) == config.ADMIN_IDS, "гостям ничего не уходит, только админам"
+        check_caption(ctx.bot.send_message.await_args.args[1])
+        u = make_update(1); ctx.args = []; await bot.sni_cmd(u, ctx)
+        assert "Hysteria" in u.message.reply_text.await_args.args[0] and "www.wp.pl" in u.message.reply_text.await_args.args[0]
+        check_caption(u.message.reply_text.await_args.args[0])
+    finally:
+        prov.hy2_sni_rotatable, bot.masking.ranked = saved_rot, saved_rank
+        prov.hy2, prov.xray_enabled = None, True
     # купленные прокси списком: ссылка хранится на сервере, сообщение с ней удаляется
     import webshare as ws
     saved = ws.fetch, ws.scan, bot.public_proxies.direct_ok
@@ -628,17 +651,6 @@ async def main():
     finally:
         ws.fetch, ws.scan, bot.public_proxies.direct_ok = saved
         ctx.args = []
-    # смена сайта маскировки: гостям с активным доступом уходит просьба обновить подписку
-    bot.STATE["bot"] = ctx.bot
-    ctx.bot.send_message.reset_mock()
-    n = bot.announce_update(urgent=True)
-    await bot.STATE["announce"]
-    assert n == len(db.active_user_ids()) > 0 and ctx.bot.send_message.await_count == n
-    assert "обновите подписку" in ctx.bot.send_message.await_args.args[1]
-    prov.xray_enabled = False
-    assert bot.announce_update() == 0, "без Xray сайт маскировки ни на что не влияет"
-    prov.xray_enabled = True
-    bot.STATE["bot"] = None
     prov._server.close()
     bot.vpn = demo
 

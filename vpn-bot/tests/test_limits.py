@@ -211,6 +211,29 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.v.state["hy2_ports"]["fr"], 30000, "освободившийся порт достался следующей стране")
         self.assertEqual(self.conf("fr")["outbounds"][0], {"name": "out", "type": "http", "http": {"url": "http://5.5.5.5:3128"}})
 
+    async def test_names_without_suffix_and_site_rotation(self):
+        from urllib.parse import parse_qs, unquote, urlparse
+        self.v.add_location("de", "🇩🇪 Германия", "socks5://u:p@1.2.3.4:1080")
+        await self.v._pending
+        links = self.v.links(1)
+        self.assertEqual([unquote(l.rsplit("#", 1)[1]) for l in links], ["🇵🇱 Польша", "🇩🇪 Германия"],
+                         "только Hysteria: просто название страны")
+        self.assertEqual(parse_qs(urlparse(links[0]).query)["sni"], ["www.example.com"])
+        self.assertFalse(self.v.hy2_sni_rotatable(), "сервер без sniGuard: менять сайт нельзя")
+        os.makedirs(self.hydir, exist_ok=True)
+        with open(os.path.join(self.hydir, "hy2-plain.yaml"), "w") as f:
+            json.dump({"tls": {"sniGuard": "disable"}}, f, indent=1)
+        self.assertTrue(self.v.hy2_sni_rotatable())
+        n = len(self.units())
+        self.assertEqual(self.v.set_hy2_sni("www.wp.pl"), "www.example.com")
+        self.assertTrue(all(parse_qs(urlparse(l).query)["sni"] == ["www.wp.pl"] for l in self.v.links(1)))
+        await self.v.apply()
+        self.assertEqual(len(self.units()), n, "смена сайта ничего не перезапускает")
+        self.assertEqual(self.conf("de")["tls"]["sniGuard"], "disable")
+        self.v.xray_enabled = True
+        self.assertTrue(unquote(self.v.links(1)[0].rsplit("#", 1)[1]).endswith("· Hysteria"),
+                        "с Xray приписка нужна, чтобы отличать от TCP")
+
     async def test_second_hysteria_only_when_asked(self):
         e = {"HY2_PORT": "443", "HY2_OBFS_PORT": "8443", "HY2_OBFS": "pw", "PUBLIC_HOST": "1.2.3.4",
              "REALITY_PRIVATE_KEY": "a", "REALITY_PUBLIC_KEY": "b", "REALITY_SHORT_ID": "c",

@@ -2106,50 +2106,75 @@ async def switch_masking(reason: str, site: str | None = None) -> str:
         MASK["fails"] = 0
         keys = ("Ключи с прежним сайтом принимаются ещё сутки." if grace
                 else "Ключи с прежним сайтом больше не работают.")
-        told = announce_update(urgent=not grace)
         return (f"🎭 Сайт маскировки изменён: {old} → {new}\nПричина: {reason}.{note}\n\n{keys} "
-                "Подписка на сервере уже новая. "
-                + (f"Гостям с активным доступом ({told}) уходит сообщение с просьбой обновить её в приложении. "
-                   if told else "")
-                + "Приложения и сами обновляют подписку раз в час.")
+                "Подписка на сервере уже новая, приложения заберут её сами при обновлении (раз в час).")
 
 
-def announce_update(urgent: bool = False) -> int:
-    """Настройки сервера сменились: подписка на сервере уже новая, но приложение само заберёт её
-    только при следующем обновлении (раз в час). Гостям с активным доступом уходит сообщение,
-    чтобы обновили сразу. Возвращает число адресатов; рассылка идёт в фоне."""
-    bot = STATE.get("bot")
-    targets = db.active_user_ids()
-    if not bot or not targets or not getattr(vpn, "xray_enabled", True):
-        return 0
-    text = ("🔄 <b>Мы обновили настройки сервера</b>\n\n"
-            + ("Чтобы VPN снова заработал, обновите подписку в приложении" if urgent
-               else "Чтобы VPN не прервался, обновите подписку в приложении")
-            + ": откройте список серверов и потяните его вниз или нажмите «Обновить подписку». "
-              "Ключ и ссылка остаются прежними."
-            + ("" if urgent else "\n\n<i>Старые настройки работают ещё сутки, а приложение обновит "
-                                 "подписку и само в течение часа.</i>"))
-    kb = KB([B("🗝 Мои подписки", "subs"), B("🛠 Не работает?", "fix")])
+# ---------------------------------------------------------------- сайт маскировки Hysteria
 
-    async def run() -> None:
-        for uid in targets:
-            for attempt in range(3):
-                try:
-                    await bot.send_message(uid, text, reply_markup=kb)
-                    break
-                except RetryAfter as e:
-                    await asyncio.sleep(retry_seconds(e) + 1)
-                except TelegramError:
-                    break  # гость заблокировал бота или удалил чат
-            await asyncio.sleep(0.05)
-    STATE["announce"] = asyncio.get_running_loop().create_task(run())
-    return len(targets)
+HY2_SNI_EVERY = float(os.environ.get("HY2_SNI_EVERY", "24"))  # часов между сменами, 0 — не менять
+
+
+def hy2_every() -> float:
+    return float(vpn.state.get("hy2_sni_every", HY2_SNI_EVERY))
+
+
+async def rotate_hy2_sni(reason: str, site: str | None = None) -> str:
+    """Меняет сайт в ссылках Hysteria. Сервер принимает любое имя, поэтому прежние ссылки
+    продолжают работать, а гостям ничего делать не нужно. Отчёт — только для админов."""
+    if not getattr(vpn, "hy2", None):
+        return "Hysteria не настроена."
+    if not vpn.hy2_sni_rotatable():
+        return ("Сайт Hysteria пока менять нельзя: сервер принимает только прежнее имя. "
+                "Запустите установщик этой версии ещё раз, после этого смена заработает.")
+    old = vpn.hy2_sni
+    if not site:
+        recent = set(vpn.state.get("hy2_sni_prev", [])) | {old}
+        ranked = await masking.ranked(h for h in masking.SITES if h not in recent)
+        if not ranked:
+            ranked = await masking.ranked(h for h in masking.SITES if h != old)
+        if not ranked:
+            return f"Подходящий сайт не нашёлся: с сервера не отвечает ни один из списка. Остался {old}."
+        import random
+        site = random.choice(ranked[:5])[0]  # из пяти самых быстрых, чтобы смены не шли по кругу
+    elif await masking.check(site) is None:
+        return f"Сайт {site} не подходит: с сервера он не отвечает по TLS 1.3 и HTTP/2. Остался {old}."
+    if site == old:
+        return f"Сайт Hysteria уже {old}."
+    vpn.set_hy2_sni(site)
+    vpn.state["hy2_sni_prev"] = ([old] + [x for x in vpn.state.get("hy2_sni_prev", []) if x != old])[:5]
+    vpn._save()
+    return (f"🎭 Hysteria: сайт маскировки {old} → {site}\nПричина: {reason}.\n\n"
+            "Ничего не перезапускалось, прежние ссылки работают. Приложения заберут новую подписку "
+            "сами при обновлении, гостям ничего не отправлялось.")
+
+
+async def hy2_sni_job(bot) -> None:
+    every = hy2_every()
+    if not every or not getattr(vpn, "hy2", None) or not vpn.hy2_sni_rotatable():
+        return
+    last = vpn.state.get("hy2_sni_changed")
+    if not last:
+        vpn.state["hy2_sni_changed"] = time.time()  # отсчёт с первого запуска
+        vpn._save()
+        return
+    if time.time() - last >= every * 3600:
+        await send_admins(bot, esc(await rotate_hy2_sni("плановая смена")))
+
+
 
 
 async def masking_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Раз в 10 минут: если сайт маскировки перестал отвечать с сервера, бот ставит другой.
     Плановая смена раз в N часов включается командой /sni every."""
-    if not hasattr(vpn, "masking") or not vpn.masking.get("auto", True):
+    if not hasattr(vpn, "masking"):
+        return
+    try:
+        await hy2_sni_job(context.bot)
+    except Exception:
+        log.exception("сайт Hysteria: сбой смены")
+    # Сайт маскировки Reality нужен только Xray; без Xray он ни на что не влияет.
+    if not vpn.masking.get("auto", True) or not getattr(vpn, "xray_enabled", True):
         return
     try:
         m = vpn.masking
@@ -2228,6 +2253,9 @@ async def sni_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     args = [a.lower() for a in context.args]
     sub = args[0] if args else ""
     reply = update.message.reply_text
+    if not getattr(vpn, "xray_enabled", True) and getattr(vpn, "hy2", None):
+        await hy2_sni_cmd(update, context, args)
+        return
     run = lambda action, site=None: context.application.create_task(
         _masking_report(context.bot, update.effective_chat.id, action, site))
     if sub == "next":
@@ -2251,6 +2279,46 @@ async def sni_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         run("switch", sub)
     else:
         await reply(masking_status_text())
+
+
+async def hy2_sni_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE, args: list[str]) -> None:
+    """/sni без Xray: сайт, под который маскируется Hysteria."""
+    reply, chat = update.message.reply_text, update.effective_chat.id
+    sub = args[0] if args else ""
+
+    async def run(site=None) -> None:
+        try:
+            await _send_report(context.bot, chat, esc(await rotate_hy2_sni("команда администратора", site)))
+        except Exception as e:
+            await _report_failure(context.bot, chat, "Смена сайта Hysteria не удалась", e)
+    if sub == "next":
+        await reply("Подбираю сайт. Результат пришлю сообщением.")
+        context.application.create_task(run())
+    elif sub == "every" and len(args) > 1 and (args[1] == "off" or (args[1].isdigit() and 1 <= int(args[1]) <= 720)):
+        vpn.state["hy2_sni_every"] = 0 if args[1] == "off" else int(args[1])
+        vpn.state["hy2_sni_changed"] = time.time()
+        vpn._save()
+        await reply(f"Сайт Hysteria будет меняться каждые {args[1]} ч." if args[1] != "off"
+                    else "Плановая смена сайта Hysteria выключена.")
+    elif masking.valid_name(sub):
+        await reply(f"Проверяю {esc(sub)}. Результат пришлю сообщением.")
+        context.application.create_task(run(sub))
+    else:
+        every = hy2_every()
+        last = vpn.state.get("hy2_sni_changed")
+        lines = [f"Сейчас: <code>{esc(vpn.hy2_sni)}</code>" + (f", с {fmt_date(last)}" if last else ""),
+                 "Плановая смена: " + (f"раз в {every:g} ч" if every else "выключена")]
+        if not vpn.hy2_sni_rotatable():
+            lines.append("⚠️ Смена пока недоступна: запустите установщик этой версии ещё раз.")
+        await reply("<b>Сайт маскировки Hysteria</b>\n\n" + "\n".join(lines) + "\n\n"
+                    "Hysteria выдаёт себя за обращение к обычному сайту, и его имя видно оператору. "
+                    "Бот меняет сайт по расписанию. Сервер принимает любое имя, поэтому прежние ссылки "
+                    "работают и после смены, а гостям ничего не приходит: приложения заберут новую "
+                    "подписку сами. Сообщение о смене получают только админы.\n\n"
+                    "<b>Команды</b>\n"
+                    "/sni next: сменить сейчас\n"
+                    "/sni www.example.com: поставить этот сайт\n"
+                    "/sni every 24: менять каждые 24 часа, /sni every off: не менять")
 
 
 # ---------------------------------------------------------------- купленные прокси списком (Webshare)

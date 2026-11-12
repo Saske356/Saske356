@@ -671,7 +671,7 @@ class XrayProvider(VpnProvider):
             acl += ["direct(all, udp/53)", "reject(all, udp)"]
         cfg = {
             "listen": f":{port}",
-            "tls": {"cert": f"{d}/hy2.crt", "key": f"{d}/hy2.key"},
+            "tls": {"cert": f"{d}/hy2.crt", "key": f"{d}/hy2.key", "sniGuard": "disable"},
             "auth": {"type": "http", "http": {"url": f"http://127.0.0.1:{self.hy2_auth_port}/hy2auth"}},
             "trafficStats": {"listen": f"127.0.0.1:{self._loc_stats_port(port)}",
                              "secret": self.hy2.get("stats_secret", "")},
@@ -729,24 +729,49 @@ class XrayProvider(VpnProvider):
         if changed:
             self._save()
 
+    @property
+    def hy2_sni(self) -> str:
+        """Сайт, под который маскируется Hysteria в ссылках. Бот меняет его раз в день."""
+        return self.state.get("hy2_sni") or (self.hy2 or {}).get("sni") or self.sni
+
+    def hy2_sni_rotatable(self) -> bool:
+        """Менять сайт можно, только если сервер Hysteria принимает любое имя (sniGuard: disable):
+        иначе ссылки с новым сайтом он бы отклонил. Такой конфиг пишет установщик этой версии."""
+        path = os.path.join((self.hy2_locs or {}).get("dir", "/etc/aurora"), "hy2-plain.yaml")
+        try:
+            with open(path, encoding="utf-8") as f:
+                return '"sniGuard": "disable"' in f.read()
+        except OSError:
+            return False
+
+    def set_hy2_sni(self, site: str) -> str:
+        """Новый сайт в ссылках Hysteria. Ничего не перезапускает: прежние ссылки тоже работают,
+        приложения заберут новую подписку сами при ближайшем обновлении."""
+        old = self.hy2_sni
+        self.state["hy2_sni"], self.state["hy2_sni_changed"] = site, time.time()
+        self._save()
+        return old
+
     def hy2_links(self, user_id: int) -> list[str]:
         if not self.hy2:
             return []
         h, main = self.hy2, self.direct_location()["name"]
-        sni = h.get("sni") or self.sni
+        sni = self.hy2_sni
+        # Без Xray в подписке только Hysteria: приписка к названию не нужна, просто «Польша».
+        tag = " · Hysteria" if self.xray_enabled else ""
         out = []
         if h.get("port"):
-            out.append(self._hy2_link(user_id, self.host, h["port"], sni, f"{main} · Hysteria"))
+            out.append(self._hy2_link(user_id, self.host, h["port"], sni, f"{main}{tag}"))
         if h.get("obfs_port") and h.get("obfs"):
             out.append(self._hy2_link(user_id, self.host, h["obfs_port"], sni, f"{main} · Hysteria 2", obfs=True))
         # Страны через прокси: у каждой свой порт Hysteria, пароль тот же.
         for loc in self.locations:
             port = self.hy2_loc_port(loc)
             if port and not loc.get("down"):
-                out.append(self._hy2_link(user_id, self.host, port, sni, f"{loc['name']} · Hysteria"))
+                out.append(self._hy2_link(user_id, self.host, port, sni, f"{loc['name']}{tag}"))
         # Мост «ru» пересылает и UDP 443: Hysteria через мост маскируется под российский сайт.
         if h.get("port") and self.bridge_site:
-            out += [self._hy2_link(user_id, b["host"], b["port"], self.bridge_site, f"{b['name']} · Hysteria")
+            out += [self._hy2_link(user_id, b["host"], b["port"], self.bridge_site, f"{b['name']}{tag}")
                     for b in self.visible_bridges() if b.get("ru")]
         return out
 
