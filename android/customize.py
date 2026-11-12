@@ -169,6 +169,56 @@ def encrypt_subscription(kt: str) -> None:
     ], count_ok=lambda n: n == 1)
 
 
+def connect_screen(kt: str) -> None:
+    """Главный экран как у крупных VPN: большая золотая кнопка, статус, таймер, выбранная страна
+    (android/kt/AuroraConnect.kt) вместо узкой полоски v2rayNG внизу; заголовок — «Aurora VPN»."""
+    main = os.path.join(kt, "ui", "main")
+    here = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(here, "kt", "AuroraConnect.kt"), encoding="utf-8") as f:
+        code = f.read()
+    with open(os.path.join(main, "AuroraConnect.kt"), "w", encoding="utf-8") as f:
+        f.write(code)
+    edit(os.path.join(main, "MainScreen.kt"), [
+        ("""            MainBottomBar(
+                displayText = displayText,
+                isRunning = isRunning,
+                isDarkTheme = isDarkTheme,
+                onAction = onAction,
+""", """            AuroraConnectPanel(
+                displayText = displayText,
+                isRunning = isRunning,
+                selectedGuid = selectedGuid,
+                onAction = onAction,
+"""),
+    ], count_ok=lambda n: n == 1)
+    edit(os.path.join(main, "MainTopBar.kt"), [
+        ("        title = stringResource(R.string.title_server),\n", f'        title = "{APP_NAME}",\n'),
+    ], count_ok=lambda n: n == 1)
+
+
+def auto_update_subscription(kt: str) -> None:
+    """Подписка обновляется сама раз в 3 часа (в v2rayNG по умолчанию выключено): гость всегда
+    получает свежие страны, мосты и сайт маскировки, даже если месяц не открывал приложение.
+    Уже добавленным подпискам автообновление включается при запуске приложения."""
+    edit(os.path.join(kt, "handler", "AngConfigManager.kt"), [
+        ("        subItem.url = url\n        MmkvManager.encodeSubscription(\"\", subItem)\n",
+         "        subItem.url = url\n        subItem.autoUpdate = true\n        subItem.updateInterval = 180\n"
+         "        MmkvManager.encodeSubscription(\"\", subItem)\n        SubscriptionUpdater.sync()\n"),
+    ], count_ok=lambda n: n == 1)
+    edit(os.path.join(kt, "ui", "main", "MainRepository.kt"), [
+        ("    override fun syncSubscriptions() {\n        SubscriptionUpdater.sync(app)\n",
+         "    override fun syncSubscriptions() {\n"
+         "        MmkvManager.decodeSubscriptions().forEach {\n"
+         "            if (!it.subscription.autoUpdate && it.subscription.url.isNotEmpty()) {\n"
+         "                it.subscription.autoUpdate = true\n"
+         "                it.subscription.updateInterval = 180\n"
+         "                MmkvManager.encodeSubscription(it.guid, it.subscription)\n"
+         "            }\n"
+         "        }\n"
+         "        SubscriptionUpdater.sync(app)\n"),
+    ], count_ok=lambda n: n == 1)
+
+
 def main(root: str) -> None:
     app = os.path.join(root, "V2rayNG", "app")
     src = os.path.join(app, "src", "main")
@@ -234,6 +284,8 @@ def main(root: str) -> None:
     mask_servers(kt)
     encrypt_subscription(kt)
     brand_theme(kt)
+    connect_screen(kt)
+    auto_update_subscription(kt)
 
     # По умолчанию: после обновления подписки сразу замерить пинг и поставить быстрые сверху.
     for key in ("PREF_AUTO_TEST_AFTER_UPDATE_SUBSCRIPTION", "PREF_AUTO_SORT_AFTER_TEST"):
