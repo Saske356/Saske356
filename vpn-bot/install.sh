@@ -15,6 +15,8 @@ SUB_PORT="${SUB_PORT:-2096}"
 HY_BIN=/usr/local/bin/hysteria
 HY_DIR=/etc/hysteria
 HY2="${HY2:-1}"   # HY2=0 — не ставить Hysteria2
+AWG="${AWG:-1}"   # AWG=0 — не ставить AmneziaWG
+HOP_PORTS="${HOP_PORTS:-20000-29999}"  # диапазон смены портов Hysteria2
 
 say()  { printf '\n\033[1;33m== %s\033[0m\n' "$*"; }
 fail() { printf '\n\033[1;31mОшибка: %s\033[0m\n' "$*" >&2; exit 1; }
@@ -364,6 +366,105 @@ EOF
   fi
 fi
 
+# ---------- смена портов Hysteria2 ----------
+# Файрвол перенаправляет UDP с диапазона портов на порт Hysteria2, а приложение прыгает между
+# ними: заблокировать один порт оператору проще, чем десять тысяч.
+if [ "$HY_OK" = 1 ] && [ "$HOP_PORTS" != 0 ]; then
+  say "Смена портов Hysteria2 ($HOP_PORTS)"
+  if apt-get install -y -qq nftables >/dev/null 2>&1; then
+    HP=$(envget HY2_PORT); HP=${HP:-443}
+    cat > /etc/aurora-hop.nft <<EOF
+table inet aurora_hop
+delete table inet aurora_hop
+table inet aurora_hop {
+  chain prerouting {
+    type nat hook prerouting priority dstnat; policy accept;
+    udp dport $HOP_PORTS redirect to :$HP
+  }
+}
+EOF
+    cat > /etc/systemd/system/aurora-hop.service <<EOF
+[Unit]
+Description=Aurora VPN: UDP port hopping for Hysteria2
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/aurora-hop.nft
+ExecStop=/usr/sbin/nft delete table inet aurora_hop
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload
+    if systemctl enable -q --now aurora-hop && systemctl restart aurora-hop; then
+      if [ -z "$(envget HY2_HOP_PORTS)" ]; then echo "HY2_HOP_PORTS=$HOP_PORTS" >> "$ENV"; fi
+      echo "Смена портов включена."
+    else
+      echo "Смена портов не включилась, Hysteria2 работает на одном порту."
+    fi
+  fi
+fi
+
+# ---------- AmneziaWG: запасной способ по UDP ----------
+AWG_OK=0
+if [ "$AWG" = 1 ]; then
+  say "Ставлю AmneziaWG"
+  if ! command -v awg >/dev/null; then
+    if [ "$ID" = ubuntu ]; then
+      apt-get install -y -qq software-properties-common "linux-headers-$(uname -r)" >/dev/null 2>&1 || true
+      { add-apt-repository -y ppa:amnezia/ppa >/dev/null 2>&1 && retry apt-get update -qq \
+        && apt-get install -y -qq amneziawg >/dev/null 2>&1; } || echo "AmneziaWG не поставился из PPA."
+    else
+      echo "AmneziaWG ставится автоматически только на Ubuntu. VPN работает и без него."
+    fi
+  fi
+  if command -v awg >/dev/null && command -v awg-quick >/dev/null; then
+    AWG_DIR=/etc/amnezia/amneziawg
+    mkdir -p "$AWG_DIR"; chmod 700 "$AWG_DIR"
+    if [ ! -f "$AWG_DIR/awg0.conf" ]; then
+      DEV=$(ip route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "dev") {print $(i + 1); exit}}')
+      AWG_PORT_NEW=${AWG_PORT:-51820}
+      PRIV_AWG=$(awg genkey)
+      S1=$(shuf -i 15-150 -n 1); S2=$(shuf -i 15-150 -n 1)
+      [ $((S1 + 56)) -ne "$S2" ] || S2=$((S2 + 1))
+      read -r H1 H2 H3 H4 < <(shuf -i 5-2147483647 -n 4 | tr '\n' ' ')
+      PARAMS="Jc=4,Jmin=40,Jmax=70,S1=$S1,S2=$S2,H1=$H1,H2=$H2,H3=$H3,H4=$H4"
+      umask 077
+      {
+        echo "[Interface]"
+        echo "Address = 10.66.0.1/16"
+        echo "ListenPort = $AWG_PORT_NEW"
+        echo "PrivateKey = $PRIV_AWG"
+        printf '%s\n' "$PARAMS" | tr ',' '\n' | sed 's/=/ = /'
+        echo "PostUp = iptables -t nat -A POSTROUTING -s 10.66.0.0/16 -o $DEV -j MASQUERADE; iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT"
+        echo "PostDown = iptables -t nat -D POSTROUTING -s 10.66.0.0/16 -o $DEV -j MASQUERADE; iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT"
+      } > "$AWG_DIR/awg0.conf"
+      umask 022
+      if [ -z "$(envget AWG_PORT)" ]; then
+        umask 077
+        cat >> "$ENV" <<EOF
+AWG_PORT=$AWG_PORT_NEW
+AWG_PUBLIC_KEY=$(printf '%s' "$PRIV_AWG" | awg pubkey)
+AWG_PARAMS=$PARAMS
+AWG_NET=10.66.0.0/16
+EOF
+        umask 022
+      fi
+    fi
+    echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/99-aurora-awg.conf
+    sysctl -q -p /etc/sysctl.d/99-aurora-awg.conf || true
+    if systemctl enable -q --now awg-quick@awg0 && awg show awg0 >/dev/null 2>&1; then
+      AWG_OK=1
+      echo "AmneziaWG работает на UDP $(envget AWG_PORT)."
+    else
+      echo "AmneziaWG не запустился: journalctl -u awg-quick@awg0 -n 30 --no-pager"
+    fi
+  fi
+fi
+
 # ---------- HTTPS для подписки: ключи не видны по дороге ----------
 # Свой домен не нужен: имя вида 1-2-3-4.sslip.io само указывает на IP сервера,
 # а Let's Encrypt бесплатно выдаёт на него сертификат (проверка идёт через порт 80).
@@ -460,6 +561,11 @@ if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
   if [ "$SUB_TLS_OK" = 1 ]; then
     T_PORT=$(envget SUB_TLS_PORT); ufw allow "${T_PORT:-2097}"/tcp >/dev/null
   fi
+  if [ "$AWG_OK" = 1 ]; then
+    ufw allow "$(envget AWG_PORT)"/udp >/dev/null
+    ufw route allow in on awg0 >/dev/null 2>&1 || true
+  fi
+  if [ -n "$(envget HY2_HOP_PORTS)" ]; then ufw allow "$(envget HY2_HOP_PORTS | tr - :)"/udp >/dev/null; fi
   XH_PORT=$(envget XRAY_XHTTP_PORT); XH_PORT=${XH_PORT:-8443}
   [ "$XH_PORT" = 0 ] || ufw allow "$XH_PORT"/tcp >/dev/null
 fi

@@ -4,7 +4,7 @@
 и, как настоящий Xray, перестаёт читать флаги на первом обычном аргументе.
 """
 
-import asyncio, json, os, sys, tempfile, time, unittest
+import asyncio, base64, json, os, sys, tempfile, time, unittest
 from urllib.parse import parse_qs, unquote, urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -453,6 +453,137 @@ class SubscriptionTls(Base):
         self.assertIsNone(self.v.sub_tls)
         self.assertTrue(self.v.sub_url(1).startswith("http://203.0.113.7:"))
         self.v._server.close()
+
+
+class JsonSubscription(Hy2):
+    async def get(self, path, agent):
+        r, w = await asyncio.open_connection("127.0.0.1", self.v._server.sockets[0].getsockname()[1])
+        w.write(f"GET {path} HTTP/1.1\r\nHost: x\r\nUser-Agent: {agent}\r\n\r\n".encode()); await w.drain()
+        data = await r.read(); w.close()
+        head, _, body = data.partition(b"\r\n\r\n")
+        return head.decode(), body
+
+    async def test_v2rayng_and_happ_get_configs_others_get_links(self):
+        self.v.json_sub = True
+        self.v.hy2.hop_ports = "20000-29999"
+        await self.started({1: time.time() + 3600})
+        await self.v.start_sub_server("127.0.0.1")
+        path = urlparse(self.v.sub_url(1)).path
+        head, body = await self.get(path, "v2rayNG/1.10.20")
+        self.assertIn("application/json", head)
+        cfgs = json.loads(body)
+        self.assertEqual([c["remarks"] for c in cfgs], ["🇸🇪 Швеция", "🇸🇪 Швеция ⚡ Hysteria2"])
+        hy = cfgs[1]["outbounds"][0]
+        self.assertEqual((hy["protocol"], hy["settings"]["port"], hy["streamSettings"]["hysteriaSettings"]["auth"]),
+                         ("hysteria", 443, self.v.hy2.password(1)))
+        tls = hy["streamSettings"]["tlsSettings"]
+        self.assertEqual((tls["alpn"], tls["pinnedPeerCertSha256"]), (["h3"], self.v.hy2.pin))
+        self.assertNotIn("allowInsecure", json.dumps(cfgs), "в новом Xray этого поля нет, конфиг бы не открылся")
+        vl = cfgs[0]["outbounds"][0]
+        self.assertEqual(vl["streamSettings"]["realitySettings"]["publicKey"], "PUB")
+        rules = cfgs[0]["routing"]["rules"]
+        self.assertTrue(any("geoip:ru" in r.get("ip", []) and r["outboundTag"] == "direct" for r in rules))
+        self.assertTrue(any("regexp:\\.ru$" in r.get("domain", []) and r["outboundTag"] == "direct" for r in rules))
+        self.assertEqual(rules[-1]["outboundTag"], "proxy")
+        self.assertEqual(cfgs[0]["inbounds"][0]["port"], 10808)
+        _, body = await self.get(path, "Happ/3.5")
+        self.assertIsInstance(json.loads(body), list)
+        for agent, p in (("HiddifyNext/2.5", path), ("v2rayNG/1.10.20", path + "?format=links")):
+            head, body = await self.get(p, agent)
+            links = base64.b64decode(body).decode().splitlines()
+            self.assertTrue(links[0].startswith("vless://") or links[0].startswith("hysteria2://"), agent)
+            hy_link = next(l for l in links if l.startswith("hysteria2://"))
+            self.assertIn("mport=20000-29999", hy_link, "смена портов в ссылке")
+        self.v.json_sub = False
+        _, body = await self.get(path, "v2rayNG/1.10.20")
+        self.assertTrue(base64.b64decode(body))
+        self.v._server.close()
+
+
+FAKE_AWG = r'''#!/usr/bin/env python3
+import base64, hashlib, json, os, sys, time
+ST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "awg-state.json")
+st = json.load(open(ST)) if os.path.exists(ST) else {"peers": {}, "down": False}
+def save(): json.dump(st, open(ST, "w"))
+a = sys.argv[1:]
+if a == ["genkey"]:
+    print(base64.b64encode(os.urandom(32)).decode())
+elif a == ["pubkey"]:
+    print(base64.b64encode(hashlib.sha256(sys.stdin.read().strip().encode()).digest()).decode())
+elif st["down"]:
+    print("Unable to access interface"); sys.exit(1)
+elif a[0] == "set" and a[3:5] and a[4] == "remove":
+    st["peers"].pop(a[3], None); save()
+elif a[0] == "set":
+    st["peers"][a[3]] = {"ip": a[5], "rx": 0, "tx": 0, "hs": 0}; save()
+elif a[1:] == ["awg0", "peers"]:
+    print("\n".join(st["peers"]))
+elif a[1:] == ["awg0", "dump"]:
+    print("priv\tpub\t51820\toff")
+    for k, p in st["peers"].items():
+        print("\t".join([k, "(none)", "1.2.3.4:5", p["ip"], str(p["hs"]), str(p["rx"]), str(p["tx"]), "25"]))
+'''
+
+
+class AmneziaWG(Base):
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        awg = os.path.join(self.d, "awg")
+        with open(awg, "w") as f:
+            f.write(FAKE_AWG)
+        os.chmod(awg, 0o755)
+        self.v = self.make(awg={"port": 51820, "server_public_key": "SERVERPUB=", "awg_bin": awg,
+                                "params": "Jc=4,Jmin=40,Jmax=70,S1=33,S2=77,H1=101,H2=202,H3=303,H4=404"})
+
+    def peers(self) -> dict:
+        with open(os.path.join(self.d, "awg-state.json")) as f:
+            return json.load(f)["peers"]
+
+    def set_peers(self, **kw):
+        path = os.path.join(self.d, "awg-state.json")
+        st = json.load(open(path))
+        for pub, vals in kw.items():
+            st["peers"][pub].update(vals)
+        json.dump(st, open(path, "w"))
+
+    async def test_keys_follow_subscriptions_and_config_file(self):
+        await self.started({1: time.time() + 3600, 2: time.time() + 3600})
+        self.assertEqual(sorted(p["ip"] for p in self.peers().values()), ["10.66.0.2/32", "10.66.0.3/32"])
+        k1 = self.v.awg.state["1"]
+        conf = await self.v.awg_config(1, "Телефон")
+        self.assertIn(f"PrivateKey = {k1['priv']}", conf)
+        self.assertIn("Address = 10.66.0.2/32", conf)
+        self.assertIn("Endpoint = 203.0.113.7:51820", conf)
+        self.assertIn("PublicKey = SERVERPUB=", conf)
+        for line in ("Jc = 4", "S1 = 33", "H4 = 404", "AllowedIPs = 0.0.0.0/0"):
+            self.assertIn(line, conf)
+        await self.v.issue(3, time.time() + 3600)
+        self.assertIn(self.v.awg.state["3"]["pub"], self.peers())
+        await self.v.suspend(1, 600)
+        self.assertNotIn(k1["pub"], self.peers(), "отключённая подписка без ключа")
+        self.assertIsNone(await self.v.awg_config(1, "x"))
+        await self.v.resume(1)
+        self.assertIn(k1["pub"], self.peers())
+        await self.v.revoke(2)
+        self.assertNotIn(self.v.awg.state["2"]["pub"], self.peers())
+        # интерфейс перезапустили, ключи пропали: синхронизация их возвращает, лишних не оставляет
+        json.dump({"peers": {"stranger=": {"ip": "10.66.9.9/32", "rx": 0, "tx": 0, "hs": 0}}, "down": False},
+                  open(os.path.join(self.d, "awg-state.json"), "w"))
+        await self.v.sync_awg()
+        self.assertEqual(set(self.peers()), {self.v.awg.state["1"]["pub"], self.v.awg.state["3"]["pub"]})
+        # ключ не меняется: файл у гостя остаётся рабочим
+        self.assertEqual(self.v.awg.state["1"], k1)
+
+    async def test_traffic_and_online(self):
+        await self.started({1: time.time() + 3600})
+        pub = self.v.awg.state["1"]["pub"]
+        self.set_peers(**{pub: {"rx": 1000, "tx": 5000, "hs": int(time.time()) - 10}})
+        self.assertEqual(await self.v.awg.traffic(), {1: (1000, 5000)})
+        self.set_peers(**{pub: {"rx": 1500, "tx": 5000}})
+        self.assertEqual(await self.v.awg.traffic(), {1: (500, 0)})
+        self.assertEqual(await self.v.awg.online(), {1: 1})
+        self.set_peers(**{pub: {"hs": int(time.time()) - 1000}})
+        self.assertEqual(await self.v.awg.online(), {})
 
 
 class Guard(unittest.TestCase):

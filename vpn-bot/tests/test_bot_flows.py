@@ -551,6 +551,19 @@ async def main():
     await bot.devices_job(ctx)
     prov.resume.assert_awaited_once_with(some)
     bot.guard.__init__("block")
+    # AmneziaWG: кнопка в подписке присылает файл и QR-код, чужому — нет
+    prov.awg = MagicMock()
+    prov.awg_config = AsyncMock(return_value="[Interface]\nPrivateKey = X\n")
+    assert any("AmneziaWG" in b.text for r in bot.sub_kb(db.get_sub(some)).inline_keyboard for b in r)
+    ctx.bot.send_document.reset_mock()
+    await press(owner, f"awg:{some}", ctx)
+    doc = ctx.bot.send_document.await_args
+    assert doc.kwargs["filename"].endswith(".conf") and b"PrivateKey" in doc.kwargs["document"].getvalue()
+    check_caption(doc.kwargs["caption"])
+    other = 300 if owner != 300 else 400
+    ctx.bot.send_document.reset_mock()
+    u = await press(other, f"awg:{some}", ctx); assert alerted(u) and ctx.bot.send_document.await_count == 0
+    prov.awg = None
     prov._server.close()
     bot.vpn = demo
 

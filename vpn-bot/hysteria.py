@@ -41,12 +41,15 @@ def cert_pin(path: str) -> str:
 class Hysteria:
     def __init__(self, *, host: str, port: int, secret: str, is_allowed, cert_path: str = "",
                  sni: str = "", auth_port: int = 20809, stats_port: int = 20810,
-                 stats_secret: str = "", obfs_password: str = ""):
+                 stats_secret: str = "", obfs_password: str = "", hop_ports: str = ""):
         self.host, self.port, self.secret = host, port, secret
         self.is_allowed = is_allowed          # функция(sub_id) -> bool: активна ли подписка
         self.cert_path, self.sni = cert_path, sni
         self.auth_port, self.stats_port, self.stats_secret = auth_port, stats_port, stats_secret
         self.obfs_password = obfs_password
+        # Смена портов: сервер принимает и на диапазоне UDP-портов (их перенаправляет файрвол),
+        # приложение само прыгает между ними. Один порт оператору заблокировать проще.
+        self.hop_ports = hop_ports if re.fullmatch(r"\d+-\d+", hop_ports or "") else ""
         self.locs: dict[str, int] = {}    # серверы других стран: код страны -> UDP-порт
         self.extra_ports: range | None = None
         self._pin: str | None = None
@@ -83,8 +86,10 @@ class Hysteria:
             ports += [self.loc_stats_port(p) for p in sorted(self.locs.values())]
         return ports
 
-    def link(self, sid: int, name: str, port: int | None = None) -> str:
+    def link(self, sid: int, name: str, port: int | None = None, hop: str = "") -> str:
         q = f"sni={quote(self.sni)}&insecure=1"
+        if hop:
+            q += f"&mport={hop}"
         if self.pin:
             q += f"&pinSHA256={self.pin}"
         if self.obfs_password:

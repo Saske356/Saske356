@@ -361,6 +361,8 @@ def sub_kb(s) -> InlineKeyboardMarkup:
     rows = []
     if sub_active(s):
         rows.append([B("📷 QR-код", f"qr:{s['id']}"), B("📲 Подключение", "howto")])
+        if getattr(vpn, "awg", None):
+            rows.append([B("🛡 AmneziaWG: файл для приложения", f"awg:{s['id']}")])
     rows.append([B("◆ Продлить", f"ext:{s['id']}"), B("✏️ Переименовать", f"ren:{s['id']}")])
     if s["auto_active"] and sub_active(s):
         rows.append([B("🔁 Отключить автопродление", f"noauto:{s['id']}")])
@@ -849,9 +851,30 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     # ---- подписки
-    if parts[0] in ("sub", "qr", "ren", "ext", "noauto", "noautook") and len(parts) == 2:
+    if parts[0] in ("sub", "qr", "ren", "ext", "noauto", "noautook", "awg") and len(parts) == 2:
         sub = await own_sub(q, uid, parts[1])
         if not sub:
+            return
+        if parts[0] == "awg":
+            conf = await vpn.awg_config(sub["id"], sub["name"]) if getattr(vpn, "awg", None) else None
+            if not sub_active(sub) or not conf:
+                await q.answer("AmneziaWG сейчас недоступен", show_alert=True)
+                return
+            await q.answer()
+            fname = re.sub(r"[^A-Za-z0-9_-]", "", config.BRAND.replace(" ", "_"))[:20] or "vpn"
+            await context.bot.send_document(
+                update.effective_chat.id, document=io.BytesIO(conf.encode()), filename=f"{fname}-{sub['id']}.conf",
+                caption="🛡 <b>AmneziaWG</b>\n\n"
+                        "1. Установите приложение <b>AmneziaVPN</b> или <b>AmneziaWG</b>.\n"
+                        "2. Откройте этот файл в приложении или отсканируйте QR-код ниже.\n"
+                        "3. Нажмите подключиться.\n\n"
+                        "<i>Это запасной способ: включайте его, если основной не работает. "
+                        "Файл личный, не пересылайте его.</i>")
+            img = qrcode.make(conf, border=2, box_size=8)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            buf.seek(0)
+            await context.bot.send_photo(update.effective_chat.id, buf, caption="QR-код для AmneziaWG")
             return
         if parts[0] == "qr":
             if not sub_active(sub) or not sub["vpn_key"]:
@@ -2182,6 +2205,11 @@ def dev_word(n: int) -> str:
 
 async def devices_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Раз в 5 минут сверяет, сколько устройств подключено, с оплаченным числом."""
+    if hasattr(vpn, "sync_awg"):
+        try:
+            await vpn.sync_awg()  # ключи AmneziaWG возвращаются, если интерфейс перезапускался
+        except Exception:
+            log.exception("AmneziaWG: сбой синхронизации")
     if vpn.is_demo or not hasattr(vpn, "online") or guard.mode == "off":
         return
     # Отключение закончилось: по памяти бота или по сохранённому на сервере (после перезапуска бота).

@@ -21,9 +21,11 @@ import re
 import secrets
 import time
 import uuid
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
+import client_config
 import public_proxies
+from amnezia import Amnezia
 from hysteria import Hysteria
 from vpn import VpnProvider
 
@@ -55,7 +57,7 @@ class XrayProvider(VpnProvider):
                  auto_enabled: bool = False, auto_countries: tuple = (), auto_max: int = 8,
                  relay_port: int = 20808, api_port: int = 10085, hy2: dict | None = None,
                  xhttp_port: int = 0, hy2_first: bool = False, hy2_extra: dict | None = None,
-                 sub_tls: dict | None = None):
+                 sub_tls: dict | None = None, json_sub: bool = False, awg: dict | None = None):
         self.state_path, self.config_path, self.xray_bin = state_path, config_path, xray_bin
         self.host, self.port, self.env_sni = public_host, port, sni
         self.private_key, self.public_key, self.short_id = private_key, public_key, short_id
@@ -71,6 +73,9 @@ class XrayProvider(VpnProvider):
             self.hy2.extra_ports = self.hy2_extra["ports"]
             self.hy2.locs = {c: p for c, p in self.state["hy2_ports"].items() if p in self.hy2_extra["ports"]}
         self.xhttp_port, self.hy2_first = xhttp_port, hy2_first
+        self.json_sub = json_sub
+        # AmneziaWG: запасной способ по UDP для приложений AmneziaVPN и AmneziaWG.
+        self.awg = Amnezia(host=public_host, state=self.state["awg"], save=self._save, **awg) if awg else None
         # Подписка по HTTPS: {"host": имя с сертификатом, "port": порт, "cert": путь, "key": путь}.
         # Тогда по дороге не видно ни ключей, ни что это VPN. Старый HTTP-адрес отправляет на новый.
         self.sub_tls = sub_tls
@@ -102,6 +107,7 @@ class XrayProvider(VpnProvider):
         st.setdefault("devices", {})     # подписка -> сколько устройств оплачено
         st.setdefault("suspended", {})   # подписка -> до какого времени отключена за превышение
         st.setdefault("hy2_ports", {})   # страна -> UDP-порт её сервера Hysteria2
+        st.setdefault("awg", {})         # подписка -> ключ AmneziaWG и адрес во внутренней сети
         # Настройки авто-стран берутся из окружения только при первом запуске,
         # дальше ими управляет команда /autoproxy.
         st.setdefault("auto", {"enabled": bool(auto_enabled),
@@ -282,6 +288,8 @@ class XrayProvider(VpnProvider):
         if key not in self.live and self.allowed(user_id) and not self._apply_pending():
             if not await self._hot_add([user_id]):
                 self.schedule_apply()
+        if self.awg and self.allowed(user_id):
+            await self.awg.add(user_id)
         return self.sub_url(user_id)
 
     async def revoke(self, user_id: int) -> None:
@@ -298,6 +306,8 @@ class XrayProvider(VpnProvider):
                 self.schedule_apply()
         elif not self.last_apply:
             self.schedule_apply()  # что сейчас в Xray, неизвестно: применяем целиком
+        if self.awg:
+            await self.awg.remove(user_id)
         if self.hy2:
             await self.hy2.kick([user_id])
 
@@ -311,6 +321,22 @@ class XrayProvider(VpnProvider):
                                    if t > now and k in self.state["users"]}
         self._save()
         await self.apply()
+        await self.sync_awg()
+
+    async def sync_awg(self) -> None:
+        """Ключи AmneziaWG по активным подпискам. Бот повторяет это раз в 5 минут: если интерфейс
+        перезапускался, ключи вернутся сами."""
+        if self.awg:
+            await self.awg.sync(self.active_sids())
+
+    async def awg_config(self, sid: int, name: str) -> str | None:
+        """Файл настроек AmneziaWG для подписки. None — AmneziaWG не настроен или ключ не создан."""
+        if not self.awg or not self.allowed(sid):
+            return None
+        if not await self.awg.keys(sid):
+            return None
+        await self.awg.add(sid)
+        return self.awg.client_config(sid, name)
 
     # ---------- отключение за превышение устройств ----------
 
@@ -320,6 +346,8 @@ class XrayProvider(VpnProvider):
         self._save()
         if str(sid) in self.live and not await self._hot_remove([sid]):
             self.schedule_apply()
+        if self.awg:
+            await self.awg.remove(sid)
         if self.hy2:
             await self.hy2.kick([sid])
 
@@ -334,6 +362,8 @@ class XrayProvider(VpnProvider):
         self._save()
         if self.allowed(sid) and str(sid) not in self.live and not await self._hot_add([sid]):
             self.schedule_apply()
+        if self.awg and self.allowed(sid):
+            await self.awg.add(sid)
 
     def add_location(self, code: str, name: str, proxy: str) -> None:
         code = code.lower()
@@ -424,25 +454,45 @@ class XrayProvider(VpnProvider):
             return self.hy2.port
         return self.hy2.locs.get(loc["code"]) if self.hy2_extra else None
 
-    def links(self, user_id: int) -> list[str]:
+    def entries(self, user_id: int) -> list[dict]:
+        """Все способы подключения гостя по порядку. Из них собираются и ссылки, и JSON-конфиги.
+        kind: reality, xhttp или hy2."""
         direct_loc = self.direct_location()
         fast, out = [], []
         for loc in self.locations:
             if loc.get("down") or (loc.get("auto") and self.auto_rejected):
                 continue
             uid = self.user_uuid(user_id, loc["code"])
-            out.append(self._link(uid, self.host, self.port, self.sni, loc["name"]))
+            keys = {"pbk": self.public_key, "sid": self.short_id}
+            out.append({"kind": "reality", "name": loc["name"], "uid": uid, "host": self.host,
+                        "port": self.port, "sni": self.sni, **keys})
             if self.xhttp_port:
-                out.append(self._xhttp_link(uid, f"{loc['name']} · XHTTP"))
+                out.append({"kind": "xhttp", "name": f"{loc['name']} · XHTTP", "uid": uid, "host": self.host,
+                            "port": self.xhttp_port, "sni": self.sni, "path": self.xhttp_path, **keys})
             port = self._hy2_port(loc)
             if port:
                 # По умолчанию Hysteria2 идёт первым: на сетях, где оператор замораживает TCP,
                 # приложение сразу берёт рабочий способ. Иначе — сразу после своей страны.
+                hop = self.hy2.hop_ports if loc is direct_loc else ""
                 (fast if self.hy2_first else out).append(
-                    self.hy2.link(user_id, f"{loc['name']} ⚡ Hysteria2", port))
+                    {"kind": "hy2", "name": f"{loc['name']} ⚡ Hysteria2", "auth": self.hy2.password(user_id),
+                     "host": self.host, "port": port, "sni": self.hy2.sni, "pin": self.hy2.pin,
+                     "obfs": self.hy2.obfs_password, "hop": hop})
         out = fast + out
         direct = self.user_uuid(user_id, direct_loc["code"])
-        out += [self._link(direct, b["host"], b["port"], b["sni"] or self.sni, b["name"]) for b in self.bridges]
+        out += [{"kind": "reality", "name": b["name"], "uid": direct, "host": b["host"], "port": b["port"],
+                 "sni": b["sni"] or self.sni, "pbk": self.public_key, "sid": self.short_id} for b in self.bridges]
+        return out
+
+    def links(self, user_id: int) -> list[str]:
+        out = []
+        for e in self.entries(user_id):
+            if e["kind"] == "reality":
+                out.append(self._link(e["uid"], e["host"], e["port"], e["sni"], e["name"]))
+            elif e["kind"] == "xhttp":
+                out.append(self._xhttp_link(e["uid"], e["name"]))
+            else:
+                out.append(self.hy2.link(user_id, e["name"], e["port"], hop=e["hop"]))
         return out
 
     # ---------- сайт маскировки ----------
@@ -770,6 +820,11 @@ class XrayProvider(VpnProvider):
                 pair = out.setdefault(sid, [0, 0])
                 pair[0] += up
                 pair[1] += down
+        if self.awg:
+            for sid, (up, down) in (await self.awg.traffic()).items():
+                pair = out.setdefault(sid, [0, 0])
+                pair[0] += up
+                pair[1] += down
         return {k: (v[0], v[1]) for k, v in out.items() if v[0] or v[1]}
 
     async def online(self) -> dict[int, int] | None:
@@ -800,11 +855,11 @@ class XrayProvider(VpnProvider):
                         one = self._json(t2) if c2 == 0 else None
                         ips.setdefault(int(m.group(1)), set()).update((one or {}).get("ips") or {})
         counts = {sid: len(v) for sid, v in ips.items()}
-        if self.hy2:
-            hy = await self.hy2.online()
-            if hy is not None:
+        for extra in ([self.hy2] if self.hy2 else []) + ([self.awg] if self.awg else []):
+            more = await extra.online()
+            if more is not None:
                 got = True
-                for sid, n in hy.items():
+                for sid, n in more.items():
                     counts[sid] = counts.get(sid, 0) + n
         return counts if got else None
 
@@ -877,11 +932,16 @@ class XrayProvider(VpnProvider):
 
     # ---------- раздача подписки ----------
 
-    def subscription(self, user_id: int) -> tuple[bytes, dict] | None:
+    def subscription(self, user_id: int, as_json: bool = False) -> tuple[bytes, dict] | None:
+        """Подписка гостя. as_json — готовые конфиги Xray для v2rayNG и Happ: в них российские
+        сайты идут напрямую, DNS через HTTPS, реклама режется. Остальным приложениям — ссылки."""
         exp = self.state["users"].get(str(user_id))
         if not exp or exp <= time.time():
             return None
-        body = base64.b64encode("\n".join(self.links(user_id)).encode())
+        if as_json:
+            body = json.dumps(client_config.configs(self.entries(user_id)), ensure_ascii=False).encode()
+        else:
+            body = base64.b64encode("\n".join(self.links(user_id)).encode())
         title = base64.b64encode(self.brand.encode()).decode()
         up = down = 0
         if self.usage:
@@ -890,7 +950,7 @@ class XrayProvider(VpnProvider):
             except Exception:
                 log.exception("трафик для подписки %s", user_id)
         headers = {
-            "Content-Type": "text/plain; charset=utf-8",
+            "Content-Type": ("application/json" if as_json else "text/plain") + "; charset=utf-8",
             "profile-title": f"base64:{title}",
             "subscription-userinfo": f"upload={int(up)}; download={int(down)}; total=0; expire={int(exp)}",
             "profile-update-interval": "1",
@@ -947,14 +1007,21 @@ class XrayProvider(VpnProvider):
         status, body, headers = "404 Not Found", b"not found", {"Content-Type": "text/plain"}
         try:
             line = await asyncio.wait_for(reader.readline(), 10)
-            for _ in range(50):  # пропускаем заголовки запроса
+            agent = ""
+            for _ in range(50):  # заголовки запроса: нужен только User-Agent
                 h = await asyncio.wait_for(reader.readline(), 10)
                 if h in (b"\r\n", b"\n", b""):
                     break
+                k, _, v = h.decode(errors="replace").partition(":")
+                if k.strip().lower() == "user-agent":
+                    agent = v.strip()
             parts = line.decode(errors="replace").split()
-            m = re.fullmatch(r"/sub/(\d+)/([0-9a-f]{24})", parts[1]) if len(parts) >= 2 else None
+            path, _, query = (parts[1] if len(parts) >= 2 else "").partition("?")
+            m = re.fullmatch(r"/sub/(\d+)/([0-9a-f]{24})", path)
             if m and parts[0] == "GET" and hmac.compare_digest(m.group(2), self.sub_token(int(m.group(1)))):
-                res = self.subscription(int(m.group(1)))
+                fmt = parse_qs(query).get("format", [""])[0]
+                as_json = fmt == "json" or (fmt != "links" and self.json_sub and client_config.wants_json(agent))
+                res = self.subscription(int(m.group(1)), as_json=as_json)
                 if res:
                     status, (body, headers) = "200 OK", res
                 else:
@@ -1008,7 +1075,8 @@ def hy2_from_env(e) -> dict | None:
             "sni": e.get("HY2_SNI") or e.get("REALITY_SNI", "www.microsoft.com"),
             "auth_port": int(e.get("HY2_AUTH_PORT", "20809")),
             "stats_port": int(e.get("HY2_STATS_PORT", "20810")),
-            "stats_secret": e.get("HY2_STATS_SECRET", ""), "obfs_password": e.get("HY2_OBFS_PASSWORD", "")}
+            "stats_secret": e.get("HY2_STATS_SECRET", ""), "obfs_password": e.get("HY2_OBFS_PASSWORD", ""),
+            "hop_ports": e.get("HY2_HOP_PORTS", "")}
 
 
 def hy2_extra_from_env(e) -> dict | None:
@@ -1027,6 +1095,15 @@ def sub_tls_from_env(e) -> dict | None:
         return None
     return {"host": e["SUB_DOMAIN"], "port": int(e.get("SUB_TLS_PORT", "2097")),
             "cert": e["SUB_TLS_CERT"], "key": e["SUB_TLS_KEY"]}
+
+
+def awg_from_env(e) -> dict | None:
+    """AmneziaWG: установщик вписывает AWG_PORT, AWG_PUBLIC_KEY и AWG_PARAMS. Пусто — выключен."""
+    if not (e.get("AWG_PORT") and e.get("AWG_PUBLIC_KEY")) or e.get("AWG", "1") == "0":
+        return None
+    return {"port": int(e["AWG_PORT"]), "server_public_key": e["AWG_PUBLIC_KEY"],
+            "params": e.get("AWG_PARAMS", ""), "iface": e.get("AWG_IFACE", "awg0"),
+            "net": e.get("AWG_NET", "10.66.0.0/16")}
 
 
 def from_env() -> XrayProvider:
@@ -1054,4 +1131,6 @@ def from_env() -> XrayProvider:
         hy2_first=e.get("HY2_FIRST", "1") == "1",
         xhttp_port=int(e.get("XRAY_XHTTP_PORT", "8443")),
         sub_tls=sub_tls_from_env(e),
+        json_sub=e.get("SUB_JSON", "1") == "1",
+        awg=awg_from_env(e),
     )
