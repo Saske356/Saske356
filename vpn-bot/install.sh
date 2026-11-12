@@ -613,26 +613,57 @@ env_set AURORA_BRANCH "$BRANCH"
 # заходить в Termius после каждого изменения не нужно. AUTO_UPDATE=0 в .env — выключить.
 cat > /usr/local/bin/aurora-update <<'UPD'
 #!/bin/bash
-# Обновляет Aurora VPN, если в ветке на GitHub появился новый код. Запускает таймер aurora-update.
+# Обновляет Aurora VPN с GitHub. Запускает таймер aurora-update раз в 10 минут.
+#   aurora-update        — обновить, если есть новый код
+#   aurora-update now    — переустановить, даже если нового нет
+#   aurora-update check  — только напечатать «коммит ветка», если есть обновление
+# Ветка выбирается сама: самая свежая из тех, что продолжают установленный код (в её истории есть
+# текущий коммит). Так новая сессия Claude со своей веткой подхватывается без команд в Termius,
+# а чужие и старые ветки не трогаются. AUTO_BRANCH=0 в .env — держаться только AURORA_BRANCH.
 set -uo pipefail
 DIR=/opt/aurora; ENV=$DIR/vpn-bot/.env
+MODE="${1:-}"
 get() { { grep -E "^$1=" "$ENV" 2>/dev/null || true; } | tail -1 | cut -d= -f2- | tr -d '"'; }
-[ "$(get AUTO_UPDATE)" = 0 ] && [ "${1:-}" != now ] && exit 0
-BRANCH=$(get AURORA_BRANCH); [ -n "$BRANCH" ] || exit 0
-exec 9>/run/aurora-update.lock
-flock -n 9 || { echo "обновление уже идёт"; exit 0; }
-git -C "$DIR" fetch -q origin "$BRANCH" || { echo "GitHub недоступен, попробую позже"; exit 0; }
-have=$(git -C "$DIR" rev-parse HEAD); want=$(git -C "$DIR" rev-parse "origin/$BRANCH")
-if [ "$have" = "$want" ] && [ "${1:-}" != now ]; then exit 0; fi
-# Изменения только вне vpn-bot/ (приложение, заметки) серверу не нужны: тихо подтягиваем код,
-# без переустановки и перезапуска бота, чтобы не дёргать VPN и не писать админам зря.
-if [ "${1:-}" != now ] && git -C "$DIR" diff --quiet "$have" "$want" -- vpn-bot; then
-  git -C "$DIR" checkout -q -B "$BRANCH" "origin/$BRANCH"
+[ "$(get AUTO_UPDATE)" = 0 ] && [ -z "$MODE" ] && exit 0
+if [ "$MODE" != check ]; then
+  exec 9>/run/aurora-update.lock
+  flock -n 9 || { echo "обновление уже идёт"; exit 0; }
+fi
+BRANCH=$(get AURORA_BRANCH)
+git -C "$DIR" fetch -q --prune origin '+refs/heads/*:refs/remotes/origin/*' || { echo "GitHub недоступен, попробую позже"; exit 0; }
+have=$(git -C "$DIR" rev-parse HEAD)
+best="$BRANCH"; best_t=-1
+if [ -n "$BRANCH" ] && git -C "$DIR" rev-parse -q --verify "origin/$BRANCH" >/dev/null; then
+  best_t=$(git -C "$DIR" log -1 --format=%ct "origin/$BRANCH")
+fi
+if [ "$(get AUTO_BRANCH)" != 0 ]; then
+  for ref in $(git -C "$DIR" for-each-ref --format='%(refname:short)' refs/remotes/origin); do
+    case "$ref" in origin/HEAD|origin) continue ;; esac
+    git -C "$DIR" merge-base --is-ancestor "$have" "$ref" 2>/dev/null || continue
+    t=$(git -C "$DIR" log -1 --format=%ct "$ref")
+    if [ "$t" -gt "$best_t" ]; then best_t=$t; best=${ref#origin/}; fi
+  done
+fi
+[ -n "$best" ] && git -C "$DIR" rev-parse -q --verify "origin/$best" >/dev/null || exit 0
+want=$(git -C "$DIR" rev-parse "origin/$best")
+if [ "$MODE" = check ]; then
+  [ "$want" != "$have" ] && echo "$want $best"
   exit 0
 fi
-echo "Обновляю $have -> $want"
-git -C "$DIR" checkout -q -B "$BRANCH" "origin/$BRANCH"
-AURORA_AUTO=1 BRANCH="$BRANCH" bash "$DIR/vpn-bot/install.sh" </dev/null
+if [ "$best" != "$BRANCH" ]; then
+  echo "Новая ветка: $BRANCH -> $best"
+  sed -i -E '/^AURORA_BRANCH=/d' "$ENV"; printf 'AURORA_BRANCH=%s\n' "$best" >> "$ENV"
+fi
+[ "$have" = "$want" ] && [ "$MODE" != now ] && exit 0
+# Изменения только вне vpn-bot/ (приложение, заметки) серверу не нужны: тихо подтягиваем код,
+# без переустановки и перезапуска бота, чтобы не дёргать VPN и не писать админам зря.
+if [ "$MODE" != now ] && git -C "$DIR" diff --quiet "$have" "$want" -- vpn-bot; then
+  git -C "$DIR" checkout -q -B "$best" "origin/$best"
+  exit 0
+fi
+echo "Обновляю $have -> $want ($best)"
+git -C "$DIR" checkout -q -B "$best" "origin/$best"
+AURORA_AUTO=1 BRANCH="$best" bash "$DIR/vpn-bot/install.sh" </dev/null
 UPD
 chmod 755 /usr/local/bin/aurora-update
 cat > /etc/systemd/system/aurora-update.service <<'UPD'

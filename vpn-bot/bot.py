@@ -1653,20 +1653,18 @@ def code_version() -> tuple[str, str]:
     return (out[0].strip(), out[1].strip()) if len(out) == 2 and out[0].strip() else ("", "")
 
 
-async def remote_version() -> str:
-    """Последний коммит ветки сервера на GitHub (пусто, если узнать не вышло)."""
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    branch = os.environ.get("AURORA_BRANCH", "")
-    if not branch:
-        return ""
+async def remote_version() -> tuple[str, str] | None:
+    """(коммит, ветка) обновления, которое поставит сервер; ("", "") — нового нет; None — узнать не вышло.
+    Спрашивает тот же скрипт, что и таймер: он сам выбирает свежую ветку-продолжение."""
     try:
-        proc = await asyncio.create_subprocess_exec("git", "-C", root, "ls-remote", "origin", f"refs/heads/{branch}",
+        proc = await asyncio.create_subprocess_exec("/usr/local/bin/aurora-update", "check",
                                                     stdout=asyncio.subprocess.PIPE,
                                                     stderr=asyncio.subprocess.DEVNULL)
-        out, _ = await asyncio.wait_for(proc.communicate(), 20)
+        out, _ = await asyncio.wait_for(proc.communicate(), 60)
     except (OSError, asyncio.TimeoutError):
-        return ""
-    return out.decode().split()[0] if out.strip() else ""
+        return None
+    parts = out.decode().split()
+    return (parts[0], parts[1]) if len(parts) >= 2 else ("", "")
 
 
 VERSION_FILE = os.path.join(os.path.dirname(config.DB_PATH), ".running_version")
@@ -1713,7 +1711,7 @@ async def update_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
     sha, title = code_version()
     remote = await remote_version()
-    if remote and remote == sha:
+    if remote == ("", ""):
         await update.effective_chat.send_message(
             f"✅ Уже стоит последняя версия: <b>{esc(title)}</b> <code>{sha[:7]}</code>\n"
             "Новых изменений нет. Как только они появятся, сервер обновится сам в течение 10 минут.")
@@ -1726,8 +1724,10 @@ async def update_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await update.effective_chat.send_message(f"Не удалось запустить обновление: {esc(err.decode()[-300:])}")
         return
     await update.effective_chat.send_message(
-        f"🔄 Есть новая версия <code>{(remote or '?')[:7]}</code> (сейчас <code>{sha[:7] or '?'}</code>). "
-        "Ставлю: это займёт пару минут, бот перезапустится и напишет «Сервер обновился сам».")
+        f"🔄 Есть новая версия <code>{(remote[0] if remote else '?')[:7]}</code>"
+        + (f" в ветке <code>{esc(remote[1])}</code>" if remote else "")
+        + f" (сейчас <code>{sha[:7] or '?'}</code>). "
+        "Ставлю: это займёт пару минут. Если менялся код сервера, бот перезапустится и напишет «Сервер обновился сам».")
 
 
 @admin_only
