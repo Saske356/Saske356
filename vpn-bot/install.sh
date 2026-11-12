@@ -562,6 +562,39 @@ EOF
   chmod 755 /etc/letsencrypt/renewal-hooks/deploy/aurora.sh
 fi
 
+# ---------- WireGuard: готовится здесь, а включается кнопкой в /admin ----------
+# WG=0 при запуске — не готовить. Ключи гостей бот добавляет сам (wg set), без перезапуска.
+WG_OK=0
+if [ "${WG:-1}" = 1 ]; then
+  say "Готовлю WireGuard (включается в /admin)"
+  if command -v wg >/dev/null || retry apt-get install -y -qq wireguard-tools iptables >/dev/null; then
+    mkdir -p /etc/wireguard; chmod 700 /etc/wireguard
+    if [ ! -f /etc/wireguard/wg0.conf ]; then
+      DEV=$(ip route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "dev") {print $(i + 1); exit}}')
+      WGP=$(envget WG_PORT); WGP=${WGP:-51820}
+      PRIV_WG=$(wg genkey)
+      umask 077
+      cat > /etc/wireguard/wg0.conf <<EOF
+[Interface]
+Address = 10.67.0.1/16
+ListenPort = $WGP
+PrivateKey = $PRIV_WG
+PostUp = iptables -t nat -A POSTROUTING -s 10.67.0.0/16 -o $DEV -j MASQUERADE; iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT
+PostDown = iptables -t nat -D POSTROUTING -s 10.67.0.0/16 -o $DEV -j MASQUERADE; iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT
+EOF
+      umask 022
+      sed -i -E '/^WG_(PORT|PUBLIC_KEY)=/d' "$ENV"
+      { echo "WG_PORT=$WGP"; echo "WG_PUBLIC_KEY=$(printf '%s' "$PRIV_WG" | wg pubkey)"; } >> "$ENV"
+    fi
+    echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/99-aurora-wg.conf
+    sysctl -q -p /etc/sysctl.d/99-aurora-wg.conf || true
+    WG_OK=1
+    if systemctl is-active -q wg-quick@wg0; then echo "WireGuard включён."; else echo "WireGuard готов, включается в /admin."; fi
+  else
+    echo "WireGuard не поставился. Hysteria работает и без него."
+  fi
+fi
+
 say "Ставлю Hysteria (подключение по UDP)"
 HY_OK=0
 if retry3 install_hysteria && setup_hysteria; then
@@ -628,6 +661,10 @@ if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
   ufw allow "$BRIDGE_PORT"/tcp >/dev/null
   ufw allow "$(envget HY2_PORT)"/udp >/dev/null 2>&1 || true
   if hy_obfs_on; then ufw allow "$(envget HY2_OBFS_PORT)"/udp >/dev/null 2>&1 || true; fi
+  if [ "$WG_OK" = 1 ]; then
+    ufw allow "$(envget WG_PORT)"/udp >/dev/null 2>&1 || true
+    ufw route allow in on wg0 >/dev/null 2>&1 || true
+  fi
   # серверы Hysteria для стран через прокси: по одному UDP-порту на страну
   LOCP=$(envget HY2_LOC_PORTS); LOCP=${LOCP:-30000-30049}
   [ "$LOCP" = 0 ] || ufw allow "$(printf '%s' "$LOCP" | tr - :)"/udp >/dev/null 2>&1 || true

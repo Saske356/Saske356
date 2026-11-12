@@ -31,6 +31,7 @@ import uuid
 from urllib.parse import quote, unquote, urlparse
 
 import public_proxies
+from wireguard import WireGuard
 from vpn import VpnProvider
 
 log = logging.getLogger("vpn-bot.xray")
@@ -63,7 +64,7 @@ class XrayProvider(VpnProvider):
                  auto_enabled: bool = False, auto_countries: tuple = (), auto_max: int = 8,
                  relay_port: int = 20808, api_port: int = 10085, bridge_port: int = 8444,
                  xhttp: bool = True, sub_base: str = "", hy2: dict | None = None, hy2_auth_port: int = 20809,
-                 hy2_locs: dict | None = None,
+                 hy2_locs: dict | None = None, wg: dict | None = None,
                  xray_enabled: bool = True, sub_domain: str = "", sub_tls_port: int = 443,
                  sub_cert: str = "", sub_key: str = ""):
         self.state_path, self.config_path, self.xray_bin = state_path, config_path, xray_bin
@@ -91,8 +92,13 @@ class XrayProvider(VpnProvider):
         # "stats_base": первый порт статистики, "systemctl": команда}. У каждой страны своя служба
         # aurora-hy2@loc-КОД на своём порту: Hysteria выбирает выход по адресу, а не по клиенту.
         self.hy2_locs = hy2_locs if self.hy2 and self.hy2.get("port") and hy2_locs else None
+        self._wg_cfg = wg  # WireGuard: создаётся после загрузки состояния, включается из /admin
         self.sub_base = sub_base.strip().rstrip("/")
         self.state = self._load(default_location, auto_enabled, list(auto_countries), auto_max)
+        wg_cfg = self._wg_cfg or {}
+        self.wg = WireGuard(host=public_host, state=self.state["wg"], save=self._save,
+                            **{k: v for k, v in wg_cfg.items() if k != "unit"}) if self._wg_cfg else None
+        self.wg_unit = wg_cfg.get("unit", "wg-quick@wg0")
         self._pending: asyncio.Task | None = None
         self._server: asyncio.base_events.Server | None = None
         self.on_problem = None      # async-функция(текст): бот подставляет сюда оповещение админов
@@ -123,6 +129,8 @@ class XrayProvider(VpnProvider):
         st.setdefault("bridge_site", "")  # российский сайт маскировки для мостов «ru»
         st.setdefault("devices", {})     # подписка -> сколько устройств оплачено
         st.setdefault("hy2_ports", {})   # страна -> UDP-порт её сервера Hysteria
+        st.setdefault("wg", {})          # подписка -> ключ WireGuard и адрес во внутренней сети
+        st.setdefault("wg_enabled", False)
         st.setdefault("suspended", {})   # подписка -> до какого времени отключена за превышение
         # Настройки авто-стран берутся из окружения только при первом запуске,
         # дальше ими управляет команда /autoproxy.
@@ -308,7 +316,47 @@ class XrayProvider(VpnProvider):
             self.state["devices"][str(user_id)] = int(devices)
         self._save()
         self.schedule_apply()
+        if self.wg_on and self.allowed(user_id):
+            await self.wg.add(user_id)
         return self.sub_url(user_id)
+
+    # ---------- WireGuard: включается и выключается из /admin ----------
+
+    @property
+    def wg_on(self) -> bool:
+        return bool(self.wg and self.state.get("wg_enabled"))
+
+    async def set_wg(self, enabled: bool) -> tuple[bool, str]:
+        """Включает или выключает интерфейс WireGuard на сервере. Возвращает (успех, текст ошибки)."""
+        if not self.wg:
+            return False, "WireGuard не установлен на сервере: запустите установщик этой версии ещё раз."
+        if enabled:
+            code, out = await self._run("systemctl", "enable", "--now", self.wg_unit)
+            if code != 0:
+                return False, out[-400:].strip()
+            self.state["wg_enabled"] = True
+            self._save()
+            await self.sync_wg()
+        else:
+            code, out = await self._run("systemctl", "disable", "--now", self.wg_unit)
+            self.state["wg_enabled"] = False
+            self._save()
+        return True, ""
+
+    async def sync_wg(self) -> None:
+        """Ключи WireGuard по активным подпискам. Повторяется раз в 5 минут: после перезагрузки
+        сервера или интерфейса ключи возвращаются сами."""
+        if self.wg_on:
+            now = time.time()
+            await self.wg.sync([int(k) for k, exp in self.state["users"].items()
+                                if exp > now and not self.is_suspended(int(k))])
+
+    async def wg_config(self, sid: int, name: str) -> str | None:
+        """Файл настроек WireGuard для подписки. None — WireGuard выключен или ключ не создан."""
+        if not self.wg_on or not self.allowed(sid) or not await self.wg.keys(sid):
+            return None
+        await self.wg.add(sid)
+        return self.wg.client_config(sid, name)
 
     async def revoke(self, user_id: int) -> None:
         if self.state["users"].pop(str(user_id), None) is not None:
@@ -318,6 +366,8 @@ class XrayProvider(VpnProvider):
             self.schedule_apply()
             if self.hy2:
                 await self.hy2_kick(user_id)
+            if self.wg_on:
+                await self.wg.remove(user_id)
 
     async def sync(self, active: dict[int, float], devices: dict[int, int] | None = None) -> None:
         """При запуске бота: сервер получает ровно тех, у кого доступ активен."""
@@ -329,6 +379,7 @@ class XrayProvider(VpnProvider):
                                    if t > now and k in self.state["users"]}
         self._save()
         await self.apply()
+        await self.sync_wg()
 
     # ---------- лимит устройств: временное отключение подписки ----------
 
@@ -347,6 +398,8 @@ class XrayProvider(VpnProvider):
         self.schedule_apply()
         if self.hy2:
             await self.hy2_kick(sid)
+        if self.wg_on:
+            await self.wg.remove(sid)
 
     def due_resume(self) -> list[int]:
         """Подписки, у которых отключение закончилось: их пора вернуть."""
@@ -357,6 +410,8 @@ class XrayProvider(VpnProvider):
         if self.state["suspended"].pop(str(sid), None) is not None:
             self._save()
             self.schedule_apply()
+            if self.wg_on and self.allowed(sid):
+                await self.wg.add(sid)
 
     # ---------- трафик и устройства онлайн ----------
 
@@ -401,6 +456,11 @@ class XrayProvider(VpnProvider):
                     pair = out.setdefault(int(m.group(1)), [0, 0])
                     pair[0] += int(v.get("tx") or 0)
                     pair[1] += int(v.get("rx") or 0)
+        if self.wg_on:
+            for sid, (up, down) in (await self.wg.traffic()).items():
+                pair = out.setdefault(sid, [0, 0])
+                pair[0] += up
+                pair[1] += down
         return {k: (v[0], v[1]) for k, v in out.items() if v[0] or v[1]}
 
     async def online(self) -> dict[int, int] | None:
@@ -428,6 +488,12 @@ class XrayProvider(VpnProvider):
                     m = re.fullmatch(r"u(\d+)", str(ident))
                     if m:
                         counts[int(m.group(1))] = counts.get(int(m.group(1)), 0) + int(n or 0)
+        if self.wg_on:
+            more = await self.wg.online()
+            if more is not None:
+                got = True
+                for sid, n in more.items():
+                    counts[sid] = counts.get(sid, 0) + n
         return counts if got else None
 
     def add_location(self, code: str, name: str, proxy: str) -> None:
@@ -1308,6 +1374,15 @@ def hy2_locs_from_env(e) -> dict | None:
             "stats_base": int(e.get("HY2_LOC_STATS_BASE", "20830")), "systemctl": ("systemctl",)}
 
 
+def wg_from_env(e) -> dict | None:
+    """WireGuard: установщик вписывает WG_PORT и WG_PUBLIC_KEY. Пусто — не установлен."""
+    if not (e.get("WG_PORT") and e.get("WG_PUBLIC_KEY")):
+        return None
+    return {"port": int(e["WG_PORT"]), "server_public_key": e["WG_PUBLIC_KEY"],
+            "iface": e.get("WG_IFACE", "wg0"), "net": e.get("WG_NET", "10.67.0.0/16"),
+            "unit": f"wg-quick@{e.get('WG_IFACE', 'wg0')}"}
+
+
 def from_env() -> XrayProvider:
     e = os.environ
     need = ["PUBLIC_HOST", "REALITY_PRIVATE_KEY", "REALITY_PUBLIC_KEY", "REALITY_SHORT_ID"]
@@ -1340,6 +1415,7 @@ def from_env() -> XrayProvider:
              "stats_secret": e.get("HY2_STATS_SECRET", "")} if e.get("HY2_PORT") or e.get("HY2_OBFS_PORT") else None,
         hy2_auth_port=int(e.get("HY2_AUTH_PORT", "20809")),
         hy2_locs=hy2_locs_from_env(e),
+        wg=wg_from_env(e),
         xray_enabled=e.get("XRAY_ENABLED", "1") == "1",
         sub_domain=e.get("SUB_DOMAIN", ""),
         sub_tls_port=int(e.get("SUB_TLS_PORT") or (443 if e.get("XRAY_ENABLED", "1") == "0" else 2053)),
