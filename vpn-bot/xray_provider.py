@@ -351,6 +351,53 @@ class XrayProvider(VpnProvider):
             await self.wg.sync([int(k) for k, exp in self.state["users"].items()
                                 if exp > now and not self.is_suspended(int(k))])
 
+    def wg_sub_url(self, sid: int) -> str:
+        return self.sub_url(sid) + "/wg"
+
+    def wg_xray_config(self, sid: int, name: str) -> dict | None:
+        """WireGuard как готовый конфиг Xray: так его открывают Happ и v2rayNG, у которых нет
+        ссылок WireGuard. Внутри встроенный в Xray WireGuard, локальные адреса идут напрямую."""
+        k = self.wg.state.get(str(sid)) if self.wg else None
+        if not k:
+            return None
+        return {
+            "remarks": name,
+            "log": {"loglevel": "warning"},
+            "dns": {"servers": ["1.1.1.1", "8.8.8.8"]},
+            "inbounds": [
+                {"tag": "socks", "listen": "127.0.0.1", "port": 10808, "protocol": "socks",
+                 "settings": {"auth": "noauth", "udp": True},
+                 "sniffing": {"enabled": True, "destOverride": ["http", "tls", "quic"], "routeOnly": True}},
+                {"tag": "http", "listen": "127.0.0.1", "port": 10809, "protocol": "http"},
+            ],
+            "outbounds": [
+                {"tag": "proxy", "protocol": "wireguard", "settings": {
+                    "secretKey": k["priv"], "address": [f"{k['ip']}/32"], "mtu": 1280,
+                    "peers": [{"publicKey": self.wg.server_pub, "endpoint": f"{self.host}:{self.wg.port}",
+                               "allowedIPs": ["0.0.0.0/0"], "keepAlive": 25}]}},
+                {"tag": "direct", "protocol": "freedom"},
+                {"tag": "block", "protocol": "blackhole"},
+            ],
+            "routing": {"domainStrategy": "IPIfNonMatch", "rules": [
+                {"type": "field", "ip": ["geoip:private"], "outboundTag": "direct"},
+                {"type": "field", "network": "tcp,udp", "outboundTag": "proxy"},
+            ]},
+        }
+
+    async def wg_subscription(self, sid: int) -> tuple[bytes, dict] | None:
+        if not self.wg_on or not self.allowed(sid) or not await self.wg.keys(sid):
+            return None
+        await self.wg.add(sid)
+        cfg = self.wg_xray_config(sid, f"{self.direct_location()['name']} · WireGuard")
+        exp = self.state["users"][str(sid)]
+        title = base64.b64encode(f"{self.brand} WireGuard".encode()).decode()
+        return json.dumps([cfg], ensure_ascii=False).encode(), {
+            "Content-Type": "application/json; charset=utf-8",
+            "profile-title": f"base64:{title}",
+            "subscription-userinfo": f"upload=0; download=0; total=0; expire={int(exp)}",
+            "profile-update-interval": "12",
+        }
+
     async def wg_config(self, sid: int, name: str) -> str | None:
         """Файл настроек WireGuard для подписки. None — WireGuard выключен или ключ не создан."""
         if not self.wg_on or not self.allowed(sid) or not await self.wg.keys(sid):
@@ -1312,6 +1359,9 @@ class XrayProvider(VpnProvider):
             parts = line.decode(errors="replace").split()
             path = parts[1].split("?", 1)[0] if len(parts) >= 2 else ""
             uid = None
+            wg = path.endswith("/wg")  # отдельная подписка WireGuard для Happ
+            if wg:
+                path = path[:-3]
             m = re.fullmatch(r"/sub/(\d+)/([0-9a-f]{24})", path)
             if m and hmac.compare_digest(m.group(2), self.sub_token(int(m.group(1)))):
                 uid = int(m.group(1))
@@ -1319,7 +1369,7 @@ class XrayProvider(VpnProvider):
             if m:
                 uid = self._by_short(m.group(1))
             if parts and parts[0] == "GET" and uid is not None:
-                res = self.subscription(uid)
+                res = await self.wg_subscription(uid) if wg else self.subscription(uid)
                 if res:
                     status, (body, headers) = "200 OK", res
                 else:

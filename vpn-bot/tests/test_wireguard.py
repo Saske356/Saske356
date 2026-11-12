@@ -91,6 +91,38 @@ class WireGuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("disable --now wg-quick@wg0", self.units)
         self.assertEqual(self.v.wg.state["1"], k1, "ключ сохраняется: после включения файл у гостя рабочий")
 
+    async def test_happ_gets_wireguard_as_xray_config(self):
+        self.assertIsNone(await self.v.wg_subscription(1), "выключен — подписки нет")
+        await self.v.set_wg(True)
+        await self.v.start_sub_server("127.0.0.1")
+        port = self.v._server.sockets[0].getsockname()[1]
+        url = self.v.wg_sub_url(1)
+        self.assertTrue(url.endswith("/wg"))
+        path = url.split(f":{self.v.sub_port}", 1)[-1] if "/sub/" in url else url
+        path = path[path.index("/sub/"):]
+        r, w = await asyncio.open_connection("127.0.0.1", port)
+        w.write(f"GET {path} HTTP/1.1\r\nHost: x\r\nUser-Agent: Happ/3.5\r\n\r\n".encode()); await w.drain()
+        data = await r.read(); w.close()
+        head, _, body = data.partition(b"\r\n\r\n")
+        self.assertTrue(head.startswith(b"HTTP/1.1 200"), head)
+        cfg = json.loads(body)[0]
+        out = cfg["outbounds"][0]
+        k = self.v.wg.state["1"]
+        self.assertEqual((out["protocol"], out["settings"]["secretKey"], out["settings"]["address"]),
+                         ("wireguard", k["priv"], ["10.67.0.2/32"]))
+        peer = out["settings"]["peers"][0]
+        self.assertEqual((peer["publicKey"], peer["endpoint"]), ("SERVERPUB=", "203.0.113.7:51820"))
+        self.assertEqual(cfg["remarks"], "🇵🇱 Польша · WireGuard")
+        self.assertIn(k["pub"], self.peers(), "ключ есть на сервере")
+        # основная подписка по тому же адресу без /wg не изменилась
+        r, w = await asyncio.open_connection("127.0.0.1", port)
+        w.write(f"GET {path[:-3]} HTTP/1.1\r\nHost: x\r\n\r\n".encode()); await w.drain()
+        data = await r.read(); w.close()
+        self.assertNotIn(b"wireguard", data)
+        await self.v.set_wg(False)
+        self.assertIsNone(await self.v.wg_subscription(1))
+        self.v._server.close()
+
     async def test_not_installed(self):
         self.v.wg = None
         ok, err = await self.v.set_wg(True)
