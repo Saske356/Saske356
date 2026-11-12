@@ -10,6 +10,9 @@ BRANCH="${BRANCH:-claude/android-usage-ql87m8}"
 DIR=/opt/aurora
 BOT="$DIR/vpn-bot"
 ENV="$BOT/.env"
+# XRAY=0 или XRAY=1 при запуске выбирает, нужен ли Xray. Ниже имя XRAY занято путём к программе,
+# поэтому выбор запоминается отдельно и переживает перезапуск установщика из свежей копии.
+case "${XRAY_WANT:-${XRAY:-}}" in 0|1) export XRAY_WANT="${XRAY_WANT:-$XRAY}" ;; *) export XRAY_WANT="" ;; esac
 XRAY=/usr/local/bin/xray
 SUB_PORT="${SUB_PORT:-2096}"
 BRIDGE_PORT="${BRIDGE_PORT:-8444}"   # вход для мостов, которые проходят белые списки
@@ -493,10 +496,10 @@ mkdir -p /var/lib/aurora
 env_newline
 # ---------- Xray или только Hysteria ----------
 # XRAY=0 или XRAY=1 при запуске установщика меняет выбор, сделанный раньше.
-if [ -n "${XRAY:-}" ]; then
+if [ -n "$XRAY_WANT" ]; then
   sed -i -E '/^XRAY_ENABLED=/d' "$ENV"
-  echo "XRAY_ENABLED=$([ "$XRAY" = 1 ] && echo 1 || echo 0)" >> "$ENV"
-  echo "Xray: $([ "$XRAY" = 1 ] && echo включён || echo "выключен, VPN только через Hysteria")"
+  echo "XRAY_ENABLED=$XRAY_WANT" >> "$ENV"
+  echo "Xray: $([ "$XRAY_WANT" = 1 ] && echo включён || echo "выключен, VPN только через Hysteria")"
 fi
 if ! grep -qE '^XRAY_ENABLED=' "$ENV"; then
   say "Способ подключения"
