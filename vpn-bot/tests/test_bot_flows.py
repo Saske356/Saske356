@@ -585,6 +585,11 @@ async def main():
     await bot.devices_job(ctx)
     prov.resume.assert_awaited_once_with(some)
     bot.guard.__init__("block")
+    # JSON-конфиги для Happ включаются и выключаются в /admin
+    assert prov.json_sub and any("JSON-конфиги" in b.text for r in bot.admin_kb().inline_keyboard for b in r)
+    await press(1, "adm:json", ctx); assert not prov.json_sub
+    await press(owner, "adm:json", ctx); assert not prov.json_sub, "не админ не переключает"
+    await press(1, "adm:json", ctx); assert prov.json_sub
     # сайт Hysteria меняется по расписанию, сообщение только админам
     prov.hy2 = {"port": 443, "sni": "www.example.com", "pin": "", "obfs": "", "obfs_port": 0,
                 "stats_ports": [], "stats_secret": "s"}

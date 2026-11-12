@@ -28,8 +28,9 @@ import re
 import secrets
 import time
 import uuid
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
+import client_config
 import public_proxies
 from vpn import VpnProvider
 
@@ -63,7 +64,7 @@ class XrayProvider(VpnProvider):
                  auto_enabled: bool = False, auto_countries: tuple = (), auto_max: int = 8,
                  relay_port: int = 20808, api_port: int = 10085, bridge_port: int = 8444,
                  xhttp: bool = True, sub_base: str = "", hy2: dict | None = None, hy2_auth_port: int = 20809,
-                 hy2_locs: dict | None = None,
+                 hy2_locs: dict | None = None, json_sub: bool = True,
                  xray_enabled: bool = True, sub_domain: str = "", sub_tls_port: int = 443,
                  sub_cert: str = "", sub_key: str = ""):
         self.state_path, self.config_path, self.xray_bin = state_path, config_path, xray_bin
@@ -91,6 +92,7 @@ class XrayProvider(VpnProvider):
         # "stats_base": первый порт статистики, "systemctl": команда}. У каждой страны своя служба
         # aurora-hy2@loc-КОД на своём порту: Hysteria выбирает выход по адресу, а не по клиенту.
         self.hy2_locs = hy2_locs if self.hy2 and self.hy2.get("port") and hy2_locs else None
+        self.json_default = json_sub
         self.sub_base = sub_base.strip().rstrip("/")
         self.state = self._load(default_location, auto_enabled, list(auto_countries), auto_max)
         self._pending: asyncio.Task | None = None
@@ -752,27 +754,47 @@ class XrayProvider(VpnProvider):
         self._save()
         return old
 
-    def hy2_links(self, user_id: int) -> list[str]:
+    def hy2_entries(self, user_id: int) -> list[dict]:
+        """Подключения Hysteria гостя по порядку: из них собираются и ссылки, и JSON-конфиги."""
         if not self.hy2:
             return []
         h, main = self.hy2, self.direct_location()["name"]
         sni = self.hy2_sni
         # Без Xray в подписке только Hysteria: приписка к названию не нужна, просто «Польша».
         tag = " · Hysteria" if self.xray_enabled else ""
+        auth, pin = self.hy2_password(user_id), h.get("pin", "")
+
+        def e(host, port, site, name, obfs=""):
+            return {"kind": "hy2", "name": name, "host": host, "port": port, "sni": site, "auth": auth,
+                    "pin": pin, "obfs": obfs}
         out = []
         if h.get("port"):
-            out.append(self._hy2_link(user_id, self.host, h["port"], sni, f"{main}{tag}"))
+            out.append(e(self.host, h["port"], sni, f"{main}{tag}"))
         if h.get("obfs_port") and h.get("obfs"):
-            out.append(self._hy2_link(user_id, self.host, h["obfs_port"], sni, f"{main} · Hysteria 2", obfs=True))
+            out.append(e(self.host, h["obfs_port"], sni, f"{main} · Hysteria 2", h["obfs"]))
         # Страны через прокси: у каждой свой порт Hysteria, пароль тот же.
         for loc in self.locations:
             port = self.hy2_loc_port(loc)
             if port and not loc.get("down"):
-                out.append(self._hy2_link(user_id, self.host, port, sni, f"{loc['name']}{tag}"))
+                out.append(e(self.host, port, sni, f"{loc['name']}{tag}"))
         # Мост «ru» пересылает и UDP 443: Hysteria через мост маскируется под российский сайт.
         if h.get("port") and self.bridge_site:
-            out += [self._hy2_link(user_id, b["host"], b["port"], self.bridge_site, f"{b['name']}{tag}")
+            out += [e(b["host"], b["port"], self.bridge_site, f"{b['name']}{tag}")
                     for b in self.visible_bridges() if b.get("ru")]
+        return out
+
+    def hy2_links(self, user_id: int) -> list[str]:
+        return [self._hy2_link(user_id, x["host"], x["port"], x["sni"], x["name"], obfs=bool(x["obfs"]))
+                for x in self.hy2_entries(user_id)]
+
+    def json_entries(self, user_id: int) -> list[dict]:
+        """Подключения для JSON-конфигов: Hysteria и, если Xray включён, Reality по странам."""
+        out = self.hy2_entries(user_id)
+        if self.xray_enabled:
+            out += [{"kind": "reality", "name": l["name"], "uid": self.user_uuid(user_id, l["code"]),
+                     "host": self.host, "port": self.port, "sni": self.sni, "pbk": self.public_key,
+                     "sid": self.short_id}
+                    for l in self.locations if not l.get("down") and not (l.get("auto") and self.auto_rejected)]
         return out
 
     async def _hy2_auth(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -1215,11 +1237,21 @@ class XrayProvider(VpnProvider):
 
     # ---------- раздача подписки ----------
 
-    def subscription(self, user_id: int) -> tuple[bytes, dict] | None:
+    @property
+    def json_sub(self) -> bool:
+        """Отдавать ли Happ и v2rayNG готовые JSON-конфиги. Переключается из /admin."""
+        return bool(self.state.get("json_sub", self.json_default))
+
+    def subscription(self, user_id: int, as_json: bool = False) -> tuple[bytes, dict] | None:
+        """Подписка. as_json — готовые конфиги Xray для Happ и v2rayNG: в приложении видно только
+        название страны, а адрес и пароль спрятаны внутри конфига; российские сайты идут напрямую."""
         exp = self.state["users"].get(str(user_id))
         if not exp or exp <= time.time():
             return None
-        body = base64.b64encode("\n".join(self.links(user_id)).encode())
+        if as_json:
+            body = json.dumps(client_config.configs(self.json_entries(user_id)), ensure_ascii=False).encode()
+        else:
+            body = base64.b64encode("\n".join(self.links(user_id)).encode())
         title = base64.b64encode(self.brand.encode()).decode()
         up = down = 0
         if self.usage:
@@ -1228,7 +1260,7 @@ class XrayProvider(VpnProvider):
             except Exception:
                 log.exception("трафик для подписки %s", user_id)
         headers = {
-            "Content-Type": "text/plain; charset=utf-8",
+            "Content-Type": ("application/json" if as_json else "text/plain") + "; charset=utf-8",
             "profile-title": f"base64:{title}",
             "subscription-userinfo": f"upload={int(up)}; download={int(down)}; total=0; expire={int(exp)}",
             "profile-update-interval": "1",
@@ -1239,12 +1271,18 @@ class XrayProvider(VpnProvider):
         status, body, headers = "404 Not Found", b"not found", {"Content-Type": "text/plain"}
         try:
             line = await asyncio.wait_for(reader.readline(), 10)
-            for _ in range(50):  # пропускаем заголовки запроса
+            agent = ""
+            for _ in range(50):  # заголовки запроса: нужен только User-Agent
                 h = await asyncio.wait_for(reader.readline(), 10)
                 if h in (b"\r\n", b"\n", b""):
                     break
+                k, _, v = h.decode(errors="replace").partition(":")
+                if k.strip().lower() == "user-agent":
+                    agent = v.strip()
             parts = line.decode(errors="replace").split()
-            path = parts[1].split("?", 1)[0] if len(parts) >= 2 else ""
+            path, _, query = (parts[1] if len(parts) >= 2 else "").partition("?")
+            fmt = parse_qs(query).get("format", [""])[0]
+            as_json = fmt == "json" or (fmt != "links" and self.json_sub and client_config.wants_json(agent))
             uid = None
             m = re.fullmatch(r"/sub/(\d+)/([0-9a-f]{24})", path)
             if m and hmac.compare_digest(m.group(2), self.sub_token(int(m.group(1)))):
@@ -1253,7 +1291,7 @@ class XrayProvider(VpnProvider):
             if m:
                 uid = self._by_short(m.group(1))
             if parts and parts[0] == "GET" and uid is not None:
-                res = self.subscription(uid)
+                res = self.subscription(uid, as_json=as_json)
                 if res:
                     status, (body, headers) = "200 OK", res
                 else:
@@ -1340,6 +1378,7 @@ def from_env() -> XrayProvider:
              "stats_secret": e.get("HY2_STATS_SECRET", "")} if e.get("HY2_PORT") or e.get("HY2_OBFS_PORT") else None,
         hy2_auth_port=int(e.get("HY2_AUTH_PORT", "20809")),
         hy2_locs=hy2_locs_from_env(e),
+        json_sub=e.get("SUB_JSON", "1") == "1",
         xray_enabled=e.get("XRAY_ENABLED", "1") == "1",
         sub_domain=e.get("SUB_DOMAIN", ""),
         sub_tls_port=int(e.get("SUB_TLS_PORT") or (443 if e.get("XRAY_ENABLED", "1") == "0" else 2053)),

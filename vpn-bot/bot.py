@@ -1245,6 +1245,9 @@ def admin_kb() -> InlineKeyboardMarkup:
     return KB([B("💳 Платежи", "adm:pays"), B("📢 Рассылка", "adm:bc")],
               [B("📈 Воронка", "adm:fun"), B("📊 Трафик", "adm:trf")],
               [B("🖥 Сервер", "adm:srv"), B("💾 Резервная копия", "adm:bak")],
+              *([[B("🧩 Happ/v2rayNG: JSON-конфиги · выключить" if vpn.json_sub
+                    else "🧩 Happ/v2rayNG: обычные ссылки · включить JSON", "adm:json")]]
+                if hasattr(vpn, "json_sub") else []),
               [B("🔄 Обновить", "adm:stats"), BACK])
 
 
@@ -1568,6 +1571,13 @@ async def admin_button(update: Update, context: ContextTypes.DEFAULT_TYPE, row, 
         await send_backup(context.bot, row["id"])
         return
     await q.answer("Обновлено" if act in ("stats", "pays", "srv", "fun", "trf") else None)
+    if act == "json" and hasattr(vpn, "json_sub"):
+        vpn.state["json_sub"] = not vpn.json_sub
+        vpn._save()
+        await q.answer("Happ и v2rayNG получают готовые JSON-конфиги: в приложении видно только страну"
+                       if vpn.json_sub else "Happ и v2rayNG снова получают обычные ссылки", show_alert=True)
+        await show(update, context, admin_text(), admin_kb())
+        return
     if act == "fun":
         await show(update, context, funnel_text(), KB([B("🔄 Обновить", "adm:fun"), B("‹ Админ-панель", "adm:stats")]))
     elif act == "trf":

@@ -234,6 +234,42 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(unquote(self.v.links(1)[0].rsplit("#", 1)[1]).endswith("· Hysteria"),
                         "с Xray приписка нужна, чтобы отличать от TCP")
 
+    async def test_happ_gets_json_with_country_names_only(self):
+        import base64
+        self.v.add_location("de", "🇩🇪 Германия", "socks5://u:p@1.2.3.4:1080")
+        await self.v._pending
+        await self.v.start_sub_server("127.0.0.1")
+        port = self.v._server.sockets[0].getsockname()[1]
+        path = "/sub/1/" + self.v.sub_token(1)
+
+        async def get(p, agent):
+            r, w = await asyncio.open_connection("127.0.0.1", port)
+            w.write(f"GET {p} HTTP/1.1\r\nHost: x\r\nUser-Agent: {agent}\r\n\r\n".encode()); await w.drain()
+            data = await r.read(); w.close()
+            return data.partition(b"\r\n\r\n")
+        head, _, body = await get(path, "Happ/3.7.0")
+        self.assertIn(b"application/json", head)
+        cfgs = json.loads(body)
+        self.assertEqual([c["remarks"] for c in cfgs], ["🇵🇱 Польша", "🇩🇪 Германия"])
+        out = cfgs[1]["outbounds"][0]
+        self.assertEqual((out["protocol"], out["settings"]["port"], out["streamSettings"]["hysteriaSettings"]["auth"]),
+                         ("hysteria", 30000, self.v.hy2_password(1)))
+        tls = out["streamSettings"]["tlsSettings"]
+        self.assertEqual((tls["serverName"], tls["alpn"], tls["pinnedPeerCertSha256"]), ("www.example.com", ["h3"], "ab" * 32))
+        self.assertNotIn("allowInsecure", json.dumps(cfgs))
+        rules = cfgs[0]["routing"]["rules"]
+        self.assertTrue(any("geoip:ru" in r.get("ip", []) and r["outboundTag"] == "direct" for r in rules),
+                        "российские сайты напрямую")
+        _, _, body = await get(path, "v2rayNG/1.10.30")
+        self.assertIsInstance(json.loads(body), list)
+        for p, agent in ((path, "HiddifyNext/2.5"), (path + "?format=links", "Happ/3.7.0")):
+            _, _, body = await get(p, agent)
+            self.assertTrue(base64.b64decode(body).decode().startswith("hysteria2://"), agent)
+        self.v.state["json_sub"] = False  # выключено в /admin
+        _, _, body = await get(path, "Happ/3.7.0")
+        self.assertTrue(base64.b64decode(body).decode().startswith("hysteria2://"))
+        self.v._server.close()
+
     async def test_second_hysteria_only_when_asked(self):
         e = {"HY2_PORT": "443", "HY2_OBFS_PORT": "8443", "HY2_OBFS": "pw", "PUBLIC_HOST": "1.2.3.4",
              "REALITY_PRIVATE_KEY": "a", "REALITY_PUBLIC_KEY": "b", "REALITY_SHORT_ID": "c",
