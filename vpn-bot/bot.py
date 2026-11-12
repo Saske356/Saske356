@@ -890,14 +890,6 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             img.save(buf, format="PNG")
             buf.seek(0)
             await context.bot.send_photo(update.effective_chat.id, buf, caption="QR-код для WireGuard")
-            if hasattr(vpn, "wg_sub_url"):
-                await context.bot.send_message(
-                    update.effective_chat.id,
-                    "📲 <b>WireGuard в Happ</b>\n\nHapp не открывает файлы WireGuard, поэтому для него есть "
-                    "отдельная подписка. Скопируйте ссылку и добавьте её в Happ как ещё одну подписку "
-                    "(«+» → «Вставить из буфера»):\n\n"
-                    f"<code>{esc(vpn.wg_sub_url(sub['id']))}</code>\n\n"
-                    "<i>Основная подписка с Hysteria остаётся как была.</i>")
             return
         if parts[0] == "raw":
             if not sub_active(sub) or not hasattr(vpn, "links"):
