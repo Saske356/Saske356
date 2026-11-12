@@ -2267,10 +2267,10 @@ async def webshare_refresh() -> str:
     """Скачивает список, проверяет прокси и обновляет страны. Возвращает отчёт для админа."""
     async with WS_LOCK:
         cfg = ws_cfg()
-        if not cfg.get("url"):
+        if not cfg.get("url") and not cfg.get("list"):
             return "Ссылка на список не задана: /webshare ссылка"
         try:
-            urls = await webshare.fetch(cfg["url"])
+            urls = list(cfg["list"]) if cfg.get("list") else await webshare.fetch(cfg["url"])
         except ValueError as e:
             cfg["error"] = str(e)
             vpn._save()
@@ -2313,7 +2313,7 @@ async def webshare_refresh() -> str:
 
 async def webshare_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Раз в 3 часа: умершие прокси меняются на живые из списка, новые страны добавляются."""
-    if not hasattr(vpn, "set_paid_location") or not ws_cfg().get("url"):
+    if not hasattr(vpn, "set_paid_location") or not (ws_cfg().get("url") or ws_cfg().get("list")):
         return
     try:
         report = await webshare_refresh()
@@ -2331,6 +2331,8 @@ async def webshare_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
     arg = context.args[0] if context.args else ""
     reply, chat = update.message.reply_text, update.effective_chat.id
+    pasted = webshare.parse((update.message.text or "").split(maxsplit=1)[1]
+                            if len((update.message.text or "").split(maxsplit=1)) > 1 else "")
 
     async def run(note: str) -> None:
         await reply(note)
@@ -2338,7 +2340,18 @@ async def webshare_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await _send_report(context.bot, chat, await webshare_refresh())
         except Exception as e:
             await _report_failure(context.bot, chat, "Проверка купленных прокси не удалась", e)
-    if arg.startswith("http"):
+    if pasted and not arg.startswith("http"):
+        # Список вставлен прямо в сообщение: host:port:логин:пароль по строке на прокси.
+        vpn.state["webshare"] = {"list": pasted}
+        vpn._save()
+        try:  # в списке логины и пароли: не оставляем их в чате
+            await update.message.delete()
+        except TelegramError:
+            pass
+        context.application.create_task(run(f"Список из {len(pasted)} прокси сохранён только на сервере, "
+                                            "сообщение с ним удалено. Проверяю прокси и определяю страны."))
+    elif arg.startswith("http"):
+        vpn.state["webshare"] = {}
         ws_cfg()["url"] = arg.strip()
         vpn._save()
         try:  # в ссылке ключ доступа к списку: не оставляем его в чате
@@ -2357,9 +2370,10 @@ async def webshare_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     else:
         cfg = ws_cfg()
         locs = vpn.paid_locations()
-        state = (f"Ссылка задана, последняя проверка {_ago(cfg['last'])} назад: в списке {cfg.get('total', 0)}, "
+        src = "Список задан" if cfg.get("list") else "Ссылка задана"
+        state = (f"{src}, последняя проверка {_ago(cfg['last'])} назад: в списке {cfg.get('total', 0)}, "
                  f"работают {cfg.get('working', 0)}" if cfg.get("last") else
-                 "Ссылка задана, проверка ещё не проходила" if cfg.get("url") else "Ссылка не задана")
+                 f"{src}, проверка ещё не проходила" if cfg.get("url") or cfg.get("list") else "Список не задан")
         rows = [f"◆ {esc(l['name'])} · {l.get('ms') or '?'} мс · запасных {max(0, len(l.get('pool', [])) - 1)}"
                 + (" · ❌ не отвечает" if l.get("down") else "") for l in locs]
         await reply("<b>Купленные прокси списком</b>\n\n" + esc(state)
@@ -2371,6 +2385,7 @@ async def webshare_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                     "<b>Команды</b>\n"
                     "/webshare <code>ссылка</code>: задать список (в Webshare: Proxy List → Download → "
                     "скопировать ссылку)\n"
+                    "/webshare и ниже строки <code>host:порт:логин:пароль</code>: вставить список прямо в сообщение\n"
                     "/webshare now: проверить сейчас\n"
                     "/webshare off: убрать эти страны и забыть ссылку")
 

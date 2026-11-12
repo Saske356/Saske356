@@ -615,6 +615,14 @@ async def main():
         ctx.args = []
         u = make_update(1); await bot.webshare_cmd(u, ctx)
         assert "Германия" in u.message.reply_text.await_args.args[0]
+        # список вставлен прямо в сообщение
+        u = make_update(1, text="/webshare\np.webshare.io:80:user-1:pw\np.webshare.io:80:user-2:pw")
+        u.message.delete = AsyncMock(); ctx.args = ["p.webshare.io:80:user-1:pw", "p.webshare.io:80:user-2:pw"]
+        tasks.clear(); await bot.webshare_cmd(u, ctx); await asyncio.gather(*tasks)
+        u.message.delete.assert_awaited()
+        assert prov.state["webshare"]["list"] == ["socks5://user-1:pw@p.webshare.io:80", "socks5://user-2:pw@p.webshare.io:80"]
+        assert "url" not in prov.state["webshare"]
+        ws.fetch.reset_mock(); await bot.webshare_refresh(); ws.fetch.assert_not_awaited()
         ctx.args = ["off"]; u = make_update(1); await bot.webshare_cmd(u, ctx); ctx.args = []
         assert not prov.paid_locations() and prov.state["webshare"] == {}
     finally:

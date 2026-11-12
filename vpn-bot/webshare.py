@@ -79,6 +79,12 @@ async def scan(urls: list[str]) -> list[tuple[str, str, int]]:
     async def one(u):
         async with sem:
             res = await pp.probe(u) or await pp.probe(u)
+            if not res and u.startswith("socks5://"):
+                # строка без схемы могла быть HTTP-прокси: пробуем тот же адрес по HTTP
+                alt = "http://" + u[len("socks5://"):]
+                res = await pp.probe(alt)
+                if res:
+                    u = alt
             return (u, res.country, res.ms) if res else None
     found = [r for r in await asyncio.gather(*(one(u) for u in urls)) if r]
     return sorted(found, key=lambda r: r[2])

@@ -32,6 +32,20 @@ class Parse(unittest.TestCase):
         self.assertEqual(webshare.by_country(found, limit=2), {"de": [("a", 100), ("b", 300)], "nl": [("d", 200)]})
 
 
+class Scan(unittest.IsolatedAsyncioTestCase):
+    async def test_falls_back_to_http_and_sorts_by_speed(self):
+        saved = pp.probe
+        answers = {"socks5://a:b@1.1.1.1:80": None, "http://a:b@1.1.1.1:80": pp.Probe("de", 300),
+                   "socks5://a:b@2.2.2.2:80": pp.Probe("nl", 100), "socks5://a:b@3.3.3.3:80": None,
+                   "http://a:b@3.3.3.3:80": None}
+        pp.probe = AsyncMock(side_effect=lambda url, *a, **k: answers[url])
+        try:
+            found = await webshare.scan(["socks5://a:b@1.1.1.1:80", "socks5://a:b@2.2.2.2:80", "socks5://a:b@3.3.3.3:80"])
+        finally:
+            pp.probe = saved
+        self.assertEqual(found, [("socks5://a:b@2.2.2.2:80", "nl", 100), ("http://a:b@1.1.1.1:80", "de", 300)])
+
+
 class Provider(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.d = tempfile.mkdtemp()
