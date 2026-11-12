@@ -566,6 +566,37 @@ EOF
   chmod 755 /etc/letsencrypt/renewal-hooks/deploy/aurora.sh
 fi
 
+# ---------- mKCP: второй способ по UDP (отдельный Xray, работает и без основного) ----------
+# KCP=0 при запуске — не ставить. Конфиг со списком ключей пишет бот в $HYDIR/kcp.json.
+if [ "${KCP:-1}" = 1 ]; then
+  say "Готовлю mKCP (второй способ по UDP)"
+  env_newline
+  [ -n "$(envget KCP_PORT)" ] || { sed -i -E '/^KCP_PORT=/d' "$ENV"; echo "KCP_PORT=4443" >> "$ENV"; }
+  [ -n "$(envget KCP_SEED)" ] || { sed -i -E '/^KCP_SEED=/d' "$ENV"; echo "KCP_SEED=$(openssl rand -hex 12)" >> "$ENV"; }
+  cat > /etc/systemd/system/aurora-kcp.service <<EOF
+[Unit]
+Description=Aurora VPN mKCP (UDP $(envget KCP_PORT))
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=$HYDIR/kcp.json
+
+[Service]
+ExecStart=$XRAY run -c $HYDIR/kcp.json
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  systemctl daemon-reload
+  systemctl enable -q aurora-kcp
+  echo "mKCP на UDP $(envget KCP_PORT): бот запустит его сам."
+else
+  systemctl disable --now aurora-kcp >/dev/null 2>&1 || true
+  sed -i -E '/^KCP_(PORT|SEED)=/d' "$ENV"
+fi
+
 say "Ставлю Hysteria (подключение по UDP)"
 HY_OK=0
 if retry3 install_hysteria && setup_hysteria; then
@@ -632,6 +663,7 @@ if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
   ufw allow "$BRIDGE_PORT"/tcp >/dev/null
   ufw allow "$(envget HY2_PORT)"/udp >/dev/null 2>&1 || true
   if hy_obfs_on; then ufw allow "$(envget HY2_OBFS_PORT)"/udp >/dev/null 2>&1 || true; fi
+  if [ -n "$(envget KCP_PORT)" ]; then ufw allow "$(envget KCP_PORT)"/udp >/dev/null 2>&1 || true; fi
   # серверы Hysteria для стран через прокси: по одному UDP-порту на страну
   LOCP=$(envget HY2_LOC_PORTS); LOCP=${LOCP:-30000-30049}
   [ "$LOCP" = 0 ] || ufw allow "$(printf '%s' "$LOCP" | tr - :)"/udp >/dev/null 2>&1 || true

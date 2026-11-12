@@ -31,6 +31,17 @@ def wants_json(agent: str) -> bool:
     return bool(JSON_AGENTS.search(agent or ""))
 
 
+# mKCP с низкой задержкой: частая отправка (tti 20 мс) и запас по скорости.
+KCP_TUNING = {"mtu": 1350, "tti": 20, "uplinkCapacity": 20, "downlinkCapacity": 100}
+
+
+def kcp_stream(seed: str) -> dict:
+    """mKCP по UDP. Пакеты шифруются ключом seed и выглядят как случайные данные. Новые версии
+    Xray берут ключ из finalmask (mkcp-legacy), старые — из kcpSettings.seed: кладём оба."""
+    return {"network": "kcp", "kcpSettings": {**KCP_TUNING, "seed": seed},
+            "finalmask": {"udp": [{"type": "mkcp-legacy", "settings": {"value": seed}}]}}
+
+
 def outbound(e: dict) -> dict:
     """Исходящее подключение к серверу VPN по записи из XrayProvider.entries()."""
     if e["kind"] == "hy2":
@@ -47,6 +58,11 @@ def outbound(e: dict) -> dict:
         return {"tag": "proxy", "protocol": "hysteria",
                 "settings": {"version": 2, "address": e["host"], "port": e["port"]},
                 "streamSettings": stream}
+    if e["kind"] == "kcp":
+        return {"tag": "proxy", "protocol": "vless",
+                "settings": {"vnext": [{"address": e["host"], "port": e["port"],
+                                        "users": [{"id": e["uid"], "encryption": "none"}]}]},
+                "streamSettings": kcp_stream(e["seed"])}
     user = {"id": e["uid"], "encryption": "none"}
     if e["kind"] == "reality":
         user["flow"] = "xtls-rprx-vision"

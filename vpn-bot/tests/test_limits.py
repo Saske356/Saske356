@@ -278,6 +278,43 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(base64.b64decode(body).decode().startswith("hysteria2://"))
         self.v._server.close()
 
+    async def test_mkcp_second_udp_protocol(self):
+        from urllib.parse import parse_qs, unquote, urlparse
+        self.v.kcp = {"port": 4443, "seed": "s33d", "dir": self.hydir, "unit": "aurora-kcp",
+                      "systemctl": (os.path.join(self.d, "systemctl"),)}
+        await self.v.apply()
+        with open(os.path.join(self.hydir, "kcp.json")) as f:
+            srv = json.load(f)
+        inb = srv["inbounds"][0]
+        self.assertEqual((inb["port"], inb["streamSettings"]["network"]), (4443, "kcp"))
+        self.assertEqual(inb["streamSettings"]["finalmask"]["udp"][0],
+                         {"type": "mkcp-legacy", "settings": {"value": "s33d"}})
+        self.assertEqual([c["id"] for c in inb["settings"]["clients"]], [self.v.user_uuid(1, "kcp")])
+        self.assertIn("restart aurora-kcp", self.units())
+        n = len(self.units())
+        await self.v.apply()
+        self.assertEqual(len(self.units()), n, "ключи те же — mKCP не перезапускается")
+        await self.v.issue(2, time.time() + 3600)
+        await self.v._pending
+        self.assertEqual(len(self.units()), n + 1, "новый ключ — один перезапуск mKCP")
+        links = self.v.links(1)
+        kcp = [l for l in links if "type=kcp" in l]
+        self.assertEqual(len(kcp), 1)
+        u = urlparse(kcp[0]); q = parse_qs(u.query)
+        self.assertEqual((u.port, q["seed"], unquote(u.fragment)), (4443, ["s33d"], "🇵🇱 Польша · mKCP"))
+        cfgs = __import__("client_config").configs(self.v.json_entries(1))
+        names = [c["remarks"] for c in cfgs]
+        self.assertEqual(names, ["🚀 Лучший сервер", "🇵🇱 Польша", "🇵🇱 Польша · mKCP"])
+        out = cfgs[2]["outbounds"][0]
+        self.assertEqual((out["streamSettings"]["network"], out["streamSettings"]["kcpSettings"]["seed"],
+                          out["streamSettings"]["kcpSettings"]["tti"]), ("kcp", "s33d", 20))
+        self.assertEqual(len(cfgs[0]["outbounds"]), 4, "mKCP тоже в «Лучшем сервере»")
+        await self.v.suspend(1, 600)
+        await self.v._pending
+        with open(os.path.join(self.hydir, "kcp.json")) as f:
+            ids = [c["id"] for c in json.load(f)["inbounds"][0]["settings"]["clients"]]
+        self.assertNotIn(self.v.user_uuid(1, "kcp"), ids, "отключённая подписка без ключа mKCP")
+
     async def test_second_hysteria_only_when_asked(self):
         e = {"HY2_PORT": "443", "HY2_OBFS_PORT": "8443", "HY2_OBFS": "pw", "PUBLIC_HOST": "1.2.3.4",
              "REALITY_PRIVATE_KEY": "a", "REALITY_PUBLIC_KEY": "b", "REALITY_SHORT_ID": "c",
