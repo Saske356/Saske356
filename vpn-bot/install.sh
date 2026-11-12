@@ -348,6 +348,11 @@ fi
 
 say "Скачиваю бота"
 retry get_code || fail "не удалось скачать бота с GitHub. Запустите команду ещё раз"
+# GitHub отдаёт install.sh через кэш, и по ссылке несколько минут может приходить прошлая версия.
+# Поэтому дальше работает установщик из только что скачанного кода: он всегда свежий.
+if [ -z "${AURORA_REEXEC:-}" ] && [ -f "$BOT/install.sh" ]; then
+  AURORA_REEXEC=1 exec bash "$BOT/install.sh" "$@"
+fi
 python3 -m venv "$BOT/.venv"
 retry "$BOT/.venv/bin/pip" install -q --upgrade pip || true
 retry "$BOT/.venv/bin/pip" install -q -r "$BOT/requirements.txt" || fail "не удалось поставить библиотеки Python"
@@ -550,11 +555,19 @@ if [ -n "$TLSP" ]; then
   fi
 fi
 if [ "$HY_OK" = 1 ]; then
-  if systemctl is-active -q aurora-hy2@plain && systemctl is-active -q aurora-hy2@obfs; then
-    echo "✅ Hysteria принимает подключения на портах 443/udp и 8443/udp"
-  else
-    echo "❌ Hysteria не запустилась: journalctl -u aurora-hy2@plain -n 20 --no-pager"; ok=0
-  fi
+  # упавшая служба перезапускается по кругу: проверяем, что за 5 секунд она не перезапускалась
+  N1=$(systemctl show -p NRestarts --value aurora-hy2@plain aurora-hy2@obfs | tr '\n' ' ')
+  sleep 5
+  N2=$(systemctl show -p NRestarts --value aurora-hy2@plain aurora-hy2@obfs | tr '\n' ' ')
+  for unit in aurora-hy2@plain aurora-hy2@obfs; do
+    if systemctl is-active -q "$unit" && [ "$N1" = "$N2" ]; then
+      echo "✅ $unit работает ($(grep -oE '"listen": *":[0-9]+"' "$HYDIR/hy2-${unit#*@}.yaml" | grep -oE '[0-9]+')/udp)"
+    else
+      echo "❌ $unit не запускается. Причина из журнала:"
+      journalctl -u "$unit" -n 30 --no-pager 2>/dev/null | grep -E 'FATAL|ERROR|error' | tail -3 | cut -c1-300
+      ok=0
+    fi
+  done
 fi
 if ss -tlnpH "sport = :$SUB_PORT" | grep -q python; then
   echo "✅ подписки раздаются на порту $SUB_PORT"
