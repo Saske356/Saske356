@@ -250,7 +250,15 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         head, _, body = await get(path, "Happ/3.7.0")
         self.assertIn(b"application/json", head)
         cfgs = json.loads(body)
-        self.assertEqual([c["remarks"] for c in cfgs], ["🇵🇱 Польша", "🇩🇪 Германия"])
+        self.assertEqual([c["remarks"] for c in cfgs], ["🚀 Лучший сервер", "🇵🇱 Польша", "🇩🇪 Германия"])
+        best = cfgs[0]
+        self.assertEqual([o["tag"] for o in best["outbounds"]], ["p0", "p1", "direct", "block"])
+        self.assertEqual(best["routing"]["balancers"][0]["strategy"]["type"], "leastPing")
+        self.assertEqual(best["routing"]["rules"][-1], {"type": "field", "network": "tcp,udp", "balancerTag": "best"})
+        self.assertEqual(best["observatory"]["subjectSelector"], ["p"])
+        self.assertFalse(any(o["tag"].startswith("p") for o in best["outbounds"][2:]),
+                         "direct и block не попадают в автовыбор")
+        cfgs = cfgs[1:]
         out = cfgs[1]["outbounds"][0]
         self.assertEqual((out["protocol"], out["settings"]["port"], out["streamSettings"]["hysteriaSettings"]["auth"]),
                          ("hysteria", 30000, self.v.hy2_password(1)))

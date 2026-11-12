@@ -63,12 +63,30 @@ def outbound(e: dict) -> dict:
             "streamSettings": stream}
 
 
-def config(e: dict) -> dict:
-    # Сам сервер всегда напрямую. В правило по IP можно вписать только адрес, а не домен.
-    server = [{"type": "field", "ip": [e["host"]], "outboundTag": "direct"}] \
-        if re.fullmatch(r"[0-9.]+|[0-9a-fA-F:]+", e["host"]) else []
+def _routing(server_ips: list[str], final: dict) -> dict:
+    """Правила: сам сервер, реклама, российские сайты и локальная сеть — мимо VPN, остальное — final."""
+    server = [{"type": "field", "ip": server_ips, "outboundTag": "direct"}] if server_ips else []
     return {
-        "remarks": e["name"],
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+            *server,
+            {"type": "field", "domain": ["geosite:category-ads-all"], "outboundTag": "block"},
+            {"type": "field", "ip": ["77.88.8.8"], "outboundTag": "direct"},
+            {"type": "field", "domain": RU_DOMAINS, "outboundTag": "direct"},
+            {"type": "field", "ip": ["geoip:private", "geoip:ru"], "outboundTag": "direct"},
+            {"type": "field", "network": "tcp,udp", **final},
+        ],
+    }
+
+
+def _ip(host: str) -> list[str]:
+    # В правило по IP можно вписать только адрес, а не домен.
+    return [host] if re.fullmatch(r"[0-9.]+|[0-9a-fA-F:]+", host) else []
+
+
+def _base(name: str, outbounds: list[dict], routing: dict) -> dict:
+    return {
+        "remarks": name,
         "log": {"loglevel": "warning"},
         "dns": {
             "servers": [
@@ -83,24 +101,34 @@ def config(e: dict) -> dict:
              "sniffing": {"enabled": True, "destOverride": ["http", "tls", "quic"], "routeOnly": True}},
             {"tag": "http", "listen": "127.0.0.1", "port": 10809, "protocol": "http"},
         ],
-        "outbounds": [
-            outbound(e),
-            {"tag": "direct", "protocol": "freedom"},
-            {"tag": "block", "protocol": "blackhole"},
-        ],
-        "routing": {
-            "domainStrategy": "IPIfNonMatch",
-            "rules": [
-                *server,
-                {"type": "field", "domain": ["geosite:category-ads-all"], "outboundTag": "block"},
-                {"type": "field", "ip": ["77.88.8.8"], "outboundTag": "direct"},
-                {"type": "field", "domain": RU_DOMAINS, "outboundTag": "direct"},
-                {"type": "field", "ip": ["geoip:private", "geoip:ru"], "outboundTag": "direct"},
-                {"type": "field", "network": "tcp,udp", "outboundTag": "proxy"},
-            ],
-        },
+        "outbounds": outbounds + [{"tag": "direct", "protocol": "freedom"},
+                                  {"tag": "block", "protocol": "blackhole"}],
+        "routing": routing,
     }
 
 
-def configs(entries: list[dict]) -> list[dict]:
-    return [config(e) for e in entries]
+def best(entries: list[dict], name: str = "🚀 Лучший сервер") -> dict:
+    """Один конфиг со всеми подключениями: Xray в приложении раз в минуту замеряет каждое
+    и ведёт трафик через самое быстрое из живых. Упавшее подключение выпадает само."""
+    outs = []
+    for i, e in enumerate(entries):
+        o = outbound(e)
+        o["tag"] = f"p{i}"
+        outs.append(o)
+    cfg = _base(name, outs, _routing(sorted({ip for e in entries for ip in _ip(e["host"])}),
+                                     {"balancerTag": "best"}))
+    cfg["routing"]["balancers"] = [{"tag": "best", "selector": ["p"], "strategy": {"type": "leastPing"},
+                                    "fallbackTag": "p0"}]
+    cfg["observatory"] = {"subjectSelector": ["p"], "probeURL": "https://www.google.com/generate_204",
+                          "probeInterval": "1m", "enableConcurrency": True}
+    return cfg
+
+
+def config(e: dict) -> dict:
+    return _base(e["name"], [outbound(e)], _routing(_ip(e["host"]), {"outboundTag": "proxy"}))
+
+
+def configs(entries: list[dict], with_best: bool = True) -> list[dict]:
+    """Конфиги подписки: первым «Лучший сервер» (если подключений больше одного), затем страны."""
+    out = [config(e) for e in entries]
+    return ([best(entries)] if with_best and len(entries) > 1 else []) + out
