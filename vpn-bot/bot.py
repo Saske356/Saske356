@@ -1938,7 +1938,8 @@ def locations_text() -> str:
     for l in getattr(vpn, "locations", []):
         how = "через прокси" if l["proxy"] else "напрямую с сервера"
         tag = " · 🤖 авто" if l.get("auto") else ""
-        state = " · ❌ прокси не отвечает, скрыта" if l.get("down") else ""
+        state = (" · ❌ прокси не отвечает, скрыта" if l.get("down") else
+                 " · ⚠️ прокси не отвечает" if l.get("failing") else "")
         hy_port = vpn.hy2_loc_port(l) if hasattr(vpn, "hy2_loc_port") else None
         hy = f" · Hysteria UDP {hy_port}" if hy_port else ""
         lines.append(f"◆ <code>{esc(l['code'])}</code> · {esc(l['name'])} · <i>{how}</i>{tag}{hy}{state}")
@@ -2094,10 +2095,10 @@ async def proxy_health_job(context: ContextTypes.DEFAULT_TYPE) -> None:
                                           f"❌ Мост «{esc(b['name'])}» ({esc(b['host'])}) не отвечает. Проверьте, "
                                           "что сервер моста включён: <code>systemctl status nftables</code>."))
     for loc, alive in await vpn.check_proxies():
-        await notify_admins(context, (f"✅ Прокси «{esc(loc['name'])}» снова работает, страна вернулась в подписку."
+        await notify_admins(context, (f"✅ Прокси «{esc(loc['name'])}» снова работает."
                                       if alive else
-                                      f"❌ Прокси «{esc(loc['name'])}» не отвечает. Страна скрыта из подписки, "
-                                      "пока прокси не оживёт. Проверьте его у продавца."))
+                                      f"❌ Прокси «{esc(loc['name'])}» не отвечает. Страна остаётся в подписке, "
+                                      "но через неё сейчас не открываются сайты. Проверьте прокси у продавца."))
 
 
 @admin_only
@@ -2572,9 +2573,6 @@ def ws_cfg() -> dict:
     return vpn.state.setdefault("webshare", {})
 
 
-WEBSHARE_DROP = 7 * 86400  # сколько купленная страна может не отвечать, прежде чем её уберут
-
-
 async def webshare_refresh() -> str:
     """Скачивает список, проверяет прокси и обновляет страны. Возвращает отчёт для админа."""
     async with WS_LOCK:
@@ -2590,29 +2588,22 @@ async def webshare_refresh() -> str:
         if not await public_proxies.direct_ok():
             return "⚠️ Сервер сам не вышел в интернет, проверка отложена."
         groups = webshare.by_country(await webshare.scan(urls), WEBSHARE_MAX)
-        added, swapped, removed, taken = [], [], [], []
+        added, swapped, taken = [], [], []
         for cc, items in groups.items():
             res = vpn.set_paid_location(cc, public_proxies.country_name(cc), [u for u, _ in items[:3]],
                                         ms=items[0][1])
             {"added": added, "swapped": swapped, "": taken}.get(res, []).append(cc)
         hidden, now = [], time.time()
-        if groups:  # ничего не нашли — скорее сбой проверки, страны не трогаем
-            # Страна, не ответившая в одну проверку (прокси моргнул, бот только что перезапустился),
-            # не удаляется, а только прячется: вернётся сама, как только прокси ответит.
-            # Удаляется, только если её нет в проверках больше WEBSHARE_DROP.
-            for loc in list(vpn.paid_locations()):
+        if groups:  # ничего не нашли — скорее сбой проверки
+            # Свои страны админа не прячутся и не удаляются сами (просьба владельца): страна, которой
+            # нет в этой проверке, остаётся в подписке со своими прокси, админ получает отчёт.
+            # Убрать: /delloc код или /webshare off.
+            for loc in vpn.paid_locations():
                 if loc["code"] in groups:
                     loc.pop("missing_since", None)
-                    continue
-                since = loc.setdefault("missing_since", now)
-                if now - since > WEBSHARE_DROP:
-                    if vpn.remove_location(loc["code"]):
-                        removed.append(loc["code"])
-                elif not loc.get("down"):
-                    loc["down"] = True
+                else:
+                    loc.setdefault("missing_since", now)
                     hidden.append(loc["code"])
-            if hidden:
-                vpn.schedule_apply()
         if auto_mgr:
             auto_mgr.sync_routes()
         cfg.update(last=time.time(), total=len(urls), error="",
@@ -2628,9 +2619,7 @@ async def webshare_refresh() -> str:
         if swapped:
             lines.append("🔁 Прокси заменён: " + ", ".join(nm(c) for c in swapped))
         if hidden:
-            lines.append("⏸ Не ответили, временно скрыты (вернутся сами): " + ", ".join(nm(c) for c in hidden))
-        if removed:
-            lines.append("➖ Убраны (неделю без живых прокси): " + ", ".join(nm(c) for c in removed))
+            lines.append("⚠️ Не ответили в эту проверку (остаются в подписке): " + ", ".join(nm(c) for c in hidden))
         if taken:
             lines.append("Не тронуты, код занят страной, добавленной через /addloc: "
                          + ", ".join(c.upper() for c in taken))
@@ -2703,7 +2692,7 @@ async def webshare_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                  f"работают {cfg.get('working', 0)}" if cfg.get("last") else
                  f"{src}, проверка ещё не проходила" if cfg.get("url") or cfg.get("list") else "Список не задан")
         rows = [f"◆ {esc(l['name'])} · {l.get('ms') or '?'} мс · запасных {max(0, len(l.get('pool', [])) - 1)}"
-                + (" · ❌ не отвечает" if l.get("down") else "") for l in locs]
+                + (" · ❌ не отвечает" if l.get("down") or l.get("failing") else "") for l in locs]
         await reply("<b>Купленные прокси списком</b>\n\n" + esc(state)
                     + (f"\n⚠️ {esc(cfg['error'])}" if cfg.get("error") else "") + "\n\n"
                     + ("\n".join(rows) if rows else "<i>Стран пока нет.</i>") + "\n\n"

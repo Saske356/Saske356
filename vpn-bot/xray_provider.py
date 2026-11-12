@@ -165,6 +165,10 @@ class XrayProvider(VpnProvider):
         for key, value in (("site", ""), ("prev", []), ("auto", True), ("every", 0), ("changed", 0)):
             m.setdefault(key, value)
         for loc in st["locations"]:
+            if not loc.get("auto"):
+                # прежние версии прятали свои страны админа при сбое прокси — больше не прячем
+                if loc.pop("down", None):
+                    loc["failing"] = True
             if loc.get("auto"):
                 loc.setdefault("country", loc["code"])
                 loc.setdefault("pool", [loc["proxy"]] if loc.get("proxy") else [])
@@ -607,7 +611,8 @@ class XrayProvider(VpnProvider):
     async def check_proxies(self) -> list[tuple[dict, bool]]:
         """Проверяет прокси стран, добавленных вручную: через каждый открывается настоящее
         HTTPS-подключение, так что ловится и истёкший логин, а не только закрытый порт.
-        Нерабочие страны прячутся из подписки. Возвращает изменения: (страна, работает_ли)."""
+        Свои страны админа (купленные и /addloc) из подписки не прячутся никогда (просьба владельца):
+        бот только меняет прокси на живой запасной и сообщает админу. Возвращает изменения: (страна, работает_ли)."""
         manual = [l for l in self.locations if l["proxy"] and not l.get("auto")]
         if not manual or not await public_proxies.direct_ok():
             return []  # сервер сам не дошёл до проверочного сайта: прокси тут ни при чём
@@ -626,8 +631,8 @@ class XrayProvider(VpnProvider):
                         loc["proxy"], ok = backup, True
                         self.schedule_apply()
                         break
-            if bool(loc.get("down")) == ok:
-                loc["down"] = not ok
+            if bool(loc.get("failing")) == ok:
+                loc["failing"] = not ok
                 changes.append((loc, ok))
         if changes:
             self._save()

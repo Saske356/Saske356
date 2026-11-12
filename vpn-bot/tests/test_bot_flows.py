@@ -720,13 +720,10 @@ async def main():
         ws.scan = AsyncMock(return_value=[("socks5://u:p@1.1.1.1:1", "de", 90)])
         report = await bot.webshare_refresh()
         fi = next(l for l in prov.locations if l["code"] == "fi")
-        assert "временно скрыты" in report and fi["down"], "одна неудачная проверка не удаляет страну"
-        assert not any("3.3.3.3" in l for l in prov.links(some))
+        assert "остаются в подписке" in report and not fi.get("down"), "свою страну админа не прячем"
+        fi["missing_since"] -= 30 * 86400
         await bot.webshare_refresh()
-        assert any(l["code"] == "fi" for l in prov.locations), "и вторая тоже"
-        fi["missing_since"] -= 8 * 86400
-        report = await bot.webshare_refresh()
-        assert "Убраны" in report and not any(l["code"] == "fi" for l in prov.locations)
+        assert any(l["code"] == "fi" for l in prov.locations), "и не удаляем, сколько бы ни молчала"
         ctx.args = []
         u = make_update(1); await bot.webshare_cmd(u, ctx)
         assert "Германия" in u.message.reply_text.await_args.args[0]
