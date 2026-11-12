@@ -21,6 +21,8 @@ EXTRA_ATTEMPTS = 5       # сколько лишних стран пробуем
 PROBE_BUDGET = 60        # сколько новых прокси можно проверить за один цикл
 PER_COUNTRY = 12         # и сколько из них на одну страну
 HIDE_LIMIT = 6 * 3600    # при подборе страна без прокси столько ждёт, потом уступает место другой
+CLASSIFY = 20            # сколько прокси без страны проверить за цикл (из общего лимита проверок)
+GEO_TTL = 6 * 3600       # сколько помним страну, найденную проверкой
 
 # В режиме подбора страны берутся в этом порядке, затем остальные по числу прокси.
 PREFERRED = ["nl", "de", "us", "gb", "fr", "fi", "se", "ch", "jp", "sg", "ca", "tr",
@@ -40,6 +42,7 @@ class AutoProxy:
         self.last_run = 0.0
         self.budget = PROBE_BUDGET
         self.last_note = ""
+        self.geo: dict[str, tuple[str, int, float]] = {}  # прокси без страны -> (страна, мс, когда)
 
     async def start(self) -> bool:
         ok = await self.relay.start()
@@ -118,6 +121,34 @@ class AutoProxy:
             return (u, res.ms) if res and res.country == cc else None
         return [r for r in await asyncio.gather(*(one(u) for u in urls)) if r]
 
+    async def _classify(self, pool: dict) -> dict:
+        """Прокси из списков без страны: проверяем часть и раскладываем по странам выхода.
+        Проверенные идут первыми в своей стране: они уже точно работают."""
+        pool = {cc: list(v) for cc, v in pool.items()}
+        unknown = pool.pop(pp.UNKNOWN, [])
+        now = time.time()
+        self.geo = {u: g for u, g in self.geo.items() if now - g[2] < GEO_TTL}
+        todo = [u for u in unknown if u not in self.geo and self.bad.get(u, 0) < now]
+        todo = todo[:max(0, min(CLASSIFY, self.budget))]
+        self.budget -= len(todo)
+        sem = asyncio.Semaphore(6)
+
+        async def one(u):
+            async with sem:
+                return u, await pp.probe(u)
+        for u, res in await asyncio.gather(*(one(u) for u in todo)):
+            if res:
+                self.geo[u] = (res.country, res.ms, now)
+            else:
+                self.bad[u] = now + BAD_CANDIDATE
+        for u in unknown:
+            if u in self.geo:
+                cc = self.geo[u][0]
+                lst = pool.setdefault(cc, [])
+                if u not in lst:
+                    lst.insert(0, u)
+        return pool
+
     def _targets(self, pool: dict) -> tuple[list[str], bool]:
         """Какие страны держать: заданный список или подбор. Второе значение — режим подбора."""
         cfg, manual = self.vpn.auto, self.vpn.manual_codes()
@@ -154,6 +185,7 @@ class AutoProxy:
         self.last_note = "" if pool else "открытые списки прокси сейчас недоступны"
         now = time.time()
         self.bad = {u: t for u, t in self.bad.items() if t > now}
+        pool = await self._classify(pool)
 
         targets, discovery = self._targets(pool)
         maxn = max(1, int(vpn.auto.get("max") or 8))

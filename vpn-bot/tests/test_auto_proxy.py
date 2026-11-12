@@ -6,6 +6,7 @@ SOCKS5- и HTTP-прокси и HTTPS-сайт, который сообщает 
 
 import asyncio
 import base64
+import json
 import logging
 import os
 import shutil
@@ -297,15 +298,21 @@ class SourceTests(unittest.TestCase):
             "geonode": {"data": [{"ip": "198.51.100.1", "port": "1080", "protocols": ["socks5"], "country": "NL",
                                   "upTime": 50}]},
         }
-        real = pp._fetch_json
-        pp._fetch_json = lambda url, timeout=25.0: data[next(n for n, u in pp.SOURCES if u == url)]
+        data["socks5proxies"] = ("ip,port,country_code,country_name,city,region,asn,asn_name,org,protocols,"
+                                 "anonymity,uptime,delay_ms,last_seen\n"
+                                 "203.0.113.5,1080,,,,,,,,SOCKS4|SOCKS5,Unknown,98,500,2026-01-01T00:00:00Z\n"
+                                 "203.0.113.6,1080,,,,,,,,SOCKS4,Unknown,99,100,2026-01-01T00:00:00Z\n")
+        real = pp._fetch_text
+        pp._fetch_text = lambda url, timeout=25.0: (
+            lambda v: v if isinstance(v, str) else json.dumps(v))(data[next(n for n, u in pp.SOURCES if u == url)])
         try:
             pool = pp._collect()
         finally:
-            pp._fetch_json = real
+            pp._fetch_text = real
         self.assertEqual(pool, {"nl": ["socks5://198.51.100.1:1080",   # есть в двух списках
                                        "http://198.51.100.2:8080",     # почти всегда отвечал
-                                       "http://198.51.100.3:8080"]})   # отвечал редко
+                                       "http://198.51.100.3:8080"],    # отвечал редко
+                                pp.UNKNOWN: ["socks5://203.0.113.5:1080"]})  # страна неизвестна, только SOCKS5
 
 
 class RelayTests(Base):
@@ -497,6 +504,17 @@ class ManagerTests(Base):
         self.assertEqual(len(self.vpn.links(7)), 3)
         self.assertEqual((await self.through("nl")).country, "nl")
         self.assertEqual((await self.through("de")).country, "de")
+
+    async def test_proxy_without_country_is_placed_by_its_real_exit(self):
+        de = await self.proxy("socks5", "de")
+        dead = await self.proxy("socks5", "fr"); dead.kill()
+        self.pool = {pp.UNKNOWN: [dead.url, de.url]}
+        mgr = await self.manager(countries=("de",))
+        report = await mgr.refresh()
+        self.assertIn("Добавлены", report)
+        self.assertEqual(self.loc("de")["pool"], [de.url])
+        self.assertEqual(mgr.geo[de.url][0], "de")
+        self.assertIn(dead.url, mgr.bad, "мёртвый не перепроверяем каждый цикл")
 
     async def test_dead_proxy_is_replaced_without_xray_restart(self):
         a, b, c, d = [await self.proxy("socks5", "nl") for _ in range(4)]

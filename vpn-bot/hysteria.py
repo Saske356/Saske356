@@ -8,6 +8,10 @@ Hysteria2 работает по UDP (QUIC) на том же порту 443, чт
 подключении он спрашивает бота по HTTP на 127.0.0.1, пускать ли этот ключ. Поэтому выдача
 и отключение доступа ничего не перезапускают. Трафик, число подключений и отключение
 нарушителей берутся из встроенного API статистики Hysteria.
+
+Другие страны: Hysteria выбирает выход по адресу назначения, а не по пользователю, поэтому
+у каждой дополнительной страны свой сервер Hysteria на своём UDP-порту (служба
+hysteria-loc@код). Он выпускает трафик через прокси этой страны. Ключи у всех общие.
 """
 
 import asyncio
@@ -17,7 +21,7 @@ import json
 import logging
 import re
 import ssl
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlparse
 
 log = logging.getLogger("vpn-bot.hy2")
 
@@ -43,6 +47,8 @@ class Hysteria:
         self.cert_path, self.sni = cert_path, sni
         self.auth_port, self.stats_port, self.stats_secret = auth_port, stats_port, stats_secret
         self.obfs_password = obfs_password
+        self.locs: dict[str, int] = {}    # серверы других стран: код страны -> UDP-порт
+        self.extra_ports: range | None = None
         self._pin: str | None = None
         self._server: asyncio.base_events.Server | None = None
 
@@ -67,13 +73,23 @@ class Hysteria:
             self._pin = cert_pin(self.cert_path) if self.cert_path else ""
         return self._pin
 
-    def link(self, sid: int, name: str) -> str:
+    def loc_stats_port(self, port: int) -> int:
+        """Порт статистики сервера страны: следом за основным, по номеру в диапазоне портов."""
+        return self.stats_port + 1 + (port - self.extra_ports.start)
+
+    def stats_ports(self) -> list[int]:
+        ports = [self.stats_port]
+        if self.extra_ports:
+            ports += [self.loc_stats_port(p) for p in sorted(self.locs.values())]
+        return ports
+
+    def link(self, sid: int, name: str, port: int | None = None) -> str:
         q = f"sni={quote(self.sni)}&insecure=1"
         if self.pin:
             q += f"&pinSHA256={self.pin}"
         if self.obfs_password:
             q += f"&obfs=salamander&obfs-password={quote(self.obfs_password)}"
-        return f"hysteria2://{self.password(sid)}@{self.host}:{self.port}/?{q}#{quote(name)}"
+        return f"hysteria2://{self.password(sid)}@{self.host}:{port or self.port}/?{q}#{quote(name)}"
 
     # ---------- проверка ключа по запросу сервера Hysteria ----------
 
@@ -122,11 +138,11 @@ class Hysteria:
 
     # ---------- API статистики сервера Hysteria ----------
 
-    async def _api(self, method: str, path: str, body=None, timeout: float = 5.0):
+    async def _api(self, method: str, path: str, body=None, timeout: float = 5.0, port: int | None = None):
         """Запрос к API статистики. None — сервер Hysteria не ответил."""
         try:
             reader, writer = await asyncio.wait_for(
-                asyncio.open_connection("127.0.0.1", self.stats_port), timeout)
+                asyncio.open_connection("127.0.0.1", port or self.stats_port), timeout)
         except (OSError, asyncio.TimeoutError):
             return None
         try:
@@ -152,35 +168,89 @@ class Hysteria:
         except ValueError:
             return None
 
+    async def _all(self, method: str, path: str, body=None) -> list:
+        """Тот же запрос ко всем серверам Hysteria: основному и серверам других стран."""
+        res = await asyncio.gather(*(self._api(method, path, body, port=p) for p in self.stats_ports()))
+        return [r for r in res if isinstance(r, (dict, list))]
+
     async def traffic(self, clear: bool = True) -> dict[int, tuple[int, int]] | None:
         """Трафик по подпискам с прошлого запроса: {номер: (отдано, получено)}."""
-        res = await self._api("GET", "/traffic?clear=1" if clear else "/traffic")
-        if not isinstance(res, dict):
+        answers = await self._all("GET", "/traffic?clear=1" if clear else "/traffic")
+        if not answers:
             return None
-        out = {}
-        for ident, v in res.items():
-            m = ID_RE.match(str(ident))
-            if m and isinstance(v, dict):
-                out[int(m.group(1))] = (int(v.get("tx") or 0), int(v.get("rx") or 0))
+        out: dict[int, tuple[int, int]] = {}
+        for res in answers:
+            for ident, v in (res.items() if isinstance(res, dict) else []):
+                m = ID_RE.match(str(ident))
+                if m and isinstance(v, dict):
+                    up, down = out.get(int(m.group(1)), (0, 0))
+                    out[int(m.group(1))] = (up + int(v.get("tx") or 0), down + int(v.get("rx") or 0))
         return out
 
     async def online(self) -> dict[int, int] | None:
         """Сколько подключений сейчас у каждой подписки: обычно одно на устройство."""
-        res = await self._api("GET", "/online")
-        if not isinstance(res, dict):
+        answers = await self._all("GET", "/online")
+        if not answers:
             return None
-        out = {}
-        for ident, n in res.items():
-            m = ID_RE.match(str(ident))
-            if m:
-                out[int(m.group(1))] = int(n or 0)
+        out: dict[int, int] = {}
+        for res in answers:
+            for ident, n in (res.items() if isinstance(res, dict) else []):
+                m = ID_RE.match(str(ident))
+                if m:
+                    out[int(m.group(1))] = out.get(int(m.group(1)), 0) + int(n or 0)
         return out
 
     async def kick(self, sids) -> bool:
         ids = [f"u{s}" for s in sids]
         if not ids:
             return True
-        return await self._api("POST", "/kick", ids) is not None
+        return bool(await self._all("POST", "/kick", ids))
+
+    # ---------- серверы других стран ----------
+
+    def location_config(self, port: int, proxy: str, relay: tuple[int, str, str] | None = None) -> str:
+        """Конфиг сервера Hysteria для страны. relay: (порт, логин, пароль) ретранслятора авто-стран,
+        иначе трафик идёт через купленный прокси proxy."""
+        q = json.dumps
+        if relay:
+            out = ["  - name: out", "    type: socks5", "    socks5:",
+                   f"      addr: {q(f'127.0.0.1:{relay[0]}')}",
+                   f"      username: {q(relay[1])}", f"      password: {q(relay[2])}"]
+            udp_ok = False  # ретранслятор и публичные прокси UDP не пересылают
+        else:
+            u = urlparse(proxy.strip())
+            if u.scheme in ("socks5", "socks"):
+                out = ["  - name: out", "    type: socks5", "    socks5:",
+                       f"      addr: {q(f'{u.hostname}:{u.port}')}"]
+                if u.username:
+                    out += [f"      username: {q(unquote(u.username))}",
+                            f"      password: {q(unquote(u.password or ''))}"]
+                udp_ok = True
+            else:
+                out = ["  - name: out", "    type: http", "    http:", f"      url: {q(proxy.strip())}"]
+                udp_ok = False  # HTTP-прокси UDP не умеет
+        acl = ["reject(10.0.0.0/8)", "reject(172.16.0.0/12)", "reject(192.168.0.0/16)",
+               "reject(127.0.0.0/8)", "reject(169.254.0.0/16)"]
+        if not udp_ok:
+            # Запросы DNS уходят с сервера, остальной UDP отклоняется: приложения переходят на TCP.
+            acl += ["direct(all, udp/53)", "reject(all, udp)"]
+        acl += ["out(all)"]
+        lines = [
+            "# Создано ботом Aurora VPN: сервер Hysteria2 для одной страны. Не правьте вручную.",
+            f"listen: :{port}",
+            "tls:", f"  cert: {q(self.cert_path)}", f"  key: {q(self.cert_path[:-4] + '.key')}",
+            "  sniGuard: disable",
+            "auth:", "  type: http", "  http:", f"    url: {q(f'http://127.0.0.1:{self.auth_port}/auth')}",
+            "masquerade:", "  type: proxy", "  proxy:", f"    url: {q(f'https://{self.sni}/')}",
+            "    rewriteHost: true",
+            "trafficStats:", f"  listen: {q(f'127.0.0.1:{self.loc_stats_port(port)}')}",
+            f"  secret: {q(self.stats_secret)}",
+            "outbounds:", *out, "  - name: direct", "    type: direct",
+            "acl:", "  inline:", *[f"    - {q(r)}" for r in acl],
+        ]
+        if self.obfs_password:
+            lines += ["obfs:", "  type: salamander", "  salamander:", f"    password: {q(self.obfs_password)}"]
+        return "\n".join(lines) + "\n"
 
 
 def _dechunk(data: bytes) -> bytes:

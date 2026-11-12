@@ -41,16 +41,18 @@ if cmd == "adu":
     for f in pos:
         for inb in json.load(open(f))["inbounds"]:
             for c in inb["settings"]["clients"]:
-                if c["email"] in st["users"]:
+                key = c["email"] if inb["tag"] == "in" else inb["tag"] + ":" + c["email"]  # у входа свой список
+                if key in st["users"]:
                     print("User already exists")
                 else:
-                    st["users"].append(c["email"]); n += 1
+                    st["users"].append(key); n += 1
     save(); print(f"Added {n} user(s) in total.")
 elif cmd == "rmu":
-    if flags.get("tag") != "in": print("no tag"); sys.exit(1)
+    if not flags.get("tag"): print("no tag"); sys.exit(1)
     n = 0
     for e in pos:
-        if e in st["users"]: st["users"].remove(e); n += 1
+        key = e if flags["tag"] == "in" else flags["tag"] + ":" + e
+        if key in st["users"]: st["users"].remove(key); n += 1
     save(); print(f"Removed {n} user(s) in total.")
 elif cmd == "statsquery":
     out = [{"name": f"user>>>{e}>>>traffic>>>{d}", "value": v}
@@ -80,13 +82,13 @@ class Base(unittest.IsolatedAsyncioTestCase):
         self.restarts = os.path.join(self.d, "restarts")
         self.v = self.make()
 
-    def make(self, hy2=None):
+    def make(self, hy2=None, **kw):
         return xp.XrayProvider(
             state_path=os.path.join(self.d, "vpn.json"), config_path=os.path.join(self.d, "config.json"),
             xray_bin=self.bin, public_host="203.0.113.7", port=443, sni="www.example.com",
             private_key="PRIV", public_key="PUB", short_id="00ff", sub_port=0, brand="Aurora VPN",
             default_location="🇸🇪 Швеция", restart_cmd=("sh", "-c", f"echo x >> {self.restarts}"),
-            hy2=hy2)
+            hy2=hy2, **kw)
 
     def fake(self) -> dict:
         with open(os.path.join(self.d, "xray-state.json")) as f:
@@ -319,6 +321,94 @@ class Hy2(Base):
         self.v.hy2.stats_secret = "nope"
         self.assertIsNone(await self.v.hy2.traffic())
         self.assertIsNone(await self.v.hy2.online())
+
+
+class XhttpAndCountries(Base):
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.stats = await FakeHysteriaStats().start()
+        cert = os.path.join(self.d, "server.crt")
+        with open(cert, "w") as f:
+            f.write(CERT)
+        self.units = os.path.join(self.d, "units.log")
+        sysctl = os.path.join(self.d, "systemctl")
+        with open(sysctl, "w") as f:
+            f.write(f'#!/bin/sh\necho "$@" >> {self.units}\n')
+        os.chmod(sysctl, 0o755)
+        self.hydir = os.path.join(self.d, "hy")
+        self.v = self.make(
+            hy2={"port": 443, "cert_path": cert, "sni": "www.example.com", "auth_port": 0,
+                 "stats_port": self.stats.port, "stats_secret": "statsec"},
+            hy2_extra={"ports": range(30000, 30003), "dir": self.hydir, "unit": "hysteria-loc@",
+                       "systemctl": (sysctl,)},
+            xhttp_port=8443, hy2_first=True)
+
+    async def asyncTearDown(self):
+        self.stats.server.close()
+
+    def unit_log(self) -> list[str]:
+        if not os.path.exists(self.units):
+            return []
+        with open(self.units) as f:
+            return f.read().split("\n")[:-1]
+
+    async def test_xhttp_inbound_and_hot_keys_in_both(self):
+        await self.started()
+        cfg = self.v.build_config()
+        xh = next(i for i in cfg["inbounds"] if i["tag"] == "in-xh")
+        self.assertEqual((xh["port"], xh["streamSettings"]["network"], xh["streamSettings"]["security"]),
+                         (8443, "xhttp", "reality"))
+        self.assertTrue(all("flow" not in c for c in xh["settings"]["clients"]), "Vision с XHTTP не работает")
+        self.assertEqual(xh["streamSettings"]["xhttpSettings"]["path"], self.v.xhttp_path)
+        await self.v.issue(2, time.time() + 3600)
+        self.assertEqual(self.n_restarts(), 1, "ключ попал в оба входа без перезапуска")
+        self.assertIn("u2.main", self.fake()["users"])
+        self.assertIn("in-xh:u2.main", self.fake()["users"])
+        await self.v.revoke(2)
+        self.assertFalse([u for u in self.fake()["users"] if "u2." in u])
+        self.assertFalse(self.v._apply_pending())
+
+    async def test_every_country_gets_hysteria_and_hysteria_goes_first(self):
+        self.v.add_location("nl", "🇳🇱 Нидерланды", "socks5://u:p@1.2.3.4:1080")
+        self.v.add_location("us", "🇺🇸 США", "http://5.6.7.8:3128")
+        self.v.set_auto_location("de", "🇩🇪 Германия", ["socks5://9.9.9.9:1080"], apply=False)
+        await self.v._pending
+        self.assertEqual(self.v.hy2.locs, {"nl": 30000, "us": 30001, "de": 30002})
+        with open(os.path.join(self.hydir, "loc-nl.yaml")) as f:
+            nl = f.read()
+        self.assertIn('addr: "1.2.3.4:1080"', nl)
+        self.assertIn('username: "u"', nl)
+        with open(os.path.join(self.hydir, "loc-de.yaml")) as f:
+            de = f.read()
+        self.assertIn(f'addr: "127.0.0.1:{self.v.relay_port}"', de, "авто-страна идёт через ретранслятор")
+        self.assertIn('"reject(all, udp)"', de)
+        with open(os.path.join(self.hydir, "loc-us.yaml")) as f:
+            self.assertIn("type: http", f.read())
+        self.assertIn("restart hysteria-loc@nl", self.unit_log())
+
+        await self.v.issue(1, time.time() + 3600)
+        links = self.v.links(1)
+        schemes = [urlparse(l).scheme for l in links]
+        self.assertEqual(schemes[:4], ["hysteria2"] * 4, "Hysteria2 первым")
+        ports = [urlparse(l).port for l in links[:4]]
+        self.assertEqual(ports, [443, 30000, 30001, 30002])
+        xh = [l for l in links if "type=xhttp" in l]
+        self.assertEqual(len(xh), 4)
+        self.assertEqual(urlparse(xh[0]).port, 8443)
+        self.assertEqual(parse_qs(urlparse(xh[0]).query)["path"], [self.v.xhttp_path])
+
+        # повторное применение без изменений не перезапускает серверы стран
+        n = len(self.unit_log())
+        await self.v.apply()
+        self.assertEqual(len(self.unit_log()), n)
+        # страна удалена: её сервер остановлен, порт освобождён
+        self.v.remove_location("nl")
+        await self.v._pending
+        self.assertIn("disable --now hysteria-loc@nl", self.unit_log())
+        self.assertFalse(os.path.exists(os.path.join(self.hydir, "loc-nl.yaml")))
+        self.assertNotIn("nl", self.v.hy2.locs)
+        # статистика собирается и с серверов стран
+        self.assertEqual(self.v.hy2.stats_ports(), [self.stats.port, self.stats.port + 2, self.stats.port + 3])
 
 
 class Guard(unittest.TestCase):

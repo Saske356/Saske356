@@ -334,6 +334,26 @@ LimitNOFILE=65536
 [Install]
 WantedBy=multi-user.target
 EOF
+    # Серверы Hysteria2 для других стран: конфиги пишет бот (loc-КОД.yaml), он же включает службы.
+    cat > /etc/systemd/system/hysteria-loc@.service <<EOF
+[Unit]
+Description=Hysteria2 server for country %i (Aurora VPN)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=hysteria
+ExecStart=$HY_BIN server -c $HY_DIR/loc-%i.yaml
+Restart=always
+RestartSec=3
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
     systemctl daemon-reload
     systemctl enable -q hysteria-server
     systemctl restart hysteria-server
@@ -394,7 +414,13 @@ systemctl restart aurora-bot
 if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
   ufw allow 443/tcp >/dev/null
   ufw allow "$SUB_PORT"/tcp >/dev/null
-  if [ "$HY_OK" = 1 ]; then ufw allow "$(envget HY2_PORT)"/udp >/dev/null; fi
+  if [ "$HY_OK" = 1 ]; then
+    ufw allow "$(envget HY2_PORT)"/udp >/dev/null
+    HY_EXTRA=$(envget HY2_EXTRA_PORTS); HY_EXTRA=${HY_EXTRA:-30000-30049}
+    [ "$HY_EXTRA" = 0 ] || ufw allow "${HY_EXTRA/-/:}"/udp >/dev/null
+  fi
+  XH_PORT=$(envget XRAY_XHTTP_PORT); XH_PORT=${XH_PORT:-8443}
+  [ "$XH_PORT" = 0 ] || ufw allow "$XH_PORT"/tcp >/dev/null
 fi
 
 say "Проверка"

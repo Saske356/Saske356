@@ -33,7 +33,14 @@ SOURCES = [
                     "?request=display_proxies&proxy_format=protocolipport&format=json"),
     ("geonode", "https://proxylist.geonode.com/api/proxy-list?limit=500&page=1"
                 "&sort_by=lastChecked&sort_type=desc"),
+    # Страну этот список не сообщает: бот узнаёт её сам, проверяя прокси (см. UNKNOWN).
+    ("socks5proxies", "https://api.socks5proxies.com/api/proxies/export/csv?protocol=socks5&limit=5000"),
 ]
+
+# Ключ для прокси без страны в списке. Такие прокси проверяются отдельно, и страна
+# берётся из того, откуда прокси на самом деле выходит в интернет.
+UNKNOWN = "??"
+MAX_UNKNOWN = 200
 
 CACHE_TTL = 900
 MAX_PER_COUNTRY = 150
@@ -82,7 +89,11 @@ def _add(pool: dict, cc, proto, ip, port, uptime=None) -> None:
     """Запоминает прокси с оценкой: чем выше доля успешных проверок у источника и чем больше
     источников его знают, тем раньше мы его попробуем. Так нужно меньше попыток."""
     proto, cc = (proto or "").lower(), (cc or "").lower()
-    if proto not in ALLOWED or len(cc) != 2 or not cc.isalpha() or not ip or not str(port).isdigit():
+    if not cc:
+        cc = UNKNOWN
+    if proto not in ALLOWED or not ip or not str(port).isdigit():
+        return
+    if cc != UNKNOWN and (len(cc) != 2 or not cc.isalpha()):
         return
     try:
         quality = min(max(float(uptime or 0), 0.0), 100.0) / 100
@@ -112,20 +123,36 @@ def _parse_geonode(data, pool) -> None:
             _add(pool, p.get("country"), proto, p.get("ip"), p.get("port"), p.get("upTime"))
 
 
-PARSERS = {"proxifly": _parse_proxifly, "proxyscrape": _parse_proxyscrape, "geonode": _parse_geonode}
+def _parse_socks5proxies(text, pool) -> None:
+    """CSV: ip,port,country_code,...,protocols,anonymity,uptime,delay_ms,last_seen."""
+    import csv
+    import io
+    for p in csv.DictReader(io.StringIO(text)):
+        protos = (p.get("protocols") or "").upper().split("|")
+        if "SOCKS5" in protos:
+            _add(pool, p.get("country_code"), "socks5", p.get("ip"), p.get("port"), p.get("uptime"))
+
+
+PARSERS = {"proxifly": _parse_proxifly, "proxyscrape": _parse_proxyscrape, "geonode": _parse_geonode,
+           "socks5proxies": _parse_socks5proxies}
+TEXT_SOURCES = {"socks5proxies"}  # отдают не JSON, а текст
+
+
+def _fetch_text(url: str, timeout: float = 25.0) -> str:
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read().decode("utf-8", "replace")
 
 
 def _fetch_json(url: str, timeout: float = 25.0):
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8", "replace"))
+    return json.loads(_fetch_text(url, timeout))
 
 
 def _collect() -> dict[str, list[str]]:
     pool: dict[str, dict] = {}
     for name, url in SOURCES:
         try:
-            PARSERS[name](_fetch_json(url), pool)
+            PARSERS[name](_fetch_text(url) if name in TEXT_SOURCES else _fetch_json(url), pool)
         except Exception as e:
             log.warning("источник прокси %s недоступен: %s", name, e)
     out = {}
@@ -133,7 +160,7 @@ def _collect() -> dict[str, list[str]]:
         lst = list(urls)
         random.shuffle(lst)                      # при равной оценке порядок случайный
         lst.sort(key=lambda u: -urls[u])
-        out[cc] = lst[:MAX_PER_COUNTRY]
+        out[cc] = lst[:MAX_UNKNOWN if cc == UNKNOWN else MAX_PER_COUNTRY]
     log.info("публичные прокси: %d стран, %d адресов", len(out), sum(len(v) for v in out.values()))
     return out
 

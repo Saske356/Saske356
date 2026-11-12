@@ -1654,7 +1654,9 @@ def locations_text() -> str:
         how = "через прокси" if l["proxy"] else "напрямую с сервера"
         tag = " · 🤖 авто" if l.get("auto") else ""
         state = " · ❌ прокси не отвечает, скрыта" if l.get("down") else ""
-        lines.append(f"◆ <code>{esc(l['code'])}</code> · {esc(l['name'])} · <i>{how}</i>{tag}{state}")
+        hy_port = vpn._hy2_port(l) if hasattr(vpn, "_hy2_port") else None
+        hy = f" · ⚡ UDP {hy_port}" if hy_port else ""
+        lines.append(f"◆ <code>{esc(l['code'])}</code> · {esc(l['name'])} · <i>{how}</i>{tag}{hy}{state}")
     bridges = [f"◆ <code>{esc(b['code'])}</code> · {esc(b['name'])} · {esc(b['host'])}:{b['port']}"
                + (f" · маскировка {esc(b['sni'])}" if b["sni"] else "")
                for b in getattr(vpn, "bridges", [])]
