@@ -1653,6 +1653,22 @@ def code_version() -> tuple[str, str]:
     return (out[0].strip(), out[1].strip()) if len(out) == 2 and out[0].strip() else ("", "")
 
 
+async def remote_version() -> str:
+    """Последний коммит ветки сервера на GitHub (пусто, если узнать не вышло)."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    branch = os.environ.get("AURORA_BRANCH", "")
+    if not branch:
+        return ""
+    try:
+        proc = await asyncio.create_subprocess_exec("git", "-C", root, "ls-remote", "origin", f"refs/heads/{branch}",
+                                                    stdout=asyncio.subprocess.PIPE,
+                                                    stderr=asyncio.subprocess.DEVNULL)
+        out, _ = await asyncio.wait_for(proc.communicate(), 20)
+    except (OSError, asyncio.TimeoutError):
+        return ""
+    return out.decode().split()[0] if out.strip() else ""
+
+
 VERSION_FILE = os.path.join(os.path.dirname(config.DB_PATH), ".running_version")
 
 
@@ -1682,6 +1698,13 @@ async def update_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await update.effective_chat.send_message(
             "Автообновление ещё не настроено: один раз запустите установщик из Termius.")
         return
+    sha, title = code_version()
+    remote = await remote_version()
+    if remote and remote == sha:
+        await update.effective_chat.send_message(
+            f"✅ Уже стоит последняя версия: <b>{esc(title)}</b> <code>{sha[:7]}</code>\n"
+            "Новых изменений нет. Как только они появятся, сервер обновится сам в течение 10 минут.")
+        return
     proc = await asyncio.create_subprocess_exec("systemctl", "start", "--no-block", "aurora-update.service",
                                                 stdout=asyncio.subprocess.DEVNULL,
                                                 stderr=asyncio.subprocess.PIPE)
@@ -1689,10 +1712,9 @@ async def update_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if proc.returncode:
         await update.effective_chat.send_message(f"Не удалось запустить обновление: {esc(err.decode()[-300:])}")
         return
-    sha, _ = code_version()
     await update.effective_chat.send_message(
-        f"🔄 Проверяю обновления (сейчас <code>{sha[:7] or '?'}</code>). Если есть новый код, сервер "
-        "поставит его за пару минут, бот перезапустится и напишет, что обновился.")
+        f"🔄 Есть новая версия <code>{(remote or '?')[:7]}</code> (сейчас <code>{sha[:7] or '?'}</code>). "
+        "Ставлю: это займёт пару минут, бот перезапустится и напишет «Сервер обновился сам».")
 
 
 @admin_only
