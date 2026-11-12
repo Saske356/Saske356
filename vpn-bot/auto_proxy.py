@@ -22,8 +22,10 @@ POOL_SIZE = 3            # рабочий прокси + запасные на �
 BAD_DEAD = 6 * 3600      # сколько не возвращаемся к прокси, который умер в работе
 BAD_CANDIDATE = 1800     # сколько не перепроверяем кандидата, не прошедшего проверку
 EXTRA_ATTEMPTS = 5       # сколько лишних стран пробуем за цикл в режиме подбора
-PROBE_BUDGET = 60        # сколько новых прокси можно проверить за один цикл
+PROBE_BUDGET = 150       # сколько новых прокси можно проверить за один цикл
 PER_COUNTRY = 12         # и сколько из них на одну страну
+PARALLEL = 4             # сколько стран ищется одновременно (по 6 проверок у каждой)
+SPARE_TTL = 3600         # сколько помнить рабочий прокси, найденный «не в своей» стране
 HIDE_LIMIT = 6 * 3600    # при подборе страна без прокси столько ждёт, потом уступает место другой
 SLOW_MS = 1500           # рабочий прокси медленнее этого и вдвое медленнее запасного уступает ему
 REP_LIMIT = 5000         # сколько прокси помнить в репутации
@@ -46,6 +48,9 @@ class AutoProxy:
         self.last_run = 0.0
         self.budget = PROBE_BUDGET
         self.last_note = ""
+        # Рабочие прокси, которые списки записали не в ту страну: {страна: {url: (мс, до)}}.
+        self.spare: dict[str, dict[str, tuple[int, float]]] = {}
+        self.rot = 0  # сдвиг очереди стран: каждый цикл первыми пробуются другие
 
     async def start(self) -> bool:
         ok = await self.relay.start()
@@ -107,23 +112,41 @@ class AutoProxy:
         # Порядок из списков сохраняется, но проверенные нами хорошие идут раньше, плохие позже.
         return sorted(urls, key=lambda u: -self.rep.get(u, 0.0))
 
+    def _keep_strays(self, strays: dict) -> None:
+        until = time.time() + SPARE_TTL
+        for cc, found in strays.items():
+            for u, ms in found:
+                self.spare.setdefault(cc, {})[u] = (ms, until)
+                self._score(u, 1)
+
     async def _find(self, pool: dict, cc: str, need: int, exclude=()) -> list[tuple[str, int]]:
+        # Сначала рабочие прокси этой страны, найденные при поиске других стран: их достаточно
+        # быстро перепроверить. Потом новые кандидаты из списков.
+        now, skip = time.time(), set(exclude)
+        spare = [u for u, (_, t) in sorted(self.spare.get(cc, {}).items(), key=lambda kv: kv[1][0])
+                 if t > now and u not in skip and self.bad.get(u, 0) < now]
+        self.spare.pop(cc, None)
+        found = await self._alive(spare[:need + 1], cc) if spare else []
+        if len(found) >= need:
+            return sorted(found, key=lambda x: x[1])[:need]
         # Проверка идёт понемногу: сотни подключений к чужим адресам подряд хостинг может
         # принять за сканирование сети и ограничить сервер.
         tries = min(PER_COUNTRY, self.budget)
         if tries <= 0:
-            return []
-        urls = self._candidates(pool, cc, exclude)[:tries]
+            return found
+        urls = self._candidates(pool, cc, skip | set(spare))[:tries]
         self.budget -= len(urls)
         failed: set[str] = set()
-        found = await pp.pick_working(urls, cc, need, tries=tries, failed=failed)
+        strays: dict = {}
+        found += await pp.pick_working(urls, cc, need - len(found), tries=tries, failed=failed, strays=strays)
         until = time.time() + BAD_CANDIDATE
         for u in failed:
             self.bad[u] = until
             self._score(u, -1)
         for u, _ in found:
             self._score(u, 1)
-        return found
+        self._keep_strays(strays)
+        return sorted(found, key=lambda x: x[1])
 
     async def _alive(self, urls: list[str], cc: str) -> list[tuple[str, int]]:
         async def one(u):
@@ -169,6 +192,8 @@ class AutoProxy:
         self.last_note = "" if pool else "открытые списки прокси сейчас недоступны"
         now = time.time()
         self.bad = {u: t for u, t in self.bad.items() if t > now}
+        self.spare = {cc: kept for cc, urls in self.spare.items()
+                      if (kept := {u: v for u, v in urls.items() if v[1] > now and self.bad.get(u, 0) < now})}
 
         targets, discovery = self._targets(pool)
         maxn = max(1, int(vpn.auto.get("max") or 8))
@@ -216,17 +241,32 @@ class AutoProxy:
                 if vpn.remove_location(cc, apply=False):
                     removed.append(cc)
 
-        # 3) недостающие страны
+        # 3) недостающие страны. Раньше каждый цикл весь лимит проверок съедали одни и те же
+        # первые страны очереди, и до остальных дело не доходило. Теперь: сначала страны, для
+        # которых уже есть найденные прокси, остальные — со сдвигом, который растёт каждый цикл;
+        # несколько стран ищутся одновременно.
         have = {l["code"] for l in vpn.auto_locations()}
-        attempts = 0
-        for cc in targets:
-            if cc in have:
-                continue
-            if discovery:
-                if len(have) >= maxn or attempts >= maxn - len(have) + EXTRA_ATTEMPTS:
-                    break
-                attempts += 1
-            found = await self._find(pool, cc, POOL_SIZE)
+        missing = [cc for cc in targets if cc not in have]
+        if discovery:
+            skip = vpn.manual_codes() | set(vpn.auto.get("exclude") or [])
+            missing += [cc for cc in self.spare if cc not in have and cc not in skip and cc not in missing]
+        ready = [cc for cc in missing if self.spare.get(cc)]
+        rest = [cc for cc in missing if cc not in ready]
+        if rest:
+            k = self.rot % len(rest)
+            rest = rest[k:] + rest[:k]
+        self.rot += max(1, PROBE_BUDGET // PER_COUNTRY)
+        queue = ready + rest
+        if discovery:
+            queue = queue[:max(0, maxn - len(have)) + EXTRA_ATTEMPTS] if len(have) < maxn else []
+        sem = asyncio.Semaphore(PARALLEL)
+
+        async def search(cc):
+            async with sem:
+                return cc, await self._find(pool, cc, POOL_SIZE)
+        for cc, found in await asyncio.gather(*(search(cc) for cc in queue)):
+            if discovery and len(have) >= maxn:
+                break
             if found and vpn.set_auto_location(cc, nm(cc), [u for u, _ in found], ms=found[0][1], apply=False):
                 added.append(cc)
                 have.add(cc)

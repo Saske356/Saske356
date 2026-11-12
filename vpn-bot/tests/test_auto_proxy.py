@@ -644,8 +644,45 @@ class ManagerTests(Base):
             await mgr.refresh()
         finally:
             pp.probe = real
-        self.assertEqual(len(probed), auto_proxy.PROBE_BUDGET)
+        self.assertLessEqual(len(probed), auto_proxy.PROBE_BUDGET)
         self.assertEqual(len(set(probed)), len(probed))
+        # лимит не съедают первые страны очереди: проверку получает каждая
+        tried = {(int(u.rsplit(":", 1)[1]) - 1000) // 50 for u in probed}
+        self.assertEqual(tried, set(range(len(codes))))
+
+    async def test_queue_rotates_and_budget_runs_out(self):
+        import auto_proxy
+        codes = [f"c{i}" for i in range(20)]
+        self.pool = {cc: [f"socks5://127.0.0.1:{2000 + i * 50 + n}" for n in range(40)]
+                     for i, cc in enumerate(codes)}
+        mgr = await self.manager(countries=tuple(codes))
+        probed, real = [], pp.probe
+
+        async def counting(url, timeout=6.0):
+            probed.append(url)
+            return None
+        pp.probe = counting
+        try:
+            await mgr.refresh()
+            first = {(int(u.rsplit(":", 1)[1]) - 2000) // 50 for u in probed}
+            probed.clear()
+            await mgr.refresh()
+            second = {(int(u.rsplit(":", 1)[1]) - 2000) // 50 for u in probed}
+        finally:
+            pp.probe = real
+        self.assertLessEqual(len(first), auto_proxy.PROBE_BUDGET // auto_proxy.PER_COUNTRY + 1)
+        self.assertTrue(second - first, "во втором цикле пробуются другие страны")
+
+    async def test_proxy_from_another_country_is_kept_for_it(self):
+        # список записал прокси в Нидерланды, а выходит он из Германии: Германии он и достаётся
+        de = await self.proxy("socks5", "de")
+        self.pool = {"nl": [de.url], "de": []}
+        mgr = await self.manager(countries=("nl", "de"))
+        await mgr.refresh()
+        self.assertEqual([l["code"] for l in self.vpn.auto_locations()], [])
+        self.assertIn(de.url, mgr.spare["de"])
+        await mgr.refresh()
+        self.assertEqual([(l["code"], l["proxy"]) for l in self.vpn.auto_locations()], [("de", de.url)])
 
     async def test_tick_notifies_only_when_enabled(self):
         nl = await self.proxy("socks5", "nl")

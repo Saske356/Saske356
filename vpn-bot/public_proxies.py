@@ -438,9 +438,11 @@ async def direct_ok(timeout: float = 8.0) -> bool:
 
 async def pick_working(urls, country: str, need: int = 1, *, timeout: float = 6.0,
                        concurrency: int = 6, tries: int = 12,
-                       failed: set | None = None) -> list[tuple[str, int]]:
+                       failed: set | None = None, strays: dict | None = None) -> list[tuple[str, int]]:
     """Ищет среди кандидатов прокси, которые работают и выходят из нужной страны.
-    Возвращает до need штук (url, мс), самые быстрые первыми. В failed попадают непрошедшие."""
+    Возвращает до need штук (url, мс), самые быстрые первыми. В failed попадают непрошедшие.
+    strays: рабочий и быстрый прокси, который выходит из другой страны (списки часто ошибаются
+    со страной), не выбрасывается, а попадает сюда: {страна: [(url, мс), ...]}."""
     urls = list(urls)[:tries]
     if not urls or need < 1:
         return []
@@ -450,7 +452,7 @@ async def pick_working(urls, country: str, need: int = 1, *, timeout: float = 6.
         async with sem:
             res = await probe(u, timeout)
             # Второе подключение заодно подтверждает, что прокси не случайно ответил один раз.
-            if res and res.country == country and res.ms <= MAX_MS:
+            if res and res.ms <= MAX_MS and (res.country == country or strays is not None):
                 kbps = await speed(u, timeout)
                 if kbps is None or kbps < MIN_KBPS:
                     log.info("прокси %s отброшен: скорость %s КБ/с", u, kbps)
@@ -466,6 +468,8 @@ async def pick_working(urls, country: str, need: int = 1, *, timeout: float = 6.
                 good.append((u, res.ms))
                 if len(good) > need:  # один запасной, чтобы было из чего выбрать быстрый
                     break
+            elif res and res.ms <= MAX_MS and strays is not None:
+                strays.setdefault(res.country, []).append((u, res.ms))
             elif failed is not None:
                 failed.add(u)
     finally:
