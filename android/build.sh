@@ -8,7 +8,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 WORK="${1:-$HERE/build}"
 OUT="$HERE/out"
 # shellcheck disable=SC1091
-source <(grep -E '^[A-Z_]+=' "$HERE/UPSTREAM")
+source <(grep -E '^[A-Z0-9_]+=' "$HERE/UPSTREAM")
 : "${ANDROID_HOME:?нужен ANDROID_HOME}" "${NDK_HOME:?нужен NDK_HOME}"
 
 if [ ! -d "$WORK/.git" ] || [ "$(git -C "$WORK" rev-parse HEAD)" != "$V2RAYNG_COMMIT" ]; then
