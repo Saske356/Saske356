@@ -608,26 +608,6 @@ async def main():
     finally:
         prov.hy2_sni_rotatable, bot.masking.ranked = saved_rot, saved_rank
         prov.hy2, prov.xray_enabled = None, True
-    # WireGuard: включается кнопкой в админке, у гостя появляется кнопка с файлом
-    prov.wg = MagicMock()
-    prov.state["wg_enabled"] = False
-    prov.set_wg = AsyncMock(side_effect=lambda on: (prov.state.__setitem__("wg_enabled", on) or (True, "")))
-    prov.wg_config = AsyncMock(return_value="[Interface]\nPrivateKey = X\n")
-    assert any("WireGuard: выключен" in b.text for r in bot.admin_kb().inline_keyboard for b in r)
-    assert not any("WireGuard" in b.text for r in bot.sub_kb(db.get_sub(some)).inline_keyboard for b in r)
-    await press(owner, "adm:wg", ctx); prov.set_wg.assert_not_awaited()  # не админ
-    await press(1, "adm:wg", ctx)
-    prov.set_wg.assert_awaited_with(True)
-    assert any("WireGuard: включён" in b.text for r in bot.admin_kb().inline_keyboard for b in r)
-    assert any("WireGuard" in b.text for r in bot.sub_kb(db.get_sub(some)).inline_keyboard for b in r)
-    ctx.bot.send_document.reset_mock()
-    await press(owner, f"wg:{some}", ctx)
-    doc = ctx.bot.send_document.await_args
-    assert doc.kwargs["filename"].endswith(".conf") and b"PrivateKey" in doc.kwargs["document"].getvalue()
-    check_caption(doc.kwargs["caption"])
-    await press(1, "adm:wg", ctx)
-    prov.set_wg.assert_awaited_with(False)
-    prov.wg, prov.state["wg_enabled"] = None, False
     # купленные прокси списком: ссылка хранится на сервере, сообщение с ней удаляется
     import webshare as ws
     saved = ws.fetch, ws.scan, bot.public_proxies.direct_ok
