@@ -82,6 +82,20 @@ def main(root: str) -> None:
         ('"v2rayNG/${BuildConfig.VERSION_NAME}"', '"AuroraVPN/${BuildConfig.VERSION_NAME} v2rayNG/${BuildConfig.VERSION_NAME}"'),
     ])
 
+    # Импорт подписки по ссылке aurora://install-sub:
+    # - повторный импорт той же подписки v2rayNG считает ошибкой («невозможно импортировать»),
+    #   хотя подписка уже на месте, — считаем успехом (дальше она всё равно обновится);
+    # - v2rayNG принимает подписку только по https:// (или http:// на локальный адрес), а бот без
+    #   своего домена раздаёт её по http:// — разрешаем и его.
+    edit(os.path.join(kt, "handler", "AngConfigManager.kt"), [
+        ("            if (it.subscription.url == url) {\n                return 0\n",
+         "            if (it.subscription.url == url) {\n                return 1\n"),
+    ], count_ok=lambda n: n == 1)
+    edit(os.path.join(kt, "util", "Utils.kt"), [
+        ("if (URLUtil.isHttpsUrl(value)) return true",
+         "if (URLUtil.isHttpsUrl(value) || URLUtil.isHttpUrl(value)) return true"),
+    ], count_ok=lambda n: n == 1)
+
     # По умолчанию: после обновления подписки сразу замерить пинг и поставить быстрые сверху.
     for key in ("PREF_AUTO_TEST_AFTER_UPDATE_SUBSCRIPTION", "PREF_AUTO_SORT_AFTER_TEST"):
         pat = re.compile(r"((?:decodeSettingsBool|rememberMmkvBool)\(AppConfig\." + key + r", )false\)")

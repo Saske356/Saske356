@@ -1278,10 +1278,10 @@ class XrayProvider(VpnProvider):
 
     def app_page(self, user_id: int) -> str:
         """Telegram не открывает в кнопках ссылки aurora://, поэтому кнопка ведёт на эту страницу,
-        а уже она открывает приложение."""
+        а уже кнопка на ней открывает приложение. Сама страница приложение не открывает:
+        иначе вместе с нажатием подписка импортировалась дважды."""
         import html as _html
-        raw = self.app_deeplink(user_id)
-        link = _html.escape(raw)
+        link = _html.escape(self.app_deeplink(user_id))
         brand = _html.escape(self.brand)
         return ("<!doctype html><html lang=ru><head><meta charset=utf-8>"
                 "<meta name=viewport content='width=device-width,initial-scale=1'>"
@@ -1295,8 +1295,7 @@ class XrayProvider(VpnProvider):
                 "<p>Нажмите кнопку, и подписка добавится в приложение сама.</p>"
                 f"<a class=b href='{link}'>Открыть в приложении {brand}</a>"
                 "<p>Не открывается? Сначала установите приложение: его присылает бот.</p>"
-                f"</main><script>setTimeout(function(){{location.href={json.dumps(raw)}}},300)</script>"
-                "</body></html>")
+                "</main></body></html>")
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         status, body, headers = "404 Not Found", b"not found", {"Content-Type": "text/plain"}
