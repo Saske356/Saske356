@@ -64,7 +64,7 @@ class XrayProvider(VpnProvider):
                  auto_enabled: bool = False, auto_countries: tuple = (), auto_max: int = 8,
                  relay_port: int = 20808, api_port: int = 10085, bridge_port: int = 8444,
                  xhttp: bool = True, sub_base: str = "", hy2: dict | None = None, hy2_auth_port: int = 20809,
-                 hy2_locs: dict | None = None, wg: dict | None = None,
+                 hy2_locs: dict | None = None, wg: dict | None = None, awg: dict | None = None,
                  xray_enabled: bool = True, sub_domain: str = "", sub_tls_port: int = 443,
                  sub_cert: str = "", sub_key: str = ""):
         self.state_path, self.config_path, self.xray_bin = state_path, config_path, xray_bin
@@ -92,13 +92,17 @@ class XrayProvider(VpnProvider):
         # "stats_base": первый порт статистики, "systemctl": команда}. У каждой страны своя служба
         # aurora-hy2@loc-КОД на своём порту: Hysteria выбирает выход по адресу, а не по клиенту.
         self.hy2_locs = hy2_locs if self.hy2 and self.hy2.get("port") and hy2_locs else None
-        self._wg_cfg = wg  # WireGuard: создаётся после загрузки состояния, включается из /admin
+        # WireGuard и AmneziaWG: создаются после загрузки состояния, каждый включается из /admin
+        self._tun_cfg = {"wg": wg, "awg": awg}
         self.sub_base = sub_base.strip().rstrip("/")
         self.state = self._load(default_location, auto_enabled, list(auto_countries), auto_max)
-        wg_cfg = self._wg_cfg or {}
-        self.wg = WireGuard(host=public_host, state=self.state["wg"], save=self._save,
-                            **{k: v for k, v in wg_cfg.items() if k != "unit"}) if self._wg_cfg else None
-        self.wg_unit = wg_cfg.get("unit", "wg-quick@wg0")
+        self.tunnels: dict[str, WireGuard] = {}
+        self.tun_units: dict[str, str] = {}
+        for kind, cfg in self._tun_cfg.items():
+            if cfg:
+                self.tunnels[kind] = WireGuard(host=public_host, state=self.state[kind], save=self._save,
+                                               **{k: v for k, v in cfg.items() if k != "unit"})
+                self.tun_units[kind] = cfg.get("unit") or ("awg-quick@awg0" if kind == "awg" else "wg-quick@wg0")
         self._pending: asyncio.Task | None = None
         self._server: asyncio.base_events.Server | None = None
         self.on_problem = None      # async-функция(текст): бот подставляет сюда оповещение админов
@@ -131,6 +135,8 @@ class XrayProvider(VpnProvider):
         st.setdefault("hy2_ports", {})   # страна -> UDP-порт её сервера Hysteria
         st.setdefault("wg", {})          # подписка -> ключ WireGuard и адрес во внутренней сети
         st.setdefault("wg_enabled", False)
+        st.setdefault("awg", {})         # то же для AmneziaWG
+        st.setdefault("awg_enabled", False)
         st.setdefault("suspended", {})   # подписка -> до какого времени отключена за превышение
         # Настройки авто-стран берутся из окружения только при первом запуске,
         # дальше ими управляет команда /autoproxy.
@@ -316,40 +322,72 @@ class XrayProvider(VpnProvider):
             self.state["devices"][str(user_id)] = int(devices)
         self._save()
         self.schedule_apply()
-        if self.wg_on and self.allowed(user_id):
-            await self.wg.add(user_id)
+        if self.allowed(user_id):
+            for t in self.tunnels_on():
+                await t.add(user_id)
         return self.sub_url(user_id)
 
     # ---------- WireGuard: включается и выключается из /admin ----------
 
     @property
-    def wg_on(self) -> bool:
-        return bool(self.wg and self.state.get("wg_enabled"))
+    def wg(self) -> WireGuard | None:
+        return self.tunnels.get("wg")
 
-    async def set_wg(self, enabled: bool) -> tuple[bool, str]:
-        """Включает или выключает интерфейс WireGuard на сервере. Возвращает (успех, текст ошибки)."""
-        if not self.wg:
-            return False, "WireGuard не установлен на сервере: запустите установщик этой версии ещё раз."
+    @property
+    def awg(self) -> WireGuard | None:
+        return self.tunnels.get("awg")
+
+    def tun_on(self, kind: str) -> bool:
+        return kind in self.tunnels and bool(self.state.get(f"{kind}_enabled"))
+
+    def tunnels_on(self) -> list[WireGuard]:
+        return [t for k, t in self.tunnels.items() if self.tun_on(k)]
+
+    @property
+    def wg_on(self) -> bool:
+        return self.tun_on("wg")
+
+    @property
+    def awg_on(self) -> bool:
+        return self.tun_on("awg")
+
+    async def set_tunnel(self, kind: str, enabled: bool) -> tuple[bool, str]:
+        """Включает или выключает интерфейс WireGuard (wg) или AmneziaWG (awg). (успех, ошибка)."""
+        name = "AmneziaWG" if kind == "awg" else "WireGuard"
+        if kind not in self.tunnels:
+            return False, f"{name} не установлен на сервере: запустите установщик этой версии ещё раз."
+        unit = self.tun_units[kind]
         if enabled:
-            code, out = await self._run("systemctl", "enable", "--now", self.wg_unit)
+            code, out = await self._run("systemctl", "enable", "--now", unit)
             if code != 0:
                 return False, out[-400:].strip()
-            self.state["wg_enabled"] = True
+            self.state[f"{kind}_enabled"] = True
             self._save()
             await self.sync_wg()
         else:
-            code, out = await self._run("systemctl", "disable", "--now", self.wg_unit)
-            self.state["wg_enabled"] = False
+            await self._run("systemctl", "disable", "--now", unit)
+            self.state[f"{kind}_enabled"] = False
             self._save()
         return True, ""
 
+    async def set_wg(self, enabled: bool) -> tuple[bool, str]:
+        return await self.set_tunnel("wg", enabled)
+
     async def sync_wg(self) -> None:
-        """Ключи WireGuard по активным подпискам. Повторяется раз в 5 минут: после перезагрузки
-        сервера или интерфейса ключи возвращаются сами."""
-        if self.wg_on:
-            now = time.time()
-            await self.wg.sync([int(k) for k, exp in self.state["users"].items()
-                                if exp > now and not self.is_suspended(int(k))])
+        """Ключи WireGuard и AmneziaWG по активным подпискам. Повторяется раз в 5 минут: после
+        перезагрузки сервера или интерфейса ключи возвращаются сами."""
+        now = time.time()
+        active = [int(k) for k, exp in self.state["users"].items() if exp > now and not self.is_suspended(int(k))]
+        for t in self.tunnels_on():
+            await t.sync(active)
+
+    async def tunnel_config(self, kind: str, sid: int, name: str) -> str | None:
+        """Файл настроек для подписки. None — туннель выключен или ключ не создан."""
+        t = self.tunnels.get(kind)
+        if not self.tun_on(kind) or not self.allowed(sid) or not await t.keys(sid):
+            return None
+        await t.add(sid)
+        return t.client_config(sid, name)
 
     def wg_sub_url(self, sid: int) -> str:
         return self.sub_url(sid) + "/wg"
@@ -399,11 +437,7 @@ class XrayProvider(VpnProvider):
         }
 
     async def wg_config(self, sid: int, name: str) -> str | None:
-        """Файл настроек WireGuard для подписки. None — WireGuard выключен или ключ не создан."""
-        if not self.wg_on or not self.allowed(sid) or not await self.wg.keys(sid):
-            return None
-        await self.wg.add(sid)
-        return self.wg.client_config(sid, name)
+        return await self.tunnel_config("wg", sid, name)
 
     async def revoke(self, user_id: int) -> None:
         if self.state["users"].pop(str(user_id), None) is not None:
@@ -413,8 +447,8 @@ class XrayProvider(VpnProvider):
             self.schedule_apply()
             if self.hy2:
                 await self.hy2_kick(user_id)
-            if self.wg_on:
-                await self.wg.remove(user_id)
+            for t in self.tunnels_on():
+                await t.remove(user_id)
 
     async def sync(self, active: dict[int, float], devices: dict[int, int] | None = None) -> None:
         """При запуске бота: сервер получает ровно тех, у кого доступ активен."""
@@ -445,8 +479,8 @@ class XrayProvider(VpnProvider):
         self.schedule_apply()
         if self.hy2:
             await self.hy2_kick(sid)
-        if self.wg_on:
-            await self.wg.remove(sid)
+        for t in self.tunnels_on():
+            await t.remove(sid)
 
     def due_resume(self) -> list[int]:
         """Подписки, у которых отключение закончилось: их пора вернуть."""
@@ -457,8 +491,9 @@ class XrayProvider(VpnProvider):
         if self.state["suspended"].pop(str(sid), None) is not None:
             self._save()
             self.schedule_apply()
-            if self.wg_on and self.allowed(sid):
-                await self.wg.add(sid)
+            if self.allowed(sid):
+                for t in self.tunnels_on():
+                    await t.add(sid)
 
     # ---------- трафик и устройства онлайн ----------
 
@@ -503,8 +538,8 @@ class XrayProvider(VpnProvider):
                     pair = out.setdefault(int(m.group(1)), [0, 0])
                     pair[0] += int(v.get("tx") or 0)
                     pair[1] += int(v.get("rx") or 0)
-        if self.wg_on:
-            for sid, (up, down) in (await self.wg.traffic()).items():
+        for t in self.tunnels_on():
+            for sid, (up, down) in (await t.traffic()).items():
                 pair = out.setdefault(sid, [0, 0])
                 pair[0] += up
                 pair[1] += down
@@ -535,8 +570,8 @@ class XrayProvider(VpnProvider):
                     m = re.fullmatch(r"u(\d+)", str(ident))
                     if m:
                         counts[int(m.group(1))] = counts.get(int(m.group(1)), 0) + int(n or 0)
-        if self.wg_on:
-            more = await self.wg.online()
+        for t in self.tunnels_on():
+            more = await t.online()
             if more is not None:
                 got = True
                 for sid, n in more.items():
@@ -1433,6 +1468,16 @@ def wg_from_env(e) -> dict | None:
             "unit": f"wg-quick@{e.get('WG_IFACE', 'wg0')}"}
 
 
+def awg_from_env(e) -> dict | None:
+    """AmneziaWG: установщик вписывает AWG_PORT, AWG_PUBLIC_KEY и AWG_PARAMS. Пусто — не установлен."""
+    if not (e.get("AWG_PORT") and e.get("AWG_PUBLIC_KEY")):
+        return None
+    iface = e.get("AWG_IFACE", "awg0")
+    return {"port": int(e["AWG_PORT"]), "server_public_key": e["AWG_PUBLIC_KEY"],
+            "params": e.get("AWG_PARAMS", ""), "iface": iface, "net": e.get("AWG_NET", "10.66.0.0/16"),
+            "wg_bin": "awg", "unit": f"awg-quick@{iface}"}
+
+
 def from_env() -> XrayProvider:
     e = os.environ
     need = ["PUBLIC_HOST", "REALITY_PRIVATE_KEY", "REALITY_PUBLIC_KEY", "REALITY_SHORT_ID"]
@@ -1466,6 +1511,7 @@ def from_env() -> XrayProvider:
         hy2_auth_port=int(e.get("HY2_AUTH_PORT", "20809")),
         hy2_locs=hy2_locs_from_env(e),
         wg=wg_from_env(e),
+        awg=awg_from_env(e),
         xray_enabled=e.get("XRAY_ENABLED", "1") == "1",
         sub_domain=e.get("SUB_DOMAIN", ""),
         sub_tls_port=int(e.get("SUB_TLS_PORT") or (443 if e.get("XRAY_ENABLED", "1") == "0" else 2053)),
