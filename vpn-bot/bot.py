@@ -291,6 +291,41 @@ def devices_kb(plan: str, gift: bool, uid: int | None = None) -> InlineKeyboardM
     return InlineKeyboardMarkup(rows)
 
 
+def upgrade_base() -> str:
+    """Тариф, по которому считается доплата за устройства: месячный, а если его нет — первый."""
+    return next((k for k, (_, d, _) in config.PLANS.items() if d == 30), next(iter(config.PLANS)))
+
+
+def upgrade_price(sub, devices: int, now: float | None = None) -> int:
+    """Доплата за переход на большее число устройств до конца срока подписки:
+    разница цены тарифа за оставшиеся дни, не меньше 1 звезды."""
+    plan = upgrade_base()
+    days = config.PLANS[plan][1]
+    per_day = (config.plan_price(plan, devices) - config.plan_price(plan, sub["devices"])) / days
+    left = max(0.0, sub["expires_at"] - (now or time.time())) / DAY
+    return max(1, int(per_day * left + 0.999))
+
+
+def can_upgrade(s) -> bool:
+    # С автопродлением нельзя: ежемесячное списание осталось бы по старой цене.
+    return bool(sub_active(s) and not s["auto_active"] and any(n > s["devices"] for n in config.DEVICE_OPTIONS))
+
+
+def upgrade_text(s) -> str:
+    lines = [f"◆ {plural_dev(n)} · доплата {upgrade_price(s, n)} ⭐" for n in config.DEVICE_OPTIONS
+             if n > s["devices"]]
+    return (f"<b>Устройства в «{esc(s['name'])}»</b>\n<i>Сейчас: {plural_dev(s['devices'])}, "
+            f"ещё {plural_days(days_left(s))}.</i>\n\n<blockquote>{chr(10).join(lines)}</blockquote>\n\n"
+            "Доплата только за оставшиеся дни. Ключ остаётся тем же, новые устройства подключаются сразу.")
+
+
+def upgrade_kb(s) -> InlineKeyboardMarkup:
+    rows = [[B(f"{plural_dev(n)} — {upgrade_price(s, n)} ⭐", f"upd:{s['id']}:{n}")]
+            for n in config.DEVICE_OPTIONS if n > s["devices"]]
+    rows.append([B("‹ Подписка", f"sub:{s['id']}")])
+    return InlineKeyboardMarkup(rows)
+
+
 APPS = {
     "android": ("🤖 Android", "Happ или v2rayNG", "из Google Play"),
     "ios": ("🍏 iPhone и iPad", "Hiddify, Happ или Streisand", "из App Store"),
@@ -393,6 +428,8 @@ def sub_kb(s) -> InlineKeyboardMarkup:
         if android_app:
             rows.append([B(f"⚡ Открыть в приложении {config.BRAND}", url=vpn.app_link(s["id"]))])
     rows.append([B("◆ Продлить", f"ext:{s['id']}"), B("✏️ Переименовать", f"ren:{s['id']}")])
+    if can_upgrade(s):
+        rows.append([B("➕ Добавить устройства", f"up:{s['id']}")])
     if s["auto_active"] and sub_active(s):
         rows.append([B("🔁 Отключить автопродление", f"noauto:{s['id']}")])
     if sub_active(s):
@@ -563,6 +600,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     elif arg.startswith("gift_"):
         await redeem(update, context, arg[5:])
         return
+    elif arg == "renew":  # кнопка «Продлить · устройства» в приложении Aurora VPN
+        subs = db.user_subs(u.id)
+        active = [x for x in subs if sub_active(x)]
+        if len(subs) == 1 or len(active) == 1:
+            s = (active or subs)[0]
+            await show(update, context, sub_text(s), sub_kb(s), banner="key")
+        else:
+            text, kb = subs_view(u.id)
+            await show(update, context, text, kb, banner="key")
+        return
     await show(update, context, main_text(row), main_kb(row))
 
 
@@ -674,7 +721,7 @@ async def send_order(update: Update, context: ContextTypes.DEFAULT_TYPE, kind: s
 def parse_payload(payload: str):
     try:
         v, code, plan, days, price, dev, sub_id, token = payload.split(":")
-        if v != "v2" or code not in ("b", "e", "x", "a", "g"):
+        if v != "v2" or code not in ("b", "e", "x", "a", "g", "u"):
             return None
         return code, plan, int(days), int(price), int(dev), int(sub_id), token
     except ValueError:
@@ -689,6 +736,13 @@ async def precheckout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await q.answer(ok=False, error_message=stale)
         return
     code, plan, days, amount, dev, sub_id, _ = p
+    if code == "u":  # доплата за устройства: подписка та же, число устройств не менялось, сумма не ниже текущей
+        sub = db.get_sub(sub_id)
+        ok = bool(sub and sub["user_id"] == q.from_user.id and q.currency == "XTR" and q.total_amount == amount
+                  and plan == f"up{sub['devices']}" and can_upgrade(sub) and dev in config.DEVICE_OPTIONS
+                  and dev > sub["devices"] and amount >= upgrade_price(sub, dev))
+        await q.answer(ok=ok, error_message=None if ok else stale)
+        return
     current = find_plan(plan, q.from_user.id)
     ok = bool(current and q.currency == "XTR" and current[1] == days and q.total_amount == amount
               and (dev in config.DEVICE_OPTIONS or plan == "test"))
@@ -735,6 +789,28 @@ async def paid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         except TelegramError:
             pass
         await notify_admins(context, f"🔁 Автосписание: {who(u)} · {sp.total_amount} ⭐\n"
+                                     f"charge: <code>{esc(charge)}</code>")
+        return
+
+    if code == "u":
+        sub = db.get_sub(sub_id)
+        if not sub or sub["user_id"] != u.id:
+            log.error("доплата за устройства без подписки: %s", sp.invoice_payload)
+            return
+        if not db.add_payment(u.id, plan, sp.total_amount, 0, charge, "upgrade", sub["id"], dev):
+            return
+        db.set_payment_target(charge, sub["id"])
+        db.run("UPDATE subscriptions SET devices=? WHERE id=?", max(dev, sub["devices"]), sub["id"])
+        sub = await issue_key(sub["id"])
+        await refresh_menu(context, u.id)
+        await show(update, context,
+                   f"<b>Готово: {plural_dev(sub['devices'])}</b>\n\n"
+                   f"◆ «{esc(sub['name'])}» до <b>{fmt_date(sub['expires_at'])}</b>\n"
+                   "Ключ тот же, новые устройства можно подключать сразу.",
+                   KB([B("📲 Подключение", "howto"), B("🗝 Подписка", f"sub:{sub['id']}")], [BACK]),
+                   banner="welcome", effect=CONFETTI)
+        await notify_admins(context, f"➕ Устройства: {who(u)} · «{esc(sub['name'])}» → "
+                                     f"{plural_dev(sub['devices'])} · {sp.total_amount} ⭐\n"
                                      f"charge: <code>{esc(charge)}</code>")
         return
 
@@ -861,6 +937,34 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             return
         await q.answer()
         await choose_payment(update, context, "e", parts[1], sub["devices"], sub["id"])
+        return
+    if parts[0] == "up" and len(parts) == 2:
+        sub = await own_sub(q, uid, parts[1])
+        if not sub:
+            return
+        if not can_upgrade(sub):
+            await q.answer("С автопродлением устройства меняются при новой подписке" if sub["auto_active"]
+                           else "Добавить устройства сейчас нельзя", show_alert=True)
+            return
+        await q.answer()
+        await show(update, context, upgrade_text(sub), upgrade_kb(sub), banner="plans")
+        return
+    if parts[0] == "upd" and len(parts) == 3 and parts[2].isdigit():
+        sub = await own_sub(q, uid, parts[1])
+        if not sub:
+            return
+        n = int(parts[2])
+        if not can_upgrade(sub) or n not in config.DEVICE_OPTIONS or n <= sub["devices"]:
+            await q.answer("Откройте подписку заново", show_alert=True)
+            return
+        await q.answer("Счёт ниже 👇")
+        amount = upgrade_price(sub, n)
+        await context.bot.send_invoice(
+            chat_id=update.effective_chat.id, title=f"{config.BRAND} · устройства",
+            description=f"«{sub['name']}»: {plural_dev(sub['devices'])} → {plural_dev(n)} до "
+                        f"{fmt_date(sub['expires_at'])}.",
+            payload=f"v2:u:up{sub['devices']}:0:{amount}:{n}:{sub['id']}:-", provider_token="",
+            currency="XTR", prices=[LabeledPrice("Устройства", amount)])
         return
     if parts[0] in ("pa", "po") and len(parts) == 5 and parts[2] in config.PLANS:
         kind, plan = parts[1], parts[2]
@@ -1523,7 +1627,8 @@ def payments_view(user_id: int | None = None) -> tuple[str, InlineKeyboardMarkup
         return title + "\n\nПлатежей пока нет.", KB([B("‹ Админ-панель", "adm:stats")])
     lines, buttons = [], []
     for p in pays:
-        name = (config.TEST_PLAN if p["plan"] == "test" else config.PLANS.get(p["plan"], (p["plan"],)))[0]
+        name = (config.TEST_PLAN if p["plan"] == "test" else config.PLANS.get(
+            p["plan"], ("Устройства" if str(p["plan"]).startswith("up") else p["plan"],)))[0]
         mark = "↩️ возвращён" if p["refunded"] else "✅"
         lines.append(f"<b>#{p['id']}</b> · {fmt_date(p['created_at'])} · {who_paid(p)}\n"
                      f"{esc(name)} · {KIND_NAMES.get(p['kind'], p['kind'])} · {p['stars']} ⭐ · {mark}")
@@ -1547,6 +1652,11 @@ async def do_refund(context: ContextTypes.DEFAULT_TYPE, charge: str) -> str:
     except TelegramError as e:
         return f"Telegram не принял возврат: {esc(str(e))}"
     sub = db.mark_refunded(charge)
+    if sub and p["kind"] == "upgrade" and str(p["plan"]).startswith("up") and str(p["plan"])[2:].isdigit():
+        db.run("UPDATE subscriptions SET devices=? WHERE id=?", int(str(p["plan"])[2:]), sub["id"])
+        sub = db.get_sub(sub["id"])
+        if sub_active(sub):
+            sub = await issue_key(sub["id"])
     if sub:
         if p["kind"] in ("auto", "renew") and sub["auto_active"]:
             await cancel_auto(context, sub)

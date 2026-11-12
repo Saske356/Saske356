@@ -258,6 +258,32 @@ async def main():
     assert near(db.get_sub(new["id"])["expires_at"], before + 30 * DAY)
     u = await press(300, f"po:e:m1:3:{new['id']}", ctx); assert alerted(u)
 
+    # 5б. докупить устройства: 3 → 5 до конца срока, доплата только за оставшиеся дни
+    s = db.get_sub(new["id"])
+    assert any("up:" in b.callback_data for r in bot.sub_kb(s).inline_keyboard for b in r if b.callback_data)
+    await press(200, f"up:{new['id']}", ctx)
+    await press(200, f"upd:{new['id']}:5", ctx)
+    kw = ctx.bot.send_invoice.await_args.kwargs
+    p_up = bot.upgrade_price(s, 5)
+    left = (s["expires_at"] - time.time()) / DAY
+    want = (config.plan_price("m1", 5) - config.plan_price("m1", 3)) / 30 * left
+    assert abs(p_up - want) <= 1 and kw["payload"] == f"v2:u:up3:0:{p_up}:5:{new['id']}:-"
+    assert await precheck(200, kw["payload"], p_up, ctx)
+    assert not await precheck(200, kw["payload"].replace(f":{p_up}:", ":1:"), 1, ctx), "дешевле нельзя"
+    assert not await precheck(300, kw["payload"], p_up, ctx), "чужую подписку нельзя"
+    u = await press(200, f"upd:{new['id']}:2", ctx); assert alerted(u), "меньше устройств — не доплата"
+    exp_before = s["expires_at"]
+    await pay(200, ctx, kw["payload"], p_up, "CUP")
+    s = db.get_sub(new["id"])
+    assert s["devices"] == 5 and s["expires_at"] == exp_before
+    assert not await precheck(200, kw["payload"], p_up, ctx), "повторный счёт устарел"
+    assert not bot.can_upgrade(s), "больше 5 устройств вариантов нет"
+    await bot.do_refund(ctx, "CUP")
+    assert db.get_sub(new["id"])["devices"] == 3, "возврат доплаты возвращает прежнее число устройств"
+    ctx.bot.refund_star_payment.reset_mock()
+    # кнопка «Продлить · устройства» в приложении открывает бота по ?start=renew
+    ctx.args = ["renew"]; u = make_update(200); await bot.start(u, ctx); ctx.args = []
+
     # 6. автопродление: новая подписка на 2 устройства
     await press(300, "bn:m1:2", ctx)
     await press(300, "pa:n:m1:2:0", ctx)

@@ -1312,7 +1312,12 @@ class XrayProvider(VpnProvider):
             body = base64.b64encode("\n".join(self.links(user_id)).encode())
         if enc_path:  # своё приложение: тело зашифровано, адресов и паролей в ответе не видно
             body = client_config.encrypt_sub(body, enc_path)
-        title = base64.b64encode(self.brand.encode()).decode()
+        # Название подписки с числом устройств: «Aurora VPN · 2 устройства» (приложение Aurora
+        # показывает это рядом со сроком и кнопкой «Продлить»)
+        n = int(self.state["devices"].get(str(user_id)) or 1)
+        word = "устройство" if n % 10 == 1 and n % 100 != 11 else (
+            "устройства" if n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14) else "устройств")
+        title = base64.b64encode(f"{self.brand} · {n} {word}".encode()).decode()
         up = down = 0
         if self.usage:
             try:

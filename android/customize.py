@@ -178,18 +178,28 @@ def connect_screen(kt: str) -> None:
         code = f.read()
     with open(os.path.join(main, "AuroraConnect.kt"), "w", encoding="utf-8") as f:
         f.write(code)
+    # Панель вверху, под заголовком (снизу по центру неудобно): список стран начинается под ней.
     edit(os.path.join(main, "MainScreen.kt"), [
         ("""            MainBottomBar(
                 displayText = displayText,
                 isRunning = isRunning,
                 isDarkTheme = isDarkTheme,
                 onAction = onAction,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
 """, """            AuroraConnectPanel(
                 displayText = displayText,
                 isRunning = isRunning,
                 selectedGuid = selectedGuid,
+                status = uiState.status,
                 onAction = onAction,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = innerPadding.calculateTopPadding())
 """),
+        ("                            top = innerPadding.calculateTopPadding(),\n",
+         "                            top = innerPadding.calculateTopPadding() + bottomBarHeight,\n"),
+        ("                                bottom = bottomBarHeight + 8.dp\n", "                                bottom = 32.dp\n"),
     ], count_ok=lambda n: n == 1)
     edit(os.path.join(main, "MainTopBar.kt"), [
         ("        title = stringResource(R.string.title_server),\n", f'        title = "{APP_NAME}",\n'),
@@ -197,21 +207,22 @@ def connect_screen(kt: str) -> None:
 
 
 def auto_update_subscription(kt: str) -> None:
-    """Подписка обновляется сама раз в 3 часа (в v2rayNG по умолчанию выключено): гость всегда
+    """Подписка обновляется сама раз в час (в v2rayNG по умолчанию выключено): гость всегда
     получает свежие страны, мосты и сайт маскировки, даже если месяц не открывал приложение.
     Уже добавленным подпискам автообновление включается при запуске приложения."""
     edit(os.path.join(kt, "handler", "AngConfigManager.kt"), [
         ("        subItem.url = url\n        MmkvManager.encodeSubscription(\"\", subItem)\n",
-         "        subItem.url = url\n        subItem.autoUpdate = true\n        subItem.updateInterval = 180\n"
+         "        subItem.url = url\n        subItem.autoUpdate = true\n        subItem.updateInterval = 60\n"
          "        MmkvManager.encodeSubscription(\"\", subItem)\n        SubscriptionUpdater.sync()\n"),
     ], count_ok=lambda n: n == 1)
     edit(os.path.join(kt, "ui", "main", "MainRepository.kt"), [
         ("    override fun syncSubscriptions() {\n        SubscriptionUpdater.sync(app)\n",
          "    override fun syncSubscriptions() {\n"
          "        MmkvManager.decodeSubscriptions().forEach {\n"
-         "            if (!it.subscription.autoUpdate && it.subscription.url.isNotEmpty()) {\n"
+         "            if (it.subscription.url.isNotEmpty() &&\n"
+         "                (!it.subscription.autoUpdate || it.subscription.updateInterval > 60)) {\n"
          "                it.subscription.autoUpdate = true\n"
-         "                it.subscription.updateInterval = 180\n"
+         "                it.subscription.updateInterval = 60\n"
          "                MmkvManager.encodeSubscription(it.guid, it.subscription)\n"
          "            }\n"
          "        }\n"

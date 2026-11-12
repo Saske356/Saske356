@@ -128,6 +128,9 @@ async def main():
     got = base64.b64decode(body).decode().splitlines()
     assert got == v.links(10) and len(got) == 4  # nl и основной (us удалили), у каждой запасной
     assert f"expire={int(now + 100)}" in head and "profile-title: base64:" in head
+    title = base64.b64decode(head.split("profile-title: base64:")[1].split("\r\n")[0]).decode()
+    assert title.endswith(f" · {v.state['devices'].get('10', 1)} " + ("устройство" if v.state['devices'].get('10', 1) == 1
+                                                                       else "устройства")), title
     head, _ = await get(f"/sub/10/{'0' * 24}"); assert head.startswith("HTTP/1.1 404")
     head, _ = await get("/etc/passwd"); assert head.startswith("HTTP/1.1 404")
     v.state["users"]["10"] = now - 1
