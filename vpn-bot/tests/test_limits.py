@@ -278,61 +278,12 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(base64.b64decode(body).decode().startswith("hysteria2://"))
         self.v._server.close()
 
-    async def test_mkcp_second_udp_protocol(self):
-        from urllib.parse import parse_qs, unquote, urlparse
-        self.v.kcp = {"port": 4443, "seed": "s33d", "dir": self.hydir, "unit": "aurora-kcp",
-                      "systemctl": (os.path.join(self.d, "systemctl"),)}
-        await self.v.apply()
-        with open(os.path.join(self.hydir, "kcp.json")) as f:
-            srv = json.load(f)
-        inb = srv["inbounds"][0]
-        self.assertEqual((inb["port"], inb["streamSettings"]["network"]), (4443, "kcp"))
-        self.assertEqual(inb["streamSettings"]["finalmask"]["udp"][0],
-                         {"type": "mkcp-legacy", "settings": {"value": "s33d"}})
-        self.assertEqual([c["id"] for c in inb["settings"]["clients"]], [self.v.user_uuid(1, "kcp")])
-        self.assertIn("restart aurora-kcp", self.units())
-        # Xray проверяет конфиг и, как настоящий, не принимает файл без .json на конце
-        xray = os.path.join(self.d, "xray-strict")
-        with open(xray, "w") as f:
-            f.write('#!/bin/sh\ncase "$4" in *.json) exit 0;; *) echo "Failed to get format of $4"; exit 1;; esac\n')
-        os.chmod(xray, 0o755)
-        self.v.xray_bin = xray
-        problems = []
-        self.v.on_problem = AsyncMock(side_effect=lambda t: problems.append(t))
-        await self.v.issue(3, time.time() + 3600)
-        await self.v._pending
-        self.assertEqual(problems, [], "проверка конфига mKCP проходит")
-        with open(os.path.join(self.hydir, "kcp.json")) as f:
-            self.assertIn(self.v.user_uuid(3, "kcp"), f.read())
-        self.assertFalse([x for x in os.listdir(self.hydir) if x.startswith("kcp.") and x != "kcp.json"],
-                         "временных файлов не остаётся")
-        await self.v.revoke(3)
-        await self.v._pending
-        n = len(self.units())
-        await self.v.apply()
-        self.assertEqual(len(self.units()), n, "ключи те же — mKCP не перезапускается")
-        await self.v.issue(2, time.time() + 3600)
-        await self.v._pending
-        self.assertEqual(len(self.units()), n + 1, "новый ключ — один перезапуск mKCP")
-        links = self.v.links(1)
-        kcp = [l for l in links if "type=kcp" in l]
-        self.assertEqual(len(kcp), 1)
-        u = urlparse(kcp[0]); q = parse_qs(u.query)
-        self.assertEqual((u.port, q["seed"], unquote(u.fragment)), (4443, ["s33d"], "🇵🇱 Польша · mKCP"))
+    async def test_no_mkcp_left(self):
+        # mKCP убран: Happ не собирал его конфиг и вместе с ним терял «Лучший сервер»
+        self.assertFalse([l for l in self.v.links(1) if "type=kcp" in l])
         cfgs = __import__("client_config").configs(self.v.json_entries(1))
-        names = [c["remarks"] for c in cfgs]
-        self.assertEqual(names, ["🚀 Лучший сервер", "🇵🇱 Польша", "🇵🇱 Польша · mKCP"])
-        out = cfgs[2]["outbounds"][0]
-        st = out["streamSettings"]
-        self.assertEqual((st["network"], st["kcpSettings"]["tti"], st["finalmask"]["udp"][0]["settings"]["value"]),
-                         ("kcp", 20, "s33d"))
-        self.assertNotIn("seed", st["kcpSettings"], "Xray с finalmask отвергает kcpSettings.seed")
-        self.assertEqual(len(cfgs[0]["outbounds"]), 4, "mKCP тоже в «Лучшем сервере»")
-        await self.v.suspend(1, 600)
-        await self.v._pending
-        with open(os.path.join(self.hydir, "kcp.json")) as f:
-            ids = [c["id"] for c in json.load(f)["inbounds"][0]["settings"]["clients"]]
-        self.assertNotIn(self.v.user_uuid(1, "kcp"), ids, "отключённая подписка без ключа mKCP")
+        self.assertEqual([c["remarks"] for c in cfgs], ["🇵🇱 Польша"], "одно подключение — без «Лучшего сервера»")
+        self.assertNotIn('"kcp"', json.dumps(cfgs))
 
     async def test_second_hysteria_only_when_asked(self):
         e = {"HY2_PORT": "443", "HY2_OBFS_PORT": "8443", "HY2_OBFS": "pw", "PUBLIC_HOST": "1.2.3.4",

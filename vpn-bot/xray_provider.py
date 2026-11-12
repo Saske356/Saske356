@@ -64,7 +64,7 @@ class XrayProvider(VpnProvider):
                  auto_enabled: bool = False, auto_countries: tuple = (), auto_max: int = 8,
                  relay_port: int = 20808, api_port: int = 10085, bridge_port: int = 8444,
                  xhttp: bool = True, sub_base: str = "", hy2: dict | None = None, hy2_auth_port: int = 20809,
-                 hy2_locs: dict | None = None, json_sub: bool = True, kcp: dict | None = None,
+                 hy2_locs: dict | None = None, json_sub: bool = True,
                  xray_enabled: bool = True, sub_domain: str = "", sub_tls_port: int = 443,
                  sub_cert: str = "", sub_key: str = ""):
         self.state_path, self.config_path, self.xray_bin = state_path, config_path, xray_bin
@@ -93,9 +93,6 @@ class XrayProvider(VpnProvider):
         # aurora-hy2@loc-КОД на своём порту: Hysteria выбирает выход по адресу, а не по клиенту.
         self.hy2_locs = hy2_locs if self.hy2 and self.hy2.get("port") and hy2_locs else None
         self.json_default = json_sub
-        # mKCP: отдельный небольшой Xray на своём UDP-порту (служба aurora-kcp), работает и при
-        # выключенном основном Xray. {"port", "seed", "dir", "unit", "systemctl"}.
-        self.kcp = kcp if kcp and kcp.get("port") and kcp.get("seed") else None
         self.sub_base = sub_base.strip().rstrip("/")
         self.state = self._load(default_location, auto_enabled, list(auto_countries), auto_max)
         self._pending: asyncio.Task | None = None
@@ -792,7 +789,7 @@ class XrayProvider(VpnProvider):
 
     def json_entries(self, user_id: int) -> list[dict]:
         """Подключения для JSON-конфигов: Hysteria и, если Xray включён, Reality по странам."""
-        out = self.hy2_entries(user_id) + self.kcp_entries(user_id)
+        out = self.hy2_entries(user_id)
         if self.xray_enabled:
             out += [{"kind": "reality", "name": l["name"], "uid": self.user_uuid(user_id, l["code"]),
                      "host": self.host, "port": self.port, "sni": self.sni, "pbk": self.public_key,
@@ -880,7 +877,7 @@ class XrayProvider(VpnProvider):
     def links(self, user_id: int) -> list[str]:
         shown = [l for l in self.locations if not l.get("down") and not (l.get("auto") and self.auto_rejected)]
         # Hysteria первой: приложения проверяют пинг сверху вниз, и она чаще проходит.
-        out = self.hy2_links(user_id) + [self._kcp_link(e) for e in self.kcp_entries(user_id)]
+        out = self.hy2_links(user_id)
         if not self.xray_enabled:
             return out
         out += [self._link(self.user_uuid(user_id, loc["code"]), self.host, self.port, self.sni, loc["name"])
@@ -1153,75 +1150,13 @@ class XrayProvider(VpnProvider):
         return True
 
     async def apply(self) -> bool:
-        """Применяет состояние: сначала Xray, затем серверы Hysteria для стран и mKCP."""
+        """Применяет состояние: сначала Xray, затем серверы Hysteria для стран."""
         ok = await self._apply_xray()
         try:
             await self.sync_hy2_locs()
         except Exception:
             log.exception("Hysteria для стран: сбой")
-        try:
-            await self.sync_kcp()
-        except Exception:
-            log.exception("mKCP: сбой")
         return ok
-
-    # ---------- mKCP: второй способ по UDP ----------
-
-    def kcp_entries(self, user_id: int) -> list[dict]:
-        if not self.kcp:
-            return []
-        return [{"kind": "kcp", "name": f"{self.direct_location()['name']} · mKCP",
-                 "uid": self.user_uuid(user_id, "kcp"), "host": self.host, "port": self.kcp["port"],
-                 "seed": self.kcp["seed"]}]
-
-    def _kcp_link(self, e: dict) -> str:
-        q = f"encryption=none&type=kcp&headerType=none&seed={quote(e['seed'], safe='')}"
-        return f"vless://{e['uid']}@{e['host']}:{e['port']}?{q}#{quote(e['name'])}"
-
-    def kcp_server_config(self) -> dict:
-        now = time.time()
-        clients = [{"id": self.user_uuid(int(u), "kcp"), "email": f"u{u}.kcp"}
-                   for u, exp in sorted(self.state["users"].items()) if exp > now and not self.is_suspended(int(u))]
-        return {
-            "log": {"loglevel": "warning", "access": "none"},
-            "inbounds": [{"tag": "kcp", "listen": "0.0.0.0", "port": self.kcp["port"], "protocol": "vless",
-                          "settings": {"clients": clients, "decryption": "none"},
-                          "streamSettings": client_config.kcp_stream(self.kcp["seed"]),
-                          "sniffing": {"enabled": True, "destOverride": ["http", "tls", "quic"]}}],
-            "outbounds": [{"tag": "direct", "protocol": "freedom"}, {"tag": "block", "protocol": "blackhole"}],
-            "routing": {"rules": [{"type": "field", "ip": ["geoip:private"], "outboundTag": "block"},
-                                  {"type": "field", "protocol": ["bittorrent"], "outboundTag": "block"}]},
-        }
-
-    async def sync_kcp(self) -> None:
-        """Пишет конфиг mKCP и перезапускает службу, только если список ключей изменился.
-        Перезапуск рвёт лишь подключения mKCP на секунду, Hysteria и Xray не трогаются."""
-        if not self.kcp:
-            return
-        text = json.dumps(self.kcp_server_config(), ensure_ascii=False, indent=1)
-        path = os.path.join(self.kcp.get("dir", "/etc/aurora"), "kcp.json")
-        try:
-            with open(path, encoding="utf-8") as f:
-                if f.read() == text:
-                    return
-        except OSError:
-            pass
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = path[:-5] + ".next.json"  # Xray узнаёт формат по расширению: временный файл тоже .json
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(text)
-        if os.path.exists(self.xray_bin):  # конфиг сначала проверяет сам Xray
-            code, out = await self._run(self.xray_bin, "run", "-test", "-c", tmp)
-            if code != 0:
-                os.unlink(tmp)
-                await self._problem("Xray не принял конфиг mKCP, оставляю прежний:\n" + out[-500:].strip())
-                return
-        os.replace(tmp, path)
-        code, out = await self._run(*self.kcp.get("systemctl", ("systemctl",)), "restart",
-                                    self.kcp.get("unit", "aurora-kcp"))
-        if code != 0:
-            await self._problem("mKCP не запустился: " + out[-300:].strip())
 
     async def _apply_xray(self) -> bool:
         """Применяет состояние к Xray. Если поменялись только клиенты, они меняются через API
@@ -1411,14 +1346,6 @@ def hy2_locs_from_env(e) -> dict | None:
             "stats_base": int(e.get("HY2_LOC_STATS_BASE", "20830")), "systemctl": ("systemctl",)}
 
 
-def kcp_from_env(e) -> dict | None:
-    """mKCP: установщик вписывает KCP_PORT и KCP_SEED. KCP=0 — выключен."""
-    if e.get("KCP", "1") == "0" or not e.get("KCP_PORT") or not e.get("KCP_SEED"):
-        return None
-    return {"port": int(e["KCP_PORT"]), "seed": e["KCP_SEED"], "dir": e.get("HY2_DIR", "/etc/aurora"),
-            "unit": "aurora-kcp", "systemctl": ("systemctl",)}
-
-
 def from_env() -> XrayProvider:
     e = os.environ
     need = ["PUBLIC_HOST", "REALITY_PRIVATE_KEY", "REALITY_PUBLIC_KEY", "REALITY_SHORT_ID"]
@@ -1452,7 +1379,6 @@ def from_env() -> XrayProvider:
         hy2_auth_port=int(e.get("HY2_AUTH_PORT", "20809")),
         hy2_locs=hy2_locs_from_env(e),
         json_sub=e.get("SUB_JSON", "1") == "1",
-        kcp=kcp_from_env(e),
         xray_enabled=e.get("XRAY_ENABLED", "1") == "1",
         sub_domain=e.get("SUB_DOMAIN", ""),
         sub_tls_port=int(e.get("SUB_TLS_PORT") or (443 if e.get("XRAY_ENABLED", "1") == "0" else 2053)),
