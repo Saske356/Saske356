@@ -841,8 +841,12 @@ async def crypto_job(context: ContextTypes.DEFAULT_TYPE) -> None:
                               money=f"{rub} ₽" + (f" ({asset})" if asset else ""))
             except Exception:
                 log.exception("крипта: выдача доступа по счёту %s", r["invoice_id"])
-                await notify_admins(context, f"⚠️ Счёт в крипте #{r['invoice_id']} оплачен, но доступ не выдан "
-                                             "из-за ошибки. Выдайте вручную: /grant.")
+                granted = db.payment_seen(f"cp:{r['invoice_id']}")
+                await notify_admins(context, (
+                    f"ℹ️ Счёт в крипте #{r['invoice_id']} оплачен, доступ выдан, но сообщение гостю не "
+                    "дошло (возможно, он остановил бота)." if granted else
+                    f"⚠️ Счёт в крипте #{r['invoice_id']} оплачен, но доступ не выдан из-за ошибки. "
+                    "Выдайте вручную: /grant."))
         elif status == "expired" or (inv is None and time.time() - r["created_at"] > 2 * paymod.CRYPTO_TTL):
             db.set_crypto_status(r["invoice_id"], "expired")
 

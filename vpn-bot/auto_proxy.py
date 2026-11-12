@@ -153,6 +153,8 @@ class AutoProxy:
     def _keep_strays(self, strays: dict) -> None:
         until = time.time() + SPARE_TTL
         for cc, found in strays.items():
+            if len(cc) != 2 or not cc.isalpha() or cc in ("xx", "t1"):
+                continue  # служебные коды Cloudflare (Tor, неизвестно) — не страна
             for u, ms in found:
                 self.spare.setdefault(cc, {})[u] = (ms, until)
                 self._score(u, 1)
