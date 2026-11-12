@@ -307,8 +307,9 @@ if grep -qE '^HY2_PORT=' "$ENVF" 2>/dev/null; then
     systemctl is-active -q "$unit" && ok "служба $unit запущена" \
       || bad "служба $unit не запущена: journalctl -u $unit -n 20 --no-pager"
   done
-  ss -ulnpH 'sport = :443' 2>/dev/null | grep -q hysteria && ok "Hysteria слушает 443/udp" \
-    || bad "443/udp слушает не Hysteria"
+  HYP=$(grep -E '^HY2_PORT=' "$ENVF" | cut -d= -f2)
+  ss -ulnpH "sport = :$HYP" 2>/dev/null | grep -q hysteria && ok "Hysteria слушает $HYP/udp" \
+    || bad "$HYP/udp слушает не Hysteria: $(ss -ulnpH "sport = :$HYP" 2>/dev/null | grep -oE 'users:\(\("[^"]+' | sed 's/.*("//')"
   STATEF=$(grep -E '^VPN_STATE=' "$ENVF" | tail -1 | cut -d= -f2); STATEF=${STATEF:-/var/lib/aurora/vpn.json}
   HYPASS=$(python3 - "$STATEF" <<'PY' 2>/dev/null
 import hashlib, hmac, json, sys, time

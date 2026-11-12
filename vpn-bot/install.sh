@@ -192,6 +192,67 @@ hy_env_defaults() {  # дописывает в .env то, чего там не �
   fi
 }
 
+# Кто держит порт: «программа pid служба». Пусто — порт свободен. $1 — udp или tcp.
+port_owner() {
+  local line pid name unit
+  line=$({ ss -"${1:0:1}"lnpH "sport = :$2" 2>/dev/null || true; } | head -1)
+  [ -n "$line" ] || return 0
+  pid=$(printf '%s' "$line" | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
+  name=$(printf '%s' "$line" | grep -oE 'users:\(\("[^"]+' | head -1 | sed 's/.*("//')
+  unit=$([ -n "$pid" ] && sed -nE 's#.*/([^/]+\.service)$#\1#p' "/proc/$pid/cgroup" 2>/dev/null | head -1)
+  echo "${name:-?} ${pid:-?} ${unit:--}"
+}
+
+free_port() {  # первый свободный порт начиная с $2 ($1 — udp или tcp), кроме перечисленных дальше
+  local p="$2" proto="$1"; shift 2
+  while [ -n "$(port_owner "$proto" "$p")" ] || [[ " $* " == *" $p "* ]]; do p=$((p + 1)); done
+  echo "$p"
+}
+
+env_set() { sed -i -E "/^$1=/d" "$ENV"; echo "$1=$2" >> "$ENV"; }
+
+# Порты Hysteria может держать прежний VPN (например, старая Hysteria): показываем, что это,
+# и с согласия останавливаем. Иначе берём свободный порт. Порты статистики меняем молча.
+hy_free_ports() {
+  local key port owner name pid unit ans s1 s2
+  systemctl stop aurora-hy2@plain aurora-hy2@obfs >/dev/null 2>&1 || true
+  sleep 1
+  for key in HY2_PORT HY2_OBFS_PORT; do
+    port=$(envget "$key")
+    owner=$(port_owner udp "$port")
+    [ -n "$owner" ] || continue
+    read -r name pid unit <<<"$owner"
+    echo "Порт $port/udp занят: программа $name (pid $pid, служба $unit)."
+    echo "Обычно это прежний VPN. Если его остановить, старые ключи от него перестанут работать,"
+    echo "клиентам нужно будет взять новую подписку в боте."
+    ans=$(ask "Остановить его? (Enter — да, n — оставить и взять другой порт)" "y")
+    case "$ans" in
+      n|N|н|Н|no|нет)
+        port=$(free_port udp $(( port == 443 ? 2443 : port + 1 )) "$(envget HY2_PORT)" "$(envget HY2_OBFS_PORT)")
+        env_set "$key" "$port"
+        echo "Hysteria будет на порту $port/udp." ;;
+      *)
+        if [ "$unit" != "-" ]; then
+          systemctl disable --now "$unit" >/dev/null 2>&1 || true
+        elif [ "$pid" != "?" ]; then
+          kill "$pid" 2>/dev/null || true
+        fi
+        sleep 2
+        if [ -n "$(port_owner udp "$port")" ]; then
+          port=$(free_port udp $(( port == 443 ? 2443 : port + 1 )) "$(envget HY2_PORT)" "$(envget HY2_OBFS_PORT)")
+          env_set "$key" "$port"
+          echo "Освободить не вышло, Hysteria будет на порту $port/udp."
+        else
+          echo "Остановлено, порт $port/udp свободен."
+        fi ;;
+    esac
+  done
+  s1=$(envget HY2_STATS_PORTS | cut -d, -f1); s2=$(envget HY2_STATS_PORTS | cut -d, -f2)
+  [ -z "$(port_owner tcp "$s1")" ] || s1=$(free_port tcp 20820)
+  [ -z "$(port_owner tcp "$s2")" ] && [ "$s2" != "$s1" ] || s2=$(free_port tcp $((s1 + 1)) "$s1")
+  [ "$s1,$s2" = "$(envget HY2_STATS_PORTS)" ] || env_set HY2_STATS_PORTS "$s1,$s2"
+}
+
 env_newline() {  # .env, поправленный вручную, может кончаться без перевода строки: дописанное склеилось бы
   [ ! -s "$ENV" ] || [ -z "$(tail -c1 "$ENV")" ] || echo >> "$ENV"
 }
@@ -230,6 +291,7 @@ EOF
     sed -i -E '/^HY2_PIN=/d' "$ENV"
   fi
   hy_env_defaults
+  hy_free_ports
   hy_config plain || return 1
   hy_config obfs || return 1
   cat > /etc/systemd/system/aurora-hy2@.service <<EOF
@@ -523,8 +585,8 @@ if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
   ufw allow 443/tcp >/dev/null
   ufw allow "$SUB_PORT"/tcp >/dev/null
   ufw allow "$BRIDGE_PORT"/tcp >/dev/null
-  ufw allow 443/udp >/dev/null
-  ufw allow 8443/udp >/dev/null
+  ufw allow "$(envget HY2_PORT)"/udp >/dev/null 2>&1 || true
+  ufw allow "$(envget HY2_OBFS_PORT)"/udp >/dev/null 2>&1 || true
   [ -n "$(envget SUB_TLS_PORT)" ] && ufw allow "$(envget SUB_TLS_PORT)"/tcp >/dev/null
 fi
 
