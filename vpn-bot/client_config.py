@@ -26,18 +26,11 @@ AURORA_AGENT = re.compile(r"aurora", re.I)
 AURORA_QUIC = {"keepAlivePeriod": 10, "maxIdleTimeout": 60}
 # Турбо (Brutal) — во всех подключениях своего приложения. Обычный режим (BBR) при потерях пакетов
 # сбавляет скорость, а на мобильном при глушилках потери большие: замер при белых списках — 1.6 Мбит/с.
-# Brutal держит заявленную скорость и досылает потерянное: с потолком 100 Мбит/с — 92 Мбит/с.
+# Brutal держит заявленную скорость и досылает потерянное (с потолком 100 Мбит/с было 92 на Wi-Fi).
 # Сервер шлёт к гостю со скоростью brutalDown (её клиент сообщает серверу при подключении).
-# 100 Мбит/с — потолок модема пользователя; канал медленнее Brutal не перегружает сверх меры
-# (потери до 20% компенсирует, дальше нет). 92 Мбит/с — замер на Wi-Fi. На мобильном при белых
-# списках оператор режет канал, и турбо на 100 его засыпает — для этого запасные пункты ниже.
-TURBO_QUIC = {"congestion": "brutal", "brutalUp": "20 mbps", "brutalDown": "100 mbps"}
-# Запасные пункты для основной страны (в «Лучший сервер» не входят): (приписка, quicParams или
-# None — обычный BBR без турбо).
-EXTRA_MODES = [
-    (" · белые списки", {"congestion": "brutal", "brutalUp": "3 mbps", "brutalDown": "10 mbps"}),
-    (" · эконом", None),
-]
+# Потолок 150 Мбит/с — по просьбе пользователя, у всех подключений одинаковый. Запасные пункты
+# «· белые списки» (Brutal 10) и «· эконом» (BBR) убраны: по замерам они ничего не давали.
+TURBO_QUIC = {"congestion": "brutal", "brutalUp": "20 mbps", "brutalDown": "150 mbps"}
 
 # Российские домены: зона .ru, .su, .рф и крупные сервисы на других зонах.
 RU_DOMAINS = [
@@ -206,9 +199,4 @@ def config(e: dict, tuned: bool = False) -> dict:
 def configs(entries: list[dict], with_best: bool = True, tuned: bool = False) -> list[dict]:
     """Конфиги подписки: первым «Лучший сервер» (если подключений больше одного), затем страны."""
     out = [config(e, tuned) for e in entries]
-    if tuned:
-        first = next((e for e in entries if e["kind"] == "hy2"), None)
-        if first:
-            for i, (tag, mode) in enumerate(EXTRA_MODES):
-                out.insert(1 + i, config({**first, "name": first["name"] + tag, "mode": mode}, tuned))
     return ([best(entries, tuned=tuned)] if with_best and len(entries) > 1 else []) + out

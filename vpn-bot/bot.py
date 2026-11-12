@@ -1913,7 +1913,8 @@ async def addbridge(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def pick_bridge_site(avoid=()) -> str | None:
     """Российский сайт для мостов, который отвечает с сервера и который Xray принимает."""
     for host, _ in await masking.ranked(h for h in masking.RU_SITES if h not in avoid):
-        if await vpn.site_flagged(host) is not None:
+        # Без Xray мост работает только через Hysteria: ей хватает, что сайт отвечает.
+        if not getattr(vpn, "xray_enabled", True) or await vpn.site_flagged(host) is not None:
             return host
     return None
 
@@ -2294,6 +2295,10 @@ async def masking_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         await hy2_sni_job(context.bot)
     except Exception:
         log.exception("сайт Hysteria: сбой смены")
+    try:
+        await bridge_site_job(context.bot)
+    except Exception:
+        log.exception("сайт мостов: сбой проверки")
     # Сайт маскировки Reality нужен только Xray; без Xray он ни на что не влияет.
     if not vpn.masking.get("auto", True) or not getattr(vpn, "xray_enabled", True):
         return
@@ -2314,17 +2319,22 @@ async def masking_job(context: ContextTypes.DEFAULT_TYPE) -> None:
                 reason = "плановая смена"
         if reason:
             await send_admins(context.bot, esc(await switch_masking(reason)))
-        if vpn.ru_bridges():
-            site = vpn.bridge_site
-            if site and await masking.check(site) is not None:
-                MASK["bridge_fails"] = 0
-            elif not site or await public_proxies.direct_ok():
-                MASK["bridge_fails"] += 1
-            if MASK["bridge_fails"] >= (1 if not site else 3):
-                await send_admins(context.bot, esc(await switch_bridge_site(
-                    f"{site} перестал отвечать с сервера" if site else "сайт не был выбран")))
     except Exception:
         log.exception("сайт маскировки: сбой проверки")
+
+
+async def bridge_site_job(bot) -> None:
+    """Сайт маскировки мостов «ru»: нужен и Reality, и Hysteria через мост (даже без Xray)."""
+    if not vpn.ru_bridges():
+        return
+    site = vpn.bridge_site
+    if site and await masking.check(site) is not None:
+        MASK["bridge_fails"] = 0
+    elif not site or await public_proxies.direct_ok():
+        MASK["bridge_fails"] += 1
+    if MASK["bridge_fails"] >= (1 if not site else 3):
+        await send_admins(bot, esc(await switch_bridge_site(
+            f"{site} перестал отвечать с сервера" if site else "сайт не был выбран")))
 
 
 def masking_status_text() -> str:

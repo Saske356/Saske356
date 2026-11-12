@@ -599,6 +599,19 @@ async def main():
     assert "Xray выключен" in bot.locations_text() and len(bot.location_names()) == 1
     assert all(l.startswith("hysteria2://") for l in prov.links(some)) and "Hysteria" in bot.fix_text()
     assert "запасной" not in bot.fix_text()
+    # мост «ru» без Xray: сайт подбирается без проверки Xray, Hysteria идёт через мост
+    real_ranked, real_flag = bot.masking.ranked, prov.site_flagged
+    bot.masking.ranked = AsyncMock(return_value=[("ya.ru", 30.0)])
+    prov.site_flagged = AsyncMock(return_value=None)  # Xray нет — проверить нельзя
+    prov.add_bridge("ru4", "🇷🇺 Обход", "198.51.100.44", ru=True)
+    prov.state["bridge_site"] = ""
+    assert await bot.pick_bridge_site() == "ya.ru"
+    await bot.bridge_site_job(ctx.bot)
+    assert prov.bridge_site == "ya.ru"
+    assert any("198.51.100.44:443" in l and "sni=ya.ru" in l for l in prov.links(some))
+    assert await prov.check_bridges() == [], "без Xray мост не помечается мёртвым"
+    bot.masking.ranked, prov.site_flagged = real_ranked, real_flag
+    ctx.args = ["ru4"]; await bot.delbridge(make_update(1), ctx); ctx.args = []
     prov.xray_enabled, prov.hy2, prov.sub_domain = True, None, ""
     ctx.bot.send_message.reset_mock()
     prov.add_location("dead", "🇺🇸 США", "socks5://u:p@127.0.0.1:1")

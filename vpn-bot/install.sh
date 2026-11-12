@@ -417,8 +417,9 @@ EOF2
   if timeout 5 bash -c "</dev/tcp/$MAIN/$TARGET" 2>/dev/null; then
     echo "✅ основной сервер отвечает на порту $TARGET"
   else
-    echo "⚠️ основной сервер не ответил на порту $TARGET. Обновите его установщиком этой версии"
-    echo "   и проверьте, что порт $TARGET открыт у хостинга."
+    echo "ℹ️ основной сервер не ответил на порту $TARGET (TCP). Если на нём Xray выключен"
+    echo "   (только Hysteria) — это нормально: мост работает через UDP 443."
+    echo "   Если Xray включён — обновите основной сервер и откройте порт $TARGET у хостинга."
   fi
   BRIDGE_IP=$(curl -fsS4 --max-time 10 https://api.ipify.org || echo "IP_ЭТОГО_СЕРВЕРА")
   say "Мост готов"

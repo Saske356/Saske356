@@ -592,7 +592,8 @@ class XrayProvider(VpnProvider):
                     await asyncio.sleep(1)
             return False
 
-        if not self.bridges:
+        # Без Xray вход для мостов (TCP) никто не слушает, а Hysteria через мост так не проверить.
+        if not self.bridges or not self.xray_enabled:
             return []
         changes = []
         for b, ok in zip(list(self.bridges), await asyncio.gather(*(alive(b) for b in self.bridges))):

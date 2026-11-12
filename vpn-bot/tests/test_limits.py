@@ -320,14 +320,9 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         _, _, body = await get(path, "AuroraVPN/1.0.5 v2rayNG/1.0.5")
         cfgs = json.loads(body)
         self.assertEqual([c["remarks"] for c in cfgs],
-                         ["🚀 Лучший сервер", "🇵🇱 Польша", "🇵🇱 Польша · белые списки", "🇵🇱 Польша · эконом",
-                          "🇩🇪 Германия"])
+                         ["🚀 Лучший сервер", "🇵🇱 Польша", "🇩🇪 Германия"])
         turbo = {"keepAlivePeriod": 10, "maxIdleTimeout": 60, "congestion": "brutal",
-                 "brutalUp": "20 mbps", "brutalDown": "100 mbps"}
-        self.assertEqual([q["brutalDown"] for q in quic([cfgs[2]])], ["10 mbps"], "белые списки — турбо 10")
-        self.assertEqual(quic([cfgs[3]]), [{"keepAlivePeriod": 10, "maxIdleTimeout": 60}], "эконом — обычный BBR")
-        self.assertEqual(len(cfgs[0]["outbounds"]), 4, "запасные пункты не входят в «Лучший сервер»")
-        cfgs = [cfgs[0], cfgs[1], cfgs[4]]
+                 "brutalUp": "20 mbps", "brutalDown": "150 mbps"}
         self.assertTrue(quic(cfgs) and all(q == turbo for q in quic(cfgs)), "турбо везде, и в «Лучшем сервере»")
         self.assertEqual({c["routing"]["domainStrategy"] for c in cfgs}, {"AsIs"}, "без лишних DNS-запросов")
         # обфускация и настройки QUIC уживаются в одном finalmask
@@ -352,7 +347,7 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         key = hashlib.sha256((cc.SUB_SECRET + path).encode()).digest()  # как в AuroraCrypto.kt
         plain = json.loads(AESGCM(key).decrypt(raw[:12], raw[12:], None))
         self.assertEqual([c["remarks"] for c in plain], [c["remarks"] for c in cfgs[:1]] +
-                         ["🇵🇱 Польша", "🇵🇱 Польша · белые списки", "🇵🇱 Польша · эконом", "🇩🇪 Германия"])
+                         ["🇵🇱 Польша", "🇩🇪 Германия"])
         _, _, again = await get(path, "AuroraVPN/1.0.9 (enc1) v2rayNG/1.0.9")
         self.assertNotEqual(again, body, "каждый раз новый nonce")
         # короткая ссылка: ключ от её пути
