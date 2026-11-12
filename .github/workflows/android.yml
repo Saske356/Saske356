@@ -1,0 +1,77 @@
+# Собирает приложение Aurora VPN для Android и выкладывает APK в Releases репозитория.
+# Запускается при изменениях в android/ или вручную (Actions → Android app → Run workflow).
+name: Android app
+
+on:
+  push:
+    paths:
+      - "android/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-app
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      NDK_VERSION: "30.0.16248370"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v3
+        with:
+          log-accepted-android-sdk-licenses: false
+          packages: "platforms;android-37.0 build-tools;37.0.0 platform-tools ndk;30.0.16248370"
+
+      - name: Pillow для иконки
+        run: pip install -q Pillow
+
+      - name: Ключ подписи из секретов (если задан)
+        env:
+          KS: ${{ secrets.AURORA_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KS" ]; then
+            echo "$KS" | base64 -d > "$RUNNER_TEMP/aurora.keystore"
+            echo "KEYSTORE=$RUNNER_TEMP/aurora.keystore" >> "$GITHUB_ENV"
+          fi
+
+      - name: Сборка
+        env:
+          AURORA_VERSION_CODE: ${{ github.run_number }}
+          KEYSTORE_PASSWORD: ${{ secrets.AURORA_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.AURORA_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.AURORA_KEY_PASSWORD }}
+        run: |
+          [ -n "$KEYSTORE_PASSWORD" ] || unset KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD
+          export NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
+          bash android/build.sh "$RUNNER_TEMP/v2rayng"
+          # бот скачивает APK по постоянным именам
+          cd android/out
+          cp AuroraVPN_*_arm64-v8a.apk AuroraVPN-arm64-v8a.apk
+          cp AuroraVPN_*_armeabi-v7a.apk AuroraVPN-armeabi-v7a.apk
+
+      - name: Выпуск в Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Aurora VPN 1.0.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          body: |
+            Aurora VPN для Android. Большинству телефонов нужен файл arm64-v8a, старым — armeabi-v7a.
+            Собрано из v2rayNG (GPL-3.0) с правками из папки android/ этого репозитория.
+          files: |
+            android/out/AuroraVPN-arm64-v8a.apk
+            android/out/AuroraVPN-armeabi-v7a.apk

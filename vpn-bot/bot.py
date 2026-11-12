@@ -32,6 +32,7 @@ import make_banner
 import masking
 import public_proxies
 import webshare
+from android_app import AppRelease
 from auto_proxy import AutoProxy
 from db import DAY, DB
 from devices import DeviceGuard
@@ -46,6 +47,8 @@ public_proxies.MAX_MS = int(os.environ.get("AUTO_PROXY_MAX_MS", "1500"))
 vpn = get_provider()
 auto_mgr = AutoProxy(vpn) if hasattr(vpn, "auto") else None
 guard = DeviceGuard(config.DEVICE_LIMIT, block_minutes=config.DEVICE_BLOCK_MINUTES)
+# Своё приложение для Android: только у настоящего VPN (у демо нет подписки для него)
+android_app = AppRelease(config.APP_REPO, config.APP_DIR) if config.APP_REPO and hasattr(vpn, "app_link") else None
 esc = html.escape
 
 CONFETTI = "5046509860389126442"   # встроенный эффект Telegram «🎉»
@@ -288,7 +291,7 @@ def devices_kb(plan: str, gift: bool, uid: int | None = None) -> InlineKeyboardM
 
 
 APPS = {
-    "android": ("🤖 Android", "Hiddify, Happ или v2rayNG", "из Google Play"),
+    "android": ("🤖 Android", "Happ или v2rayNG", "из Google Play"),
     "ios": ("🍏 iPhone и iPad", "Hiddify, Happ или Streisand", "из App Store"),
     "windows": ("🪟 Windows", "Hiddify или Happ", "с официального сайта"),
     "mac": ("💻 macOS", "Hiddify или Happ", "из App Store"),
@@ -297,6 +300,17 @@ APPS = {
 
 def howto_text(platform: str) -> str:
     title, apps, store = APPS[platform]
+    if platform == "android" and android_app:
+        return (f"<b>{title}</b>\n\n"
+                f"<b>Наше приложение {esc(config.BRAND)}</b> — настроено под наши серверы: само выбирает "
+                "самый быстрый, держит соединение тёплым и быстрее открывает страницы.\n"
+                "<blockquote>1. Нажмите «📥 Скачать приложение» ниже и установите файл "
+                "(телефон спросит разрешение на установку — разрешите).\n"
+                "2. Откройте «🗝 Мои подписки», выберите подписку и нажмите «⚡ Открыть в приложении».\n"
+                "3. Нажмите кнопку подключения ▶️</blockquote>\n\n"
+                f"<b>Или {esc(apps)}</b> {esc(store)}: скопируйте ключ из «🗝 Мои подписки», в приложении "
+                "нажмите «+» → «Добавить из буфера обмена».\n\n"
+                "Если что-то не получилось, консьерж поможет.")
     return (f"<b>{title}</b>\n\n"
             f"<blockquote>1. Установите {esc(apps)} {esc(store)}.\n"
             "2. Откройте «🗝 Мои подписки», выберите подписку и нажмите на ключ: он скопируется.\n"
@@ -375,6 +389,8 @@ def sub_kb(s) -> InlineKeyboardMarkup:
     rows = []
     if sub_active(s):
         rows.append([B("📷 QR-код", f"qr:{s['id']}"), B("📲 Подключение", "howto")])
+        if android_app:
+            rows.append([B(f"⚡ Открыть в приложении {config.BRAND}", url=vpn.app_link(s["id"]))])
     rows.append([B("◆ Продлить", f"ext:{s['id']}"), B("✏️ Переименовать", f"ren:{s['id']}")])
     if s["auto_active"] and sub_active(s):
         rows.append([B("🔁 Отключить автопродление", f"noauto:{s['id']}")])
@@ -952,8 +968,12 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                       [B(APPS["windows"][0], "how:windows"), B(APPS["mac"][0], "how:mac")],
                       [BACK]), banner="howto")
     elif data.startswith("how:") and data[4:] in APPS:
-        await show(update, context, howto_text(data[4:]),
-                   KB([B("🗝 Мои подписки", "subs"), B("‹ Устройства", "howto")], [BACK]), banner="howto")
+        rows = [[B("🗝 Мои подписки", "subs"), B("‹ Устройства", "howto")], [BACK]]
+        if data == "how:android" and android_app:
+            rows.insert(0, [B("📥 Скачать приложение", "apk")])
+        await show(update, context, howto_text(data[4:]), KB(*rows), banner="howto")
+    elif data == "apk":
+        await send_app(update, context)
     elif data == "profile":
         act = db.active_subs(uid)
         await show(update, context,
@@ -2671,6 +2691,42 @@ async def setup_profile(app: Application) -> None:
         log.warning("имя бота: %s", e)
 
 
+async def send_app(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Присылает APK приложения файлом. Telegram запоминает файл: повторно он уходит мгновенно."""
+    q = update.callback_query
+    if not android_app:
+        if q:
+            await q.answer("Приложение пока недоступно", show_alert=True)
+        return
+    if q:
+        await q.answer("Готовлю файл…")
+    chat = update.effective_chat.id
+    got = await android_app.latest()
+    if not got:
+        await context.bot.send_message(chat, "Приложение ещё собирается. Загляните чуть позже, а пока "
+                                             "подключитесь через Happ или v2rayNG.")
+        return
+    ver, path = got
+    cache = context.bot_data.setdefault("apk_file", {})
+    caption = (f"<b>{esc(config.BRAND)} {esc(ver)}</b> для Android\n"
+               "Откройте файл и установите. Потом в «🗝 Мои подписки» нажмите «⚡ Открыть в приложении».")
+    try:
+        if ver in cache:
+            await context.bot.send_document(chat, cache[ver], caption=caption)
+            return
+    except TelegramError:
+        cache.pop(ver, None)
+    with open(path, "rb") as f:
+        msg = await context.bot.send_document(chat, f, filename=f"AuroraVPN-{ver}.apk", caption=caption,
+                                              read_timeout=180, write_timeout=180)
+    if msg.document:
+        cache[ver] = msg.document.file_id
+
+
+async def app_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await send_app(update, context)
+
+
 def build_app(token: str) -> Application:
     app = (Application.builder().token(token)
            .defaults(Defaults(parse_mode=ParseMode.HTML))
@@ -2687,7 +2743,8 @@ def build_app(token: str) -> Application:
                     ("addloc", addloc), ("delloc", delloc), ("addbridge", addbridge),
                     ("delbridge", delbridge), ("server", server), ("backup", backup),
                     ("autoproxy", autoproxy), ("sni", sni_cmd), ("bridgesite", bridgesite_cmd),
-                    ("funnel", funnel), ("traffic", traffic), ("webshare", webshare_cmd)]:
+                    ("funnel", funnel), ("traffic", traffic), ("webshare", webshare_cmd),
+                    ("app", app_cmd)]:
         app.add_handler(CommandHandler(cmd, fn))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(PreCheckoutQueryHandler(precheckout))

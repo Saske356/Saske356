@@ -1,0 +1,4 @@
+# Исходники, из которых собирается Aurora VPN для Android (меняй вместе и проверяй сборку).
+V2RAYNG_REPO=https://github.com/2dust/v2rayNG
+V2RAYNG_COMMIT=1fa257fab9f6eacd1b05b50b49834d5bbe5a6980
+LIBXRAY_TAG=v26.11.9

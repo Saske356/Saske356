@@ -96,3 +96,9 @@ def plan_price(plan_key: str, devices: int) -> int:
     """Цена тарифа с учётом числа устройств."""
     base = TEST_PLAN[2] if plan_key == "test" else PLANS[plan_key][2]
     return max(1, round(base * DEVICE_OPTIONS.get(devices, 1.0)))
+
+# Своё приложение Aurora VPN для Android (папка android/, собирается в GitHub Actions).
+# Бот берёт свежий APK из Releases этого репозитория и присылает его гостю файлом.
+# Пустое значение — кнопки приложения не показываются.
+APP_REPO = os.environ.get("APP_REPO", "Saske356/Saske356").strip()
+APP_DIR = os.environ.get("APP_DIR", os.path.join(os.path.dirname(DB_PATH), "app"))

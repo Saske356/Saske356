@@ -13,7 +13,15 @@ Hysteria2 описан встроенным в Xray протоколом hysteri
 
 import re
 
-JSON_AGENTS = re.compile(r"v2rayng|happ", re.I)
+JSON_AGENTS = re.compile(r"v2rayng|happ|aurora", re.I)
+# Своё приложение Aurora VPN (сборка v2rayNG из android/): в нём ядро Xray всегда свежее.
+AURORA_AGENT = re.compile(r"aurora", re.I)
+# Настройки QUIC для Hysteria только для своего приложения. В Xray у клиента Hysteria сигналы
+# «на связи» по умолчанию выключены: стоит минуту ничего не открывать, и соединение тихо
+# умирает (а мобильный оператор ещё раньше забывает UDP-сопоставление), тогда следующая
+# страница ждёт нового рукопожатия. keepAlive раз в 10 с держит соединение тёплым.
+# Happ эти поля не отдаём: его ядро может не знать quicParams (они появились в Xray осенью 2026).
+AURORA_QUIC = {"keepAlivePeriod": 10, "maxIdleTimeout": 60}
 
 # Российские домены: зона .ru, .su, .рф и крупные сервисы на других зонах.
 RU_DOMAINS = [
@@ -31,8 +39,13 @@ def wants_json(agent: str) -> bool:
     return bool(JSON_AGENTS.search(agent or ""))
 
 
-def outbound(e: dict) -> dict:
-    """Исходящее подключение к серверу VPN по записи из XrayProvider.entries()."""
+def is_aurora(agent: str) -> bool:
+    return bool(AURORA_AGENT.search(agent or ""))
+
+
+def outbound(e: dict, tuned: bool = False) -> dict:
+    """Исходящее подключение к серверу VPN по записи из XrayProvider.entries().
+    tuned — для своего приложения: с настройками QUIC под скорость (AURORA_QUIC)."""
     if e["kind"] == "hy2":
         stream = {
             "network": "hysteria",
@@ -44,6 +57,8 @@ def outbound(e: dict) -> dict:
             stream["tlsSettings"]["pinnedPeerCertSha256"] = e["pin"]
         if e.get("obfs"):
             stream["finalmask"] = {"udp": [{"type": "salamander", "settings": {"password": e["obfs"]}}]}
+        if tuned:
+            stream.setdefault("finalmask", {})["quicParams"] = dict(AURORA_QUIC)
         return {"tag": "proxy", "protocol": "hysteria",
                 "settings": {"version": 2, "address": e["host"], "port": e["port"]},
                 "streamSettings": stream}
@@ -107,12 +122,12 @@ def _base(name: str, outbounds: list[dict], routing: dict) -> dict:
     }
 
 
-def best(entries: list[dict], name: str = "🚀 Лучший сервер") -> dict:
+def best(entries: list[dict], name: str = "🚀 Лучший сервер", tuned: bool = False) -> dict:
     """Один конфиг со всеми подключениями: Xray в приложении раз в минуту замеряет каждое
     и ведёт трафик через самое быстрое из живых. Упавшее подключение выпадает само."""
     outs = []
     for i, e in enumerate(entries):
-        o = outbound(e)
+        o = outbound(e, tuned)
         o["tag"] = f"p{i}"
         outs.append(o)
     cfg = _base(name, outs, _routing(sorted({ip for e in entries for ip in _ip(e["host"])}),
@@ -124,11 +139,11 @@ def best(entries: list[dict], name: str = "🚀 Лучший сервер") -> d
     return cfg
 
 
-def config(e: dict) -> dict:
-    return _base(e["name"], [outbound(e)], _routing(_ip(e["host"]), {"outboundTag": "proxy"}))
+def config(e: dict, tuned: bool = False) -> dict:
+    return _base(e["name"], [outbound(e, tuned)], _routing(_ip(e["host"]), {"outboundTag": "proxy"}))
 
 
-def configs(entries: list[dict], with_best: bool = True) -> list[dict]:
+def configs(entries: list[dict], with_best: bool = True, tuned: bool = False) -> list[dict]:
     """Конфиги подписки: первым «Лучший сервер» (если подключений больше одного), затем страны."""
-    out = [config(e) for e in entries]
-    return ([best(entries)] if with_best and len(entries) > 1 else []) + out
+    out = [config(e, tuned) for e in entries]
+    return ([best(entries, tuned=tuned)] if with_best and len(entries) > 1 else []) + out

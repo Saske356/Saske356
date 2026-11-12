@@ -6,6 +6,7 @@ Hysteria отдаёт маленький HTTP-сервер с тем же заг
 
 import asyncio, json, os, sys, tempfile, time, unittest
 from unittest.mock import AsyncMock
+from urllib.parse import quote
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import xray_provider as xp  # noqa: E402
@@ -276,6 +277,44 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         self.v.state["json_sub"] = False  # выключено в /admin
         _, _, body = await get(path, "Happ/3.7.0")
         self.assertTrue(base64.b64decode(body).decode().startswith("hysteria2://"))
+        self.v._server.close()
+
+    async def test_own_app_gets_tuned_configs_and_one_tap_page(self):
+        self.v.add_location("de", "🇩🇪 Германия", "socks5://u:p@1.2.3.4:1080")
+        await self.v._pending
+        await self.v.start_sub_server("127.0.0.1")
+        port = self.v._server.sockets[0].getsockname()[1]
+        path = "/sub/1/" + self.v.sub_token(1)
+
+        async def get(p, agent):
+            r, w = await asyncio.open_connection("127.0.0.1", port)
+            w.write(f"GET {p} HTTP/1.1\r\nHost: x\r\nUser-Agent: {agent}\r\n\r\n".encode()); await w.drain()
+            data = await r.read(); w.close()
+            return data.partition(b"\r\n\r\n")
+
+        def quic(cfgs):
+            return [o["streamSettings"].get("finalmask", {}).get("quicParams")
+                    for c in cfgs for o in c["outbounds"] if o["protocol"] == "hysteria"]
+
+        _, _, body = await get(path, "AuroraVPN/1.0.5 v2rayNG/1.0.5")
+        cfgs = json.loads(body)
+        self.assertEqual([c["remarks"] for c in cfgs], ["🚀 Лучший сервер", "🇵🇱 Польша", "🇩🇪 Германия"])
+        self.assertTrue(quic(cfgs) and all(q == {"keepAlivePeriod": 10, "maxIdleTimeout": 60} for q in quic(cfgs)))
+        # обфускация и настройки QUIC уживаются в одном finalmask
+        obfs = [o for c in cfgs for o in c["outbounds"] if o["protocol"] == "hysteria"
+                and o["streamSettings"].get("finalmask", {}).get("udp")]
+        self.assertTrue(all("quicParams" in o["streamSettings"]["finalmask"] for o in obfs))
+        for agent in ("Happ/3.7.0", "v2rayNG/1.10.30"):
+            _, _, body = await get(path, agent)
+            self.assertEqual(set(map(str, quic(json.loads(body)))), {"None"}, f"{agent}: без quicParams")
+
+        head, _, body = await get(path + "/app", "Mozilla/5.0")
+        self.assertIn(b"text/html", head)
+        page = body.decode()
+        self.assertIn("aurora://install-sub?url=" + quote(self.v.sub_url(1), safe=""), page)
+        self.assertEqual(self.v.app_link(1), self.v.sub_url(1) + "/app")
+        _, _, body = await get("/sub/1/" + "0" * 24 + "/app", "Mozilla/5.0")
+        self.assertNotIn(b"aurora://", body, "чужой токен — без страницы")
         self.v._server.close()
 
     async def test_no_mkcp_left(self):

@@ -1242,14 +1242,15 @@ class XrayProvider(VpnProvider):
         """Отдавать ли Happ и v2rayNG готовые JSON-конфиги. Переключается из /admin."""
         return bool(self.state.get("json_sub", self.json_default))
 
-    def subscription(self, user_id: int, as_json: bool = False) -> tuple[bytes, dict] | None:
+    def subscription(self, user_id: int, as_json: bool = False, tuned: bool = False) -> tuple[bytes, dict] | None:
         """Подписка. as_json — готовые конфиги Xray для Happ и v2rayNG: в приложении видно только
         название страны, а адрес и пароль спрятаны внутри конфига; российские сайты идут напрямую."""
         exp = self.state["users"].get(str(user_id))
         if not exp or exp <= time.time():
             return None
         if as_json:
-            body = json.dumps(client_config.configs(self.json_entries(user_id)), ensure_ascii=False).encode()
+            body = json.dumps(client_config.configs(self.json_entries(user_id), tuned=tuned),
+                              ensure_ascii=False).encode()
         else:
             body = base64.b64encode("\n".join(self.links(user_id)).encode())
         title = base64.b64encode(self.brand.encode()).decode()
@@ -1266,6 +1267,36 @@ class XrayProvider(VpnProvider):
             "profile-update-interval": "1",
         }
         return body, headers
+
+    def app_link(self, user_id: int) -> str:
+        """Ссылка на страницу, которая одним касанием добавляет подписку в приложение Aurora VPN."""
+        return self.sub_url(user_id) + "/app"
+
+    def app_deeplink(self, user_id: int) -> str:
+        # aurora://install-sub — обработчик ссылок v2rayNG: добавляет подписку и сразу её обновляет
+        return f"aurora://install-sub?url={quote(self.sub_url(user_id), safe='')}#{quote(self.brand)}"
+
+    def app_page(self, user_id: int) -> str:
+        """Telegram не открывает в кнопках ссылки aurora://, поэтому кнопка ведёт на эту страницу,
+        а уже она открывает приложение."""
+        import html as _html
+        raw = self.app_deeplink(user_id)
+        link = _html.escape(raw)
+        brand = _html.escape(self.brand)
+        return ("<!doctype html><html lang=ru><head><meta charset=utf-8>"
+                "<meta name=viewport content='width=device-width,initial-scale=1'>"
+                f"<title>{brand}</title><style>"
+                "body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;"
+                "background:#070609;color:#f3e6c4;font:17px/1.45 system-ui,sans-serif;text-align:center}"
+                "main{padding:24px;max-width:420px}h1{font-size:24px;color:#e8c46a;margin:0 0 12px}"
+                "a.b{display:block;margin:22px 0 14px;padding:16px;border-radius:14px;background:#e8c46a;"
+                "color:#070609;font-weight:700;text-decoration:none}p{color:#b9ad8f;margin:8px 0}"
+                f"</style></head><body><main><h1>{brand}</h1>"
+                "<p>Нажмите кнопку, и подписка добавится в приложение сама.</p>"
+                f"<a class=b href='{link}'>Открыть в приложении {brand}</a>"
+                "<p>Не открывается? Сначала установите приложение: его присылает бот.</p>"
+                f"</main><script>setTimeout(function(){{location.href={json.dumps(raw)}}},300)</script>"
+                "</body></html>")
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         status, body, headers = "404 Not Found", b"not found", {"Content-Type": "text/plain"}
@@ -1284,14 +1315,20 @@ class XrayProvider(VpnProvider):
             fmt = parse_qs(query).get("format", [""])[0]
             as_json = fmt == "json" or (fmt != "links" and self.json_sub and client_config.wants_json(agent))
             uid = None
+            app_page = path.endswith("/app")  # страница «Открыть в Aurora VPN» для этой подписки
+            if app_page:
+                path = path[:-4]
             m = re.fullmatch(r"/sub/(\d+)/([0-9a-f]{24})", path)
             if m and hmac.compare_digest(m.group(2), self.sub_token(int(m.group(1)))):
                 uid = int(m.group(1))
             m = re.fullmatch(r"/([0-9A-Za-z]{16})", path)
             if m:
                 uid = self._by_short(m.group(1))
-            if parts and parts[0] == "GET" and uid is not None:
-                res = self.subscription(uid, as_json=as_json)
+            if parts and parts[0] == "GET" and uid is not None and app_page:
+                status, body = "200 OK", self.app_page(uid).encode()
+                headers = {"Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store"}
+            elif parts and parts[0] == "GET" and uid is not None:
+                res = self.subscription(uid, as_json=as_json, tuned=as_json and client_config.is_aurora(agent))
                 if res:
                     status, (body, headers) = "200 OK", res
                 else:

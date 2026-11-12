@@ -185,6 +185,28 @@ async def main():
     await press(200, f"sub:{sid200}", ctx)
     u = await press(300, f"sub:{sid200}", ctx); assert alerted(u), "чужую подписку не открыть"
 
+    # 3а. своё приложение: пока не собрано — честный ответ; потом файл, повторно — по file_id
+    assert bot.android_app is None, "у демо-VPN приложения нет"
+    from android_app import AppRelease
+    bot.android_app = AppRelease("o/r", tempfile.mkdtemp())
+    def no_net(url, limit):
+        raise OSError("нет сети")
+    bot.android_app._fetch = no_net
+    await press(200, "apk", ctx)
+    assert "собирается" in ctx.bot.send_message.await_args.args[1]
+    rel = json.dumps({"tag_name": "v1.0.3", "assets": [{"name": "AuroraVPN-arm64-v8a.apk",
+                                                        "browser_download_url": "https://x/a"}]}).encode()
+    bot.android_app._fetch = lambda url, limit: rel if url.endswith("latest") else b"PK\x03\x04apk"
+    bot.android_app._checked = 0
+    doc = MagicMock(); doc.document.file_id = "APK1"
+    ctx.bot.send_document = AsyncMock(return_value=doc)
+    await press(200, "apk", ctx)
+    assert ctx.bot.send_document.await_args.kwargs["filename"] == "AuroraVPN-1.0.3.apk"
+    await press(200, "apk", ctx)
+    assert ctx.bot.send_document.await_args.args[1] == "APK1", "второй раз — без повторной загрузки"
+    bot.android_app = None
+    ctx.bot.send_document = AsyncMock()
+
     # 4. новая подписка на 3 устройства, 3 месяца
     await press(200, "buy:m3", ctx)          # есть подписки -> выбор цели
     await press(200, "bd:m3", ctx)           # выбор устройств
