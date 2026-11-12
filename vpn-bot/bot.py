@@ -377,8 +377,6 @@ def sub_kb(s) -> InlineKeyboardMarkup:
         rows.append([B("📷 QR-код", f"qr:{s['id']}"), B("📲 Подключение", "howto")])
         if getattr(vpn, "wg_on", False):
             rows.append([B("🛡 WireGuard: файл для приложения", f"wg:{s['id']}")])
-        if getattr(vpn, "awg_on", False):
-            rows.append([B("🛡 AmneziaWG: файл для приложения", f"awg:{s['id']}")])
     rows.append([B("◆ Продлить", f"ext:{s['id']}"), B("✏️ Переименовать", f"ren:{s['id']}")])
     if s["auto_active"] and sub_active(s):
         rows.append([B("🔁 Отключить автопродление", f"noauto:{s['id']}")])
@@ -868,30 +866,9 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     # ---- подписки
-    if parts[0] in ("sub", "qr", "raw", "ren", "ext", "noauto", "noautook", "wg", "awg") and len(parts) == 2:
+    if parts[0] in ("sub", "qr", "raw", "ren", "ext", "noauto", "noautook", "wg") and len(parts) == 2:
         sub = await own_sub(q, uid, parts[1])
         if not sub:
-            return
-        if parts[0] == "awg":
-            conf = await vpn.tunnel_config("awg", sub["id"], sub["name"]) if getattr(vpn, "awg_on", False) else None
-            if not sub_active(sub) or not conf:
-                await q.answer("AmneziaWG сейчас недоступен", show_alert=True)
-                return
-            await q.answer()
-            fname = re.sub(r"[^A-Za-z0-9_-]", "", config.BRAND.replace(" ", "_"))[:20] or "vpn"
-            await context.bot.send_document(
-                update.effective_chat.id, document=io.BytesIO(conf.encode()), filename=f"{fname}-awg-{sub['id']}.conf",
-                caption="🛡 <b>AmneziaWG</b>\n\n"
-                        "1. Установите приложение <b>AmneziaVPN</b> или <b>AmneziaWG</b> (Google Play, App Store).\n"
-                        "2. Откройте этот файл в приложении или отсканируйте QR-код ниже.\n"
-                        "3. Включите подключение.\n\n"
-                        "<i>Это WireGuard с маскировкой: оператору сложнее его распознать. В Happ и v2rayNG "
-                        "он не открывается. Файл личный, не пересылайте его.</i>")
-            img = qrcode.make(conf, border=2, box_size=8)
-            buf = io.BytesIO()
-            img.save(buf, format="PNG")
-            buf.seek(0)
-            await context.bot.send_photo(update.effective_chat.id, buf, caption="QR-код для AmneziaWG")
             return
         if parts[0] == "wg":
             conf = await vpn.wg_config(sub["id"], sub["name"]) if getattr(vpn, "wg_on", False) else None
@@ -1299,11 +1276,9 @@ def admin_kb() -> InlineKeyboardMarkup:
     rows = [[B("💳 Платежи", "adm:pays"), B("📢 Рассылка", "adm:bc")],
             [B("📈 Воронка", "adm:fun"), B("📊 Трафик", "adm:trf")],
             [B("🖥 Сервер", "adm:srv"), B("💾 Резервная копия", "adm:bak")]]
-    for kind, name in (("wg", "WireGuard"), ("awg", "AmneziaWG")):
-        if kind in getattr(vpn, "tunnels", {}):
-            on = vpn.tun_on(kind)
-            rows.append([B(f"🛡 {name}: включён · выключить" if on else f"🛡 {name}: выключен · включить",
-                           f"adm:{kind}")])
+    if getattr(vpn, "wg", None):
+        rows.append([B("🛡 WireGuard: включён · выключить" if vpn.wg_on else "🛡 WireGuard: выключен · включить",
+                       "adm:wg")])
     rows.append([B("🔄 Обновить", "adm:stats"), BACK])
     return InlineKeyboardMarkup(rows)
 
@@ -1628,17 +1603,16 @@ async def admin_button(update: Update, context: ContextTypes.DEFAULT_TYPE, row, 
         await send_backup(context.bot, row["id"])
         return
     await q.answer("Обновлено" if act in ("stats", "pays", "srv", "fun", "trf") else None)
-    if act in ("wg", "awg") and act in getattr(vpn, "tunnels", {}):
-        name = "AmneziaWG" if act == "awg" else "WireGuard"
-        turn_on = not vpn.tun_on(act)
-        ok, err = await vpn.set_tunnel(act, turn_on)
+    if act == "wg" and getattr(vpn, "wg", None):
+        turn_on = not vpn.wg_on
+        ok, err = await vpn.set_wg(turn_on)
         if not ok:
             await q.answer("Не получилось", show_alert=True)
-            await send_admins(context.bot, f"⚠️ <b>{name}</b> не " + ("включился" if turn_on else "выключился")
+            await send_admins(context.bot, "⚠️ <b>WireGuard</b> не " + ("включился" if turn_on else "выключился")
                               + f":\n<code>{esc(err)}</code>")
         else:
-            await q.answer(f"{name} включён: у гостей в подписке появилась кнопка" if turn_on
-                           else f"{name} выключен", show_alert=True)
+            await q.answer("WireGuard включён: у гостей в подписке появилась кнопка" if turn_on
+                           else "WireGuard выключен", show_alert=True)
         await show(update, context, admin_text(), admin_kb())
         return
     if act == "fun":

@@ -217,10 +217,10 @@ env_set() { sed -i -E "/^$1=/d" "$ENV"; echo "$1=$2" >> "$ENV"; }
 hy_free_ports() {
   local key port owner name pid unit ans s1 s2
   systemctl stop aurora-hy2@plain aurora-hy2@obfs >/dev/null 2>&1 || true
-  # Службы прежней версии установщика: одна Hysteria на 443/udp, отдельные серверы стран и
-  # перенаправление портов. Бот ими больше не управляет, а порты они занимают.
+  # Службы прежней версии установщика: одна Hysteria на 443/udp, отдельные серверы стран,
+  # перенаправление портов и AmneziaWG. Бот ими больше не управляет, а порты они занимают.
   local old
-  for old in hysteria-server aurora-hop \
+  for old in hysteria-server aurora-hop awg-quick@awg0 \
              $(systemctl list-units --all --plain --no-legend 'hysteria-loc@*' 2>/dev/null | awk '{print $1}'); do
     if systemctl is-enabled -q "$old" 2>/dev/null || systemctl is-active -q "$old" 2>/dev/null; then
       echo "Отключаю службу прежней версии: $old"
@@ -595,61 +595,6 @@ EOF
   fi
 fi
 
-# ---------- AmneziaWG: WireGuard с маскировкой, включается кнопкой в /admin ----------
-# Ставится только на Ubuntu из PPA Amnezia (нужен модуль ядра). AWG=0 при запуске — не ставить.
-AWG_OK=0
-if [ "${AWG:-1}" = 1 ]; then
-  say "Готовлю AmneziaWG (включается в /admin)"
-  if ! command -v awg >/dev/null; then
-    if [ "$ID" = ubuntu ]; then
-      apt-get install -y -qq software-properties-common "linux-headers-$(uname -r)" >/dev/null 2>&1 || true
-      { add-apt-repository -y ppa:amnezia/ppa >/dev/null 2>&1 && retry apt-get update -qq \
-        && apt-get install -y -qq amneziawg >/dev/null 2>&1; } || echo "AmneziaWG не поставился из PPA."
-    else
-      echo "AmneziaWG ставится автоматически только на Ubuntu. Hysteria работает и без него."
-    fi
-  fi
-  if command -v awg >/dev/null && command -v awg-quick >/dev/null; then
-    AWG_DIR=/etc/amnezia/amneziawg
-    mkdir -p "$AWG_DIR"; chmod 700 "$AWG_DIR"
-    if [ ! -f "$AWG_DIR/awg0.conf" ] || [ -z "$(envget AWG_PUBLIC_KEY)" ]; then
-      DEV=$(ip route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "dev") {print $(i + 1); exit}}')
-      AWGP=$(envget AWG_PORT); AWGP=${AWGP:-51821}
-      PRIV_AWG=$(awg genkey)
-      # Параметры маскировки свои для каждого сервера: мусорные пакеты, сдвиг и новые заголовки.
-      S1=$(shuf -i 15-150 -n 1); S2=$(shuf -i 15-150 -n 1)
-      [ $((S1 + 56)) -ne "$S2" ] || S2=$((S2 + 1))
-      read -r H1 H2 H3 H4 < <(shuf -i 5-2147483647 -n 4 | tr '\n' ' ')
-      PARAMS="Jc=4,Jmin=40,Jmax=70,S1=$S1,S2=$S2,H1=$H1,H2=$H2,H3=$H3,H4=$H4"
-      umask 077
-      {
-        echo "[Interface]"
-        echo "Address = 10.66.0.1/16"
-        echo "ListenPort = $AWGP"
-        echo "PrivateKey = $PRIV_AWG"
-        printf '%s\n' "$PARAMS" | tr ',' '\n' | sed 's/=/ = /'
-        echo "PostUp = iptables -t nat -A POSTROUTING -s 10.66.0.0/16 -o $DEV -j MASQUERADE; iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT"
-        echo "PostDown = iptables -t nat -D POSTROUTING -s 10.66.0.0/16 -o $DEV -j MASQUERADE; iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT"
-      } > "$AWG_DIR/awg0.conf"
-      umask 022
-      sed -i -E '/^AWG_(PORT|PUBLIC_KEY|PARAMS|NET)=/d' "$ENV"
-      { echo "AWG_PORT=$AWGP"; echo "AWG_PUBLIC_KEY=$(printf '%s' "$PRIV_AWG" | awg pubkey)"
-        echo "AWG_PARAMS=$PARAMS"; echo "AWG_NET=10.66.0.0/16"; } >> "$ENV"
-    fi
-    # Прежняя версия ставила AmneziaWG на 51820 — теперь там обычный WireGuard. Разводим порты.
-    if [ -n "$(envget WG_PORT)" ] && [ "$(envget AWG_PORT)" = "$(envget WG_PORT)" ]; then
-      sed -i -E "s/^ListenPort = .*/ListenPort = 51821/" "$AWG_DIR/awg0.conf"
-      sed -i -E '/^AWG_PORT=/d' "$ENV"; echo "AWG_PORT=51821" >> "$ENV"
-      echo "AmneziaWG перенесён на порт 51821/udp: 51820 занят обычным WireGuard."
-      systemctl is-active -q awg-quick@awg0 && systemctl restart awg-quick@awg0 || true
-    fi
-    echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/99-aurora-awg.conf
-    sysctl -q -p /etc/sysctl.d/99-aurora-awg.conf || true
-    AWG_OK=1
-    if systemctl is-active -q awg-quick@awg0; then echo "AmneziaWG включён."; else echo "AmneziaWG готов, включается в /admin."; fi
-  fi
-fi
-
 say "Ставлю Hysteria (подключение по UDP)"
 HY_OK=0
 if retry3 install_hysteria && setup_hysteria; then
@@ -719,10 +664,6 @@ if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
   if [ "$WG_OK" = 1 ]; then
     ufw allow "$(envget WG_PORT)"/udp >/dev/null 2>&1 || true
     ufw route allow in on wg0 >/dev/null 2>&1 || true
-  fi
-  if [ "$AWG_OK" = 1 ]; then
-    ufw allow "$(envget AWG_PORT)"/udp >/dev/null 2>&1 || true
-    ufw route allow in on awg0 >/dev/null 2>&1 || true
   fi
   # серверы Hysteria для стран через прокси: по одному UDP-порту на страну
   LOCP=$(envget HY2_LOC_PORTS); LOCP=${LOCP:-30000-30049}

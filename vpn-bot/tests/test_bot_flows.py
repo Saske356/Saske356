@@ -609,15 +609,15 @@ async def main():
         prov.hy2_sni_rotatable, bot.masking.ranked = saved_rot, saved_rank
         prov.hy2, prov.xray_enabled = None, True
     # WireGuard: включается кнопкой в админке, у гостя появляется кнопка с файлом
-    prov.tunnels["wg"] = MagicMock()
+    prov.wg = MagicMock()
     prov.state["wg_enabled"] = False
-    prov.set_tunnel = AsyncMock(side_effect=lambda kind, on: (prov.state.__setitem__(f"{kind}_enabled", on) or (True, "")))
+    prov.set_wg = AsyncMock(side_effect=lambda on: (prov.state.__setitem__("wg_enabled", on) or (True, "")))
     prov.wg_config = AsyncMock(return_value="[Interface]\nPrivateKey = X\n")
     assert any("WireGuard: выключен" in b.text for r in bot.admin_kb().inline_keyboard for b in r)
     assert not any("WireGuard" in b.text for r in bot.sub_kb(db.get_sub(some)).inline_keyboard for b in r)
-    await press(owner, "adm:wg", ctx); prov.set_tunnel.assert_not_awaited()  # не админ
+    await press(owner, "adm:wg", ctx); prov.set_wg.assert_not_awaited()  # не админ
     await press(1, "adm:wg", ctx)
-    prov.set_tunnel.assert_awaited_with("wg", True)
+    prov.set_wg.assert_awaited_with(True)
     assert any("WireGuard: включён" in b.text for r in bot.admin_kb().inline_keyboard for b in r)
     assert any("WireGuard" in b.text for r in bot.sub_kb(db.get_sub(some)).inline_keyboard for b in r)
     ctx.bot.send_document.reset_mock()
@@ -626,20 +626,8 @@ async def main():
     assert doc.kwargs["filename"].endswith(".conf") and b"PrivateKey" in doc.kwargs["document"].getvalue()
     check_caption(doc.kwargs["caption"])
     await press(1, "adm:wg", ctx)
-    prov.set_tunnel.assert_awaited_with("wg", False)
-    # AmneziaWG: своя кнопка в админке и своя у гостя
-    prov.tunnels["awg"] = MagicMock()
-    prov.tunnel_config = AsyncMock(return_value="[Interface]\nJc = 4\n")
-    assert any("AmneziaWG: выключен" in b.text for r in bot.admin_kb().inline_keyboard for b in r)
-    await press(1, "adm:awg", ctx)
-    prov.set_tunnel.assert_awaited_with("awg", True)
-    assert any("AmneziaWG" in b.text for r in bot.sub_kb(db.get_sub(some)).inline_keyboard for b in r)
-    ctx.bot.send_document.reset_mock()
-    await press(owner, f"awg:{some}", ctx)
-    doc = ctx.bot.send_document.await_args
-    assert "awg" in doc.kwargs["filename"] and b"Jc" in doc.kwargs["document"].getvalue()
-    check_caption(doc.kwargs["caption"])
-    prov.tunnels.clear(); prov.state["wg_enabled"] = prov.state["awg_enabled"] = False
+    prov.set_wg.assert_awaited_with(False)
+    prov.wg, prov.state["wg_enabled"] = None, False
     # купленные прокси списком: ссылка хранится на сервере, сообщение с ней удаляется
     import webshare as ws
     saved = ws.fetch, ws.scan, bot.public_proxies.direct_ok
