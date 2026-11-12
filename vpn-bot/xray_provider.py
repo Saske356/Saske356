@@ -1207,16 +1207,17 @@ class XrayProvider(VpnProvider):
         except OSError:
             pass
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        fd = os.open(path + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        tmp = path[:-5] + ".next.json"  # Xray узнаёт формат по расширению: временный файл тоже .json
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(text)
         if os.path.exists(self.xray_bin):  # конфиг сначала проверяет сам Xray
-            code, out = await self._run(self.xray_bin, "run", "-test", "-c", path + ".tmp")
+            code, out = await self._run(self.xray_bin, "run", "-test", "-c", tmp)
             if code != 0:
-                os.unlink(path + ".tmp")
+                os.unlink(tmp)
                 await self._problem("Xray не принял конфиг mKCP, оставляю прежний:\n" + out[-500:].strip())
                 return
-        os.replace(path + ".tmp", path)
+        os.replace(tmp, path)
         code, out = await self._run(*self.kcp.get("systemctl", ("systemctl",)), "restart",
                                     self.kcp.get("unit", "aurora-kcp"))
         if code != 0:

@@ -291,6 +291,23 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
                          {"type": "mkcp-legacy", "settings": {"value": "s33d"}})
         self.assertEqual([c["id"] for c in inb["settings"]["clients"]], [self.v.user_uuid(1, "kcp")])
         self.assertIn("restart aurora-kcp", self.units())
+        # Xray проверяет конфиг и, как настоящий, не принимает файл без .json на конце
+        xray = os.path.join(self.d, "xray-strict")
+        with open(xray, "w") as f:
+            f.write('#!/bin/sh\ncase "$4" in *.json) exit 0;; *) echo "Failed to get format of $4"; exit 1;; esac\n')
+        os.chmod(xray, 0o755)
+        self.v.xray_bin = xray
+        problems = []
+        self.v.on_problem = AsyncMock(side_effect=lambda t: problems.append(t))
+        await self.v.issue(3, time.time() + 3600)
+        await self.v._pending
+        self.assertEqual(problems, [], "проверка конфига mKCP проходит")
+        with open(os.path.join(self.hydir, "kcp.json")) as f:
+            self.assertIn(self.v.user_uuid(3, "kcp"), f.read())
+        self.assertFalse([x for x in os.listdir(self.hydir) if x.startswith("kcp.") and x != "kcp.json"],
+                         "временных файлов не остаётся")
+        await self.v.revoke(3)
+        await self.v._pending
         n = len(self.units())
         await self.v.apply()
         self.assertEqual(len(self.units()), n, "ключи те же — mKCP не перезапускается")

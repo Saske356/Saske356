@@ -54,5 +54,6 @@
 - В тестах вместо xray/hysteria/systemctl/wg — заглушки (shell/python-скрипты в temp). В сеть тесты не ходят.
 - В песочнице Claude **нельзя запускать скачанные бинарники** (xray, hysteria) — форматы сверяй по исходникам (sparse-clone XTLS/Xray-core, apernet/hysteria).
 - В песочнице исходящие подключения подменяются: `curl --proxy` через чужой прокси показывает адрес самой песочницы — проверка прокси отсюда недостоверна.
+- Xray определяет формат конфига по расширению: временные файлы для `xray run -test` должны кончаться на `.json` (была ошибка с `kcp.json.tmp`). В тестах заглушки Xray тоже отвергают файлы без `.json`.
 - Перед коммитом: `pyflakes`, `bash -n` для `*.sh`, все тесты.
 - Ключевые файлы: `bot.py` (бот), `xray_provider.py` (Xray, Hysteria, страны, mKCP, подписка), `client_config.py` (JSON для Happ), `install.sh`, `diag.sh`, `webshare.py`, `devices.py`, `auto_proxy.py`, `proxy_relay.py`, `public_proxies.py`, `db.py`.
