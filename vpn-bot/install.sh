@@ -145,7 +145,7 @@ install_hysteria() {
   rm -rf "$tmp"
 }
 
-envget() { grep -E "^$1=" "$ENV" | tail -1 | cut -d= -f2- | tr -d '"'; }
+envget() { { grep -E "^$1=" "$ENV" || true; } | tail -1 | cut -d= -f2- | tr -d '"'; }  # нет ключа — пусто
 
 hy_config() {  # $1 — plain (похож на HTTP/3) или obfs (похож на случайный UDP)
   local name="$1" port stats
@@ -387,12 +387,68 @@ else
 fi
 mkdir -p /var/lib/aurora
 
+# ---------- Xray или только Hysteria ----------
+if ! grep -qE '^XRAY_ENABLED=' "$ENV"; then
+  say "Способ подключения"
+  echo "Hysteria (UDP) проходит там, где оператор режет обычные подключения. Xray нужен только"
+  echo "для стран через прокси и как запасной вариант по TCP."
+  KEEPX=$(ask "Оставить Xray вместе с Hysteria? (y — да, Enter — только Hysteria)" "n")
+  case "$KEEPX" in y|Y|д|Д|yes|да) echo "XRAY_ENABLED=1" >> "$ENV" ;; *) echo "XRAY_ENABLED=0" >> "$ENV" ;; esac
+fi
+XRAY_ON=$(envget XRAY_ENABLED); XRAY_ON=${XRAY_ON:-1}
+
+# ---------- подписка по HTTPS на своём домене: https://домен/ТОКЕН ----------
+if ! grep -qE '^SUB_DOMAIN=' "$ENV"; then
+  say "Домен для подписки"
+  echo "Ссылка подписки будет вида https://домен/ZKwXhAPWFBHb7NZn. Нужен домен (или поддомен),"
+  echo "у которого запись A указывает на IP этого сервера. Без Cloudflare-прокси (серое облако)."
+  DOMAIN=$(ask "Домен, например sub.example.com (Enter — без домена)" "")
+  DOMAIN=$(printf '%s' "$DOMAIN" | tr 'A-Z' 'a-z' | sed -E 's#^https?://##; s#/.*##')
+  echo "SUB_DOMAIN=$DOMAIN" >> "$ENV"
+fi
+DOMAIN=$(envget SUB_DOMAIN)
+if [ -n "$DOMAIN" ] && [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+  say "Сертификат для $DOMAIN"
+  MYIP=$(envget PUBLIC_HOST)
+  GOT=$({ getent ahostsv4 "$DOMAIN" || true; } | awk '{print $1; exit}')
+  if [ "$GOT" != "$MYIP" ]; then
+    echo "⚠️ $DOMAIN указывает на ${GOT:-никуда}, а этот сервер $MYIP. Поправьте запись A у регистратора"
+    echo "   и запустите установщик ещё раз. Пока подписка раздаётся по HTTP."
+  else
+    retry apt-get install -y -qq certbot >/dev/null || echo "не удалось поставить certbot"
+    for svc in nginx apache2 caddy lighttpd; do systemctl disable --now "$svc" >/dev/null 2>&1 || true; done
+    command -v ufw >/dev/null && ufw status | grep -q "Status: active" && ufw allow 80/tcp >/dev/null
+    if certbot certonly --standalone --non-interactive --agree-tos --register-unsafely-without-email \
+         -d "$DOMAIN" >/tmp/aurora-certbot.log 2>&1; then
+      echo "✅ сертификат получен, продлевается сам"
+    else
+      echo "❌ сертификат не получен: tail -20 /tmp/aurora-certbot.log. Порт 80 должен быть открыт у хостинга."
+    fi
+  fi
+fi
+if [ -n "$DOMAIN" ] && [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+  sed -i -E '/^SUB_(CERT|KEY|TLS_PORT)=/d' "$ENV"
+  cat >> "$ENV" <<EOF
+SUB_CERT=/etc/letsencrypt/live/$DOMAIN/fullchain.pem
+SUB_KEY=/etc/letsencrypt/live/$DOMAIN/privkey.pem
+SUB_TLS_PORT=$([ "$XRAY_ON" = 0 ] && echo 443 || echo 2053)
+EOF
+  # после продления сертификата бот перезапускается и подхватывает новый
+  mkdir -p /etc/letsencrypt/renewal-hooks/deploy
+  printf '#!/bin/sh\nsystemctl restart aurora-bot\n' > /etc/letsencrypt/renewal-hooks/deploy/aurora.sh
+  chmod 755 /etc/letsencrypt/renewal-hooks/deploy/aurora.sh
+fi
+
 say "Ставлю Hysteria (подключение по UDP)"
 HY_OK=0
 if retry3 install_hysteria && setup_hysteria; then
   HY_OK=1
 else
   echo "Hysteria поставить не удалось. Xray работает и без неё; запустите установщик ещё раз позже."
+  if [ "$XRAY_ON" = 0 ]; then  # без обоих VPN не будет вовсе
+    echo "Включаю Xray обратно, чтобы VPN работал."
+    sed -i -E 's/^XRAY_ENABLED=.*/XRAY_ENABLED=1/' "$ENV"; XRAY_ON=1
+  fi
 fi
 
 say "Ускорение сети (BBR)"
@@ -420,11 +476,15 @@ LimitNOFILE=65536
 WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
-systemctl enable -q xray
+if [ "$XRAY_ON" = 1 ]; then
+  systemctl enable -q xray
+else
+  systemctl disable --now xray >/dev/null 2>&1 || true
+fi
 systemctl enable -q aurora-bot
 
 say "Освобождаю порт 443 для VPN"
-busy443() { ss -tlnpH 'sport = :443' | grep -v '"xray"' || true; }
+busy443() { ss -tlnpH 'sport = :443' | grep -v '"xray"' | grep -v '"python' || true; }
 if [ -n "$(busy443)" ]; then
   for svc in caddy nginx apache2 httpd lighttpd haproxy; do
     if systemctl is-active -q "$svc" 2>/dev/null; then
@@ -445,6 +505,7 @@ if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
   ufw allow "$BRIDGE_PORT"/tcp >/dev/null
   ufw allow 443/udp >/dev/null
   ufw allow 8443/udp >/dev/null
+  [ -n "$(envget SUB_TLS_PORT)" ] && ufw allow "$(envget SUB_TLS_PORT)"/tcp >/dev/null
 fi
 
 say "Проверка"
@@ -453,14 +514,25 @@ ok=1
 # подписок: ждём, пока заработает и то и другое (старый Xray мог держать 443 и до этого)
 sleep 5
 for _ in $(seq 1 45); do
-  ss -tlnpH 'sport = :443' | grep -q '"xray"' && ss -tlnpH "sport = :$SUB_PORT" | grep -q python && break
+  { [ "$XRAY_ON" = 0 ] || ss -tlnpH 'sport = :443' | grep -q '"xray"'; } \
+    && ss -tlnpH "sport = :$SUB_PORT" | grep -q python && break
   sleep 1
 done
 systemctl is-active -q aurora-bot && echo "✅ бот работает" || { echo "❌ бот не запустился"; ok=0; }
-if ss -tlnpH 'sport = :443' | grep -q '"xray"'; then
+if [ "$XRAY_ON" = 0 ]; then
+  echo "◇ Xray выключен, VPN идёт через Hysteria"
+elif ss -tlnpH 'sport = :443' | grep -q '"xray"'; then
   echo "✅ VPN принимает подключения на порту 443"
 else
   echo "❌ VPN не слушает порт 443"; ok=0
+fi
+TLSP=$(envget SUB_TLS_PORT)
+if [ -n "$TLSP" ]; then
+  if curl -fsS -m 10 -o /dev/null "https://$(envget SUB_DOMAIN):$TLSP/"; then
+    echo "✅ подписка раздаётся по HTTPS: https://$(envget SUB_DOMAIN)$([ "$TLSP" = 443 ] || echo ":$TLSP")/..."
+  else
+    echo "❌ HTTPS-подписка не отвечает на $(envget SUB_DOMAIN):$TLSP"; ok=0
+  fi
 fi
 if [ "$HY_OK" = 1 ]; then
   if systemctl is-active -q aurora-hy2@plain && systemctl is-active -q aurora-hy2@obfs; then

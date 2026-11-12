@@ -61,13 +61,23 @@ class XrayProvider(VpnProvider):
                  restart_cmd: tuple = ("systemctl", "restart", "xray"),
                  auto_enabled: bool = False, auto_countries: tuple = (), auto_max: int = 8,
                  relay_port: int = 20808, api_port: int = 10085, bridge_port: int = 8444,
-                 xhttp: bool = True, sub_base: str = "", hy2: dict | None = None, hy2_auth_port: int = 20809):
+                 xhttp: bool = True, sub_base: str = "", hy2: dict | None = None, hy2_auth_port: int = 20809,
+                 xray_enabled: bool = True, sub_domain: str = "", sub_tls_port: int = 443,
+                 sub_cert: str = "", sub_key: str = ""):
         self.state_path, self.config_path, self.xray_bin = state_path, config_path, xray_bin
         self.host, self.port, self.env_sni = public_host, port, sni
         self.private_key, self.public_key, self.short_id = private_key, public_key, short_id
         self.sub_port, self.brand, self.restart_cmd = sub_port, brand, restart_cmd
         self.relay_port, self.api_port, self.bridge_port = relay_port, api_port, bridge_port
-        self.xhttp_enabled = xhttp
+        # XRAY_ENABLED=0: Xray не используется вовсе, VPN идёт только через Hysteria
+        self.xray_enabled = xray_enabled
+        self.xhttp_enabled = xhttp and xray_enabled
+        # Подписка по HTTPS на своём домене: https://домен/КОРОТКИЙ_ТОКЕН
+        self.sub_domain = sub_domain.strip().lower()
+        self.sub_tls_port, self.sub_cert, self.sub_key = sub_tls_port, sub_cert, sub_key
+        self._tls_server: asyncio.base_events.Server | None = None
+        self.sub_https: bool | None = None  # HTTPS-раздача: None — ещё не запускали, False — не поднялась
+        self._short: dict[str, int] = {}
         # Hysteria2: {"port", "sni", "pin", "obfs", "obfs_port", "stats_ports", "stats_secret"}.
         # port — обычный вариант (похож на HTTP/3), obfs_port — с обфускацией (похож на случайный UDP).
         self.hy2 = hy2 if hy2 and (hy2.get("port") or hy2.get("obfs_port")) else None
@@ -245,7 +255,29 @@ class XrayProvider(VpnProvider):
     def sub_token(self, user_id: int) -> str:
         return hmac.new(self.state["secret"].encode(), str(user_id).encode(), hashlib.sha256).hexdigest()[:24]
 
+    B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+    def short_token(self, user_id: int) -> str:
+        """16 символов из букв и цифр, по ним нельзя угадать ни номер, ни чужую подписку."""
+        n = int.from_bytes(hmac.new(self.state["secret"].encode(), f"sub16:{user_id}".encode(),
+                                    hashlib.sha256).digest(), "big")
+        out = ""
+        for _ in range(16):
+            n, r = divmod(n, 62)
+            out += self.B62[r]
+        return out
+
+    def _by_short(self, token: str) -> int | None:
+        uid = self._short.get(token)
+        if uid is None or str(uid) not in self.state["users"]:
+            self._short = {self.short_token(int(u)): int(u) for u in self.state["users"]}
+            uid = self._short.get(token)
+        return uid
+
     def sub_url(self, user_id: int) -> str:
+        if self.sub_domain and self.sub_cert and self.sub_https is not False:
+            port = "" if self.sub_tls_port == 443 else f":{self.sub_tls_port}"
+            return f"https://{self.sub_domain}{port}/{self.short_token(user_id)}"
         # SUB_URL: свой адрес раздачи, например домен за Cloudflare, если оператор режет порт подписки
         base = self.sub_base or f"http://{self.host}:{self.sub_port}"
         return f"{base}/sub/{user_id}/{self.sub_token(user_id)}"
@@ -256,7 +288,7 @@ class XrayProvider(VpnProvider):
 
     @property
     def xhttp_on(self) -> bool:
-        return self.xhttp_enabled and not self.xhttp_off
+        return self.xray_enabled and self.xhttp_enabled and not self.xhttp_off
 
     # ---------- интерфейс для бота ----------
 
@@ -531,6 +563,8 @@ class XrayProvider(VpnProvider):
         shown = [l for l in self.locations if not l.get("down") and not (l.get("auto") and self.auto_rejected)]
         # Hysteria первой: приложения проверяют пинг сверху вниз, и она чаще проходит.
         out = self.hy2_links(user_id)
+        if not self.xray_enabled:
+            return out
         out += [self._link(self.user_uuid(user_id, loc["code"]), self.host, self.port, self.sni, loc["name"])
                for loc in shown]
         direct = self.user_uuid(user_id, self.direct_location()["code"])
@@ -801,6 +835,9 @@ class XrayProvider(VpnProvider):
         Если Xray не принимает запасной вход или авто-страны, применяется конфиг без них:
         основная страна, купленные прокси и новые клиенты не должны от них зависеть."""
         # Xray определяет формат по расширению, поэтому временный файл тоже .json
+        if not self.xray_enabled:  # VPN только через Hysteria: ей перезапуск не нужен никогда
+            self.last_apply, self.last_error = time.time(), ""
+            return True
         base = self.config_path[:-5] if self.config_path.endswith(".json") else self.config_path
         tmp = base + ".next.json"
         os.makedirs(os.path.dirname(self.config_path) or ".", exist_ok=True)
@@ -894,14 +931,26 @@ class XrayProvider(VpnProvider):
                 if h in (b"\r\n", b"\n", b""):
                     break
             parts = line.decode(errors="replace").split()
-            m = re.fullmatch(r"/sub/(\d+)/([0-9a-f]{24})", parts[1]) if len(parts) >= 2 else None
-            if m and parts[0] == "GET" and hmac.compare_digest(m.group(2), self.sub_token(int(m.group(1)))):
-                res = self.subscription(int(m.group(1)))
+            path = parts[1].split("?", 1)[0] if len(parts) >= 2 else ""
+            uid = None
+            m = re.fullmatch(r"/sub/(\d+)/([0-9a-f]{24})", path)
+            if m and hmac.compare_digest(m.group(2), self.sub_token(int(m.group(1)))):
+                uid = int(m.group(1))
+            m = re.fullmatch(r"/([0-9A-Za-z]{16})", path)
+            if m:
+                uid = self._by_short(m.group(1))
+            if parts and parts[0] == "GET" and uid is not None:
+                res = self.subscription(uid)
                 if res:
                     status, (body, headers) = "200 OK", res
                 else:
                     status, body = "403 Forbidden", b"subscription expired"
-        except (asyncio.TimeoutError, ConnectionError, UnicodeError):
+            elif path == "/" and parts and parts[0] in ("GET", "HEAD"):
+                # корень выглядит как обычная страница, а не как VPN
+                status, body = "200 OK", (f"<!doctype html><title>{self.brand}</title>"
+                                          f"<h1>{self.brand}</h1>").encode()
+                headers = {"Content-Type": "text/html; charset=utf-8"}
+        except (asyncio.TimeoutError, ConnectionError, UnicodeError, OSError):
             pass
         head = f"HTTP/1.1 {status}\r\nContent-Length: {len(body)}\r\nConnection: close\r\n"
         head += "".join(f"{k}: {v}\r\n" for k, v in headers.items())
@@ -916,6 +965,25 @@ class XrayProvider(VpnProvider):
     async def start_sub_server(self, host: str = "0.0.0.0") -> None:
         self._server = await asyncio.start_server(self._handle, host, self.sub_port)
         log.info("Подписки раздаются на порту %d", self.sub_port)
+        if self.sub_domain and self.sub_cert:
+            await self.start_https(host)
+
+    async def start_https(self, host: str = "0.0.0.0") -> bool:
+        """HTTPS-раздача на своём домене с сертификатом Let's Encrypt."""
+        import ssl
+        try:
+            ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            ctx.load_cert_chain(self.sub_cert, self.sub_key)
+            self._tls_server = await asyncio.start_server(self._handle, host, self.sub_tls_port, ssl=ctx,
+                                                          ssl_handshake_timeout=10)
+        except (OSError, ssl.SSLError) as e:
+            self.sub_https = False
+            await self._problem(f"Подписка по HTTPS на {self.sub_domain}:{self.sub_tls_port} не запустилась: {e}. "
+                                "Клиенты получают ссылки по HTTP.")
+            return False
+        self.sub_https = True
+        log.info("Подписки раздаются по HTTPS: %s:%d", self.sub_domain, self.sub_tls_port)
+        return True
 
 
 def from_env() -> XrayProvider:
@@ -946,4 +1014,8 @@ def from_env() -> XrayProvider:
              "stats_ports": [int(p) for p in e.get("HY2_STATS_PORTS", "").split(",") if p.strip().isdigit()],
              "stats_secret": e.get("HY2_STATS_SECRET", "")} if e.get("HY2_PORT") or e.get("HY2_OBFS_PORT") else None,
         hy2_auth_port=int(e.get("HY2_AUTH_PORT", "20809")),
+        xray_enabled=e.get("XRAY_ENABLED", "1") == "1",
+        sub_domain=e.get("SUB_DOMAIN", ""),
+        sub_tls_port=int(e.get("SUB_TLS_PORT") or (443 if e.get("XRAY_ENABLED", "1") == "0" else 2053)),
+        sub_cert=e.get("SUB_CERT", ""), sub_key=e.get("SUB_KEY", ""),
     )

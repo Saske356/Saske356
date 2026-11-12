@@ -3,7 +3,7 @@
 Вместо настоящего Xray подставляется заглушка, которая, как и он, принимает только файлы .json.
 """
 
-import asyncio, base64, json, os, stat, subprocess, sys, tempfile, time, unittest
+import asyncio, base64, json, os, re, stat, subprocess, sys, tempfile, time, unittest
 from urllib.parse import urlparse, parse_qs, unquote
 from unittest.mock import AsyncMock, MagicMock
 
@@ -281,6 +281,56 @@ class XrayProvider(unittest.IsolatedAsyncioTestCase):
         await v.revoke(5)
         assert (await ask(v.hy2_password(5)))["ok"] is False, "после отключения пароль не принимается"
         v._hy2_server.close()
+        for t in asyncio.all_tasks():
+            if t is not asyncio.current_task():
+                t.cancel()
+
+    async def test_https_subscription_and_hysteria_only(self):
+        d = tempfile.mkdtemp()
+        cert, key = os.path.join(d, "c.pem"), os.path.join(d, "k.pem")
+        subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", cert,
+                        "-days", "2", "-subj", "/CN=sub.example.com", "-addext", "subjectAltName=DNS:sub.example.com"],
+                       check=True, capture_output=True)
+        v = make(name="https")
+        v.xray_enabled = v.xhttp_enabled = False
+        v.hy2 = {"port": 443, "sni": "www.nvidia.com", "pin": "", "obfs": "", "stats_ports": []}
+        v.sub_domain, v.sub_tls_port, v.sub_cert, v.sub_key = "sub.example.com", 0, cert, key
+        now = time.time()
+        old = v.sub_url(9)
+        await v.issue(9, now + 1000)
+        assert await v.apply() and v.restarts == 0, "без Xray перезапускать нечего"
+        assert [l.split("://")[0] for l in v.links(9)] == ["hysteria2"], "в подписке только Hysteria"
+        await v.start_sub_server("127.0.0.1")
+        assert v.sub_https
+        port = v._tls_server.sockets[0].getsockname()[1]
+        v.sub_tls_port = 443
+        url = v.sub_url(9)
+        assert re.fullmatch(r"https://sub\.example\.com/[0-9A-Za-z]{16}", url), url
+        assert url != old and v.short_token(9) != v.short_token(10)
+        import ssl
+        ctx = ssl.create_default_context(cafile=cert)
+
+        async def get(path, tls=True):
+            r, w = await asyncio.open_connection(
+                "127.0.0.1", port if tls else v._server.sockets[0].getsockname()[1],
+                ssl=ctx if tls else None, server_hostname="sub.example.com" if tls else None)
+            w.write(f"GET {path} HTTP/1.1\r\nHost: sub.example.com\r\n\r\n".encode()); await w.drain()
+            data = await r.read(); w.close()
+            return data.partition(b"\r\n\r\n")
+        head, _, body = await get("/" + v.short_token(9))
+        assert head.startswith(b"HTTP/1.1 200") and base64.b64decode(body).decode() == v.links(9)[0]
+        head, _, _ = await get("/" + "A" * 16); assert head.startswith(b"HTTP/1.1 404")
+        head, _, body = await get("/"); assert head.startswith(b"HTTP/1.1 200") and b"<h1>" in body
+        head, _, _ = await get(f"/sub/9/{v.sub_token(9)}", tls=False)
+        assert head.startswith(b"HTTP/1.1 200"), "старые ссылки продолжают работать"
+        await v.revoke(9)
+        head, _, _ = await get("/" + v.short_token(9)); assert head.startswith(b"HTTP/1.1 404")
+        # сертификат не найден: бот раздаёт по HTTP и не обещает HTTPS в ссылках
+        w = make(name="https2")
+        w.sub_domain, w.sub_tls_port, w.sub_cert, w.sub_key = "sub.example.com", 0, "/nope.pem", "/nope.pem"
+        assert not await w.start_https("127.0.0.1") and w.sub_url(1).startswith("http://203.0.113.7")
+        for srv in (v._server, v._tls_server):
+            srv.close()
         for t in asyncio.all_tasks():
             if t is not asyncio.current_task():
                 t.cancel()

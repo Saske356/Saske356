@@ -131,6 +131,8 @@ def ref_condition() -> str:
 
 
 def location_names() -> list[str]:
+    if not getattr(vpn, "xray_enabled", True):  # без Xray клиенту доступна только страна сервера
+        return [vpn.direct_location()["name"]]
     return [l["name"] for l in getattr(vpn, "locations", [])]
 
 
@@ -1161,16 +1163,23 @@ async def server_text() -> str:
         lines.append("◇ VPN: демо-режим, сервер не подключён")
     else:
         vpn_ok, sub_ok = await port_open(vpn.port), await port_open(vpn.sub_port)
-        lines.append(f"{'✅' if vpn_ok else '❌'} VPN (порт {vpn.port}): "
-                     + ("принимает подключения" if vpn_ok else "не отвечает"))
+        if vpn.xray_enabled:
+            lines.append(f"{'✅' if vpn_ok else '❌'} VPN (порт {vpn.port}): "
+                         + ("принимает подключения" if vpn_ok else "не отвечает"))
+        else:
+            lines.append("◇ Xray выключен (XRAY_ENABLED=0): VPN идёт только через Hysteria")
+        if vpn.sub_domain:
+            lines.append(("✅" if vpn.sub_https else "❌") + f" Подписка по HTTPS: {esc(vpn.sub_domain)}"
+                         + ("" if vpn.sub_https else ", не запустилась, ссылки идут по HTTP"))
         lines.append(f"{'✅' if sub_ok else '❌'} Подписки (порт {vpn.sub_port}): "
                      + ("раздаются" if sub_ok else "не раздаются"))
         if vpn.last_error:
             lines.append("❌ Последняя ошибка VPN:\n<code>" + esc(vpn.last_error[:300]) + "</code>")
         elif vpn.last_apply:
             lines.append(f"◆ Настройки VPN применены {fmt_span(time.time() - vpn.last_apply)} назад")
-        lines.append(f"◆ Перезапусков Xray: {vpn.restarts}, изменений клиентов без перезапуска: "
-                     f"{vpn.hot_updates}")
+        if vpn.xray_enabled:
+            lines.append(f"◆ Перезапусков Xray: {vpn.restarts}, изменений клиентов без перезапуска: "
+                         f"{vpn.hot_updates}")
         if vpn.hy2:
             hy_ok, online = await vpn.hy2_running(), await vpn.hy2_online()
             lines.append(f"{'✅' if hy_ok else '❌'} Hysteria (UDP): " + ("работает" if hy_ok else "не запущена")
@@ -1457,7 +1466,10 @@ def locations_text() -> str:
         state = " · ❌ не отвечает" if b.get("down") else ""
         return f"◆ <code>{esc(b['code'])}</code> · {esc(b['name'])} · {esc(b['host'])}:{b['port']}{mask}{state}"
     bridges = [bridge_line(b) for b in getattr(vpn, "bridges", [])]
-    return (xray_warning() + "<b>Страны</b>\n\n" + "\n".join(lines) + "\n\n"
+    off = ("⚠️ Xray выключен: страны через прокси не работают, клиенты подключаются только к этому "
+           "серверу через Hysteria. Включить Xray: XRAY_ENABLED=1 в .env и перезапуск бота.\n\n"
+           if not getattr(vpn, "xray_enabled", True) else "")
+    return (xray_warning() + off + "<b>Страны</b>\n\n" + "\n".join(lines) + "\n\n"
             "Добавить: /addloc <code>код</code> <code>Название</code> | <code>socks5://логин:пароль@ip:порт</code>\n"
             "Удалить: /delloc <code>код</code>\n\n"
             "<b>Мосты для обхода</b>\n\n" + ("\n".join(bridges) if bridges else "<i>пока нет</i>") + "\n\n"

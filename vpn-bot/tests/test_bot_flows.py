@@ -455,6 +455,16 @@ async def main():
     bot.pick_bridge_site = real_pick
     ctx.args = ["ru3"]; await bot.delbridge(make_update(1), ctx); ctx.args = []
     st_text = await bot.server_text(); check_caption(st_text); assert "без перезапуска" in st_text
+    # режим без Xray: в подписке и на экранах только Hysteria
+    prov.xray_enabled = False
+    prov.hy2 = {"port": 443, "sni": "www.nvidia.com", "pin": "", "obfs": "", "stats_ports": []}
+    prov.sub_domain = "sub.example.com"
+    st_text = await bot.server_text(); check_caption(st_text)
+    assert "Xray выключен" in st_text and "HTTPS" in st_text and "Перезапусков" not in st_text
+    assert "Xray выключен" in bot.locations_text() and len(bot.location_names()) == 1
+    assert all(l.startswith("hysteria2://") for l in prov.links(some)) and "Hysteria" in bot.fix_text()
+    assert "запасной" not in bot.fix_text()
+    prov.xray_enabled, prov.hy2, prov.sub_domain = True, None, ""
     ctx.bot.send_message.reset_mock()
     prov.add_location("dead", "🇺🇸 США", "socks5://u:p@127.0.0.1:1")
     prov.check_proxies = AsyncMock(return_value=[(prov.locations[-1], False)])  # сама проверка покрыта в tests/
