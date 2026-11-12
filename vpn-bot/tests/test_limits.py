@@ -97,7 +97,19 @@ class Provider(unittest.IsolatedAsyncioTestCase):
         self.stats.online = {"u1": 2}
         self.assertEqual(await self.v.traffic(), {1: (10, 20), 2: (1, 2)})
         self.assertEqual(self.stats.traffic, {}, "счётчики сбрасываются после чтения")
-        self.assertEqual(await self.v.online(), {1: 2})
+        self.assertEqual(await self.v.online(), {1: 1}, "адреса входа неизвестны — одно устройство")
+        # Один телефон: «Лучший сервер» и проверки пинга дают 9 подключений из одной сети оператора
+        self.stats.online = {"u1": 9}
+        for port in (1111, 2222, 3333):
+            self.v._hy2_nets.setdefault(1, {})[xp.device_net(f"100.64.7.{port % 200}:{port}")] = time.time()
+        self.assertEqual(await self.v.online(), {1: 1}, "9 подключений из одной сети — одно устройство")
+        self.v._hy2_nets[1][xp.device_net("[2a00:1fa0:4f2:1::5]:443")] = time.time()
+        self.v._hy2_nets[1][xp.device_net("203.0.113.9:7")] = time.time() - xp.HY2_NET_WINDOW - 1
+        self.assertEqual(await self.v.online(), {1: 2}, "вторая сеть — второе устройство, старый вход забыт")
+        self.stats.online = {"u1": 1}
+        self.assertEqual(await self.v.online(), {1: 1}, "устройств не больше, чем подключений")
+        self.v._hy2_nets.clear()
+        self.stats.online = {"u1": 2}
         # вместе с Xray: трафик по ключам всех стран и разные адреса складываются
         self.v._live = {}
         with open(os.path.join(self.d, "xray"), "w") as f:
@@ -107,7 +119,7 @@ class Provider(unittest.IsolatedAsyncioTestCase):
             "statsquery": {"stat": [{"name": "user>>>u1.main>>>traffic>>>uplink", "value": 100},
                                     {"name": "user>>>u1.nl>>>traffic>>>downlink", "value": 1000},
                                     {"name": "inbound>>>in>>>traffic>>>uplink", "value": 5}]},
-            "statsonlineiplist": {"users": [{"email": "u1.main", "ips": [{"ip": "10.0.0.1"}, {"ip": "10.0.0.2"}]},
+            "statsonlineiplist": {"users": [{"email": "u1.main", "ips": [{"ip": "10.0.0.1"}, {"ip": "10.0.1.2"}]},
                                             {"email": "u1.nl", "ips": [{"ip": "10.0.0.2"}]},
                                             {"email": "u2.main", "ips": [{"ip": "10.0.0.9"}]}]},
         }
@@ -119,8 +131,16 @@ class Provider(unittest.IsolatedAsyncioTestCase):
         self.v._api = api
         self.stats.traffic = {"u1": {"tx": 1, "rx": 1}}
         self.assertEqual(await self.v.traffic(), {1: (101, 1001)})
-        self.assertEqual(await self.v.online(), {1: 4, 2: 1})
+        # Xray: сети 10.0.0.0/24 и 10.0.1.0/24, плюс Hysteria без известного адреса
+        self.assertEqual(await self.v.online(), {1: 3, 2: 1})
         self.assertIn(("statsquery", ("-pattern=user>>>", "-reset")), seen)
+
+    def test_device_net(self):
+        self.assertEqual(xp.device_net("1.2.3.4:5"), "1.2.3.0/24")
+        self.assertEqual(xp.device_net("[2a00:1fa0:4f2:1::5]:443"), "2a00:1fa0:4f2::/56")
+        self.assertEqual(xp.device_net("[::ffff:1.2.3.4]:5"), "1.2.3.0/24")
+        self.assertEqual(xp.device_net("10.0.0.9"), "10.0.0.0/24")
+        self.assertEqual(xp.device_net("мусор"), "")
 
     async def test_no_data_means_no_decision(self):
         self.stats.secret = "other"   # Hysteria не отвечает, Xray не запущен

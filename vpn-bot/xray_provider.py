@@ -54,6 +54,28 @@ def parse_proxy(url: str) -> dict:
             "settings": {"servers": [server]}}
 
 
+HY2_NET_WINDOW = 600  # вход по Hysteria за последние 10 минут — устройство ещё в сети
+
+
+def device_net(addr: str) -> str:
+    """Сеть устройства по адресу «ip:порт»: /24 для IPv4, /56 для IPv6 — у мобильного оператора
+    один телефон может выходить с разных адресов одного пула."""
+    import ipaddress
+    host = addr.strip()
+    if host.startswith("["):
+        host = host[1:].partition("]")[0]
+    elif host.count(":") == 1:
+        host = host.partition(":")[0]
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return ""
+    if ip.version == 6 and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    plen = 24 if ip.version == 4 else 56
+    return str(ipaddress.ip_network(f"{ip}/{plen}", strict=False))
+
+
 class XrayProvider(VpnProvider):
     is_demo = False
 
@@ -87,6 +109,10 @@ class XrayProvider(VpnProvider):
         self.hy2_auth_port = hy2_auth_port
         self._hy2_server: asyncio.base_events.Server | None = None
         self.hy2_logins = 0          # успешных входов через Hysteria с запуска бота
+        # Hysteria сама сообщает только число подключений, а у одного телефона их бывает много:
+        # «Лучший сервер» держит по подключению к каждой стране, приложения проверяют пинг.
+        # Поэтому запоминаем, из каких сетей был вход (подписка -> сеть -> когда), и считаем их.
+        self._hy2_nets: dict[int, dict[str, float]] = {}
         self.usage = None            # функция(подписка) -> (отдано, получено): бот берёт из базы
         # Hysteria для стран через прокси: {"ports": диапазон UDP, "dir": папка конфигов,
         # "stats_base": первый порт статистики, "systemctl": команда}. У каждой страны своя служба
@@ -407,8 +433,11 @@ class XrayProvider(VpnProvider):
 
     async def online(self) -> dict[int, int] | None:
         """Сколько устройств подключено к каждой подписке сейчас. None — узнать не удалось.
-        Для Xray это число разных адресов, для Hysteria — число подключений."""
-        counts: dict[int, int] = {}
+        Устройство — отдельная сеть (адреса из одной /24 — один телефон за NAT оператора):
+        для Xray это адреса подключений, для Hysteria — адреса входов за последние HY2_NET_WINDOW
+        секунд, но не больше, чем подключений. Подключение Hysteria без известного адреса
+        (например, бот перезапускался) считается одним устройством."""
+        nets: dict[int, set] = {}
         got = False
         if self._xray_stats_ready():
             code, text = await self._api("statsonlineiplist", "-all")
@@ -421,16 +450,29 @@ class XrayProvider(VpnProvider):
                     if m:
                         ips.setdefault(int(m.group(1)), set()).update(
                             str(e.get("ip")) for e in u.get("ips") or [] if e.get("ip"))
-                counts = {sid: len(v) for sid, v in ips.items()}
+                nets = {sid: {device_net(ip) or ip for ip in v} for sid, v in ips.items()}
         if self.hy2:
             answers = await self._hy2_all("/online")
             got = got or bool(answers)
+            conns: dict[int, int] = {}
             for data in answers:
                 for ident, n in data.items():
                     m = re.fullmatch(r"u(\d+)", str(ident))
                     if m:
-                        counts[int(m.group(1))] = counts.get(int(m.group(1)), 0) + int(n or 0)
-        return counts if got else None
+                        conns[int(m.group(1))] = conns.get(int(m.group(1)), 0) + int(n or 0)
+            now = time.time()
+            for uid in list(self._hy2_nets):
+                fresh = {k: t for k, t in self._hy2_nets[uid].items() if now - t < HY2_NET_WINDOW}
+                if fresh:
+                    self._hy2_nets[uid] = fresh
+                else:
+                    del self._hy2_nets[uid]
+            for uid, n in conns.items():
+                if n <= 0:
+                    continue
+                recent = sorted(self._hy2_nets.get(uid, {}).items(), key=lambda kv: -kv[1])[:n]
+                nets.setdefault(uid, set()).update([k for k, _ in recent] or ["hy2?"])
+        return {sid: len(v) for sid, v in nets.items()} if got else None
 
     def add_location(self, code: str, name: str, proxy: str) -> None:
         code = code.lower()
@@ -807,6 +849,10 @@ class XrayProvider(VpnProvider):
             body = json.loads(await asyncio.wait_for(reader.readexactly(n), 5) or b"{}")
             uid = self.hy2_check(str(body.get("auth", "")))
             ok = uid is not None
+            if ok:
+                net = device_net(str(body.get("addr", "")))
+                if net:
+                    self._hy2_nets.setdefault(uid, {})[net] = time.time()
         except (asyncio.TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError,
                 ConnectionError, ValueError, AttributeError):
             pass

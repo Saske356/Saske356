@@ -278,6 +278,7 @@ class XrayProvider(unittest.IsolatedAsyncioTestCase):
         assert (await ask(v.hy2_password(6)))["ok"] is False
         assert (await ask("nonsense"))["ok"] is False
         assert v.hy2_logins == 1
+        assert list(v._hy2_nets.get(5, {})) == ["1.2.3.0/24"], "сеть входа запомнена"
         await v.revoke(5)
         assert (await ask(v.hy2_password(5)))["ok"] is False, "после отключения пароль не принимается"
         v._hy2_server.close()
