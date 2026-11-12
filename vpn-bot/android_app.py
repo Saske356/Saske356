@@ -15,6 +15,7 @@ log = logging.getLogger(__name__)
 
 ASSET = "AuroraVPN-arm64-v8a.apk"  # подходит почти всем телефонам последних лет
 CHECK_EVERY = 3600
+CHECK_EMPTY = 300  # пока приложения ещё нет (идёт первая сборка) — проверяем чаще
 MAX_SIZE = 49 * 1024 * 1024  # Telegram-бот отправляет файлы до 50 МБ
 
 
@@ -53,7 +54,7 @@ class AppRelease:
         async with self._lock:
             if not self.path:
                 self.version, self.path = self._local()
-            if time.time() - self._checked >= CHECK_EVERY:
+            if time.time() - self._checked >= (CHECK_EVERY if self.path else CHECK_EMPTY):
                 self._checked = time.time()
                 try:
                     await self._update()
