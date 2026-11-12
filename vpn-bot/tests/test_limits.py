@@ -321,8 +321,8 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([c["remarks"] for c in cfgs],
                          ["🚀 Лучший сервер", "🇵🇱 Польша", "🇵🇱 Польша · турбо", "🇵🇱 Польша · турбо+", "🇩🇪 Германия"])
         self.assertEqual(quic([cfgs[2]]), [{"keepAlivePeriod": 10, "maxIdleTimeout": 60, "congestion": "brutal",
-                                            "brutalUp": "15 mbps", "brutalDown": "50 mbps"}])
-        self.assertEqual([q["brutalDown"] for q in quic([cfgs[3]])], ["100 mbps"])
+                                            "brutalUp": "20 mbps", "brutalDown": "100 mbps"}])
+        self.assertEqual([q["brutalDown"] for q in quic([cfgs[3]])], ["200 mbps"])
         self.assertEqual(len(cfgs[0]["outbounds"]), 4, "турбо не входит в «Лучший сервер»")
         cfgs = [cfgs[0], cfgs[1], cfgs[4]]
         self.assertTrue(quic(cfgs) and all(q == {"keepAlivePeriod": 10, "maxIdleTimeout": 60} for q in quic(cfgs)))
