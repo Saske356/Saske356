@@ -52,6 +52,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.v2ray.ang.handler.MmkvManager
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -65,6 +68,7 @@ private val AuroraInk = Color(0xFF070609)
 private val AuroraRed = Color(0xFFE57373)
 private const val KEY_STARTED_AT = "aurora_connected_since"
 private const val PING_EVERY_MS = 15_000L
+private const val ALL_PING_EVERY_MS = 300_000L
 
 /** Срок, устройства и ссылка на бота из заголовков подписки (их отдаёт бот Aurora). */
 private data class SubInfo(val expire: Long, val devices: String, val botUrl: String)
@@ -114,13 +118,27 @@ fun AuroraConnectPanel(
             MmkvManager.encodeSettings(KEY_STARTED_AT, 0L)
         }
     }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    // Реальная задержка до всех стран меряется сама: при открытии приложения и раз в 5 минут,
+    // пока оно на экране (в фоне не меряем — не тратим батарею и трафик).
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            delay(2500)
+            while (true) {
+                act(MainAction.TestRealAllServers)
+                delay(ALL_PING_EVERY_MS)
+            }
+        }
+    }
     // Пока VPN включён, настоящая задержка через туннель меряется постоянно (раз в 15 секунд).
-    LaunchedEffect(isRunning, selectedGuid) {
+    LaunchedEffect(isRunning, selectedGuid, lifecycle) {
         if (!isRunning) return@LaunchedEffect
-        delay(1500)
-        while (true) {
-            act(MainAction.TestCurrentServer)
-            delay(PING_EVERY_MS)
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            delay(1500)
+            while (true) {
+                act(MainAction.TestCurrentServer)
+                delay(PING_EVERY_MS)
+            }
         }
     }
     LaunchedEffect(status) {
