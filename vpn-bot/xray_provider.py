@@ -1129,7 +1129,7 @@ def from_env() -> XrayProvider:
         hy2=hy2_from_env(e),
         hy2_extra=hy2_extra_from_env(e),
         hy2_first=e.get("HY2_FIRST", "1") == "1",
-        xhttp_port=int(e.get("XRAY_XHTTP_PORT", "8443")),
+        xhttp_port=int(e.get("XRAY_XHTTP_PORT", "0")),
         sub_tls=sub_tls_from_env(e),
         json_sub=e.get("SUB_JSON", "1") == "1",
         awg=awg_from_env(e),

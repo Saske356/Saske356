@@ -566,7 +566,7 @@ if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
     ufw route allow in on awg0 >/dev/null 2>&1 || true
   fi
   if [ -n "$(envget HY2_HOP_PORTS)" ]; then ufw allow "$(envget HY2_HOP_PORTS | tr - :)"/udp >/dev/null; fi
-  XH_PORT=$(envget XRAY_XHTTP_PORT); XH_PORT=${XH_PORT:-8443}
+  XH_PORT=$(envget XRAY_XHTTP_PORT); XH_PORT=${XH_PORT:-0}
   [ "$XH_PORT" = 0 ] || ufw allow "$XH_PORT"/tcp >/dev/null
 fi
 
