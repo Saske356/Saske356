@@ -31,6 +31,7 @@ import config
 import make_banner
 import masking
 import public_proxies
+import webshare
 from auto_proxy import AutoProxy
 from db import DAY, DB
 from devices import DeviceGuard
@@ -1234,6 +1235,7 @@ def admin_text() -> str:
             "/server: состояние сервера, /backup: резервная копия\n"
             "/autoproxy: страны из бесплатных публичных прокси\n"
             "/sni: сайт маскировки и его смена\n"
+            "/webshare: купленные прокси списком по ссылке\n"
             "/traffic: трафик и устройства, /funnel: воронка продаж\n"
             f"/testpay: тестовая оплата на {config.TEST_PLAN[2]} ⭐\n"
             "Тикеты: ответьте на сообщение гостя, и ответ уйдёт ему")
@@ -2251,6 +2253,128 @@ async def sni_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await reply(masking_status_text())
 
 
+# ---------------------------------------------------------------- купленные прокси списком (Webshare)
+
+WS_LOCK = asyncio.Lock()
+WEBSHARE_MAX = int(os.environ.get("WEBSHARE_MAX", "20"))  # сколько стран держать из списка
+
+
+def ws_cfg() -> dict:
+    return vpn.state.setdefault("webshare", {})
+
+
+async def webshare_refresh() -> str:
+    """Скачивает список, проверяет прокси и обновляет страны. Возвращает отчёт для админа."""
+    async with WS_LOCK:
+        cfg = ws_cfg()
+        if not cfg.get("url"):
+            return "Ссылка на список не задана: /webshare ссылка"
+        try:
+            urls = await webshare.fetch(cfg["url"])
+        except ValueError as e:
+            cfg["error"] = str(e)
+            vpn._save()
+            return f"⚠️ Список не получен: {e}. Проверьте ссылку в личном кабинете и задайте её заново."
+        if not await public_proxies.direct_ok():
+            return "⚠️ Сервер сам не вышел в интернет, проверка отложена."
+        groups = webshare.by_country(await webshare.scan(urls), WEBSHARE_MAX)
+        added, swapped, removed, taken = [], [], [], []
+        for cc, items in groups.items():
+            res = vpn.set_paid_location(cc, public_proxies.country_name(cc), [u for u, _ in items[:3]],
+                                        ms=items[0][1])
+            {"added": added, "swapped": swapped, "": taken}.get(res, []).append(cc)
+        if groups:  # ничего не нашли — скорее сбой проверки, страны не трогаем
+            for loc in vpn.paid_locations():
+                if loc["code"] not in groups and vpn.remove_location(loc["code"]):
+                    removed.append(loc["code"])
+        if auto_mgr:
+            auto_mgr.sync_routes()
+        cfg.update(last=time.time(), total=len(urls), error="",
+                   working=sum(len(v) for v in groups.values()))
+        vpn._save()
+        nm = public_proxies.country_name
+        lines = [f"🛒 <b>Купленные прокси</b>: в списке {len(urls)}, работают {cfg['working']}, "
+                 f"стран {len(groups)}"]
+        if groups:
+            lines.append(", ".join(f"{nm(c)} {groups[c][0][1]} мс" for c in groups))
+        if added:
+            lines.append("➕ Добавлены: " + ", ".join(nm(c) for c in added))
+        if swapped:
+            lines.append("🔁 Прокси заменён: " + ", ".join(nm(c) for c in swapped))
+        if removed:
+            lines.append("➖ Убраны (в списке больше нет живых): " + ", ".join(nm(c) for c in removed))
+        if taken:
+            lines.append("Не тронуты, код занят страной, добавленной через /addloc: "
+                         + ", ".join(c.upper() for c in taken))
+        if not groups:
+            lines.append("⚠️ Ни один прокси из списка не прошёл проверку: проверьте, что тариф активен.")
+        return "\n".join(lines)
+
+
+async def webshare_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Раз в 3 часа: умершие прокси меняются на живые из списка, новые страны добавляются."""
+    if not hasattr(vpn, "set_paid_location") or not ws_cfg().get("url"):
+        return
+    try:
+        report = await webshare_refresh()
+    except Exception:
+        log.exception("купленные прокси: сбой")
+        return
+    if "➕" in report or "🔁" in report or "➖" in report or "⚠️" in report:
+        await send_admins(context.bot, report)
+
+
+@admin_only
+async def webshare_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not hasattr(vpn, "set_paid_location"):
+        await update.message.reply_text("Купленные прокси работают, когда подключён настоящий VPN (VPN_MODE=xray).")
+        return
+    arg = context.args[0] if context.args else ""
+    reply, chat = update.message.reply_text, update.effective_chat.id
+
+    async def run(note: str) -> None:
+        await reply(note)
+        try:
+            await _send_report(context.bot, chat, await webshare_refresh())
+        except Exception as e:
+            await _report_failure(context.bot, chat, "Проверка купленных прокси не удалась", e)
+    if arg.startswith("http"):
+        ws_cfg()["url"] = arg.strip()
+        vpn._save()
+        try:  # в ссылке ключ доступа к списку: не оставляем его в чате
+            await update.message.delete()
+        except TelegramError:
+            pass
+        context.application.create_task(run("Ссылка сохранена только на сервере, сообщение с ней удалено. "
+                                            "Проверяю прокси, это займёт минуту."))
+    elif arg == "now":
+        context.application.create_task(run("Проверяю прокси из списка."))
+    elif arg == "off":
+        n = [l["code"] for l in vpn.paid_locations() if vpn.remove_location(l["code"])]
+        vpn.state["webshare"] = {}
+        vpn._save()
+        await reply("Список отключён" + (f", убрано стран: {len(n)}." if n else "."))
+    else:
+        cfg = ws_cfg()
+        locs = vpn.paid_locations()
+        state = (f"Ссылка задана, последняя проверка {_ago(cfg['last'])} назад: в списке {cfg.get('total', 0)}, "
+                 f"работают {cfg.get('working', 0)}" if cfg.get("last") else
+                 "Ссылка задана, проверка ещё не проходила" if cfg.get("url") else "Ссылка не задана")
+        rows = [f"◆ {esc(l['name'])} · {l.get('ms') or '?'} мс · запасных {max(0, len(l.get('pool', [])) - 1)}"
+                + (" · ❌ не отвечает" if l.get("down") else "") for l in locs]
+        await reply("<b>Купленные прокси списком</b>\n\n" + esc(state)
+                    + (f"\n⚠️ {esc(cfg['error'])}" if cfg.get("error") else "") + "\n\n"
+                    + ("\n".join(rows) if rows else "<i>Стран пока нет.</i>") + "\n\n"
+                    "Бот скачивает список по ссылке, проверяет каждый прокси, определяет страну по реальному "
+                    "выходу в интернет и держит в каждой стране самый быстрый плюс два запасных. "
+                    "Раз в 3 часа проверка повторяется. У каждой страны есть и Hysteria, и TCP.\n\n"
+                    "<b>Команды</b>\n"
+                    "/webshare <code>ссылка</code>: задать список (в Webshare: Proxy List → Download → "
+                    "скопировать ссылку)\n"
+                    "/webshare now: проверить сейчас\n"
+                    "/webshare off: убрать эти страны и забыть ссылку")
+
+
 # ---------------------------------------------------------------- фоновые задачи
 
 def buy_kb(sub=None) -> InlineKeyboardMarkup:
@@ -2470,7 +2594,7 @@ def build_app(token: str) -> Application:
                     ("addloc", addloc), ("delloc", delloc), ("addbridge", addbridge),
                     ("delbridge", delbridge), ("server", server), ("backup", backup),
                     ("autoproxy", autoproxy), ("sni", sni_cmd), ("bridgesite", bridgesite_cmd),
-                    ("funnel", funnel), ("traffic", traffic)]:
+                    ("funnel", funnel), ("traffic", traffic), ("webshare", webshare_cmd)]:
         app.add_handler(CommandHandler(cmd, fn))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(PreCheckoutQueryHandler(precheckout))
@@ -2483,6 +2607,7 @@ def build_app(token: str) -> Application:
         app.job_queue.run_repeating(backup_job, interval=86400, first=3600)
     app.job_queue.run_repeating(auto_proxy_job, interval=300, first=45)
     app.job_queue.run_repeating(masking_job, interval=600, first=150)
+    app.job_queue.run_repeating(webshare_job, interval=3 * 3600, first=200)
     app.job_queue.run_repeating(traffic_job, interval=600, first=90)
     app.job_queue.run_repeating(devices_job, interval=300, first=120)
     return app

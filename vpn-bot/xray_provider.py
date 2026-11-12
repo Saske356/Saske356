@@ -440,6 +440,40 @@ class XrayProvider(VpnProvider):
         self._save()
         self.schedule_apply()
 
+    def set_paid_location(self, code: str, name: str, pool: list[str], ms: int | None = None,
+                          src: str = "webshare") -> str:
+        """Страна из купленного списка (Webshare и т. п.): рабочий прокси и запасные.
+        Возвращает added, swapped, kept или "" (код занят страной, добавленной вручную).
+        Пока рабочий прокси жив, ничего не перезапускается; авто-страна с тем же кодом заменяется."""
+        code = code.lower()
+        if not CODE_RE.match(code) or not pool:
+            raise ValueError("нужен код страны и хотя бы один прокси")
+        for url in pool:
+            parse_proxy(url)
+        loc = next((l for l in self.locations if l["code"] == code), None)
+        if loc and not loc.get("auto") and loc.get("src") != src:
+            return ""
+        if loc and loc.get("src") == src:
+            loc.update(pool=list(pool), ms=ms)
+            if loc["proxy"] in pool and not loc.get("down"):
+                self._save()
+                return "kept"
+            loc.update(proxy=pool[0], down=False)
+            self._save()
+            self.schedule_apply()
+            return "swapped"
+        self.state["locations"] = [l for l in self.locations if l["code"] != code]
+        # tcp_only: купленные списки обычно не обещают UDP, поэтому Hysteria этой страны
+        # отправляет DNS с сервера, а остальной UDP отклоняет.
+        self.state["locations"].append({"code": code, "name": name.strip(), "proxy": pool[0], "pool": list(pool),
+                                        "src": src, "tcp_only": True, "ms": ms})
+        self._save()
+        self.schedule_apply()
+        return "added"
+
+    def paid_locations(self, src: str = "webshare") -> list[dict]:
+        return [l for l in self.locations if l.get("src") == src]
+
     def remove_location(self, code: str, apply: bool = True) -> bool:
         keep = [l for l in self.locations if l["code"] != code.lower()]
         if len(keep) == len(self.locations) or not keep:
@@ -537,6 +571,15 @@ class XrayProvider(VpnProvider):
 
         changes = []
         for loc, ok in zip(manual, await asyncio.gather(*(alive(l) for l in manual))):
+            if not ok and len(loc.get("pool") or []) > 1:
+                # Купленный список: сразу берём живой запасной из той же страны.
+                for backup in [u for u in loc["pool"] if u != loc["proxy"]]:
+                    if await alive({"proxy": backup}):
+                        loc["pool"].remove(backup)
+                        loc["pool"].insert(0, backup)
+                        loc["proxy"], ok = backup, True
+                        self.schedule_apply()
+                        break
             if bool(loc.get("down")) == ok:
                 loc["down"] = not ok
                 changes.append((loc, ok))
@@ -616,7 +659,7 @@ class XrayProvider(VpnProvider):
                 out = {"type": "socks5", "socks5": {"addr": f"{u.hostname}:{u.port}"}}
                 if u.username:
                     out["socks5"].update(username=unquote(u.username), password=unquote(u.password or ""))
-                udp_ok = True
+                udp_ok = not loc.get("tcp_only")
             else:
                 out = {"type": "http", "http": {"url": loc["proxy"].strip()}}
         private = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "169.254.0.0/16",

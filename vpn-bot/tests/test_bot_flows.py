@@ -585,6 +585,41 @@ async def main():
     await bot.devices_job(ctx)
     prov.resume.assert_awaited_once_with(some)
     bot.guard.__init__("block")
+    # купленные прокси списком: ссылка хранится на сервере, сообщение с ней удаляется
+    import webshare as ws
+    saved = ws.fetch, ws.scan, bot.public_proxies.direct_ok
+    ws.fetch = AsyncMock(return_value=["socks5://u:p@1.1.1.1:1", "socks5://u:p@2.2.2.2:1", "socks5://u:p@3.3.3.3:1"])
+    ws.scan = AsyncMock(return_value=[("socks5://u:p@1.1.1.1:1", "de", 80), ("socks5://u:p@3.3.3.3:1", "fi", 120),
+                                      ("socks5://u:p@2.2.2.2:1", "de", 200)])
+    bot.public_proxies.direct_ok = AsyncMock(return_value=True)
+    try:
+        report = await bot.webshare_refresh()
+        assert "Ссылка на список не задана" in report
+        u = make_update(1, text="/webshare https://proxy.webshare.io/api/v2/proxy/list/download/SECRET/")
+        u.message.delete = AsyncMock()
+        ctx.args = ["https://proxy.webshare.io/api/v2/proxy/list/download/SECRET/"]
+        tasks = []
+        ctx.application.create_task = lambda coro: tasks.append(asyncio.get_running_loop().create_task(coro))
+        await bot.webshare_cmd(u, ctx)
+        await asyncio.gather(*tasks)
+        u.message.delete.assert_awaited()
+        assert prov.state["webshare"]["url"].endswith("SECRET/")
+        report = await bot.webshare_refresh()
+        check_caption(report)
+        assert "SECRET" not in report and "стран 2" in report
+        de = next(l for l in prov.locations if l["code"] == "de")
+        assert de["src"] == "webshare" and de["pool"] == ["socks5://u:p@1.1.1.1:1", "socks5://u:p@2.2.2.2:1"]
+        ws.scan = AsyncMock(return_value=[("socks5://u:p@1.1.1.1:1", "de", 90)])
+        report = await bot.webshare_refresh()
+        assert "Убраны" in report and not any(l["code"] == "fi" for l in prov.locations)
+        ctx.args = []
+        u = make_update(1); await bot.webshare_cmd(u, ctx)
+        assert "Германия" in u.message.reply_text.await_args.args[0]
+        ctx.args = ["off"]; u = make_update(1); await bot.webshare_cmd(u, ctx); ctx.args = []
+        assert not prov.paid_locations() and prov.state["webshare"] == {}
+    finally:
+        ws.fetch, ws.scan, bot.public_proxies.direct_ok = saved
+        ctx.args = []
     # смена сайта маскировки: гостям с активным доступом уходит просьба обновить подписку
     bot.STATE["bot"] = ctx.bot
     ctx.bot.send_message.reset_mock()
