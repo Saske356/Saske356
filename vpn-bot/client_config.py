@@ -24,17 +24,14 @@ AURORA_AGENT = re.compile(r"aurora", re.I)
 # Маскировку QUIC под Chrome (есть в Xray с v26.9.9, включена по умолчанию) не трогаем: именно она
 # проходит мобильных операторов — поэтому v2rayNG со свежим ядром работает там, где Happ молчит.
 AURORA_QUIC = {"keepAlivePeriod": 10, "maxIdleTimeout": 60}
-# «· турбо» — отдельный пункт только в своём приложении: Hysteria в режиме Brutal. Обычный режим (BBR)
-# при потерях пакетов сбавляет скорость, а на мобильном при глушилках потери большие, и скорость
-# падает почти до нуля. Brutal держит заявленную скорость и досылает потерянное. Сервер шлёт
-# к гостю со скоростью brutalDown (её клиент сообщает серверу при подключении). Если реальный канал
-# медленнее заявленного, Brutal сам не разгонится сверх (потери до 20% он компенсирует, дальше нет).
-# Два уровня: гость выбирает тот, что у него быстрее. Замеры пользователя при белых списках:
-# потолок 30 → 30 Мбит/с, 50 → 51, 100 → 92 — канал держит потолок, поэтому подняли ещё.
-TURBO_LEVELS = [
-    (" · турбо", {"congestion": "brutal", "brutalUp": "20 mbps", "brutalDown": "100 mbps"}),
-    (" · турбо+", {"congestion": "brutal", "brutalUp": "30 mbps", "brutalDown": "200 mbps"}),
-]
+# Турбо (Brutal) — во всех подключениях своего приложения. Обычный режим (BBR) при потерях пакетов
+# сбавляет скорость, а на мобильном при глушилках потери большие: замер при белых списках — 1.6 Мбит/с.
+# Brutal держит заявленную скорость и досылает потерянное: с потолком 100 Мбит/с — 92 Мбит/с.
+# Сервер шлёт к гостю со скоростью brutalDown (её клиент сообщает серверу при подключении).
+# 100 Мбит/с — потолок модема пользователя; канал медленнее Brutal не перегружает сверх меры
+# (потери до 20% компенсирует, дальше нет). Для слабых сетей есть пункт «· эконом» с обычным BBR.
+TURBO_QUIC = {"congestion": "brutal", "brutalUp": "20 mbps", "brutalDown": "100 mbps"}
+ECO_TAG = " · эконом"
 
 # Российские домены: зона .ru, .su, .рф и крупные сервисы на других зонах.
 RU_DOMAINS = [
@@ -46,6 +43,42 @@ RU_DOMAINS = [
 ]
 RU_DNS = "https://77.88.8.8/dns-query"
 DNS = ["https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"]
+
+
+# Браузер: адрес подписки открыли по ссылке. Ему показываем страницу «Открыть в приложении»,
+# а не ключи — так адрес сервера не светится, если ссылку переслали или открыли случайно.
+# Приложения представляются своим именем; если в строке есть любое из них — это приложение.
+APP_AGENTS = re.compile(r"happ|v2ray|aurora|hiddify|streisand|sing-?box|clash|neko|v2box|shadowrocket|"
+                        r"karing|foxray|stash|surge|quantumult|loon|throne|okhttp|xray|mihomo|flclash", re.I)
+
+
+def is_browser(agent: str) -> bool:
+    agent = agent or ""
+    return agent.startswith("Mozilla/") and not APP_AGENTS.search(agent)
+
+
+# Шифрование подписки для своего приложения. Приложение с поддержкой пишет в User-Agent «(enc1)»,
+# и тогда вместо JSON приходит «aurora1:» + base64(nonce 12 байт + AES-256-GCM). Ключ —
+# SHA-256(SUB_SECRET + путь ссылки подписки), тот же код стоит в приложении (android/customize.py).
+# Это маскировка, а не секрет: код открыт, и тот, у кого есть сама ссылка, её расшифрует. Зато
+# в ответе нет ни адресов, ни паролей открытым текстом: ни прокси, ни сканер, ни случайный
+# человек по ссылке не увидят сервер.
+SUB_SECRET = "06c56043502cab251d01ad69c59ab1ea3885c20bd2590fca"
+ENC_PREFIX = "aurora1:"
+
+
+def wants_encrypted(agent: str) -> bool:
+    return is_aurora(agent) and "(enc1)" in (agent or "")
+
+
+def encrypt_sub(body: bytes, path: str) -> bytes:
+    import base64
+    import hashlib
+    import os
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    key = hashlib.sha256((SUB_SECRET + path).encode()).digest()
+    nonce = os.urandom(12)
+    return ENC_PREFIX.encode() + base64.b64encode(nonce + AESGCM(key).encrypt(nonce, body, None))
 
 
 def wants_json(agent: str) -> bool:
@@ -71,9 +104,10 @@ def outbound(e: dict, tuned: bool = False) -> dict:
         if e.get("obfs"):
             stream["finalmask"] = {"udp": [{"type": "salamander", "settings": {"password": e["obfs"]}}]}
         if tuned:
-            stream.setdefault("finalmask", {})["quicParams"] = dict(AURORA_QUIC)
-        if e.get("turbo"):
-            stream.setdefault("finalmask", {}).setdefault("quicParams", {}).update(e["turbo"])
+            q = dict(AURORA_QUIC)
+            if not e.get("eco"):
+                q.update(TURBO_QUIC)
+            stream.setdefault("finalmask", {})["quicParams"] = q
         return {"tag": "proxy", "protocol": "hysteria",
                 "settings": {"version": 2, "address": e["host"], "port": e["port"]},
                 "streamSettings": stream}
@@ -93,11 +127,15 @@ def outbound(e: dict, tuned: bool = False) -> dict:
             "streamSettings": stream}
 
 
-def _routing(server_ips: list[str], final: dict) -> dict:
-    """Правила: сам сервер, реклама, российские сайты и локальная сеть — мимо VPN, остальное — final."""
+def _routing(server_ips: list[str], final: dict, tuned: bool = False) -> dict:
+    """Правила: сам сервер, реклама, российские сайты и локальная сеть — мимо VPN, остальное — final.
+    tuned (своё приложение): AsIs — без DNS-запроса на каждый новый сайт. Трафик из VPN приходит
+    с адресами, по ним и так работают правила geoip, а имя сайта даёт sniffing. С IPIfNonMatch
+    Xray для каждого имени не из списка сначала спрашивает DNS — при белых списках этот запрос
+    упирается в блокировку и страница ждёт секунды."""
     server = [{"type": "field", "ip": server_ips, "outboundTag": "direct"}] if server_ips else []
     return {
-        "domainStrategy": "IPIfNonMatch",
+        "domainStrategy": "AsIs" if tuned else "IPIfNonMatch",
         "rules": [
             *server,
             {"type": "field", "domain": ["geosite:category-ads-all"], "outboundTag": "block"},
@@ -146,7 +184,7 @@ def best(entries: list[dict], name: str = "🚀 Лучший сервер", tune
         o["tag"] = f"p{i}"
         outs.append(o)
     cfg = _base(name, outs, _routing(sorted({ip for e in entries for ip in _ip(e["host"])}),
-                                     {"balancerTag": "best"}))
+                                     {"balancerTag": "best"}, tuned))
     cfg["routing"]["balancers"] = [{"tag": "best", "selector": ["p"], "strategy": {"type": "leastPing"},
                                     "fallbackTag": "p0"}]
     cfg["observatory"] = {"subjectSelector": ["p"], "probeURL": "https://www.google.com/generate_204",
@@ -155,16 +193,15 @@ def best(entries: list[dict], name: str = "🚀 Лучший сервер", tune
 
 
 def config(e: dict, tuned: bool = False) -> dict:
-    return _base(e["name"], [outbound(e, tuned)], _routing(_ip(e["host"]), {"outboundTag": "proxy"}))
+    return _base(e["name"], [outbound(e, tuned)], _routing(_ip(e["host"]), {"outboundTag": "proxy"}, tuned))
 
 
 def configs(entries: list[dict], with_best: bool = True, tuned: bool = False) -> list[dict]:
     """Конфиги подписки: первым «Лучший сервер» (если подключений больше одного), затем страны."""
     out = [config(e, tuned) for e in entries]
     if tuned:
-        # турбо — для первой Hysteria (основная страна); в «Лучший сервер» он не входит
         first = next((e for e in entries if e["kind"] == "hy2"), None)
         if first:
-            for i, (tag, quic) in enumerate(TURBO_LEVELS):
-                out.insert(1 + i, config({**first, "name": first["name"] + tag, "turbo": quic}, tuned))
+            # запасной пункт с обычным режимом для слабых сетей; в «Лучший сервер» не входит
+            out.insert(1, config({**first, "name": first["name"] + ECO_TAG, "eco": True}, tuned))
     return ([best(entries, tuned=tuned)] if with_best and len(entries) > 1 else []) + out

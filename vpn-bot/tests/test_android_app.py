@@ -1,4 +1,3 @@
-import asyncio
 import json
 import os
 import sys
@@ -60,5 +59,15 @@ class AppReleaseTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(os.path.exists(os.path.join(self.d, android_app.ASSET)))
 
 
+class SecretsMatch(unittest.TestCase):
+    def test_app_and_bot_share_the_subscription_key(self):
+        import re
+        import client_config
+        with open(os.path.join(os.path.dirname(__file__), "..", "..", "android", "customize.py"), encoding="utf-8") as f:
+            m = re.search(r'^SUB_SECRET = "([0-9a-f]+)"', f.read(), re.M)
+        self.assertTrue(m)
+        self.assertEqual(m.group(1), client_config.SUB_SECRET, "ключ подписки в приложении и в боте разный")
+
+
 if __name__ == "__main__":
-    asyncio.run(unittest.main())
+    unittest.main()

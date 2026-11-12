@@ -300,6 +300,7 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         self.v._server.close()
 
     async def test_own_app_gets_tuned_configs_and_one_tap_page(self):
+        import base64
         self.v.add_location("de", "🇩🇪 Германия", "socks5://u:p@1.2.3.4:1080")
         await self.v._pending
         await self.v.start_sub_server("127.0.0.1")
@@ -319,13 +320,14 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         _, _, body = await get(path, "AuroraVPN/1.0.5 v2rayNG/1.0.5")
         cfgs = json.loads(body)
         self.assertEqual([c["remarks"] for c in cfgs],
-                         ["🚀 Лучший сервер", "🇵🇱 Польша", "🇵🇱 Польша · турбо", "🇵🇱 Польша · турбо+", "🇩🇪 Германия"])
-        self.assertEqual(quic([cfgs[2]]), [{"keepAlivePeriod": 10, "maxIdleTimeout": 60, "congestion": "brutal",
-                                            "brutalUp": "20 mbps", "brutalDown": "100 mbps"}])
-        self.assertEqual([q["brutalDown"] for q in quic([cfgs[3]])], ["200 mbps"])
-        self.assertEqual(len(cfgs[0]["outbounds"]), 4, "турбо не входит в «Лучший сервер»")
-        cfgs = [cfgs[0], cfgs[1], cfgs[4]]
-        self.assertTrue(quic(cfgs) and all(q == {"keepAlivePeriod": 10, "maxIdleTimeout": 60} for q in quic(cfgs)))
+                         ["🚀 Лучший сервер", "🇵🇱 Польша", "🇵🇱 Польша · эконом", "🇩🇪 Германия"])
+        turbo = {"keepAlivePeriod": 10, "maxIdleTimeout": 60, "congestion": "brutal",
+                 "brutalUp": "20 mbps", "brutalDown": "100 mbps"}
+        self.assertEqual(quic([cfgs[2]]), [{"keepAlivePeriod": 10, "maxIdleTimeout": 60}], "эконом — обычный BBR")
+        self.assertEqual(len(cfgs[0]["outbounds"]), 4, "эконом не входит в «Лучший сервер»")
+        cfgs = [cfgs[0], cfgs[1], cfgs[3]]
+        self.assertTrue(quic(cfgs) and all(q == turbo for q in quic(cfgs)), "турбо везде, и в «Лучшем сервере»")
+        self.assertEqual({c["routing"]["domainStrategy"] for c in cfgs}, {"AsIs"}, "без лишних DNS-запросов")
         # обфускация и настройки QUIC уживаются в одном finalmask
         obfs = [o for c in cfgs for o in c["outbounds"] if o["protocol"] == "hysteria"
                 and o["streamSettings"].get("finalmask", {}).get("udp")]
@@ -333,6 +335,31 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         for agent in ("Happ/3.7.0", "v2rayNG/1.10.30"):
             _, _, body = await get(path, agent)
             self.assertEqual(set(map(str, quic(json.loads(body)))), {"None"}, f"{agent}: без quicParams")
+            self.assertEqual({c["routing"]["domainStrategy"] for c in json.loads(body)}, {"IPIfNonMatch"},
+                             f"{agent}: маршрутизация прежняя")
+
+        # новое приложение «(enc1)»: подписка зашифрована, без адресов и паролей открытым текстом
+        import hashlib
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        cc = __import__("client_config")
+        head, _, body = await get(path, "AuroraVPN/1.0.9 (enc1) v2rayNG/1.0.9")
+        self.assertTrue(body.startswith(b"aurora1:"))
+        self.assertNotIn(b"203.0.113.7", body)
+        self.assertNotIn(self.v.hy2_password(1).encode(), body)
+        raw = base64.b64decode(body[len(b"aurora1:"):])
+        key = hashlib.sha256((cc.SUB_SECRET + path).encode()).digest()  # как в AuroraCrypto.kt
+        plain = json.loads(AESGCM(key).decrypt(raw[:12], raw[12:], None))
+        self.assertEqual([c["remarks"] for c in plain], [c["remarks"] for c in cfgs[:1]] + ["🇵🇱 Польша", "🇵🇱 Польша · эконом", "🇩🇪 Германия"])
+        _, _, again = await get(path, "AuroraVPN/1.0.9 (enc1) v2rayNG/1.0.9")
+        self.assertNotEqual(again, body, "каждый раз новый nonce")
+        # короткая ссылка: ключ от её пути
+        short = "/" + self.v.short_token(1)
+        _, _, body = await get(short, "AuroraVPN/1.0.9 (enc1) v2rayNG/1.0.9")
+        raw = base64.b64decode(body[len(b"aurora1:"):])
+        AESGCM(hashlib.sha256((cc.SUB_SECRET + short).encode()).digest()).decrypt(raw[:12], raw[12:], None)
+        # старое приложение без «(enc1)» получает обычный JSON
+        _, _, body = await get(path, "AuroraVPN/1.0.4 v2rayNG/1.0.4")
+        self.assertTrue(body.startswith(b"["))
 
         self.v.support_url = "https://t.me/aurora_bot"
         head, _, _ = await get(path, "AuroraVPN/1.0.5 v2rayNG/1.0.5")
@@ -342,6 +369,17 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         page = body.decode()
         self.assertIn("aurora://install-sub?url=" + quote(self.v.sub_url(1), safe=""), page)
         self.assertEqual(self.v.app_link(1), self.v.sub_url(1) + "/app")
+        # подписка, открытая в браузере, — та же страница, ключей в ней нет
+        chrome = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/131.0 Mobile Safari/537.36"
+        head, _, body = await get(path, chrome)
+        self.assertIn(b"text/html", head)
+        self.assertNotIn(b"hysteria", body.lower())
+        self.assertNotIn(self.v.hy2_password(1).encode(), body)
+        _, _, body = await get(path + "?format=links", chrome)
+        self.assertTrue(base64.b64decode(body).decode().startswith("hysteria2://"), "ключи явно — по ?format=links")
+        for app in ("Happ/3.7.0", "HiddifyNext/2.5 (android) like ClashMeta", "Streisand/1.6", "okhttp/4.12.0"):
+            head, _, _ = await get(path, app)
+            self.assertNotIn(b"text/html", head, app)
         _, _, body = await get("/sub/1/" + "0" * 24 + "/app", "Mozilla/5.0")
         self.assertNotIn(b"aurora://", body, "чужой токен — без страницы")
         self.v._server.close()

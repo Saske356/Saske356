@@ -1289,7 +1289,8 @@ class XrayProvider(VpnProvider):
         """Отдавать ли Happ и v2rayNG готовые JSON-конфиги. Переключается из /admin."""
         return bool(self.state.get("json_sub", self.json_default))
 
-    def subscription(self, user_id: int, as_json: bool = False, tuned: bool = False) -> tuple[bytes, dict] | None:
+    def subscription(self, user_id: int, as_json: bool = False, tuned: bool = False,
+                     enc_path: str = "") -> tuple[bytes, dict] | None:
         """Подписка. as_json — готовые конфиги Xray для Happ и v2rayNG: в приложении видно только
         название страны, а адрес и пароль спрятаны внутри конфига; российские сайты идут напрямую."""
         exp = self.state["users"].get(str(user_id))
@@ -1300,6 +1301,8 @@ class XrayProvider(VpnProvider):
                               ensure_ascii=False).encode()
         else:
             body = base64.b64encode("\n".join(self.links(user_id)).encode())
+        if enc_path:  # своё приложение: тело зашифровано, адресов и паролей в ответе не видно
+            body = client_config.encrypt_sub(body, enc_path)
         title = base64.b64encode(self.brand.encode()).decode()
         up = down = 0
         if self.usage:
@@ -1308,7 +1311,7 @@ class XrayProvider(VpnProvider):
             except Exception:
                 log.exception("трафик для подписки %s", user_id)
         headers = {
-            "Content-Type": ("application/json" if as_json else "text/plain") + "; charset=utf-8",
+            "Content-Type": ("application/json" if as_json and not enc_path else "text/plain") + "; charset=utf-8",
             "profile-title": f"base64:{title}",
             "subscription-userinfo": f"upload={int(up)}; download={int(down)}; total=0; expire={int(exp)}",
             "profile-update-interval": "1",
@@ -1374,11 +1377,15 @@ class XrayProvider(VpnProvider):
             m = re.fullmatch(r"/([0-9A-Za-z]{16})", path)
             if m:
                 uid = self._by_short(m.group(1))
+            if fmt not in ("links", "json") and client_config.is_browser(agent):
+                app_page = True  # в браузере — страница вместо ключей
             if parts and parts[0] == "GET" and uid is not None and app_page:
                 status, body = "200 OK", self.app_page(uid).encode()
                 headers = {"Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store"}
             elif parts and parts[0] == "GET" and uid is not None:
-                res = self.subscription(uid, as_json=as_json, tuned=as_json and client_config.is_aurora(agent))
+                tuned = as_json and client_config.is_aurora(agent)
+                res = self.subscription(uid, as_json=as_json, tuned=tuned,
+                                        enc_path=path if tuned and client_config.wants_encrypted(agent) else "")
                 if res:
                     status, (body, headers) = "200 OK", res
                 else:

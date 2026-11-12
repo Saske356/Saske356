@@ -119,6 +119,56 @@ def brand_theme(kt: str) -> None:
     ], count_ok=lambda n: n == 1)
 
 
+# Тот же ключ, что в vpn-bot/client_config.py (SUB_SECRET): менять только вместе.
+SUB_SECRET = "06c56043502cab251d01ad69c59ab1ea3885c20bd2590fca"
+CRYPTO_KT = """package com.v2ray.ang.util
+
+import android.util.Base64
+import java.net.URI
+import java.security.MessageDigest
+import javax.crypto.Cipher
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
+
+/** Подписка Aurora VPN приходит зашифрованной: "aurora1:" + base64(nonce 12 байт + AES-256-GCM).
+ *  Ключ — SHA-256(секрет + путь ссылки подписки). Всё остальное возвращается как есть. */
+object AuroraCrypto {
+    private const val PREFIX = "aurora1:"
+    private const val SECRET = "%s"
+
+    fun decode(url: String, body: String): String {
+        val text = body.trim()
+        if (!text.startsWith(PREFIX)) return body
+        return try {
+            val raw = Base64.decode(text.substring(PREFIX.length), Base64.DEFAULT)
+            val path = URI(Utils.fixIllegalUrl(url)).rawPath.orEmpty()
+            val key = MessageDigest.getInstance("SHA-256").digest((SECRET + path).toByteArray(Charsets.UTF_8))
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, raw, 0, 12))
+            String(cipher.doFinal(raw, 12, raw.size - 12), Charsets.UTF_8)
+        } catch (e: Exception) {
+            LogUtil.e("AuroraCrypto", "Failed to decrypt subscription", e)
+            ""
+        }
+    }
+}
+""" % SUB_SECRET
+
+
+def encrypt_subscription(kt: str) -> None:
+    """Бот отдаёт своему приложению подписку зашифрованной, приложение расшифровывает её перед разбором."""
+    with open(os.path.join(kt, "util", "AuroraCrypto.kt"), "w", encoding="utf-8") as f:
+        f.write(CRYPTO_KT)
+    edit(os.path.join(kt, "handler", "AngConfigManager.kt"), [
+        ("            val count = parseConfigViaSub(configText, it.guid, false)\n",
+         "            configText = com.v2ray.ang.util.AuroraCrypto.decode(url, configText)\n"
+         "            if (configText.isEmpty()) {\n"
+         "                return SubscriptionUpdateResult(failureCount = 1)\n"
+         "            }\n"
+         "            val count = parseConfigViaSub(configText, it.guid, false)\n"),
+    ], count_ok=lambda n: n == 1)
+
+
 def main(root: str) -> None:
     app = os.path.join(root, "V2rayNG", "app")
     src = os.path.join(app, "src", "main")
@@ -162,7 +212,9 @@ def main(root: str) -> None:
     # Бот узнаёт своё приложение по User-Agent и отдаёт ему конфиги с настройками под скорость.
     # «v2rayNG» в строке остаётся: по нему бот понимает, что приложение умеет JSON-конфиги.
     edit(os.path.join(kt, "util", "HttpUtil.kt"), [
-        ('"v2rayNG/${BuildConfig.VERSION_NAME}"', '"AuroraVPN/${BuildConfig.VERSION_NAME} v2rayNG/${BuildConfig.VERSION_NAME}"'),
+        # «(enc1)» — приложение умеет расшифровывать подписку (encrypt_subscription ниже)
+        ('"v2rayNG/${BuildConfig.VERSION_NAME}"',
+         '"AuroraVPN/${BuildConfig.VERSION_NAME} (enc1) v2rayNG/${BuildConfig.VERSION_NAME}"'),
     ])
 
     # Импорт подписки по ссылке aurora://install-sub:
@@ -180,6 +232,7 @@ def main(root: str) -> None:
     ], count_ok=lambda n: n == 1)
 
     mask_servers(kt)
+    encrypt_subscription(kt)
     brand_theme(kt)
 
     # По умолчанию: после обновления подписки сразу замерить пинг и поставить быстрые сверху.
