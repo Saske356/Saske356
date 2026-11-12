@@ -216,6 +216,16 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([l.split("@")[1].split("/")[0] for l in links],
                          ["203.0.113.7:443", "203.0.113.7:30000", "203.0.113.7:30001"])
         self.assertFalse(any("obfs" in l for l in links))
+        # мост «ru» пересылает и порты стран: при белых списках страны идут через мост
+        from urllib.parse import unquote
+        self.v.add_bridge("ru1", "🇷🇺 Обход", "198.51.100.9", ru=True)
+        self.v.state["bridge_site"] = "ya.ru"
+        via = [(l.split("@")[1].split("/")[0], unquote(l.rsplit("#", 1)[1])) for l in self.v.links(1)[3:]]
+        self.assertEqual(via, [("198.51.100.9:443", "🇷🇺 Обход"), ("198.51.100.9:30000", "🇩🇪 Германия · 🇷🇺 Обход"),
+                               ("198.51.100.9:30001", "🇳🇱 Нидерланды · 🇷🇺 Обход")])
+        self.assertTrue(all("sni=ya.ru" in l for l in self.v.links(1)[3:]))
+        self.v.remove_bridge("ru1")
+        await self.v._pending
 
         n = len(self.units())
         await self.v.apply()

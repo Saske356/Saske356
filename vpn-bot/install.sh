@@ -377,7 +377,10 @@ if [ "${1:-}" = "bridge" ]; then
   printf '%s' "$MAIN" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' || fail "нужен IP вида 1.2.3.4"
   TARGET=$(ask "Порт входа для мостов на основном сервере" "$BRIDGE_PORT")
   printf '%s' "$TARGET" | grep -Eq '^[0-9]{1,5}$' || fail "порт: число"
-  say "Ставлю пересылку 443 → $MAIN:$TARGET"
+  # Порты Hysteria стран на основном сервере (HY2_LOC_PORTS там же): мост пересылает и их.
+  LOCR=$(ask "UDP-порты стран Hysteria на основном сервере" "30000-30049")
+  printf '%s' "$LOCR" | grep -Eq '^[0-9]{1,5}-[0-9]{1,5}$' || fail "порты: вида 30000-30049"
+  say "Ставлю пересылку 443 → $MAIN:$TARGET, UDP 443 и $LOCR → $MAIN"
   retry apt-get update -qq || fail "не удалось обновить список пакетов"
   retry apt-get install -y -qq nftables >/dev/null || fail "не удалось поставить nftables"
   echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/99-aurora-bridge.conf
@@ -390,11 +393,13 @@ table ip aurora {
     type nat hook prerouting priority dstnat; policy accept;
     tcp dport 443 dnat to $MAIN:$TARGET
     udp dport 443 dnat to $MAIN:443
+    udp dport $LOCR dnat to $MAIN
   }
   chain postrouting {
     type nat hook postrouting priority srcnat; policy accept;
     ip daddr $MAIN tcp dport $TARGET masquerade
     ip daddr $MAIN udp dport 443 masquerade
+    ip daddr $MAIN udp dport $LOCR masquerade
   }
 }
 EOF
@@ -411,8 +416,10 @@ EOF2
   if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
     ufw allow 443/tcp >/dev/null
     ufw allow 443/udp >/dev/null
+    ufw allow "${LOCR/-/:}/udp" >/dev/null
     ufw route allow proto tcp to "$MAIN" port "$TARGET" >/dev/null 2>&1 || true
     ufw route allow proto udp to "$MAIN" port 443 >/dev/null 2>&1 || true
+    ufw route allow proto udp to "$MAIN" port "${LOCR/-/:}" >/dev/null 2>&1 || true
   fi
   if timeout 5 bash -c "</dev/tcp/$MAIN/$TARGET" 2>/dev/null; then
     echo "✅ основной сервер отвечает на порту $TARGET"

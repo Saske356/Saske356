@@ -822,9 +822,17 @@ class XrayProvider(VpnProvider):
             if port and not loc.get("down"):
                 out.append(e(self.host, port, sni, f"{loc['name']}{tag}"))
         # Мост «ru» пересылает и UDP 443: Hysteria через мост маскируется под российский сайт.
+        # Порты стран (30000–30049) мост тоже пересылает, поэтому при белых списках через мост
+        # доступны и страны: «🇩🇪 Германия · 🇷🇺 Обход».
         if h.get("port") and self.bridge_site:
-            out += [e(b["host"], b["port"], self.bridge_site, f"{b['name']}{tag}")
-                    for b in self.visible_bridges() if b.get("ru")]
+            for b in self.visible_bridges():
+                if not b.get("ru"):
+                    continue
+                out.append(e(b["host"], b["port"], self.bridge_site, f"{b['name']}{tag}"))
+                for loc in self.locations:
+                    port = self.hy2_loc_port(loc)
+                    if port and not loc.get("down"):
+                        out.append(e(b["host"], port, self.bridge_site, f"{loc['name']} · {b['name']}"))
         return out
 
     def hy2_links(self, user_id: int) -> list[str]:
