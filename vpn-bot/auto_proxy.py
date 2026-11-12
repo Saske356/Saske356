@@ -10,7 +10,9 @@
 """
 
 import asyncio
+import json
 import logging
+import os
 import time
 
 import public_proxies as pp
@@ -29,6 +31,7 @@ SPARE_TTL = 3600         # сколько помнить рабочий прок
 HIDE_LIMIT = 6 * 3600    # при подборе страна без прокси столько ждёт, потом уступает место другой
 SLOW_MS = 1500           # рабочий прокси медленнее этого и вдвое медленнее запасного уступает ему
 REP_LIMIT = 5000         # сколько прокси помнить в репутации
+MISSES_TO_HIDE = 2       # страна прячется после стольких проверок подряд без живых прокси
 
 # В режиме подбора страны берутся в этом порядке, затем остальные по числу прокси.
 PREFERRED = ["nl", "de", "us", "gb", "fr", "fi", "se", "ch", "jp", "sg", "ca", "tr",
@@ -51,6 +54,41 @@ class AutoProxy:
         # Рабочие прокси, которые списки записали не в ту страну: {страна: {url: (мс, до)}}.
         self.spare: dict[str, dict[str, tuple[int, float]]] = {}
         self.rot = 0  # сдвиг очереди стран: каждый цикл первыми пробуются другие
+        self.misses: dict[str, int] = {}  # страна -> проверок подряд без живых прокси
+        # Что бот знает о прокси, хранится на диске: после обновления и перезапуска бота
+        # он не начинает с нуля и не прячет страны из-за одной неудачной проверки.
+        state = getattr(vpn, "state_path", "")
+        self.cache_path = os.path.join(os.path.dirname(state) or ".", "auto_cache.json") if state else ""
+        self._load_cache()
+
+    def _load_cache(self) -> None:
+        if not self.cache_path or not os.path.exists(self.cache_path):
+            return
+        try:
+            with open(self.cache_path, encoding="utf-8") as f:
+                d = json.load(f)
+            now = time.time()
+            self.rep = {str(u): float(v) for u, v in (d.get("rep") or {}).items()}
+            self.bad = {str(u): float(t) for u, t in (d.get("bad") or {}).items() if float(t) > now}
+            self.spare = {cc: {u: (int(v[0]), float(v[1])) for u, v in urls.items() if float(v[1]) > now}
+                          for cc, urls in (d.get("spare") or {}).items()}
+            self.misses = {str(c): int(n) for c, n in (d.get("misses") or {}).items()}
+            self.rot = int(d.get("rot") or 0)
+        except (OSError, ValueError, TypeError, AttributeError, IndexError) as e:
+            log.warning("авто-страны: кэш прокси не прочитан: %s", e)
+
+    def _save_cache(self) -> None:
+        if not self.cache_path:
+            return
+        data = {"rep": self.rep, "bad": self.bad, "misses": self.misses, "rot": self.rot,
+                "spare": {cc: {u: list(v) for u, v in urls.items()} for cc, urls in self.spare.items()}}
+        try:
+            tmp = self.cache_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+            os.replace(tmp, self.cache_path)
+        except OSError as e:
+            log.warning("авто-страны: кэш прокси не сохранён: %s", e)
 
     async def start(self) -> bool:
         ok = await self.relay.start()
@@ -174,7 +212,10 @@ class AutoProxy:
         """Перепроверяет авто-страны, меняет умершие прокси, добавляет недостающие страны.
         Возвращает отчёт об изменениях или пустую строку."""
         async with self.lock:
-            return await self._refresh()
+            try:
+                return await self._refresh()
+            finally:
+                self._save_cache()
 
     async def _refresh(self) -> str:
         vpn, nm = self.vpn, pp.country_name
@@ -224,6 +265,7 @@ class AutoProxy:
             if len(alive) < POOL_SIZE:
                 alive += await self._find(pool, cc, POOL_SIZE - len(alive), exclude=known)
             if alive:
+                self.misses.pop(cc, None)
                 best = min(alive, key=lambda x: x[1])
                 slow = alive[0][1] > SLOW_MS and alive[0][1] > 2 * best[1]
                 if alive[0][0] != was_active or slow:  # рабочий умер или тормозит: берём самый быстрый
@@ -234,9 +276,13 @@ class AutoProxy:
                 elif res == "swapped" and cc not in swapped:
                     swapped.append(cc)
             elif not was_down:
-                # Страна только прячется из подписки: это не требует перезапуска Xray.
-                vpn.set_auto_down(cc, True)
-                lost.append(cc)
+                # Одна неудачная проверка — ещё не повод: бесплатные прокси моргают, а сразу после
+                # перезапуска бота сеть может быть не готова. Прячем со второй подряд.
+                self.misses[cc] = self.misses.get(cc, 0) + 1
+                if self.misses[cc] >= MISSES_TO_HIDE:
+                    # Страна только прячется из подписки: это не требует перезапуска Xray.
+                    vpn.set_auto_down(cc, True)
+                    lost.append(cc)
             elif discovery and now - loc.get("down_since", now) > HIDE_LIMIT:
                 if vpn.remove_location(cc, apply=False):
                     removed.append(cc)

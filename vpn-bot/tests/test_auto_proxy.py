@@ -568,6 +568,12 @@ class ManagerTests(Base):
         mgr = await self.manager(countries=("nl",))
         await mgr.refresh()
         a.kill()
+        self.assertEqual(await mgr.refresh(), "", "одна неудачная проверка — страна остаётся")
+        self.assertFalse(self.loc("nl").get("down"))
+        # перезапуск бота (обновление): знания о прокси и счёт неудач не теряются
+        again = AutoProxy(self.vpn)
+        self.assertEqual(again.misses, {"nl": 1})
+        self.assertTrue(again.rep)
         self.assertIn("скрыты", await mgr.refresh())
         self.assertTrue(self.loc("nl")["down"])
         self.assertEqual(len(self.vpn.links(7)), 1)
@@ -594,6 +600,7 @@ class ManagerTests(Base):
 
         applies = self.applies
         px["nl"].kill()  # страна без прокси сначала только прячется: Xray не перезапускается
+        self.assertEqual(await mgr.refresh(), "")
         self.assertIn("скрыты", await mgr.refresh())
         self.assertEqual([l["code"] for l in self.vpn.auto_locations()], ["nl", "us"])
         self.assertEqual((len(self.vpn.links(7)), self.applies), (3, applies))
