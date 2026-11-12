@@ -36,9 +36,12 @@ KCP_TUNING = {"mtu": 1350, "tti": 20, "uplinkCapacity": 20, "downlinkCapacity": 
 
 
 def kcp_stream(seed: str) -> dict:
-    """mKCP по UDP. Пакеты шифруются ключом seed и выглядят как случайные данные. Новые версии
-    Xray берут ключ из finalmask (mkcp-legacy), старые — из kcpSettings.seed: кладём оба."""
-    return {"network": "kcp", "kcpSettings": {**KCP_TUNING, "seed": seed},
+    """mKCP по UDP. Пакеты шифруются ключом seed и выглядят как случайные данные.
+    Ключ задаётся только через finalmask (mkcp-legacy). Старое поле kcpSettings.seed класть нельзя:
+    в Xray с 31.01.2026 (Finalmask, #5560) оно считается удалённым и конфиг не собирается вовсе —
+    так было в Happ («н/д» сразу). Свежие версии поле молча пропускают, поэтому v2rayNG работал.
+    Ядра без finalmask всё равно не умеют Hysteria, на которой держится подписка."""
+    return {"network": "kcp", "kcpSettings": dict(KCP_TUNING),
             "finalmask": {"udp": [{"type": "mkcp-legacy", "settings": {"value": seed}}]}}
 
 

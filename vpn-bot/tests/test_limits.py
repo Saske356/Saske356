@@ -323,8 +323,10 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         names = [c["remarks"] for c in cfgs]
         self.assertEqual(names, ["🚀 Лучший сервер", "🇵🇱 Польша", "🇵🇱 Польша · mKCP"])
         out = cfgs[2]["outbounds"][0]
-        self.assertEqual((out["streamSettings"]["network"], out["streamSettings"]["kcpSettings"]["seed"],
-                          out["streamSettings"]["kcpSettings"]["tti"]), ("kcp", "s33d", 20))
+        st = out["streamSettings"]
+        self.assertEqual((st["network"], st["kcpSettings"]["tti"], st["finalmask"]["udp"][0]["settings"]["value"]),
+                         ("kcp", 20, "s33d"))
+        self.assertNotIn("seed", st["kcpSettings"], "Xray с finalmask отвергает kcpSettings.seed")
         self.assertEqual(len(cfgs[0]["outbounds"]), 4, "mKCP тоже в «Лучшем сервере»")
         await self.v.suspend(1, 600)
         await self.v._pending
