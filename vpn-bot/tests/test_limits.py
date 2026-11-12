@@ -135,6 +135,96 @@ class Provider(unittest.IsolatedAsyncioTestCase):
         self.assertIn("upload=123; download=456", headers["subscription-userinfo"])
 
 
+class CountryHysteria(unittest.IsolatedAsyncioTestCase):
+    """У каждой страны через прокси свой сервер Hysteria, и в подписке одна Hysteria на страну."""
+
+    async def asyncSetUp(self):
+        self.d = tempfile.mkdtemp()
+        self.log = os.path.join(self.d, "units.log")
+        sysctl = os.path.join(self.d, "systemctl")
+        with open(sysctl, "w") as f:
+            f.write(f'#!/bin/sh\necho "$@" >> {self.log}\n')
+        os.chmod(sysctl, 0o755)
+        self.hydir = os.path.join(self.d, "aurora")
+        self.v = xp.XrayProvider(
+            state_path=os.path.join(self.d, "vpn.json"), config_path=os.path.join(self.d, "config.json"),
+            xray_bin="/nonexistent", public_host="203.0.113.7", port=443, sni="www.example.com",
+            private_key="PRIV", public_key="PUB", short_id="00ff", sub_port=0, brand="Aurora VPN",
+            default_location="🇵🇱 Польша", restart_cmd=("true",), xray_enabled=False,
+            hy2={"port": 443, "sni": "www.example.com", "pin": "ab" * 32, "obfs": "secret", "obfs_port": 0,
+                 "stats_ports": [20810], "stats_secret": "statsec"},
+            hy2_locs={"ports": range(30000, 30002), "dir": self.hydir, "stats_base": 20830,
+                      "systemctl": (sysctl,)})
+        await self.v.sync({1: time.time() + 3600})
+
+    def units(self) -> list[str]:
+        if not os.path.exists(self.log):
+            return []
+        with open(self.log) as f:
+            return f.read().splitlines()
+
+    def conf(self, code: str) -> dict:
+        with open(os.path.join(self.hydir, f"hy2-loc-{code}.yaml")) as f:
+            return json.load(f)
+
+    async def test_countries_get_their_own_server_and_link(self):
+        self.assertEqual([l.split("#")[0].split("@")[1].split("/")[0] for l in self.v.links(1)],
+                         ["203.0.113.7:443"], "без стран в подписке одна Hysteria")
+        self.v.add_location("de", "🇩🇪 Германия", "socks5://u%40x:p@1.2.3.4:1080")
+        await self.v._pending
+        self.v.set_auto_location("nl", "🇳🇱 Нидерланды", ["socks5://9.9.9.9:1080"], apply=False)
+        await self.v.apply()
+        self.assertEqual(self.v.state["hy2_ports"], {"de": 30000, "nl": 30001})
+        de, nl = self.conf("de"), self.conf("nl")
+        self.assertEqual((de["listen"], de["outbounds"][0]["socks5"]),
+                         (":30000", {"addr": "1.2.3.4:1080", "username": "u@x", "password": "p"}))
+        self.assertEqual(de["acl"]["inline"][-1], "out(all)")
+        self.assertNotIn("reject(all, udp)", de["acl"]["inline"], "купленный SOCKS5 умеет UDP")
+        self.assertEqual(nl["outbounds"][0]["socks5"],
+                         {"addr": f"127.0.0.1:{self.v.relay_port}", "username": "nl", "password": self.v.relay_password})
+        self.assertIn("reject(all, udp)", nl["acl"]["inline"])
+        self.assertEqual(de["auth"]["http"]["url"], f"http://127.0.0.1:{self.v.hy2_auth_port}/hy2auth")
+        self.assertEqual((de["trafficStats"]["listen"], nl["trafficStats"]["listen"]),
+                         ("127.0.0.1:20830", "127.0.0.1:20831"))
+        self.assertIn("restart aurora-hy2@loc-de", self.units())
+        self.assertEqual(self.v._stats_ports(), [20810, 20830, 20831], "трафик и лимит считаются со всех серверов")
+
+        links = self.v.links(1)
+        self.assertEqual(len(links), 3, "Xray выключен: по одной Hysteria на страну, второго варианта нет")
+        self.assertTrue(all(l.startswith("hysteria2://") for l in links))
+        self.assertEqual([l.split("@")[1].split("/")[0] for l in links],
+                         ["203.0.113.7:443", "203.0.113.7:30000", "203.0.113.7:30001"])
+        self.assertFalse(any("obfs" in l for l in links))
+
+        n = len(self.units())
+        await self.v.apply()
+        self.assertEqual(len(self.units()), n, "без изменений серверы стран не перезапускаются")
+        self.v.set_auto_down("nl", True)
+        self.assertEqual(len(self.v.links(1)), 2, "страна без живых прокси скрыта")
+        self.v.add_location("fr", "🇫🇷 Франция", "http://5.5.5.5:3128")
+        await self.v._pending
+        self.assertNotIn("fr", self.v.state["hy2_ports"], "порты кончились: страна без Hysteria, остальное работает")
+        self.v.remove_location("de")
+        await self.v._pending
+        self.assertIn("disable --now aurora-hy2@loc-de", self.units())
+        self.assertFalse(os.path.exists(os.path.join(self.hydir, "hy2-loc-de.yaml")))
+        self.assertEqual(self.v.state["hy2_ports"]["fr"], 30000, "освободившийся порт достался следующей стране")
+        self.assertEqual(self.conf("fr")["outbounds"][0], {"name": "out", "type": "http", "http": {"url": "http://5.5.5.5:3128"}})
+
+    async def test_second_hysteria_only_when_asked(self):
+        e = {"HY2_PORT": "443", "HY2_OBFS_PORT": "8443", "HY2_OBFS": "pw", "PUBLIC_HOST": "1.2.3.4",
+             "REALITY_PRIVATE_KEY": "a", "REALITY_PUBLIC_KEY": "b", "REALITY_SHORT_ID": "c",
+             "VPN_STATE": os.path.join(self.d, "s2.json"), "XRAY_CONFIG": os.path.join(self.d, "c2.json")}
+        old = dict(os.environ)
+        try:
+            os.environ.update(e)
+            self.assertEqual(xp.from_env().hy2["obfs_port"], 0)
+            os.environ["HY2_OBFS_ON"] = "1"
+            self.assertEqual(xp.from_env().hy2["obfs_port"], 8443)
+        finally:
+            os.environ.clear(); os.environ.update(old)
+
+
 class Guard(unittest.TestCase):
     def test_warn_then_block_then_unblock(self):
         g = DeviceGuard("block", warn_after=2, block_after=3, block_minutes=30)

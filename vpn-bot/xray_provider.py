@@ -63,6 +63,7 @@ class XrayProvider(VpnProvider):
                  auto_enabled: bool = False, auto_countries: tuple = (), auto_max: int = 8,
                  relay_port: int = 20808, api_port: int = 10085, bridge_port: int = 8444,
                  xhttp: bool = True, sub_base: str = "", hy2: dict | None = None, hy2_auth_port: int = 20809,
+                 hy2_locs: dict | None = None,
                  xray_enabled: bool = True, sub_domain: str = "", sub_tls_port: int = 443,
                  sub_cert: str = "", sub_key: str = ""):
         self.state_path, self.config_path, self.xray_bin = state_path, config_path, xray_bin
@@ -86,6 +87,10 @@ class XrayProvider(VpnProvider):
         self._hy2_server: asyncio.base_events.Server | None = None
         self.hy2_logins = 0          # успешных входов через Hysteria с запуска бота
         self.usage = None            # функция(подписка) -> (отдано, получено): бот берёт из базы
+        # Hysteria для стран через прокси: {"ports": диапазон UDP, "dir": папка конфигов,
+        # "stats_base": первый порт статистики, "systemctl": команда}. У каждой страны своя служба
+        # aurora-hy2@loc-КОД на своём порту: Hysteria выбирает выход по адресу, а не по клиенту.
+        self.hy2_locs = hy2_locs if self.hy2 and self.hy2.get("port") and hy2_locs else None
         self.sub_base = sub_base.strip().rstrip("/")
         self.state = self._load(default_location, auto_enabled, list(auto_countries), auto_max)
         self._pending: asyncio.Task | None = None
@@ -117,6 +122,7 @@ class XrayProvider(VpnProvider):
         st.setdefault("bridges", [])
         st.setdefault("bridge_site", "")  # российский сайт маскировки для мостов «ru»
         st.setdefault("devices", {})     # подписка -> сколько устройств оплачено
+        st.setdefault("hy2_ports", {})   # страна -> UDP-порт её сервера Hysteria
         st.setdefault("suspended", {})   # подписка -> до какого времени отключена за превышение
         # Настройки авто-стран берутся из окружения только при первом запуске,
         # дальше ими управляет команда /autoproxy.
@@ -367,7 +373,7 @@ class XrayProvider(VpnProvider):
 
     async def _hy2_all(self, path: str) -> list[dict]:
         out = []
-        for port in (self.hy2 or {}).get("stats_ports") or []:
+        for port in self._stats_ports():
             try:
                 data = await asyncio.to_thread(self._hy2_stats, port, "GET", path)
             except Exception:
@@ -578,6 +584,108 @@ class XrayProvider(VpnProvider):
             q += f"&obfs=salamander&obfs-password={quote(h['obfs'], safe='')}"
         return f"hysteria2://{self.hy2_password(user_id)}@{host}:{port}/?{q}#{quote(name)}"
 
+    def _stats_ports(self) -> list[int]:
+        """Порты статистики всех серверов Hysteria: основных и серверов стран."""
+        ports = list((self.hy2 or {}).get("stats_ports") or [])
+        if self.hy2_locs:
+            ports += [self._loc_stats_port(p) for p in sorted(self.state["hy2_ports"].values())]
+        return ports
+
+    def _loc_stats_port(self, port: int) -> int:
+        return self.hy2_locs["stats_base"] + (port - self.hy2_locs["ports"].start)
+
+    def hy2_loc_port(self, loc: dict) -> int | None:
+        """UDP-порт сервера Hysteria этой страны. None — у страны его нет."""
+        if not self.hy2_locs or not loc.get("proxy"):
+            return None
+        return self.state["hy2_ports"].get(loc["code"])
+
+    def _hy2_loc_config(self, loc: dict, port: int) -> str:
+        """Конфиг сервера Hysteria для страны: тот же сертификат и та же проверка паролей,
+        а трафик выходит через прокси страны. JSON — частный случай YAML, Hysteria его читает."""
+        d = self.hy2_locs["dir"]
+        udp_ok = False
+        if loc.get("auto"):
+            # Авто-страна идёт через ретранслятор: он сам выбирает живой прокси, поэтому
+            # замена прокси не перезапускает этот сервер.
+            out = {"type": "socks5", "socks5": {"addr": f"127.0.0.1:{self.relay_port}",
+                                               "username": loc["code"], "password": self.relay_password}}
+        else:
+            u = urlparse(loc["proxy"].strip())
+            if u.scheme in ("socks5", "socks"):
+                out = {"type": "socks5", "socks5": {"addr": f"{u.hostname}:{u.port}"}}
+                if u.username:
+                    out["socks5"].update(username=unquote(u.username), password=unquote(u.password or ""))
+                udp_ok = True
+            else:
+                out = {"type": "http", "http": {"url": loc["proxy"].strip()}}
+        private = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "169.254.0.0/16",
+                   "100.64.0.0/10", "fc00::/7", "fe80::/10", "::1/128"]
+        acl = [f"reject({c})" for c in private]
+        if not udp_ok:
+            # Публичные и HTTP-прокси UDP не пересылают: запросы DNS уходят с сервера,
+            # остальной UDP отклоняется, и приложения сразу переходят на TCP.
+            acl += ["direct(all, udp/53)", "reject(all, udp)"]
+        cfg = {
+            "listen": f":{port}",
+            "tls": {"cert": f"{d}/hy2.crt", "key": f"{d}/hy2.key"},
+            "auth": {"type": "http", "http": {"url": f"http://127.0.0.1:{self.hy2_auth_port}/hy2auth"}},
+            "trafficStats": {"listen": f"127.0.0.1:{self._loc_stats_port(port)}",
+                             "secret": self.hy2.get("stats_secret", "")},
+            "masquerade": {"type": "proxy", "proxy": {"url": f"https://{self.hy2.get('sni') or self.sni}/",
+                                                      "rewriteHost": True}},
+            "outbounds": [{"name": "out", **out}, {"name": "direct", "type": "direct"}],
+            "acl": {"inline": acl + ["out(all)"]},
+        }
+        return json.dumps(cfg, indent=1, ensure_ascii=False)
+
+    async def sync_hy2_locs(self) -> None:
+        """У каждой страны с прокси — свой сервер Hysteria. Перезапускается только сервер той
+        страны, у которой поменялись настройки; остальные и основная Hysteria не трогаются."""
+        if not self.hy2_locs:
+            return
+        cfg, ports = self.hy2_locs, self.state["hy2_ports"]
+        wanted = {l["code"]: l for l in self.locations if l.get("proxy")}
+        changed = False
+        for code in [c for c in ports if c not in wanted]:
+            await self._run(*cfg["systemctl"], "disable", "--now", f"aurora-hy2@loc-{code}")
+            path = os.path.join(cfg["dir"], f"hy2-loc-{code}.yaml")
+            if os.path.exists(path):
+                os.unlink(path)
+            ports.pop(code)
+            changed = True
+        for code, loc in wanted.items():
+            if code not in ports:
+                free = next((p for p in cfg["ports"] if p not in ports.values()), None)
+                if free is None:
+                    log.warning("Hysteria: кончились порты %s, страна %s остаётся без Hysteria", cfg["ports"], code)
+                    continue
+                ports[code] = free
+                changed = True
+            text = self._hy2_loc_config(loc, ports[code])
+            path = os.path.join(cfg["dir"], f"hy2-loc-{code}.yaml")
+            try:
+                with open(path, encoding="utf-8") as f:
+                    if f.read() == text:
+                        continue
+            except OSError:
+                pass
+            try:
+                os.makedirs(cfg["dir"], exist_ok=True)
+                fd = os.open(path + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(text)
+                os.replace(path + ".tmp", path)
+                unit = f"aurora-hy2@loc-{code}"
+                await self._run(*cfg["systemctl"], "enable", unit)
+                rc, out = await self._run(*cfg["systemctl"], "restart", unit)
+            except OSError as e:
+                rc, out = 1, str(e)
+            if rc != 0:
+                await self._problem(f"Hysteria для «{loc['name']}» не запустилась: {out[-300:].strip()}")
+        if changed:
+            self._save()
+
     def hy2_links(self, user_id: int) -> list[str]:
         if not self.hy2:
             return []
@@ -588,6 +696,11 @@ class XrayProvider(VpnProvider):
             out.append(self._hy2_link(user_id, self.host, h["port"], sni, f"{main} · Hysteria"))
         if h.get("obfs_port") and h.get("obfs"):
             out.append(self._hy2_link(user_id, self.host, h["obfs_port"], sni, f"{main} · Hysteria 2", obfs=True))
+        # Страны через прокси: у каждой свой порт Hysteria, пароль тот же.
+        for loc in self.locations:
+            port = self.hy2_loc_port(loc)
+            if port and not loc.get("down"):
+                out.append(self._hy2_link(user_id, self.host, port, sni, f"{loc['name']} · Hysteria"))
         # Мост «ru» пересылает и UDP 443: Hysteria через мост маскируется под российский сайт.
         if h.get("port") and self.bridge_site:
             out += [self._hy2_link(user_id, b["host"], b["port"], self.bridge_site, f"{b['name']} · Hysteria")
@@ -642,7 +755,7 @@ class XrayProvider(VpnProvider):
 
     async def hy2_kick(self, user_id: int) -> None:
         """Обрывает уже открытые сессии Hysteria у клиента, которому отключили доступ."""
-        for port in (self.hy2 or {}).get("stats_ports") or []:
+        for port in self._stats_ports():
             try:
                 await asyncio.to_thread(self._hy2_stats, port, "POST", "/kick", [f"u{user_id}"])
             except Exception as e:
@@ -650,7 +763,7 @@ class XrayProvider(VpnProvider):
 
     async def hy2_online(self) -> int | None:
         total, seen = 0, False
-        for port in (self.hy2 or {}).get("stats_ports") or []:
+        for port in self._stats_ports():
             try:
                 data = await asyncio.to_thread(self._hy2_stats, port, "GET", "/online")
             except Exception:
@@ -947,6 +1060,15 @@ class XrayProvider(VpnProvider):
         return True
 
     async def apply(self) -> bool:
+        """Применяет состояние: сначала Xray, затем серверы Hysteria для стран."""
+        ok = await self._apply_xray()
+        try:
+            await self.sync_hy2_locs()
+        except Exception:
+            log.exception("Hysteria для стран: сбой")
+        return ok
+
+    async def _apply_xray(self) -> bool:
         """Применяет состояние к Xray. Если поменялись только клиенты, они меняются через API
         на лету. Иначе новый конфиг проверяется самим Xray и только потом Xray перезапускается.
         Если Xray не принимает запасной вход или авто-страны, применяется конфиг без них:
@@ -1109,6 +1231,15 @@ class XrayProvider(VpnProvider):
         return True
 
 
+def hy2_locs_from_env(e) -> dict | None:
+    """UDP-порты серверов Hysteria для стран через прокси, например 30000-30049. 0 — выключено."""
+    m = re.fullmatch(r"(\d+)-(\d+)", e.get("HY2_LOC_PORTS", "30000-30049").strip())
+    if not m or int(m.group(1)) > int(m.group(2)):
+        return None
+    return {"ports": range(int(m.group(1)), int(m.group(2)) + 1), "dir": e.get("HY2_DIR", "/etc/aurora"),
+            "stats_base": int(e.get("HY2_LOC_STATS_BASE", "20830")), "systemctl": ("systemctl",)}
+
+
 def from_env() -> XrayProvider:
     e = os.environ
     need = ["PUBLIC_HOST", "REALITY_PRIVATE_KEY", "REALITY_PUBLIC_KEY", "REALITY_SHORT_ID"]
@@ -1133,10 +1264,14 @@ def from_env() -> XrayProvider:
         xhttp=e.get("XHTTP", "1") == "1",
         sub_base=e.get("SUB_URL", ""),
         hy2={"port": int(e.get("HY2_PORT") or 0), "sni": e.get("HY2_SNI", ""), "pin": e.get("HY2_PIN", ""),
-             "obfs": e.get("HY2_OBFS", ""), "obfs_port": int(e.get("HY2_OBFS_PORT") or 0),
+             # Второй вариант Hysteria (с обфускацией) выключен, пока не задано HY2_OBFS_ON=1:
+             # в подписке остаётся одна Hysteria.
+             "obfs": e.get("HY2_OBFS", ""),
+             "obfs_port": int(e.get("HY2_OBFS_PORT") or 0) if e.get("HY2_OBFS_ON", "0") == "1" else 0,
              "stats_ports": [int(p) for p in e.get("HY2_STATS_PORTS", "").split(",") if p.strip().isdigit()],
              "stats_secret": e.get("HY2_STATS_SECRET", "")} if e.get("HY2_PORT") or e.get("HY2_OBFS_PORT") else None,
         hy2_auth_port=int(e.get("HY2_AUTH_PORT", "20809")),
+        hy2_locs=hy2_locs_from_env(e),
         xray_enabled=e.get("XRAY_ENABLED", "1") == "1",
         sub_domain=e.get("SUB_DOMAIN", ""),
         sub_tls_port=int(e.get("SUB_TLS_PORT") or (443 if e.get("XRAY_ENABLED", "1") == "0" else 2053)),

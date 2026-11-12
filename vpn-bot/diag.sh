@@ -303,7 +303,11 @@ fi
 HYBIN=/usr/local/bin/hysteria
 if grep -qE '^HY2_PORT=' "$ENVF" 2>/dev/null; then
   echo "== Hysteria (UDP)"
-  for unit in aurora-hy2@plain aurora-hy2@obfs; do
+  HYUNITS="aurora-hy2@plain"
+  grep -qE '^HY2_OBFS_ON=1' "$ENVF" 2>/dev/null && HYUNITS="$HYUNITS aurora-hy2@obfs"
+  # серверы Hysteria для стран через прокси
+  HYUNITS="$HYUNITS $(systemctl list-units --all --plain --no-legend 'aurora-hy2@loc-*' 2>/dev/null | awk '{print $1}' | sed 's/\.service$//' | tr '\n' ' ')"
+  for unit in $HYUNITS; do
     systemctl is-active -q "$unit" && ok "служба $unit запущена" \
       || bad "служба $unit не запущена: journalctl -u $unit -n 20 --no-pager"
   done

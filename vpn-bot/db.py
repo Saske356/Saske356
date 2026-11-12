@@ -207,6 +207,9 @@ class DB:
         return {r[0]: r[1] for r in self.qa("SELECT id, expires_at FROM subscriptions WHERE expires_at>?",
                                             time.time())}
 
+    def active_user_ids(self) -> list[int]:
+        return [r[0] for r in self.qa("SELECT DISTINCT user_id FROM subscriptions WHERE expires_at>?", time.time())]
+
     def active_devices(self) -> dict[int, int]:
         return {r[0]: r[1] for r in self.qa("SELECT id, devices FROM subscriptions WHERE expires_at>?",
                                             time.time())}

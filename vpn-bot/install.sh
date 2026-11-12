@@ -229,7 +229,7 @@ hy_free_ports() {
   rm -f /etc/systemd/system/hysteria-server.service /etc/systemd/system/hysteria-loc@.service \
         /etc/systemd/system/aurora-hop.service /etc/aurora-hop.nft /etc/hysteria/loc-*.yaml
   sleep 1
-  for key in HY2_PORT HY2_OBFS_PORT; do
+  for key in HY2_PORT $(hy_obfs_on && echo HY2_OBFS_PORT); do
     port=$(envget "$key")
     owner=$(port_owner udp "$port")
     [ -n "$owner" ] || continue
@@ -264,6 +264,11 @@ hy_free_ports() {
   [ -z "$(port_owner tcp "$s2")" ] && [ "$s2" != "$s1" ] || s2=$(free_port tcp $((s1 + 1)) "$s1")
   [ "$s1,$s2" = "$(envget HY2_STATS_PORTS)" ] || env_set HY2_STATS_PORTS "$s1,$s2"
 }
+
+# Какие службы Hysteria нужны. Вариант с обфускацией (вторая Hysteria в подписке) включается
+# только строкой HY2_OBFS_ON=1 в .env: по умолчанию в подписке одна Hysteria.
+hy_obfs_on() { [ "$(envget HY2_OBFS_ON)" = 1 ]; }
+hy_units() { if hy_obfs_on; then echo "aurora-hy2@plain aurora-hy2@obfs"; else echo "aurora-hy2@plain"; fi; }
 
 env_newline() {  # .env, поправленный вручную, может кончаться без перевода строки: дописанное склеилось бы
   [ ! -s "$ENV" ] || [ -z "$(tail -c1 "$ENV")" ] || echo >> "$ENV"
@@ -305,7 +310,7 @@ EOF
   hy_env_defaults
   hy_free_ports
   hy_config plain || return 1
-  hy_config obfs || return 1
+  if hy_obfs_on; then hy_config obfs || return 1; fi
   cat > /etc/systemd/system/aurora-hy2@.service <<EOF
 [Unit]
 Description=Aurora VPN Hysteria2 (%i)
@@ -325,8 +330,11 @@ EOF
   printf 'net.core.rmem_max=16777216\nnet.core.wmem_max=16777216\n' > /etc/sysctl.d/99-aurora-quic.conf
   sysctl -q -p /etc/sysctl.d/99-aurora-quic.conf 2>/dev/null || true
   systemctl daemon-reload
-  systemctl enable -q aurora-hy2@plain aurora-hy2@obfs
-  systemctl restart aurora-hy2@plain aurora-hy2@obfs
+  if ! hy_obfs_on; then systemctl disable --now aurora-hy2@obfs >/dev/null 2>&1 || true; fi
+  # shellcheck disable=SC2046
+  systemctl enable -q $(hy_units)
+  # shellcheck disable=SC2046
+  systemctl restart $(hy_units)
 }
 
 get_code() {
@@ -612,7 +620,10 @@ if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
   ufw allow "$SUB_PORT"/tcp >/dev/null
   ufw allow "$BRIDGE_PORT"/tcp >/dev/null
   ufw allow "$(envget HY2_PORT)"/udp >/dev/null 2>&1 || true
-  ufw allow "$(envget HY2_OBFS_PORT)"/udp >/dev/null 2>&1 || true
+  if hy_obfs_on; then ufw allow "$(envget HY2_OBFS_PORT)"/udp >/dev/null 2>&1 || true; fi
+  # серверы Hysteria для стран через прокси: по одному UDP-порту на страну
+  LOCP=$(envget HY2_LOC_PORTS); LOCP=${LOCP:-30000-30049}
+  [ "$LOCP" = 0 ] || ufw allow "$(printf '%s' "$LOCP" | tr - :)"/udp >/dev/null 2>&1 || true
   [ -n "$(envget SUB_TLS_PORT)" ] && ufw allow "$(envget SUB_TLS_PORT)"/tcp >/dev/null
 fi
 
@@ -644,10 +655,12 @@ if [ -n "$TLSP" ]; then
 fi
 if [ "$HY_OK" = 1 ]; then
   # упавшая служба перезапускается по кругу: проверяем, что за 5 секунд она не перезапускалась
-  N1=$(systemctl show -p NRestarts --value aurora-hy2@plain aurora-hy2@obfs | tr '\n' ' ')
+  # shellcheck disable=SC2046
+  N1=$(systemctl show -p NRestarts --value $(hy_units) | tr '\n' ' ')
   sleep 5
-  N2=$(systemctl show -p NRestarts --value aurora-hy2@plain aurora-hy2@obfs | tr '\n' ' ')
-  for unit in aurora-hy2@plain aurora-hy2@obfs; do
+  # shellcheck disable=SC2046
+  N2=$(systemctl show -p NRestarts --value $(hy_units) | tr '\n' ' ')
+  for unit in $(hy_units); do
     if systemctl is-active -q "$unit" && [ "$N1" = "$N2" ]; then
       echo "✅ $unit работает ($(grep -oE '"listen": *":[0-9]+"' "$HYDIR/hy2-${unit#*@}.yaml" | grep -oE '[0-9]+')/udp)"
     else

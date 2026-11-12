@@ -585,6 +585,17 @@ async def main():
     await bot.devices_job(ctx)
     prov.resume.assert_awaited_once_with(some)
     bot.guard.__init__("block")
+    # смена сайта маскировки: гостям с активным доступом уходит просьба обновить подписку
+    bot.STATE["bot"] = ctx.bot
+    ctx.bot.send_message.reset_mock()
+    n = bot.announce_update(urgent=True)
+    await bot.STATE["announce"]
+    assert n == len(db.active_user_ids()) > 0 and ctx.bot.send_message.await_count == n
+    assert "обновите подписку" in ctx.bot.send_message.await_args.args[1]
+    prov.xray_enabled = False
+    assert bot.announce_update() == 0, "без Xray сайт маскировки ни на что не влияет"
+    prov.xray_enabled = True
+    bot.STATE["bot"] = None
     prov._server.close()
     bot.vpn = demo
 

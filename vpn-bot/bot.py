@@ -170,8 +170,10 @@ def ref_condition() -> str:
 
 
 def location_names() -> list[str]:
-    if not getattr(vpn, "xray_enabled", True):  # без Xray клиенту доступна только страна сервера
-        return [vpn.direct_location()["name"]]
+    if not getattr(vpn, "xray_enabled", True):
+        # Без Xray гостю доступны страна сервера и страны, у которых есть свой сервер Hysteria.
+        return [l["name"] for l in vpn.locations
+                if l is vpn.direct_location() or (vpn.hy2_loc_port(l) and not l.get("down"))]
     return [l["name"] for l in getattr(vpn, "locations", [])]
 
 
@@ -1704,7 +1706,9 @@ def locations_text() -> str:
         how = "через прокси" if l["proxy"] else "напрямую с сервера"
         tag = " · 🤖 авто" if l.get("auto") else ""
         state = " · ❌ прокси не отвечает, скрыта" if l.get("down") else ""
-        lines.append(f"◆ <code>{esc(l['code'])}</code> · {esc(l['name'])} · <i>{how}</i>{tag}{state}")
+        hy_port = vpn.hy2_loc_port(l) if hasattr(vpn, "hy2_loc_port") else None
+        hy = f" · Hysteria UDP {hy_port}" if hy_port else ""
+        lines.append(f"◆ <code>{esc(l['code'])}</code> · {esc(l['name'])} · <i>{how}</i>{tag}{hy}{state}")
     def bridge_line(b):
         if b.get("ru"):
             mask = (f" · белые списки, маскировка {esc(vpn.bridge_site)}" if vpn.bridge_site
@@ -1714,8 +1718,8 @@ def locations_text() -> str:
         state = " · ❌ не отвечает" if b.get("down") else ""
         return f"◆ <code>{esc(b['code'])}</code> · {esc(b['name'])} · {esc(b['host'])}:{b['port']}{mask}{state}"
     bridges = [bridge_line(b) for b in getattr(vpn, "bridges", [])]
-    off = ("⚠️ Xray выключен: страны через прокси не работают, клиенты подключаются только к этому "
-           "серверу через Hysteria. Включить Xray: XRAY_ENABLED=1 в .env и перезапуск бота.\n\n"
+    off = ("ℹ️ Xray выключен: все страны работают только через Hysteria (UDP). Подключение по TCP "
+           "включается так: XRAY_ENABLED=1 в .env и перезапуск бота.\n\n"
            if not getattr(vpn, "xray_enabled", True) else "")
     return (xray_warning() + off + "<b>Страны</b>\n\n" + "\n".join(lines) + "\n\n"
             "Добавить: /addloc <code>код</code> <code>Название</code> | <code>socks5://логин:пароль@ip:порт</code>\n"
@@ -2100,9 +2104,44 @@ async def switch_masking(reason: str, site: str | None = None) -> str:
         MASK["fails"] = 0
         keys = ("Ключи с прежним сайтом принимаются ещё сутки." if grace
                 else "Ключи с прежним сайтом больше не работают.")
+        told = announce_update(urgent=not grace)
         return (f"🎭 Сайт маскировки изменён: {old} → {new}\nПричина: {reason}.{note}\n\n{keys} "
-                "Приложения сами обновляют подписку раз в час. Чтобы не ждать, в приложении нужно "
-                "нажать обновление подписки.")
+                "Подписка на сервере уже новая. "
+                + (f"Гостям с активным доступом ({told}) уходит сообщение с просьбой обновить её в приложении. "
+                   if told else "")
+                + "Приложения и сами обновляют подписку раз в час.")
+
+
+def announce_update(urgent: bool = False) -> int:
+    """Настройки сервера сменились: подписка на сервере уже новая, но приложение само заберёт её
+    только при следующем обновлении (раз в час). Гостям с активным доступом уходит сообщение,
+    чтобы обновили сразу. Возвращает число адресатов; рассылка идёт в фоне."""
+    bot = STATE.get("bot")
+    targets = db.active_user_ids()
+    if not bot or not targets or not getattr(vpn, "xray_enabled", True):
+        return 0
+    text = ("🔄 <b>Мы обновили настройки сервера</b>\n\n"
+            + ("Чтобы VPN снова заработал, обновите подписку в приложении" if urgent
+               else "Чтобы VPN не прервался, обновите подписку в приложении")
+            + ": откройте список серверов и потяните его вниз или нажмите «Обновить подписку». "
+              "Ключ и ссылка остаются прежними."
+            + ("" if urgent else "\n\n<i>Старые настройки работают ещё сутки, а приложение обновит "
+                                 "подписку и само в течение часа.</i>"))
+    kb = KB([B("🗝 Мои подписки", "subs"), B("🛠 Не работает?", "fix")])
+
+    async def run() -> None:
+        for uid in targets:
+            for attempt in range(3):
+                try:
+                    await bot.send_message(uid, text, reply_markup=kb)
+                    break
+                except RetryAfter as e:
+                    await asyncio.sleep(retry_seconds(e) + 1)
+                except TelegramError:
+                    break  # гость заблокировал бота или удалил чат
+            await asyncio.sleep(0.05)
+    STATE["announce"] = asyncio.get_running_loop().create_task(run())
+    return len(targets)
 
 
 async def masking_job(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2363,6 +2402,7 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def setup_profile(app: Application) -> None:
     """Запуск VPN-части, затем имя, описание до /start и меню команд бота."""
     bot = app.bot
+    STATE["bot"] = bot
     try:
         STATE["username"] = (await bot.get_me()).username or ""
     except TelegramError as e:
