@@ -258,6 +258,87 @@ else
   fi
 fi
 
+# Запасной вход XHTTP на том же порту: в подписке он идёт с пометкой «· запасной».
+XPATH=$(python3 -c '
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+print(next((ib["streamSettings"].get("xhttpSettings", {}).get("path", "") for ib in cfg.get("inbounds", [])
+            if (ib.get("streamSettings") or {}).get("network") == "xhttp"), ""))' "$CFG" 2>/dev/null)
+if [ -n "$XPATH" ] && [ -n "${UUID:-}" ] && [ -n "${STARTED:-}" ]; then
+  echo "== Запасное подключение XHTTP"
+  make_client vnext
+  python3 - "$TMP/client.json" "$XPATH" <<'PY'
+import json, sys
+path, xpath = sys.argv[1:]
+cfg = json.load(open(path))
+ob = cfg["outbounds"][0]
+for u in ob["settings"]["vnext"][0]["users"]:
+    u.pop("flow", None)
+ob["streamSettings"]["network"] = "xhttp"
+ob["streamSettings"]["xhttpSettings"] = {"path": xpath, "mode": "auto"}
+json.dump(cfg, open(path, "w"))
+PY
+  "$XRAY" run -c "$TMP/client.json" >"$TMP/client.x.log" 2>&1 &
+  CPID=$!
+  sleep 3
+  IP=$(curl -s -m 20 --socks5-hostname "127.0.0.1:$SOCKS" https://api.ipify.org 2>"$TMP/curl.err")
+  if [ -n "$IP" ]; then
+    ok "запасное подключение XHTTP работает"
+  else
+    { echo "curl: $(cat "$TMP/curl.err")"; tail -n 4 "$TMP/client.x.log"; } > "$TMP/xhttp.log"
+    bad "запасное подключение XHTTP не прошло" "$TMP/xhttp.log"
+  fi
+  kill "$CPID" 2>/dev/null
+fi
+BPORT=$(python3 -c '
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+print(next((ib["port"] for ib in cfg.get("inbounds", []) if ib.get("tag") == "in-b"), ""))' "$CFG" 2>/dev/null)
+if [ -n "$BPORT" ]; then
+  listen "$BPORT" | grep -q xray && ok "вход для мостов слушает порт $BPORT" \
+    || bad "вход для мостов не слушает порт $BPORT"
+fi
+
+# Hysteria (UDP): пробное подключение с паролем действующего клиента
+HYBIN=/usr/local/bin/hysteria
+if grep -qE '^HY2_PORT=' "$ENVF" 2>/dev/null; then
+  echo "== Hysteria (UDP)"
+  for unit in aurora-hy2@plain aurora-hy2@obfs; do
+    systemctl is-active -q "$unit" && ok "служба $unit запущена" \
+      || bad "служба $unit не запущена: journalctl -u $unit -n 20 --no-pager"
+  done
+  HYP=$(grep -E '^HY2_PORT=' "$ENVF" | cut -d= -f2)
+  ss -ulnpH "sport = :$HYP" 2>/dev/null | grep -q hysteria && ok "Hysteria слушает $HYP/udp" \
+    || bad "$HYP/udp слушает не Hysteria: $(ss -ulnpH "sport = :$HYP" 2>/dev/null | grep -oE 'users:\(\("[^"]+' | sed 's/.*("//')"
+  STATEF=$(grep -E '^VPN_STATE=' "$ENVF" | tail -1 | cut -d= -f2); STATEF=${STATEF:-/var/lib/aurora/vpn.json}
+  HYPASS=$(python3 - "$STATEF" <<'PY' 2>/dev/null
+import hashlib, hmac, json, sys, time
+st = json.load(open(sys.argv[1]))
+uid = next((u for u, exp in st.get("users", {}).items() if exp > time.time()), None)
+if uid:
+    print(uid + "." + hmac.new(st["secret"].encode(), f"hy2:{uid}".encode(), hashlib.sha256).hexdigest()[:20])
+PY
+)
+  HYPORT=$(grep -E '^HY2_PORT=' "$ENVF" | cut -d= -f2); HYSNI=$(grep -E '^HY2_SNI=' "$ENVF" | cut -d= -f2)
+  if [ -z "$HYPASS" ]; then
+    bad "нет активного ключа для пробного подключения Hysteria"
+  elif [ -x "$HYBIN" ]; then
+    printf 'server: 127.0.0.1:%s\nauth: %s\ntls:\n  sni: %s\n  insecure: true\nsocks5:\n  listen: 127.0.0.1:10898\n' \
+      "$HYPORT" "$HYPASS" "$HYSNI" > "$TMP/hy.yaml"
+    "$HYBIN" client -c "$TMP/hy.yaml" >"$TMP/hy.log" 2>&1 &
+    CPID=$!
+    sleep 3
+    IP=$(curl -s -m 20 --socks5-hostname 127.0.0.1:10898 https://api.ipify.org 2>/dev/null)
+    if [ -n "$IP" ]; then
+      ok "через Hysteria открылся интернет"
+    else
+      { tail -n 6 "$TMP/hy.log"; journalctl -u aurora-hy2@plain -n 4 --no-pager 2>/dev/null; } > "$TMP/hyerr.log"
+      bad "подключение через Hysteria не прошло" "$TMP/hyerr.log"
+    fi
+    kill "$CPID" 2>/dev/null
+  fi
+fi
+
 echo "== Последние сообщения Xray"
 journalctl -u xray -n 6 --no-pager 2>/dev/null | cut -c1-160
 

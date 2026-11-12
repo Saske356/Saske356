@@ -4,6 +4,8 @@
 сертификат (прокси, который подменяет шифрование, не проходит) и читается страна,
 из которой сайт видит подключение. Затем проверяется, что прокси пускает и на порт 80. Так отсеиваются мёртвые прокси, «пустышки» без
 поддержки туннелей и прокси, которые выходят в интернет не из заявленной страны.
+Новые прокси дополнительно проходят замер скорости: медленные и с большой задержкой
+отбрасываются, потому что через них VPN «работает через раз».
 
 Публичные прокси нестабильны, и их владельцы видят, к каким адресам идут подключения.
 Это бесплатный запасной вариант, а не замена платным прокси.
@@ -33,14 +35,9 @@ SOURCES = [
                     "?request=display_proxies&proxy_format=protocolipport&format=json"),
     ("geonode", "https://proxylist.geonode.com/api/proxy-list?limit=500&page=1"
                 "&sort_by=lastChecked&sort_type=desc"),
-    # Страну этот список не сообщает: бот узнаёт её сам, проверяя прокси (см. UNKNOWN).
-    ("socks5proxies", "https://api.socks5proxies.com/api/proxies/export/csv?protocol=socks5&limit=5000"),
+    # Список, который сам проверяет прокси и пишет страну выхода и время ответа.
+    ("monosans", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies.json"),
 ]
-
-# Ключ для прокси без страны в списке. Такие прокси проверяются отдельно, и страна
-# берётся из того, откуда прокси на самом деле выходит в интернет.
-UNKNOWN = "??"
-MAX_UNKNOWN = 200
 
 CACHE_TTL = 900
 MAX_PER_COUNTRY = 150
@@ -51,6 +48,15 @@ CHECK_HOST = "www.cloudflare.com"
 CHECK_PORT = 443
 CHECK_HTTP_PORT = 80
 CHECK_PATH = "/cdn-cgi/trace"
+# Замер скорости: скачивание через прокси SPEED_BYTES байт. Медленнее MIN_KBPS — не берём.
+SPEED_HOST = "speed.cloudflare.com"
+SPEED_PORT = 443
+SPEED_PATH = "/__down?bytes={n}"
+SPEED_BYTES = 262144
+SPEED_TIMEOUT = 12.0
+MIN_KBPS = 80          # КБ/с: ниже этого сайты и видео грузятся с перебоями
+MAX_MS = 3500          # полная проверка дольше этого — прокси слишком далеко или перегружен
+SPEEDS: dict[str, int] = {}   # последний замер скорости прокси, КБ/с
 _ssl_ctx: ssl.SSLContext | None = None
 
 RU_NAMES = {
@@ -89,11 +95,7 @@ def _add(pool: dict, cc, proto, ip, port, uptime=None) -> None:
     """Запоминает прокси с оценкой: чем выше доля успешных проверок у источника и чем больше
     источников его знают, тем раньше мы его попробуем. Так нужно меньше попыток."""
     proto, cc = (proto or "").lower(), (cc or "").lower()
-    if not cc:
-        cc = UNKNOWN
-    if proto not in ALLOWED or not ip or not str(port).isdigit():
-        return
-    if cc != UNKNOWN and (len(cc) != 2 or not cc.isalpha()):
+    if proto not in ALLOWED or len(cc) != 2 or not cc.isalpha() or not ip or not str(port).isdigit():
         return
     try:
         quality = min(max(float(uptime or 0), 0.0), 100.0) / 100
@@ -123,36 +125,33 @@ def _parse_geonode(data, pool) -> None:
             _add(pool, p.get("country"), proto, p.get("ip"), p.get("port"), p.get("upTime"))
 
 
-def _parse_socks5proxies(text, pool) -> None:
-    """CSV: ip,port,country_code,...,protocols,anonymity,uptime,delay_ms,last_seen."""
-    import csv
-    import io
-    for p in csv.DictReader(io.StringIO(text)):
-        protos = (p.get("protocols") or "").upper().split("|")
-        if "SOCKS5" in protos:
-            _add(pool, p.get("country_code"), "socks5", p.get("ip"), p.get("port"), p.get("uptime"))
+def _parse_monosans(data, pool) -> None:
+    for p in data if isinstance(data, list) else []:
+        if p.get("username"):
+            continue  # прокси с логином из открытого списка нам не подходят
+        country = ((p.get("geolocation") or {}).get("country") or {}).get("iso_code")
+        try:  # время ответа в секундах при проверке самим списком: быстрые раньше
+            quality = max(0.0, 1.0 - float(p.get("timeout") or 5) / 5) * 100
+        except (TypeError, ValueError):
+            quality = 0.0
+        _add(pool, country, p.get("protocol"), p.get("host"), p.get("port"), quality)
 
 
 PARSERS = {"proxifly": _parse_proxifly, "proxyscrape": _parse_proxyscrape, "geonode": _parse_geonode,
-           "socks5proxies": _parse_socks5proxies}
-TEXT_SOURCES = {"socks5proxies"}  # отдают не JSON, а текст
-
-
-def _fetch_text(url: str, timeout: float = 25.0) -> str:
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read().decode("utf-8", "replace")
+           "monosans": _parse_monosans}
 
 
 def _fetch_json(url: str, timeout: float = 25.0):
-    return json.loads(_fetch_text(url, timeout))
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8", "replace"))
 
 
 def _collect() -> dict[str, list[str]]:
     pool: dict[str, dict] = {}
     for name, url in SOURCES:
         try:
-            PARSERS[name](_fetch_text(url) if name in TEXT_SOURCES else _fetch_json(url), pool)
+            PARSERS[name](_fetch_json(url), pool)
         except Exception as e:
             log.warning("источник прокси %s недоступен: %s", name, e)
     out = {}
@@ -160,7 +159,7 @@ def _collect() -> dict[str, list[str]]:
         lst = list(urls)
         random.shuffle(lst)                      # при равной оценке порядок случайный
         lst.sort(key=lambda u: -urls[u])
-        out[cc] = lst[:MAX_UNKNOWN if cc == UNKNOWN else MAX_PER_COUNTRY]
+        out[cc] = lst[:MAX_PER_COUNTRY]
     log.info("публичные прокси: %d стран, %d адресов", len(out), sum(len(v) for v in out.values()))
     return out
 
@@ -372,6 +371,45 @@ async def _plain_ok(url: str, timeout: float) -> bool:
         await _close(writer)
 
 
+async def _speed(url: str, timeout: float) -> int | None:
+    sock = await open_tunnel(url, SPEED_HOST, SPEED_PORT, timeout)
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(sock=sock, ssl=_ctx(), server_hostname=SPEED_HOST), timeout)
+    except BaseException:
+        sock.close()
+        raise
+    try:
+        path = SPEED_PATH.format(n=SPEED_BYTES)
+        writer.write(f"GET {path} HTTP/1.1\r\nHost: {SPEED_HOST}\r\nUser-Agent: curl/8.5.0\r\n"
+                     "Accept: */*\r\nConnection: close\r\n\r\n".encode())
+        await writer.drain()
+        head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout)
+        if not re.match(rb"HTTP/1\.[01] 200", head):
+            return None
+        t0, got = time.monotonic(), 0
+        while got < SPEED_BYTES:
+            chunk = await asyncio.wait_for(reader.read(65536), timeout)
+            if not chunk:
+                break
+            got += len(chunk)
+        took = max(time.monotonic() - t0, 0.001)
+        return int(got / 1024 / took) if got >= SPEED_BYTES * 0.9 else None
+    finally:
+        await _close(writer)
+
+
+async def speed(url: str, timeout: float = 6.0) -> int | None:
+    """Скорость скачивания через прокси в КБ/с. None — замер не удался. Никогда не бросает."""
+    try:
+        kbps = await asyncio.wait_for(_speed(url, timeout), SPEED_TIMEOUT)
+    except Exception:
+        kbps = None
+    if kbps is not None:
+        SPEEDS[url] = kbps
+    return kbps
+
+
 async def probe(url: str, timeout: float = 6.0) -> Probe | None:
     """Полная проверка прокси. None — не работает. Никогда не бросает."""
     try:
@@ -398,14 +436,9 @@ async def direct_ok(timeout: float = 8.0) -> bool:
     return False
 
 
-# Прокси, через который проверочный запрос идёт дольше, бот не берёт: с ним сайты открываются
-# секундами, а пинг выше. Меняется в .env: AUTO_PROXY_MAX_MS.
-MAX_MS = 1500
-
-
 async def pick_working(urls, country: str, need: int = 1, *, timeout: float = 6.0,
                        concurrency: int = 6, tries: int = 12,
-                       failed: set | None = None, max_ms: int | None = None) -> list[tuple[str, int]]:
+                       failed: set | None = None) -> list[tuple[str, int]]:
     """Ищет среди кандидатов прокси, которые работают и выходят из нужной страны.
     Возвращает до need штук (url, мс), самые быстрые первыми. В failed попадают непрошедшие."""
     urls = list(urls)[:tries]
@@ -415,14 +448,21 @@ async def pick_working(urls, country: str, need: int = 1, *, timeout: float = 6.
 
     async def check(u):
         async with sem:
-            return u, await probe(u, timeout)
+            res = await probe(u, timeout)
+            # Второе подключение заодно подтверждает, что прокси не случайно ответил один раз.
+            if res and res.country == country and res.ms <= MAX_MS:
+                kbps = await speed(u, timeout)
+                if kbps is None or kbps < MIN_KBPS:
+                    log.info("прокси %s отброшен: скорость %s КБ/с", u, kbps)
+                    res = None
+            return u, res
 
     good = []
     tasks = [asyncio.create_task(check(u)) for u in urls]
     try:
         for fut in asyncio.as_completed(tasks):
             u, res = await fut
-            if res and res.country == country and res.ms <= (max_ms or MAX_MS):
+            if res and res.country == country and res.ms <= MAX_MS:
                 good.append((u, res.ms))
                 if len(good) > need:  # один запасной, чтобы было из чего выбрать быстрый
                     break

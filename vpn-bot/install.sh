@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Установщик Aurora VPN: Xray (VLESS Reality) + Hysteria2 + бот + раздача подписок.
+# Установщик Aurora VPN: Xray (VLESS Reality) + бот + раздача подписок.
 # Запуск на чистом сервере Ubuntu/Debian от root:
 #   bash <(curl -fsSL https://raw.githubusercontent.com/Saske356/Saske356/claude/android-usage-ql87m8/vpn-bot/install.sh)
 # Повторный запуск обновляет код и сохраняет настройки.
@@ -12,11 +12,7 @@ BOT="$DIR/vpn-bot"
 ENV="$BOT/.env"
 XRAY=/usr/local/bin/xray
 SUB_PORT="${SUB_PORT:-2096}"
-HY_BIN=/usr/local/bin/hysteria
-HY_DIR=/etc/hysteria
-HY2="${HY2:-1}"   # HY2=0 — не ставить Hysteria2
-AWG="${AWG:-1}"   # AWG=0 — не ставить AmneziaWG
-HOP_PORTS="${HOP_PORTS:-20000-29999}"  # диапазон смены портов Hysteria2
+BRIDGE_PORT="${BRIDGE_PORT:-8444}"   # вход для мостов, которые проходят белые списки
 
 say()  { printf '\n\033[1;33m== %s\033[0m\n' "$*"; }
 fail() { printf '\n\033[1;31mОшибка: %s\033[0m\n' "$*" >&2; exit 1; }
@@ -117,6 +113,10 @@ install_xray() {
   return $rc
 }
 
+# ---------- Hysteria2: подключение по UDP, проходит там, где оператор режет TCP ----------
+HY=/usr/local/bin/hysteria
+HYDIR=/etc/aurora
+
 hy_arch() {
   case "$(uname -m)" in
     x86_64|amd64) echo amd64 ;;
@@ -125,27 +125,209 @@ hy_arch() {
   esac
 }
 
-# Hysteria2 с GitHub. Файл принимается, только если его SHA-256 совпал с hashes.txt того же релиза.
+# Бинарник принимается, только если его SHA-256 совпадает со списком из того же релиза.
 install_hysteria() {
-  local arch tmp sum got base=https://github.com/apernet/hysteria/releases/latest/download
-  arch=$(hy_arch) || { echo "Hysteria2 не поддерживает процессор $(uname -m)"; return 1; }
+  local arch tmp base want got
+  arch=$(hy_arch) || { echo "Hysteria не поддерживает процессор $(uname -m)"; return 1; }
   tmp=$(mktemp -d)
-  if ! grab "$tmp/hashes.txt" "$base/hashes.txt"; then rm -rf "$tmp"; return 1; fi
-  sum=$(awk -v f="build/hysteria-linux-$arch" '$2 == f {print $1; exit}' "$tmp/hashes.txt")
-  if [ -z "$sum" ]; then echo "Нет контрольной суммы Hysteria2"; rm -rf "$tmp"; return 1; fi
-  if [ -x "$HY_BIN" ] && [ "$(sha256sum "$HY_BIN" | cut -d' ' -f1)" = "$sum" ]; then
-    echo "Hysteria2 последней версии уже установлен"; rm -rf "$tmp"; return 0
+  base=https://github.com/apernet/hysteria/releases/latest/download
+  grab "$tmp/hashes.txt" "$base/hashes.txt" || { rm -rf "$tmp"; return 1; }
+  want=$(awk -v f="build/hysteria-linux-$arch" '$2 == f {print $1; exit}' "$tmp/hashes.txt")
+  [ -n "$want" ] || { rm -rf "$tmp"; return 1; }
+  if [ -x "$HY" ] && [ "$(sha256sum "$HY" | cut -d' ' -f1)" = "$want" ]; then
+    echo "Hysteria уже последней версии"; rm -rf "$tmp"; return 0
   fi
-  echo "Качаю Hysteria2..."
-  if ! grab "$tmp/hysteria" "$base/hysteria-linux-$arch"; then rm -rf "$tmp"; return 1; fi
+  echo "Качаю Hysteria..."
+  grab "$tmp/hysteria" "$base/hysteria-linux-$arch" || { rm -rf "$tmp"; return 1; }
   got=$(sha256sum "$tmp/hysteria" | cut -d' ' -f1)
-  if [ "$got" != "$sum" ]; then echo "Файл повреждён (контрольная сумма не совпала)"; rm -rf "$tmp"; return 1; fi
-  install -m 755 "$tmp/hysteria" "$HY_BIN"
+  [ "$got" = "$want" ] || { echo "Файл повреждён (контрольная сумма не совпала)"; rm -rf "$tmp"; return 1; }
+  install -m 755 "$tmp/hysteria" "$HY"
   rm -rf "$tmp"
 }
 
-# Значение из .env или пусто. Не падает под set -e, если ключа нет.
-envget() { { grep -m1 "^$1=" "$ENV" 2>/dev/null || true; } | cut -d= -f2- | sed 's/^"//; s/"$//'; }
+envget() { { grep -E "^$1=" "$ENV" || true; } | tail -1 | cut -d= -f2- | tr -d '"'; }  # нет ключа — пусто
+
+hy_config() {  # $1 — plain (похож на HTTP/3) или obfs (похож на случайный UDP)
+  # Конфиг собирает Python в формате JSON (JSON — частный случай YAML, Hysteria его читает):
+  # так в нём не бывает синтаксических ошибок, что бы ни лежало в .env.
+  local name="$1" port stats
+  port=$(envget HY2_PORT); [ "$name" = obfs ] && port=$(envget HY2_OBFS_PORT)
+  stats=$(envget HY2_STATS_PORTS | cut -d, -f"$([ "$name" = obfs ] && echo 2 || echo 1)")
+  umask 077
+  python3 - "$HYDIR/hy2-$name.yaml" "$name" "$port" "$HYDIR" "$(envget HY2_AUTH_PORT)" "$stats" \
+    "$(envget HY2_STATS_SECRET)" "$(envget HY2_SNI)" "$(envget HY2_OBFS)" <<'PY'
+import json, sys
+out, name, port, d, auth, stats, secret, site, obfs = sys.argv[1:]
+private = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "169.254.0.0/16",
+           "100.64.0.0/10", "fc00::/7", "fe80::/10", "::1/128"]
+cfg = {
+    "listen": f":{int(port)}",
+    "tls": {"cert": f"{d}/hy2.crt", "key": f"{d}/hy2.key"},
+    "auth": {"type": "http", "http": {"url": f"http://127.0.0.1:{int(auth)}/hy2auth"}},
+    "trafficStats": {"listen": f"127.0.0.1:{int(stats)}", "secret": secret},
+    "masquerade": {"type": "proxy", "proxy": {"url": f"https://{site}/", "rewriteHost": True}},
+    "acl": {"inline": [f"reject({c})" for c in private] + ["direct(all)"]},
+}
+if name == "obfs":
+    cfg["obfs"] = {"type": "salamander", "salamander": {"password": obfs}}
+with open(out, "w") as f:
+    json.dump(cfg, f, indent=1)
+PY
+  umask 022
+}
+
+hy_env_defaults() {  # дописывает в .env то, чего там не хватает (старые или неполные установки)
+  local k v
+  for kv in HY2_PORT=443 HY2_OBFS_PORT=8443 HY2_AUTH_PORT=20809 HY2_STATS_PORTS=20810,20811; do
+    k=${kv%%=*}; v=${kv#*=}
+    [ -n "$(envget "$k")" ] || { sed -i -E "/^$k=/d" "$ENV"; echo "$k=$v" >> "$ENV"; }
+  done
+  [ -n "$(envget HY2_SNI)" ] || { sed -i -E '/^HY2_SNI=/d' "$ENV"; echo "HY2_SNI=$(envget REALITY_SNI | grep . || echo www.nvidia.com)" >> "$ENV"; }
+  for k in HY2_OBFS HY2_STATS_SECRET; do
+    [ -n "$(envget "$k")" ] || { sed -i -E "/^$k=/d" "$ENV"; echo "$k=$(openssl rand -hex 16)" >> "$ENV"; }
+  done
+  if [ -f "$HYDIR/hy2.crt" ] && [ -z "$(envget HY2_PIN)" ]; then
+    sed -i -E '/^HY2_PIN=/d' "$ENV"
+    echo "HY2_PIN=$(openssl x509 -in "$HYDIR/hy2.crt" -outform der | sha256sum | cut -d' ' -f1)" >> "$ENV"
+  fi
+}
+
+# Кто держит порт: «программа pid служба». Пусто — порт свободен. $1 — udp или tcp.
+port_owner() {
+  local line pid name unit
+  line=$({ ss -"${1:0:1}"lnpH "sport = :$2" 2>/dev/null || true; } | head -1)
+  [ -n "$line" ] || return 0
+  pid=$(printf '%s' "$line" | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
+  name=$(printf '%s' "$line" | grep -oE 'users:\(\("[^"]+' | head -1 | sed 's/.*("//')
+  unit=$([ -n "$pid" ] && sed -nE 's#.*/([^/]+\.service)$#\1#p' "/proc/$pid/cgroup" 2>/dev/null | head -1)
+  echo "${name:-?} ${pid:-?} ${unit:--}"
+}
+
+free_port() {  # первый свободный порт начиная с $2 ($1 — udp или tcp), кроме перечисленных дальше
+  local p="$2" proto="$1"; shift 2
+  while [ -n "$(port_owner "$proto" "$p")" ] || [[ " $* " == *" $p "* ]]; do p=$((p + 1)); done
+  echo "$p"
+}
+
+env_set() { sed -i -E "/^$1=/d" "$ENV"; echo "$1=$2" >> "$ENV"; }
+
+# Порты Hysteria может держать прежний VPN (например, старая Hysteria): показываем, что это,
+# и с согласия останавливаем. Иначе берём свободный порт. Порты статистики меняем молча.
+hy_free_ports() {
+  local key port owner name pid unit ans s1 s2
+  systemctl stop aurora-hy2@plain aurora-hy2@obfs >/dev/null 2>&1 || true
+  # Службы прежней версии установщика: одна Hysteria на 443/udp, отдельные серверы стран,
+  # перенаправление портов и AmneziaWG. Бот ими больше не управляет, а порты они занимают.
+  local old
+  for old in hysteria-server aurora-hop awg-quick@awg0 \
+             $(systemctl list-units --all --plain --no-legend 'hysteria-loc@*' 2>/dev/null | awk '{print $1}'); do
+    if systemctl is-enabled -q "$old" 2>/dev/null || systemctl is-active -q "$old" 2>/dev/null; then
+      echo "Отключаю службу прежней версии: $old"
+      systemctl disable --now "$old" >/dev/null 2>&1 || true
+    fi
+  done
+  rm -f /etc/systemd/system/hysteria-server.service /etc/systemd/system/hysteria-loc@.service \
+        /etc/systemd/system/aurora-hop.service /etc/aurora-hop.nft /etc/hysteria/loc-*.yaml
+  sleep 1
+  for key in HY2_PORT HY2_OBFS_PORT; do
+    port=$(envget "$key")
+    owner=$(port_owner udp "$port")
+    [ -n "$owner" ] || continue
+    read -r name pid unit <<<"$owner"
+    echo "Порт $port/udp занят: программа $name (pid $pid, служба $unit)."
+    echo "Обычно это прежний VPN. Если его остановить, старые ключи от него перестанут работать,"
+    echo "клиентам нужно будет взять новую подписку в боте."
+    ans=$(ask "Остановить его? (Enter — да, n — оставить и взять другой порт)" "y")
+    case "$ans" in
+      n|N|н|Н|no|нет)
+        port=$(free_port udp $(( port == 443 ? 2443 : port + 1 )) "$(envget HY2_PORT)" "$(envget HY2_OBFS_PORT)")
+        env_set "$key" "$port"
+        echo "Hysteria будет на порту $port/udp." ;;
+      *)
+        if [ "$unit" != "-" ]; then
+          systemctl disable --now "$unit" >/dev/null 2>&1 || true
+        elif [ "$pid" != "?" ]; then
+          kill "$pid" 2>/dev/null || true
+        fi
+        sleep 2
+        if [ -n "$(port_owner udp "$port")" ]; then
+          port=$(free_port udp $(( port == 443 ? 2443 : port + 1 )) "$(envget HY2_PORT)" "$(envget HY2_OBFS_PORT)")
+          env_set "$key" "$port"
+          echo "Освободить не вышло, Hysteria будет на порту $port/udp."
+        else
+          echo "Остановлено, порт $port/udp свободен."
+        fi ;;
+    esac
+  done
+  s1=$(envget HY2_STATS_PORTS | cut -d, -f1); s2=$(envget HY2_STATS_PORTS | cut -d, -f2)
+  [ -z "$(port_owner tcp "$s1")" ] || s1=$(free_port tcp 20820)
+  [ -z "$(port_owner tcp "$s2")" ] && [ "$s2" != "$s1" ] || s2=$(free_port tcp $((s1 + 1)) "$s1")
+  [ "$s1,$s2" = "$(envget HY2_STATS_PORTS)" ] || env_set HY2_STATS_PORTS "$s1,$s2"
+}
+
+env_newline() {  # .env, поправленный вручную, может кончаться без перевода строки: дописанное склеилось бы
+  [ ! -s "$ENV" ] || [ -z "$(tail -c1 "$ENV")" ] || echo >> "$ENV"
+}
+
+setup_hysteria() {
+  mkdir -p "$HYDIR"
+  env_newline
+  if ! grep -qE '^HY2_PORT=' "$ENV"; then
+    local site pin
+    site=$(envget REALITY_SNI); site=${site:-www.nvidia.com}
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 \
+      -keyout "$HYDIR/hy2.key" -out "$HYDIR/hy2.crt" -subj "/CN=$site" -addext "subjectAltName=DNS:$site" \
+      >/dev/null 2>&1 || return 1
+    chmod 600 "$HYDIR/hy2.key"
+    pin=$(openssl x509 -in "$HYDIR/hy2.crt" -outform der | sha256sum | cut -d' ' -f1)
+    umask 077
+    cat >> "$ENV" <<EOF
+HY2_PORT=443
+HY2_OBFS_PORT=8443
+HY2_SNI=$site
+HY2_PIN=$pin
+HY2_OBFS=$(openssl rand -hex 16)
+HY2_AUTH_PORT=20809
+HY2_STATS_PORTS=20810,20811
+HY2_STATS_SECRET=$(openssl rand -hex 16)
+EOF
+    umask 022
+  fi
+  # ключи, которых нет или которые пустые, восстанавливаются
+  if [ ! -f "$HYDIR/hy2.crt" ]; then
+    local site; site=$(envget HY2_SNI); site=${site:-www.nvidia.com}
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 \
+      -keyout "$HYDIR/hy2.key" -out "$HYDIR/hy2.crt" -subj "/CN=$site" -addext "subjectAltName=DNS:$site" \
+      >/dev/null 2>&1 || return 1
+    chmod 600 "$HYDIR/hy2.key"
+    sed -i -E '/^HY2_PIN=/d' "$ENV"
+  fi
+  hy_env_defaults
+  hy_free_ports
+  hy_config plain || return 1
+  hy_config obfs || return 1
+  cat > /etc/systemd/system/aurora-hy2@.service <<EOF
+[Unit]
+Description=Aurora VPN Hysteria2 (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=$HY server -c $HYDIR/hy2-%i.yaml
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  # QUIC работает быстрее с большими буферами UDP
+  printf 'net.core.rmem_max=16777216\nnet.core.wmem_max=16777216\n' > /etc/sysctl.d/99-aurora-quic.conf
+  sysctl -q -p /etc/sysctl.d/99-aurora-quic.conf 2>/dev/null || true
+  systemctl daemon-reload
+  systemctl enable -q aurora-hy2@plain aurora-hy2@obfs
+  systemctl restart aurora-hy2@plain aurora-hy2@obfs
+}
 
 get_code() {
   if [ -d "$DIR/.git" ]; then
@@ -164,10 +346,14 @@ export DEBIAN_FRONTEND=noninteractive
 
 # ---------- режим моста: российский сервер пересылает порт 443 на основной ----------
 # Запуск на сервере-мосте:  bash <(curl -fsSL .../install.sh) bridge
+# Мост пересылает подключения на отдельный вход основного сервера (порт 8444), который
+# маскируется под российский сайт. Так подключение к мосту проходит и белые списки.
 if [ "${1:-}" = "bridge" ]; then
   MAIN=$(ask "IP основного VPN-сервера")
   printf '%s' "$MAIN" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' || fail "нужен IP вида 1.2.3.4"
-  say "Ставлю пересылку 443 → $MAIN:443"
+  TARGET=$(ask "Порт входа для мостов на основном сервере" "$BRIDGE_PORT")
+  printf '%s' "$TARGET" | grep -Eq '^[0-9]{1,5}$' || fail "порт: число"
+  say "Ставлю пересылку 443 → $MAIN:$TARGET"
   retry apt-get update -qq || fail "не удалось обновить список пакетов"
   retry apt-get install -y -qq nftables >/dev/null || fail "не удалось поставить nftables"
   echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/99-aurora-bridge.conf
@@ -178,20 +364,43 @@ flush ruleset
 table ip aurora {
   chain prerouting {
     type nat hook prerouting priority dstnat; policy accept;
-    tcp dport 443 dnat to $MAIN:443
+    tcp dport 443 dnat to $MAIN:$TARGET
+    udp dport 443 dnat to $MAIN:443
   }
   chain postrouting {
     type nat hook postrouting priority srcnat; policy accept;
-    ip daddr $MAIN tcp dport 443 masquerade
+    ip daddr $MAIN tcp dport $TARGET masquerade
+    ip daddr $MAIN udp dport 443 masquerade
   }
 }
 EOF
   nft -f /etc/nftables.conf
   systemctl enable -q nftables
+  # Мост держит много пересылаемых подключений: BBR и большая таблица соединений.
+  cat > /etc/sysctl.d/99-aurora-bridge-tune.conf <<'EOF2'
+net.core.default_qdisc=fq
+net.ipv4.tcp_congestion_control=bbr
+net.netfilter.nf_conntrack_max=262144
+net.ipv4.tcp_keepalive_time=300
+EOF2
+  sysctl -q -p /etc/sysctl.d/99-aurora-bridge-tune.conf 2>/dev/null || true
+  if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
+    ufw allow 443/tcp >/dev/null
+    ufw allow 443/udp >/dev/null
+    ufw route allow proto tcp to "$MAIN" port "$TARGET" >/dev/null 2>&1 || true
+    ufw route allow proto udp to "$MAIN" port 443 >/dev/null 2>&1 || true
+  fi
+  if timeout 5 bash -c "</dev/tcp/$MAIN/$TARGET" 2>/dev/null; then
+    echo "✅ основной сервер отвечает на порту $TARGET"
+  else
+    echo "⚠️ основной сервер не ответил на порту $TARGET. Обновите его установщиком этой версии"
+    echo "   и проверьте, что порт $TARGET открыт у хостинга."
+  fi
   BRIDGE_IP=$(curl -fsS4 --max-time 10 https://api.ipify.org || echo "IP_ЭТОГО_СЕРВЕРА")
   say "Мост готов"
   echo "Теперь в боте отправьте:"
-  echo "  /addbridge ru1 🇷🇺 Обход | $BRIDGE_IP"
+  echo "  /addbridge ru1 🇷🇺 Обход | $BRIDGE_IP | ru"
+  echo "Бот сам подберёт российский сайт для маскировки моста."
   exit 0
 fi
 
@@ -199,9 +408,6 @@ say "Ставлю пакеты"
 retry apt-get update -qq || fail "не удалось обновить список пакетов"
 retry apt-get install -y -qq curl unzip git python3 python3-venv python3-pip openssl ca-certificates >/dev/null \
   || fail "не удалось поставить пакеты"
-# rclone нужен только для копий в облако (BACKUP_RCLONE), поэтому без него установка продолжается
-apt-get install -y -qq rclone >/dev/null 2>&1 || echo "rclone не поставился: копии в облако работать не будут"
-apt-get install -y -qq certbot >/dev/null 2>&1 || echo "certbot не поставился: подписка останется по HTTP"
 
 say "Ставлю Xray"
 if ! retry3 install_xray; then
@@ -216,6 +422,11 @@ fi
 
 say "Скачиваю бота"
 retry get_code || fail "не удалось скачать бота с GitHub. Запустите команду ещё раз"
+# GitHub отдаёт install.sh через кэш, и по ссылке несколько минут может приходить прошлая версия.
+# Поэтому дальше работает установщик из только что скачанного кода: он всегда свежий.
+if [ -z "${AURORA_REEXEC:-}" ] && [ -f "$BOT/install.sh" ]; then
+  AURORA_REEXEC=1 exec bash "$BOT/install.sh" "$@"
+fi
 python3 -m venv "$BOT/.venv"
 retry "$BOT/.venv/bin/pip" install -q --upgrade pip || true
 retry "$BOT/.venv/bin/pip" install -q -r "$BOT/requirements.txt" || fail "не удалось поставить библиотеки Python"
@@ -227,7 +438,13 @@ if [ ! -f "$ENV" ]; then
   ADMIN=$(ask "Ваш Telegram ID (узнать у @userinfobot)")
   SUPPORT=$(ask "Ник поддержки без @ (можно пусто)" "")
   LOC=$(ask "Название страны этого сервера" "🇸🇪 Швеция")
-  SNI=$(ask "Сайт для маскировки Reality" "www.microsoft.com")
+  # Сайт маскировки: самый быстрый с этого сервера из списка бота. Microsoft и подобные
+  # самые известные сайты не предлагаем: под них маскируются слишком многие, и Xray об этом предупреждает.
+  SNI_DEF=$(cd "$BOT" && timeout 90 "$BOT/.venv/bin/python" -c '
+import asyncio, masking
+r = asyncio.run(masking.ranked(masking.SITES))
+print(r[0][0] if r else "www.nvidia.com")' 2>/dev/null || echo "www.nvidia.com")
+  SNI=$(ask "Сайт для маскировки Reality" "${SNI_DEF:-www.nvidia.com}")
   MINI=$(ask "Адрес мини-приложения (пусто — без него)" "https://saske356.github.io/Saske356/")
 
   KEYS=$("$XRAY" x25519)
@@ -263,252 +480,88 @@ else
 fi
 mkdir -p /var/lib/aurora
 
-# ---------- Hysteria2: быстрый способ по UDP на том же порту 443 ----------
-HY_OK=0
-if [ "$HY2" = "1" ]; then
-  say "Ставлю Hysteria2 (быстрый режим по UDP)"
-  if retry3 install_hysteria; then
-    id hysteria >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin hysteria
-    mkdir -p "$HY_DIR"
-    HY_SNI=$(envget HY2_SNI); [ -n "$HY_SNI" ] || HY_SNI=$(envget REALITY_SNI); [ -n "$HY_SNI" ] || HY_SNI=www.microsoft.com
-    if [ ! -f "$HY_DIR/server.crt" ]; then
-      # Свой сертификат: приложение сверяет его отпечаток из ссылки, домен для этого не нужен.
-      openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -days 3650 \
-        -keyout "$HY_DIR/server.key" -out "$HY_DIR/server.crt" -subj "/CN=$HY_SNI" \
-        -addext "subjectAltName=DNS:$HY_SNI" >/dev/null 2>&1 || fail "не удалось создать сертификат Hysteria2"
-    fi
-    chown root:hysteria "$HY_DIR/server.key"; chmod 640 "$HY_DIR/server.key"; chmod 644 "$HY_DIR/server.crt"
-    if [ -z "$(envget HY2_PORT)" ]; then
-      umask 077
-      cat >> "$ENV" <<EOF
-HY2_PORT=443
-HY2_CERT=$HY_DIR/server.crt
-HY2_SNI=$HY_SNI
-HY2_AUTH_PORT=20809
-HY2_STATS_PORT=20810
-HY2_STATS_SECRET=$(openssl rand -hex 16)
-EOF
-      umask 022
-    fi
-    HY_PORT=$(envget HY2_PORT); HY_AUTH=$(envget HY2_AUTH_PORT); HY_STATS=$(envget HY2_STATS_PORT)
-    HY_SECRET=$(envget HY2_STATS_SECRET); HY_OBFS=$(envget HY2_OBFS_PASSWORD)
-    umask 027
-    cat > "$HY_DIR/config.yaml" <<EOF
-# Создано установщиком Aurora VPN. Ключи проверяет бот: при подключении Hysteria спрашивает его.
-listen: :${HY_PORT:-443}
-tls:
-  cert: $HY_DIR/server.crt
-  key: $HY_DIR/server.key
-  sniGuard: disable
-auth:
-  type: http
-  http:
-    url: http://127.0.0.1:${HY_AUTH:-20809}/auth
-masquerade:
-  type: proxy
-  proxy:
-    url: https://$HY_SNI/
-    rewriteHost: true
-trafficStats:
-  listen: 127.0.0.1:${HY_STATS:-20810}
-  secret: $HY_SECRET
-EOF
-    if [ -n "$HY_OBFS" ]; then
-      printf 'obfs:\n  type: salamander\n  salamander:\n    password: %s\n' "$HY_OBFS" >> "$HY_DIR/config.yaml"
-    fi
-    umask 022
-    chown root:hysteria "$HY_DIR/config.yaml"
-    cat > /etc/systemd/system/hysteria-server.service <<EOF
-[Unit]
-Description=Hysteria2 server (Aurora VPN)
-After=network-online.target
-Wants=network-online.target
+env_newline
+# ---------- Xray или только Hysteria ----------
+if ! grep -qE '^XRAY_ENABLED=' "$ENV"; then
+  say "Способ подключения"
+  echo "Hysteria (UDP) проходит там, где оператор режет обычные подключения. Xray нужен только"
+  echo "для стран через прокси и как запасной вариант по TCP."
+  KEEPX=$(ask "Оставить Xray вместе с Hysteria? (y — да, Enter — только Hysteria)" "n")
+  case "$KEEPX" in y|Y|д|Д|yes|да) echo "XRAY_ENABLED=1" >> "$ENV" ;; *) echo "XRAY_ENABLED=0" >> "$ENV" ;; esac
+fi
+XRAY_ON=$(envget XRAY_ENABLED); XRAY_ON=${XRAY_ON:-1}
 
-[Service]
-User=hysteria
-ExecStart=$HY_BIN server -c $HY_DIR/config.yaml
-Restart=always
-RestartSec=3
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
-NoNewPrivileges=true
-LimitNOFILE=65536
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    # Серверы Hysteria2 для других стран: конфиги пишет бот (loc-КОД.yaml), он же включает службы.
-    cat > /etc/systemd/system/hysteria-loc@.service <<EOF
-[Unit]
-Description=Hysteria2 server for country %i (Aurora VPN)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-User=hysteria
-ExecStart=$HY_BIN server -c $HY_DIR/loc-%i.yaml
-Restart=always
-RestartSec=3
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
-NoNewPrivileges=true
-LimitNOFILE=65536
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    systemctl daemon-reload
-    systemctl enable -q hysteria-server
-    systemctl restart hysteria-server
-    HY_OK=1
+# ---------- подписка по HTTPS на своём домене: https://домен/ТОКЕН ----------
+if ! grep -qE '^SUB_DOMAIN=' "$ENV"; then
+  say "Домен для подписки"
+  echo "Ссылка подписки будет вида https://домен/ZKwXhAPWFBHb7NZn. Нужен домен (или поддомен),"
+  echo "у которого запись A указывает на IP этого сервера. Без Cloudflare-прокси (серое облако)."
+  echo "Своего домена нет? Нажмите Enter: возьму бесплатное имя вида 1-2-3-4.sslip.io."
+  DOMAIN=$(ask "Домен, например sub.example.com (Enter — бесплатное имя)" "")
+  DOMAIN=$(printf '%s' "$DOMAIN" | tr 'A-Z' 'a-z' | sed -E 's#^https?://##; s#/.*##')
+  echo "SUB_DOMAIN=$DOMAIN" >> "$ENV"
+fi
+DOMAIN=$(envget SUB_DOMAIN)
+# Своего домена нет: имя вида 1-2-3-4.sslip.io само указывает на IP сервера, и Let's Encrypt
+# выдаёт на него сертификат. Так подписка идёт по HTTPS и ключи не видны по дороге.
+# SSLIP=0 при запуске — оставить подписку по HTTP.
+if [ -z "$DOMAIN" ] && [ "${SSLIP:-1}" = 1 ]; then
+  MYIP=$(envget PUBLIC_HOST)
+  if printf '%s' "$MYIP" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'; then
+    DOMAIN="$(printf '%s' "$MYIP" | tr . -).sslip.io"
+    sed -i -E '/^SUB_DOMAIN=/d' "$ENV"
+    echo "SUB_DOMAIN=$DOMAIN" >> "$ENV"
+    echo "Своего домена нет: беру бесплатное имя $DOMAIN"
+  fi
+fi
+if [ -n "$DOMAIN" ] && [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+  say "Сертификат для $DOMAIN"
+  MYIP=$(envget PUBLIC_HOST)
+  GOT=$({ getent ahostsv4 "$DOMAIN" || true; } | awk '{print $1; exit}')
+  if [ "$GOT" != "$MYIP" ]; then
+    echo "⚠️ $DOMAIN указывает на ${GOT:-никуда}, а этот сервер $MYIP. Поправьте запись A у регистратора"
+    echo "   и запустите установщик ещё раз. Пока подписка раздаётся по HTTP."
+    case "$DOMAIN" in *.sslip.io) echo "   (Имя sslip.io не определилось: возможно, у сервера не работает DNS. Повторите позже.)" ;; esac
   else
-    echo "Hysteria2 не скачался. VPN работает и без него, повторный запуск установщика попробует снова."
-  fi
-fi
-
-# ---------- смена портов Hysteria2 ----------
-# Файрвол перенаправляет UDP с диапазона портов на порт Hysteria2, а приложение прыгает между
-# ними: заблокировать один порт оператору проще, чем десять тысяч.
-if [ "$HY_OK" = 1 ] && [ "$HOP_PORTS" != 0 ]; then
-  say "Смена портов Hysteria2 ($HOP_PORTS)"
-  if apt-get install -y -qq nftables >/dev/null 2>&1; then
-    HP=$(envget HY2_PORT); HP=${HP:-443}
-    cat > /etc/aurora-hop.nft <<EOF
-table inet aurora_hop
-delete table inet aurora_hop
-table inet aurora_hop {
-  chain prerouting {
-    type nat hook prerouting priority dstnat; policy accept;
-    udp dport $HOP_PORTS redirect to :$HP
-  }
-}
-EOF
-    cat > /etc/systemd/system/aurora-hop.service <<EOF
-[Unit]
-Description=Aurora VPN: UDP port hopping for Hysteria2
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart=/usr/sbin/nft -f /etc/aurora-hop.nft
-ExecStop=/usr/sbin/nft delete table inet aurora_hop
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    systemctl daemon-reload
-    if systemctl enable -q --now aurora-hop && systemctl restart aurora-hop; then
-      if [ -z "$(envget HY2_HOP_PORTS)" ]; then echo "HY2_HOP_PORTS=$HOP_PORTS" >> "$ENV"; fi
-      echo "Смена портов включена."
+    retry apt-get install -y -qq certbot >/dev/null || echo "не удалось поставить certbot"
+    for svc in nginx apache2 caddy lighttpd; do systemctl disable --now "$svc" >/dev/null 2>&1 || true; done
+    command -v ufw >/dev/null && ufw status | grep -q "Status: active" && ufw allow 80/tcp >/dev/null
+    if certbot certonly --standalone --non-interactive --agree-tos --register-unsafely-without-email \
+         -d "$DOMAIN" >/tmp/aurora-certbot.log 2>&1; then
+      echo "✅ сертификат получен, продлевается сам"
     else
-      echo "Смена портов не включилась, Hysteria2 работает на одном порту."
+      echo "❌ сертификат не получен: tail -20 /tmp/aurora-certbot.log. Порт 80 должен быть открыт у хостинга."
     fi
   fi
 fi
-
-# ---------- AmneziaWG: запасной способ по UDP ----------
-AWG_OK=0
-if [ "$AWG" = 1 ]; then
-  say "Ставлю AmneziaWG"
-  if ! command -v awg >/dev/null; then
-    if [ "$ID" = ubuntu ]; then
-      apt-get install -y -qq software-properties-common "linux-headers-$(uname -r)" >/dev/null 2>&1 || true
-      { add-apt-repository -y ppa:amnezia/ppa >/dev/null 2>&1 && retry apt-get update -qq \
-        && apt-get install -y -qq amneziawg >/dev/null 2>&1; } || echo "AmneziaWG не поставился из PPA."
-    else
-      echo "AmneziaWG ставится автоматически только на Ubuntu. VPN работает и без него."
-    fi
-  fi
-  if command -v awg >/dev/null && command -v awg-quick >/dev/null; then
-    AWG_DIR=/etc/amnezia/amneziawg
-    mkdir -p "$AWG_DIR"; chmod 700 "$AWG_DIR"
-    if [ ! -f "$AWG_DIR/awg0.conf" ]; then
-      DEV=$(ip route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "dev") {print $(i + 1); exit}}')
-      AWG_PORT_NEW=${AWG_PORT:-51820}
-      PRIV_AWG=$(awg genkey)
-      S1=$(shuf -i 15-150 -n 1); S2=$(shuf -i 15-150 -n 1)
-      [ $((S1 + 56)) -ne "$S2" ] || S2=$((S2 + 1))
-      read -r H1 H2 H3 H4 < <(shuf -i 5-2147483647 -n 4 | tr '\n' ' ')
-      PARAMS="Jc=4,Jmin=40,Jmax=70,S1=$S1,S2=$S2,H1=$H1,H2=$H2,H3=$H3,H4=$H4"
-      umask 077
-      {
-        echo "[Interface]"
-        echo "Address = 10.66.0.1/16"
-        echo "ListenPort = $AWG_PORT_NEW"
-        echo "PrivateKey = $PRIV_AWG"
-        printf '%s\n' "$PARAMS" | tr ',' '\n' | sed 's/=/ = /'
-        echo "PostUp = iptables -t nat -A POSTROUTING -s 10.66.0.0/16 -o $DEV -j MASQUERADE; iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT"
-        echo "PostDown = iptables -t nat -D POSTROUTING -s 10.66.0.0/16 -o $DEV -j MASQUERADE; iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT"
-      } > "$AWG_DIR/awg0.conf"
-      umask 022
-      if [ -z "$(envget AWG_PORT)" ]; then
-        umask 077
-        cat >> "$ENV" <<EOF
-AWG_PORT=$AWG_PORT_NEW
-AWG_PUBLIC_KEY=$(printf '%s' "$PRIV_AWG" | awg pubkey)
-AWG_PARAMS=$PARAMS
-AWG_NET=10.66.0.0/16
+if [ -n "$DOMAIN" ] && [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+  sed -i -E '/^SUB_(CERT|KEY|TLS_PORT)=/d' "$ENV"
+  cat >> "$ENV" <<EOF
+SUB_CERT=/etc/letsencrypt/live/$DOMAIN/fullchain.pem
+SUB_KEY=/etc/letsencrypt/live/$DOMAIN/privkey.pem
+SUB_TLS_PORT=$([ "$XRAY_ON" = 0 ] && echo 443 || echo 2053)
 EOF
-        umask 022
-      fi
-    fi
-    echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/99-aurora-awg.conf
-    sysctl -q -p /etc/sysctl.d/99-aurora-awg.conf || true
-    if systemctl enable -q --now awg-quick@awg0 && awg show awg0 >/dev/null 2>&1; then
-      AWG_OK=1
-      echo "AmneziaWG работает на UDP $(envget AWG_PORT)."
-    else
-      echo "AmneziaWG не запустился: journalctl -u awg-quick@awg0 -n 30 --no-pager"
-    fi
+  # после продления сертификата бот перезапускается и подхватывает новый
+  mkdir -p /etc/letsencrypt/renewal-hooks/deploy
+  printf '#!/bin/sh\nsystemctl restart aurora-bot\n' > /etc/letsencrypt/renewal-hooks/deploy/aurora.sh
+  chmod 755 /etc/letsencrypt/renewal-hooks/deploy/aurora.sh
+fi
+
+say "Ставлю Hysteria (подключение по UDP)"
+HY_OK=0
+if retry3 install_hysteria && setup_hysteria; then
+  HY_OK=1
+else
+  echo "Hysteria поставить не удалось. Xray работает и без неё; запустите установщик ещё раз позже."
+  if [ "$XRAY_ON" = 0 ]; then  # без обоих VPN не будет вовсе
+    echo "Включаю Xray обратно, чтобы VPN работал."
+    sed -i -E 's/^XRAY_ENABLED=.*/XRAY_ENABLED=1/' "$ENV"; XRAY_ON=1
   fi
 fi
 
-# ---------- HTTPS для подписки: ключи не видны по дороге ----------
-# Свой домен не нужен: имя вида 1-2-3-4.sslip.io само указывает на IP сервера,
-# а Let's Encrypt бесплатно выдаёт на него сертификат (проверка идёт через порт 80).
-SUB_TLS_OK=0
-if [ -z "$(envget SUB_DOMAIN)" ] && command -v certbot >/dev/null; then
-  say "Сертификат для подписки по HTTPS"
-  IP_NOW=$(envget PUBLIC_HOST)
-  if printf '%s' "$IP_NOW" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'; then
-    if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then ufw allow 80/tcp >/dev/null; fi
-    for zone in sslip.io nip.io; do
-      NAME="$(printf '%s' "$IP_NOW" | tr . -).$zone"
-      if certbot certonly --standalone --non-interactive --agree-tos --register-unsafely-without-email \
-           --preferred-challenges http -d "$NAME" >/dev/null 2>&1; then
-        umask 077
-        cat >> "$ENV" <<EOF
-SUB_DOMAIN=$NAME
-SUB_TLS_PORT=2097
-SUB_TLS_CERT=/etc/letsencrypt/live/$NAME/fullchain.pem
-SUB_TLS_KEY=/etc/letsencrypt/live/$NAME/privkey.pem
-EOF
-        umask 022
-        echo "Подписка будет по HTTPS: https://$NAME:2097"
-        SUB_TLS_OK=1
-        break
-      fi
-      echo "Сертификат на $NAME не выдан, пробую другое имя"
-    done
-    [ "$SUB_TLS_OK" = 1 ] || echo "Сертификат не получен (нужен открытый TCP 80). Подписка пока по HTTP, повторный запуск попробует снова."
-  fi
-elif [ -n "$(envget SUB_DOMAIN)" ]; then
-  SUB_TLS_OK=1
-fi
-
-say "Ускорение сети (BBR и буферы UDP)"
+say "Ускорение сети (BBR)"
 if ! grep -q "tcp_congestion_control=bbr" /etc/sysctl.conf 2>/dev/null; then
   printf 'net.core.default_qdisc=fq\nnet.ipv4.tcp_congestion_control=bbr\n' >> /etc/sysctl.conf
-fi
-# TCP Fast Open: повторное подключение к серверу без лишнего круга.
-if ! grep -q "net.ipv4.tcp_fastopen=3" /etc/sysctl.conf 2>/dev/null; then
-  printf 'net.ipv4.tcp_fastopen=3\n' >> /etc/sysctl.conf
-fi
-# Большие буферы UDP: без них QUIC (Hysteria2) упирается в скорость на быстрых каналах.
-if ! grep -q "net.core.rmem_max=16777216" /etc/sysctl.conf 2>/dev/null; then
-  printf 'net.core.rmem_max=16777216\nnet.core.wmem_max=16777216\n' >> /etc/sysctl.conf
 fi
 sysctl -p >/dev/null 2>&1 || true
 
@@ -531,11 +584,15 @@ LimitNOFILE=65536
 WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
-systemctl enable -q xray
+if [ "$XRAY_ON" = 1 ]; then
+  systemctl enable -q xray
+else
+  systemctl disable --now xray >/dev/null 2>&1 || true
+fi
 systemctl enable -q aurora-bot
 
 say "Освобождаю порт 443 для VPN"
-busy443() { ss -tlnpH 'sport = :443' | grep -v '"xray"' || true; }
+busy443() { ss -tlnpH 'sport = :443' | grep -v '"xray"' | grep -v '"python' || true; }
 if [ -n "$(busy443)" ]; then
   for svc in caddy nginx apache2 httpd lighttpd haproxy; do
     if systemctl is-active -q "$svc" 2>/dev/null; then
@@ -553,21 +610,10 @@ systemctl restart aurora-bot
 if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
   ufw allow 443/tcp >/dev/null
   ufw allow "$SUB_PORT"/tcp >/dev/null
-  if [ "$HY_OK" = 1 ]; then
-    ufw allow "$(envget HY2_PORT)"/udp >/dev/null
-    HY_EXTRA=$(envget HY2_EXTRA_PORTS); HY_EXTRA=${HY_EXTRA:-30000-30049}
-    [ "$HY_EXTRA" = 0 ] || ufw allow "${HY_EXTRA/-/:}"/udp >/dev/null
-  fi
-  if [ "$SUB_TLS_OK" = 1 ]; then
-    T_PORT=$(envget SUB_TLS_PORT); ufw allow "${T_PORT:-2097}"/tcp >/dev/null
-  fi
-  if [ "$AWG_OK" = 1 ]; then
-    ufw allow "$(envget AWG_PORT)"/udp >/dev/null
-    ufw route allow in on awg0 >/dev/null 2>&1 || true
-  fi
-  if [ -n "$(envget HY2_HOP_PORTS)" ]; then ufw allow "$(envget HY2_HOP_PORTS | tr - :)"/udp >/dev/null; fi
-  XH_PORT=$(envget XRAY_XHTTP_PORT); XH_PORT=${XH_PORT:-0}
-  [ "$XH_PORT" = 0 ] || ufw allow "$XH_PORT"/tcp >/dev/null
+  ufw allow "$BRIDGE_PORT"/tcp >/dev/null
+  ufw allow "$(envget HY2_PORT)"/udp >/dev/null 2>&1 || true
+  ufw allow "$(envget HY2_OBFS_PORT)"/udp >/dev/null 2>&1 || true
+  [ -n "$(envget SUB_TLS_PORT)" ] && ufw allow "$(envget SUB_TLS_PORT)"/tcp >/dev/null
 fi
 
 say "Проверка"
@@ -576,27 +622,45 @@ ok=1
 # подписок: ждём, пока заработает и то и другое (старый Xray мог держать 443 и до этого)
 sleep 5
 for _ in $(seq 1 45); do
-  ss -tlnpH 'sport = :443' | grep -q '"xray"' && ss -tlnpH "sport = :$SUB_PORT" | grep -q python && break
+  { [ "$XRAY_ON" = 0 ] || ss -tlnpH 'sport = :443' | grep -q '"xray"'; } \
+    && ss -tlnpH "sport = :$SUB_PORT" | grep -q python && break
   sleep 1
 done
 systemctl is-active -q aurora-bot && echo "✅ бот работает" || { echo "❌ бот не запустился"; ok=0; }
-if ss -tlnpH 'sport = :443' | grep -q '"xray"'; then
+if [ "$XRAY_ON" = 0 ]; then
+  echo "◇ Xray выключен, VPN идёт через Hysteria"
+elif ss -tlnpH 'sport = :443' | grep -q '"xray"'; then
   echo "✅ VPN принимает подключения на порту 443"
 else
   echo "❌ VPN не слушает порт 443"; ok=0
+fi
+TLSP=$(envget SUB_TLS_PORT)
+if [ -n "$TLSP" ]; then
+  if curl -fsS -m 10 -o /dev/null "https://$(envget SUB_DOMAIN):$TLSP/"; then
+    echo "✅ подписка раздаётся по HTTPS: https://$(envget SUB_DOMAIN)$([ "$TLSP" = 443 ] || echo ":$TLSP")/..."
+  else
+    echo "❌ HTTPS-подписка не отвечает на $(envget SUB_DOMAIN):$TLSP"; ok=0
+  fi
+fi
+if [ "$HY_OK" = 1 ]; then
+  # упавшая служба перезапускается по кругу: проверяем, что за 5 секунд она не перезапускалась
+  N1=$(systemctl show -p NRestarts --value aurora-hy2@plain aurora-hy2@obfs | tr '\n' ' ')
+  sleep 5
+  N2=$(systemctl show -p NRestarts --value aurora-hy2@plain aurora-hy2@obfs | tr '\n' ' ')
+  for unit in aurora-hy2@plain aurora-hy2@obfs; do
+    if systemctl is-active -q "$unit" && [ "$N1" = "$N2" ]; then
+      echo "✅ $unit работает ($(grep -oE '"listen": *":[0-9]+"' "$HYDIR/hy2-${unit#*@}.yaml" | grep -oE '[0-9]+')/udp)"
+    else
+      echo "❌ $unit не запускается. Причина из журнала:"
+      journalctl -u "$unit" -n 30 --no-pager 2>/dev/null | grep -E 'FATAL|ERROR|error' | tail -3 | cut -c1-300
+      ok=0
+    fi
+  done
 fi
 if ss -tlnpH "sport = :$SUB_PORT" | grep -q python; then
   echo "✅ подписки раздаются на порту $SUB_PORT"
 else
   echo "❌ подписки не раздаются на порту $SUB_PORT"; ok=0
-fi
-if [ "$HY_OK" = 1 ]; then
-  if systemctl is-active -q hysteria-server && ss -ulnpH "sport = :$(envget HY2_PORT)" | grep -q hysteria; then
-    echo "✅ Hysteria2 принимает подключения на UDP $(envget HY2_PORT)"
-  else
-    echo "⚠️ Hysteria2 не запустился: journalctl -u hysteria-server -n 40 --no-pager"
-    echo "   Reality работает и без него."
-  fi
 fi
 if [ "$ok" = 1 ]; then
   echo
@@ -606,5 +670,4 @@ else
   echo "Пришлите вывод этих команд:"
   echo "  journalctl -u aurora-bot -n 40 --no-pager"
   echo "  journalctl -u xray -n 40 --no-pager"
-  if [ "$HY_OK" = 1 ]; then echo "  journalctl -u hysteria-server -n 40 --no-pager"; fi
 fi

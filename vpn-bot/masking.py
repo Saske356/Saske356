@@ -22,6 +22,15 @@ SITES = [
     "www.lovelive-anime.jp",
 ]
 
+# Российские сайты для мостов. При белых списках оператор пропускает только адреса и имена
+# из списка, поэтому мост маскируется под крупный российский сайт. Бот берёт первый, который
+# отвечает с сервера по TLS 1.3 и HTTP/2.
+RU_SITES = [
+    "www.gosuslugi.ru", "vk.com", "ya.ru", "dzen.ru", "mail.ru", "ok.ru", "www.ozon.ru",
+    "www.wildberries.ru", "www.avito.ru", "max.ru", "rutube.ru", "www.kinopoisk.ru", "hh.ru",
+    "www.2gis.ru", "www.x5.ru", "www.mvideo.ru",
+]
+
 SITE_RE = re.compile(r"^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$")
 PORT = 443
 _ctx: ssl.SSLContext | None = None

@@ -39,8 +39,8 @@ class TagCheck(html.parser.HTMLParser):
         if not self.stack or self.stack.pop() != t: self.bad.append("/" + t)
 
 
-def check_caption(text):
-    assert text and len(text) <= 1024, f"caption length {len(text or '')}"
+def check_caption(text, limit=1024):
+    assert text and len(text) <= limit, f"caption length {len(text or '')}"
     p = TagCheck(); p.feed(text); p.close()
     assert not p.bad and not p.stack, f"bad html {p.bad} {p.stack}: {text[:100]}"
     captions.append(text)
@@ -68,7 +68,7 @@ def make_ctx():
     ctx.effects = []
     b.send_photo = AsyncMock(side_effect=send_photo)
     async def send_message(chat_id, text, reply_markup=None):
-        check_caption(text)
+        check_caption(text, 4096)  # у обычного сообщения предел 4096 символов, у подписи к фото 1024
         return msg_obj()
     b.send_message = AsyncMock(side_effect=send_message)
     b.copy_message = AsyncMock(side_effect=lambda *a, **k: msg_obj())
@@ -525,6 +525,40 @@ async def main():
     assert len(prov.bridges) == 1, "не админ не добавляет мосты"
     ctx.args = ["ru1"]; await bot.delbridge(make_update(1), ctx); ctx.args = []
     assert not prov.bridges
+    # ключи без подписки: на случай, если оператор режет порт раздачи
+    owner = db.get_sub(some)["user_id"]
+    ctx.bot.send_message.reset_mock()
+    await press(owner, f"raw:{some}", ctx)
+    sent = "\n".join(c.args[1] for c in ctx.bot.send_message.await_args_list)
+    assert "без подписки" in sent and sent.count("vless://") == len(prov.links(some)) and "· запасной" in sent
+    u = await press(300, f"raw:{some}", ctx); assert alerted(u), "чужие ключи не выдаются"
+    assert "запасной" in bot.fix_text() and "Ключи без подписки" in bot.fix_text()
+    # мост для белых списков: бот сам подбирает российский сайт маскировки
+    real_pick = bot.pick_bridge_site
+    bot.pick_bridge_site = AsyncMock(return_value="vk.com")
+    ctx.application.create_task = lambda coro: asyncio.ensure_future(coro)
+    u = make_update(1, text="/addbridge ru3 🇷🇺 Белые списки | 198.51.100.30 | ru"); await bot.addbridge(u, ctx)
+    assert "Подбираю" in u.message.reply_text.await_args.args[0]
+    await asyncio.sleep(0.1)
+    assert prov.bridge_site == "vk.com" and prov.bridges[0]["ru"]
+    assert any("vk.com" in c.args[1] for c in ctx.bot.send_message.await_args_list)
+    assert any("198.51.100.30" in l and "sni=vk.com" in l for l in prov.links(some))
+    check_caption(bot.locations_text()); assert "белые списки" in bot.locations_text()
+    ctx.args = []; u = make_update(1); await bot.bridgesite_cmd(u, ctx)
+    assert "vk.com" in u.message.reply_text.await_args.args[0]
+    bot.pick_bridge_site = real_pick
+    ctx.args = ["ru3"]; await bot.delbridge(make_update(1), ctx); ctx.args = []
+    st_text = await bot.server_text(); check_caption(st_text); assert "без перезапуска" in st_text
+    # режим без Xray: в подписке и на экранах только Hysteria
+    prov.xray_enabled = False
+    prov.hy2 = {"port": 443, "sni": "www.nvidia.com", "pin": "", "obfs": "", "stats_ports": []}
+    prov.sub_domain = "sub.example.com"
+    st_text = await bot.server_text(); check_caption(st_text)
+    assert "Xray выключен" in st_text and "HTTPS" in st_text and "Перезапусков" not in st_text
+    assert "Xray выключен" in bot.locations_text() and len(bot.location_names()) == 1
+    assert all(l.startswith("hysteria2://") for l in prov.links(some)) and "Hysteria" in bot.fix_text()
+    assert "запасной" not in bot.fix_text()
+    prov.xray_enabled, prov.hy2, prov.sub_domain = True, None, ""
     ctx.bot.send_message.reset_mock()
     prov.add_location("dead", "🇺🇸 США", "socks5://u:p@127.0.0.1:1")
     prov.check_proxies = AsyncMock(return_value=[(prov.locations[-1], False)])  # сама проверка покрыта в tests/
@@ -551,19 +585,6 @@ async def main():
     await bot.devices_job(ctx)
     prov.resume.assert_awaited_once_with(some)
     bot.guard.__init__("block")
-    # AmneziaWG: кнопка в подписке присылает файл и QR-код, чужому — нет
-    prov.awg = MagicMock()
-    prov.awg_config = AsyncMock(return_value="[Interface]\nPrivateKey = X\n")
-    assert any("AmneziaWG" in b.text for r in bot.sub_kb(db.get_sub(some)).inline_keyboard for b in r)
-    ctx.bot.send_document.reset_mock()
-    await press(owner, f"awg:{some}", ctx)
-    doc = ctx.bot.send_document.await_args
-    assert doc.kwargs["filename"].endswith(".conf") and b"PrivateKey" in doc.kwargs["document"].getvalue()
-    check_caption(doc.kwargs["caption"])
-    other = 300 if owner != 300 else 400
-    ctx.bot.send_document.reset_mock()
-    u = await press(other, f"awg:{some}", ctx); assert alerted(u) and ctx.bot.send_document.await_count == 0
-    prov.awg = None
     prov._server.close()
     bot.vpn = demo
 
