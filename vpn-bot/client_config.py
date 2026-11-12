@@ -24,6 +24,13 @@ AURORA_AGENT = re.compile(r"aurora", re.I)
 # Маскировку QUIC под Chrome (есть в Xray с v26.9.9, включена по умолчанию) не трогаем: именно она
 # проходит мобильных операторов — поэтому v2rayNG со свежим ядром работает там, где Happ молчит.
 AURORA_QUIC = {"keepAlivePeriod": 10, "maxIdleTimeout": 60}
+# «· турбо» — отдельный пункт только в своём приложении: Hysteria в режиме Brutal. Обычный режим (BBR)
+# при потерях пакетов сбавляет скорость, а на мобильном при глушилках потери большие, и скорость
+# падает почти до нуля. Brutal держит заявленную скорость и досылает потерянное. Сервер шлёт
+# к гостю со скоростью brutalDown (её клиент сообщает серверу при подключении). Если реальный канал
+# медленнее заявленного, Brutal сам не разгонится сверх (потери до 20% он компенсирует, дальше нет).
+TURBO_QUIC = {"congestion": "brutal", "brutalUp": "10 mbps", "brutalDown": "30 mbps"}
+TURBO_TAG = " · турбо"
 
 # Российские домены: зона .ru, .su, .рф и крупные сервисы на других зонах.
 RU_DOMAINS = [
@@ -61,6 +68,8 @@ def outbound(e: dict, tuned: bool = False) -> dict:
             stream["finalmask"] = {"udp": [{"type": "salamander", "settings": {"password": e["obfs"]}}]}
         if tuned:
             stream.setdefault("finalmask", {})["quicParams"] = dict(AURORA_QUIC)
+        if e.get("turbo"):
+            stream.setdefault("finalmask", {}).setdefault("quicParams", {}).update(TURBO_QUIC)
         return {"tag": "proxy", "protocol": "hysteria",
                 "settings": {"version": 2, "address": e["host"], "port": e["port"]},
                 "streamSettings": stream}
@@ -148,4 +157,9 @@ def config(e: dict, tuned: bool = False) -> dict:
 def configs(entries: list[dict], with_best: bool = True, tuned: bool = False) -> list[dict]:
     """Конфиги подписки: первым «Лучший сервер» (если подключений больше одного), затем страны."""
     out = [config(e, tuned) for e in entries]
+    if tuned:
+        # турбо — для первой Hysteria (основная страна); в «Лучший сервер» он не входит
+        first = next((e for e in entries if e["kind"] == "hy2"), None)
+        if first:
+            out.insert(1, config({**first, "name": first["name"] + TURBO_TAG, "turbo": True}, tuned))
     return ([best(entries, tuned=tuned)] if with_best and len(entries) > 1 else []) + out
