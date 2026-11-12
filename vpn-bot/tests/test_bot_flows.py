@@ -284,6 +284,90 @@ async def main():
     # кнопка «Продлить · устройства» в приложении открывает бота по ?start=renew
     ctx.args = ["renew"]; u = make_update(200); await bot.start(u, ctx); ctx.args = []
 
+    # 5в. оплата картой (ЮKassa) и криптой (Crypto Pay): включаются командой /pay
+    import payments as pm_mod
+    saved_cfg = dict(bot.pay_cfg.data)
+    calls = []
+
+    async def fake_call(self, method, **params):
+        calls.append((method, params))
+        if method == "getMe":
+            return {"name": "Aurora"}
+        if method == "createInvoice":
+            return {"invoice_id": 77, "bot_invoice_url": "https://t.me/CryptoBot?start=IV77", "status": "active"}
+        if method == "getInvoices":
+            return {"items": [{"invoice_id": 77, "status": "paid", "paid_asset": "USDT", "paid_amount": "1.6"}]}
+        raise AssertionError(method)
+    real_call = pm_mod.CryptoPay.call
+    pm_mod.CryptoPay.call = fake_call
+    try:
+        u = make_update(1, text="/pay crypto TOKEN"); u.message.delete = AsyncMock()
+        ctx.args = ["crypto", "TOKEN"]; await bot.pay_cmd(u, ctx)
+        u.message.delete.assert_awaited()
+        u = make_update(1, text="/pay yookassa 381764678:TEST:1"); u.message.delete = AsyncMock()
+        ctx.args = ["yookassa", "381764678:TEST:1"]; await bot.pay_cmd(u, ctx); ctx.args = []
+        assert bot.pay_cfg.yookassa and bot.pay_cfg.crypto
+        assert "TOKEN" not in bot.pay_text() and "149 ₽" in bot.pay_text()
+        assert os.stat(bot.pay_cfg.path).st_mode & 0o777 == 0o600
+        u = make_update(300, text="/pay"); await bot.pay_cmd(u, ctx)  # не админ: ничего не меняется
+        # разовая оплата: сначала выбор способа, счёт не выставляется
+        ctx.bot.send_invoice.reset_mock()
+        await bot.start(make_update(700, "Карта"), ctx)
+        await press(700, "bn:m3:1", ctx)
+        assert ctx.bot.send_invoice.await_count == 0
+        rub = bot.rub_price(700, "m3", 1)
+        assert rub == 399, rub
+        await press(700, "pm:y:n:m3:1:0", ctx)
+        kw = ctx.bot.send_invoice.await_args.kwargs
+        assert kw["currency"] == "RUB" and kw["prices"][0].amount == rub * 100
+        assert kw["provider_token"] == "381764678:TEST:1"
+
+        async def precheck_rub(uid, payload, total):
+            pc = MagicMock(); pc.answer = AsyncMock(); pc.invoice_payload = payload
+            pc.currency = "RUB"; pc.total_amount = total; pc.from_user.id = uid
+            upd = MagicMock(); upd.pre_checkout_query = pc
+            await bot.precheckout(upd, ctx)
+            return pc.answer.await_args.kwargs["ok"]
+        assert await precheck_rub(700, kw["payload"], rub * 100)
+        assert not await precheck_rub(700, kw["payload"], 100 * 100), "другая сумма"
+        assert not await precheck_rub(700, kw["payload"].replace(f":{rub}:", ":100:"), 100 * 100), "подделка цены"
+        n_before = len(db.user_subs(700))
+        await pay(700, ctx, kw["payload"], rub * 100, "YK1")
+        assert len(db.user_subs(700)) == n_before + 1
+        pay_row = db.get_payment("yk:YK1")
+        assert pay_row["method"] == "yookassa" and pay_row["money"] == f"{rub} ₽"
+        assert pay_row["stars"] == config.plan_price("m3", 1)
+        await pay(700, ctx, kw["payload"], rub * 100, "YK1")  # дубль
+        assert len(db.user_subs(700)) == n_before + 1
+        # крипта: счёт по ссылке, доступ выдаёт фоновая проверка
+        await press(200, "pm:c:g:m1:2:0", ctx)
+        assert calls[-1][0] == "createInvoice" and calls[-1][1]["fiat"] == "RUB"
+        assert [r["invoice_id"] for r in db.active_crypto_invoices()] == [77]
+        ctx.bot.send_message.reset_mock()
+        await bot.crypto_job(ctx)
+        assert not db.active_crypto_invoices() and db.get_payment("cp:77")["method"] == "crypto"
+        assert "USDT" in db.get_payment("cp:77")["money"]
+        await bot.crypto_job(ctx)  # повтор ничего не выдаёт
+        assert db.qa("SELECT COUNT(*) FROM payments WHERE charge_id='cp:77'")[0][0] == 1
+        # возврат: деньги вручную, звёзды не трогаем
+        ctx.bot.refund_star_payment.reset_mock()
+        text = await bot.do_refund(ctx, "yk:YK1")
+        assert "вручную" in text and ctx.bot.refund_star_payment.await_count == 0
+        # продление тоже предлагает способы, автопродление и доплата за устройства — только звёзды
+        ctx.bot.send_invoice.reset_mock()
+        await press(200, f"po:e:m1:3:{new['id']}", ctx)
+        assert ctx.bot.send_invoice.await_count == 0
+        await press(200, f"pm:s:e:m1:3:{new['id']}", ctx)
+        assert ctx.bot.send_invoice.await_args.kwargs["currency"] == "XTR"
+        u = await press(300, f"pm:y:e:m1:3:{new['id']}", ctx); assert alerted(u), "чужую подписку нельзя"
+    finally:
+        pm_mod.CryptoPay.call = real_call
+        bot.pay_cfg.data = saved_cfg
+        bot.pay_cfg.save()
+        ctx.args = []
+        ctx.bot.refund_star_payment.reset_mock()
+        ctx.bot.send_invoice.reset_mock()
+
     # 6. автопродление: новая подписка на 2 устройства
     await press(300, "bn:m1:2", ctx)
     await press(300, "pa:n:m1:2:0", ctx)
@@ -374,7 +458,7 @@ async def main():
     # 12. админка и возвраты
     await bot.start(make_update(1, "Админ"), ctx)
     await bot.admin(make_update(1), ctx)
-    st = db.stats(); assert st["auto"] == 0 and st["payments"] == 5, st
+    st = db.stats(); assert st["auto"] == 0 and st["payments"] == 6 and st["rub"] > 0, st  # +1 оплата криптой из 5в
     text, kb = bot.payments_view(); check_caption(text)
     ctx.args = ["@user300"]; await bot.payments(make_update(1), ctx); ctx.args = []
     pid = db.get_payment("C2")["id"]

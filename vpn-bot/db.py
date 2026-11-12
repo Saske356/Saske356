@@ -81,6 +81,14 @@ CREATE TABLE IF NOT EXISTS offers (
     reason      TEXT NOT NULL DEFAULT '',
     created_at  REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS crypto_invoices (
+    invoice_id  INTEGER PRIMARY KEY,
+    user_id     INTEGER NOT NULL,
+    payload     TEXT NOT NULL,
+    rub         INTEGER NOT NULL,
+    created_at  REAL NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'active'
+);
 CREATE TABLE IF NOT EXISTS winback (
     user_id   INTEGER PRIMARY KEY,
     for_exp   REAL NOT NULL,
@@ -93,7 +101,9 @@ MIGRATIONS = {
     "subscriptions": [("trial", "INTEGER NOT NULL DEFAULT 0"),
                       ("up_bytes", "INTEGER NOT NULL DEFAULT 0"),
                       ("down_bytes", "INTEGER NOT NULL DEFAULT 0")],
-    "payments": [("full_price", "INTEGER")],
+    "payments": [("full_price", "INTEGER"),
+                 # чем заплатили: stars, yookassa, crypto; money — сумма в деньгах для отчёта («149 ₽»)
+                 ("method", "TEXT NOT NULL DEFAULT 'stars'"), ("money", "TEXT")],
 }
 
 
@@ -249,20 +259,35 @@ class DB:
 
     def add_payment(self, user_id: int, plan: str, stars: int, days: int, charge_id: str,
                     kind: str = "buy", sub_id: int | None = None, devices: int = 1,
-                    gift_code: str | None = None, full_price: int | None = None) -> bool:
+                    gift_code: str | None = None, full_price: int | None = None,
+                    method: str = "stars", money: str | None = None) -> bool:
         """Записывает платёж. False, если такой charge_id уже был (повтор от Telegram).
-        full_price — цена без скидки, если оплата шла по персональному предложению."""
+        full_price — цена без скидки, если оплата шла по персональному предложению.
+        Для оплаты рублями stars — цена тарифа в звёздах (чтобы отчёты оставались сравнимыми)."""
         try:
             self.conn.execute(
                 "INSERT INTO payments (user_id, plan, stars, days, charge_id, created_at, kind, sub_id, "
-                "devices, gift_code, full_price) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "devices, gift_code, full_price, method, money) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (user_id, plan, stars, days, charge_id, time.time(), kind, sub_id, devices, gift_code,
-                 full_price))
+                 full_price, method, money))
         except sqlite3.IntegrityError:
             return False
         self.conn.execute("UPDATE users SET paid_stars = paid_stars + ? WHERE id=?", (stars, user_id))
         self.conn.commit()
         return True
+
+    # ---------- счета в крипте (Crypto Pay) ----------
+
+    def add_crypto_invoice(self, invoice_id: int, user_id: int, payload: str, rub: int) -> None:
+        self.run("INSERT OR REPLACE INTO crypto_invoices (invoice_id, user_id, payload, rub, created_at) "
+                 "VALUES (?,?,?,?,?)", invoice_id, user_id, payload, rub, time.time())
+
+    def active_crypto_invoices(self, older_than: float = 0) -> list[sqlite3.Row]:
+        return self.qa("SELECT * FROM crypto_invoices WHERE status='active' AND created_at<? "
+                       "ORDER BY invoice_id LIMIT 100", time.time() - older_than)
+
+    def set_crypto_status(self, invoice_id: int, status: str) -> None:
+        self.run("UPDATE crypto_invoices SET status=? WHERE invoice_id=?", status, invoice_id)
 
     def payment_seen(self, charge_id: str) -> bool:
         return self.q1("SELECT 1 FROM payments WHERE charge_id=?", charge_id) is not None
@@ -423,7 +448,11 @@ class DB:
             "auto": one("SELECT COUNT(*) FROM subscriptions WHERE auto_active=1 AND expires_at > ?", now),
             "trials": one("SELECT COUNT(*) FROM users WHERE trial_used=1"),
             "payments": one("SELECT COUNT(*) FROM payments WHERE refunded=0"),
-            "stars": one("SELECT COALESCE(SUM(stars),0) FROM payments WHERE refunded=0"),
-            "stars_today": one("SELECT COALESCE(SUM(stars),0) FROM payments WHERE refunded=0 AND created_at > ?",
-                               now - DAY),
+            "stars": one("SELECT COALESCE(SUM(stars),0) FROM payments WHERE refunded=0 AND method='stars'"),
+            "stars_today": one("SELECT COALESCE(SUM(stars),0) FROM payments WHERE refunded=0 AND method='stars' "
+                               "AND created_at > ?", now - DAY),
+            # оплаты рублями (ЮKassa, крипта): сумма берётся из «149 ₽ …»
+            "rub": sum(int(str(r[0]).split()[0]) for r in self.qa(
+                "SELECT money FROM payments WHERE refunded=0 AND method!='stars' AND money IS NOT NULL")
+                if str(r[0]).split() and str(r[0]).split()[0].isdigit()),
         }

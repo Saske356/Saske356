@@ -17,6 +17,7 @@ import shutil
 import sqlite3
 import tempfile
 import time
+import types
 
 import qrcode
 from urllib.parse import unquote
@@ -30,6 +31,7 @@ from telegram.ext import (Application, CallbackQueryHandler, CommandHandler, Con
 import config
 import make_banner
 import masking
+import payments as paymod
 import public_proxies
 import webshare
 from android_app import AppRelease
@@ -47,6 +49,8 @@ public_proxies.MAX_MS = int(os.environ.get("AUTO_PROXY_MAX_MS", "1500"))
 vpn = get_provider()
 auto_mgr = AutoProxy(vpn) if hasattr(vpn, "auto") else None
 guard = DeviceGuard(config.DEVICE_LIMIT, block_minutes=config.DEVICE_BLOCK_MINUTES)
+# Оплата картой (ЮKassa) и криптой (Crypto Pay): ключи задаёт админ командой /pay
+pay_cfg = paymod.Settings(os.path.join(os.path.dirname(os.path.abspath(config.DB_PATH)), "payments.json"))
 # Своё приложение для Android: только у настоящего VPN (у демо нет подписки для него)
 android_app = AppRelease(config.APP_REPO, config.APP_DIR) if config.APP_REPO and hasattr(vpn, "app_link") else None
 esc = html.escape
@@ -686,11 +690,46 @@ async def choose_payment(update: Update, context: ContextTypes.DEFAULT_TYPE, kin
     await send_order(update, context, kind, plan, dev, sub_id, auto=False)
 
 
+def rub_price(uid, plan: str, dev: int) -> int:
+    """Цена в рублях: та же цена в звёздах (со скидкой гостя, если есть), переведённая по курсу /pay."""
+    return pay_cfg.rub(price(uid, plan, dev, once=True))
+
+
+def parse_rub_payload(payload: str):
+    """Счёт ЮKassa: r1:код:тариф:дней:рубли:звёзды:устройства:подписка."""
+    try:
+        v, code, plan, days, rub, stars, dev, sub_id = payload.split(":")
+        if v != "r1" or code not in ("b", "e", "g"):
+            return None
+        return code, plan, int(days), int(rub), int(stars), int(dev), int(sub_id)
+    except ValueError:
+        return None
+
+
 async def send_order(update: Update, context: ContextTypes.DEFAULT_TYPE, kind: str, plan: str,
-                     dev: int, sub_id: int, auto: bool) -> None:
-    """kind: n — новая подписка, e — продление, g — подарок."""
+                     dev: int, sub_id: int, auto: bool, stars_only: bool = False) -> None:
+    """kind: n — новая подписка, e — продление, g — подарок.
+    Разовая оплата при включённых ЮKassa или крипте сначала спрашивает способ оплаты."""
     name, days, _ = config.PLANS[plan]
     uid = update.effective_user.id
+    if not auto and not stars_only and pay_cfg.any_on():
+        who_pays = None if kind == "g" else uid
+        stars, rub = price(who_pays, plan, dev, once=True), rub_price(who_pays, plan, dev)
+        tail = f"{kind}:{plan}:{dev}:{sub_id}"
+        rows = [[B(f"⭐ Звёздами Telegram — {stars} ⭐", f"pm:s:{tail}")]]
+        if pay_cfg.yookassa:
+            rows.append([B(f"💳 Картой или СБП — {rub} ₽", f"pm:y:{tail}")])
+        if pay_cfg.crypto:
+            rows.append([B(f"🪙 Криптой (USDT, TON, BTC) — {rub} ₽", f"pm:c:{tail}")])
+        rows.append([B("‹ Тарифы", "plans")])
+        await show(update, context,
+                   f"<b>{esc(name)} · {plural_dev(dev)}</b>\n<i>Как удобнее оплатить?</i>\n\n"
+                   "<blockquote>⭐ Звёзды — прямо в Telegram\n"
+                   + ("💳 Карта или СБП — через ЮKassa\n" if pay_cfg.yookassa else "")
+                   + ("🪙 Крипта — через @CryptoBot, по курсу на момент оплаты\n" if pay_cfg.crypto else "")
+                   + "</blockquote>\nДоступ выдаётся сразу после оплаты любым способом.",
+                   InlineKeyboardMarkup(rows), banner="plans")
+        return
     amount = price(None if kind == "g" else uid, plan, dev, once=not auto)
     code = {"n": "a" if auto else "b", "e": "x" if auto else "e", "g": "g"}[kind]
     token = secrets.token_hex(6) if auto else "-"
@@ -718,6 +757,96 @@ async def send_order(update: Update, context: ContextTypes.DEFAULT_TYPE, kind: s
                                    provider_token="", currency="XTR", prices=prices)
 
 
+def order_title(kind: str, plan: str, dev: int) -> tuple[str, str]:
+    name, days, _ = config.PLANS[plan]
+    if kind == "g":
+        return (f"{config.BRAND} · подарок", f"Подарочный доступ на {plural_days(days)}, {plural_dev(dev)}. "
+                                             "После оплаты придёт подарочная ссылка.")
+    return f"{config.BRAND} · {name}", f"Персональный доступ к VPN на {plural_days(days)}, {plural_dev(dev)}."
+
+
+async def send_rub_order(update: Update, context: ContextTypes.DEFAULT_TYPE, method: str, kind: str, plan: str,
+                         dev: int, sub_id: int) -> None:
+    """Счёт в рублях: ЮKassa (счёт Telegram) или Crypto Pay (ссылка на оплату в @CryptoBot)."""
+    uid = update.effective_user.id
+    name, days, _ = config.PLANS[plan]
+    who_pays = None if kind == "g" else uid
+    stars, rub = price(who_pays, plan, dev, once=True), rub_price(who_pays, plan, dev)
+    code = {"n": "b", "e": "e", "g": "g"}[kind]
+    payload = f"r1:{code}:{plan}:{days}:{rub}:{stars}:{dev}:{sub_id}"
+    title, desc = order_title(kind, plan, dev)
+    chat = update.effective_chat.id
+    if method == "y":
+        extra = {}
+        if pay_cfg.receipt:  # чек по 54-ФЗ: ЮKassa просит почту и состав покупки
+            extra = dict(need_email=True, send_email_to_provider=True, provider_data=json.dumps({"receipt": {
+                "items": [{"description": title[:128], "quantity": "1.00",
+                           "amount": {"value": f"{rub}.00", "currency": "RUB"}, "vat_code": 1,
+                           "payment_mode": "full_payment", "payment_subject": "service"}]}}))
+        await context.bot.send_invoice(chat_id=chat, title=title, description=desc, payload=payload,
+                                       provider_token=pay_cfg.yookassa, currency="RUB",
+                                       prices=[LabeledPrice(name, rub * 100)], **extra)
+        return
+    cp = paymod.CryptoPay(pay_cfg.crypto, pay_cfg.crypto_test)
+    try:
+        inv = await cp.create(rub, f"{title}. {desc}", payload)
+    except Exception as e:
+        log.warning("крипта: счёт не создан: %s", e)
+        await context.bot.send_message(chat, "Не получилось создать счёт в крипте. Попробуйте ещё раз "
+                                             "через минуту или выберите другой способ оплаты.")
+        return
+    db.add_crypto_invoice(int(inv["invoice_id"]), uid, payload, rub)
+    await context.bot.send_message(
+        chat, f"🪙 <b>Счёт на {rub} ₽</b>\n\nОплатите в @CryptoBot любой монетой: USDT, TON, BTC и другие, "
+              "по курсу на момент оплаты. Счёт действует час. Доступ придёт сюда сам, как только "
+              "оплата пройдёт (обычно меньше минуты).",
+        reply_markup=KB([B(f"Оплатить {rub} ₽", url=paymod.invoice_url(inv))]))
+
+
+def chat_stub(uid: int):
+    """Заглушка update для экрана после оплаты в крипте: события от Telegram нет, есть только чат гостя."""
+    return types.SimpleNamespace(callback_query=None, effective_chat=types.SimpleNamespace(id=uid),
+                                 effective_user=types.SimpleNamespace(id=uid))
+
+
+async def crypto_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Раз в 20 секунд спрашивает Crypto Pay об открытых счетах и выдаёт доступ по оплаченным."""
+    if not pay_cfg.crypto:
+        return
+    pending = db.active_crypto_invoices()
+    if not pending:
+        return
+    cp = paymod.CryptoPay(pay_cfg.crypto, pay_cfg.crypto_test)
+    try:
+        items = {int(i["invoice_id"]): i for i in await cp.invoices([r["invoice_id"] for r in pending])}
+    except Exception as e:
+        log.warning("крипта: проверка счетов не удалась: %s", e)
+        return
+    for r in pending:
+        inv = items.get(r["invoice_id"])
+        status = (inv or {}).get("status", "")
+        if status == "paid":
+            db.set_crypto_status(r["invoice_id"], "paid")
+            p = parse_rub_payload(r["payload"])
+            urow = db.get_user(r["user_id"])
+            if not p or not urow:
+                await notify_admins(context, f"⚠️ Оплачен счёт в крипте #{r['invoice_id']}, но выдать доступ "
+                                             "не вышло. Проверьте его в @CryptoBot.")
+                continue
+            code, plan, days, rub, stars, dev, sub_id = p
+            asset = f"{inv.get('paid_amount') or ''} {inv.get('paid_asset') or ''}".strip()
+            try:
+                await fulfill(chat_stub(r["user_id"]), context, urow, code, plan, days, dev, sub_id,
+                              f"cp:{r['invoice_id']}", stars, method="crypto",
+                              money=f"{rub} ₽" + (f" ({asset})" if asset else ""))
+            except Exception:
+                log.exception("крипта: выдача доступа по счёту %s", r["invoice_id"])
+                await notify_admins(context, f"⚠️ Счёт в крипте #{r['invoice_id']} оплачен, но доступ не выдан "
+                                             "из-за ошибки. Выдайте вручную: /grant.")
+        elif status == "expired" or (inv is None and time.time() - r["created_at"] > 2 * paymod.CRYPTO_TTL):
+            db.set_crypto_status(r["invoice_id"], "expired")
+
+
 def parse_payload(payload: str):
     try:
         v, code, plan, days, price, dev, sub_id, token = payload.split(":")
@@ -730,8 +859,22 @@ def parse_payload(payload: str):
 
 async def precheckout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.pre_checkout_query
-    p = parse_payload(q.invoice_payload)
     stale = "Счёт устарел. Откройте меню и выберите тариф заново."
+    r = parse_rub_payload(q.invoice_payload)
+    if r:  # ЮKassa: сумма в копейках, цена та же, что показали гостю
+        code, plan, days, rub, stars, dev, sub_id = r
+        who_pays = None if code == "g" else q.from_user.id
+        ok = bool(pay_cfg.yookassa and q.currency == "RUB" and plan in config.PLANS
+                  and config.PLANS[plan][1] == days and dev in config.DEVICE_OPTIONS
+                  and q.total_amount == rub * 100
+                  and rub in (rub_price(who_pays, plan, dev), pay_cfg.rub(config.plan_price(plan, dev)))
+                  and stars in (price(who_pays, plan, dev, once=True), config.plan_price(plan, dev)))
+        if ok and code == "e":
+            sub = db.get_sub(sub_id)
+            ok = bool(sub) and sub["user_id"] == q.from_user.id and sub["devices"] == dev
+        await q.answer(ok=ok, error_message=None if ok else stale)
+        return
+    p = parse_payload(q.invoice_payload)
     if not p:
         await q.answer(ok=False, error_message=stale)
         return
@@ -766,6 +909,12 @@ async def paid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     u = update.effective_user
     row = current_user(update)
     charge = sp.telegram_payment_charge_id
+    r = parse_rub_payload(sp.invoice_payload)
+    if r:  # оплата картой через ЮKassa (счёт Telegram в рублях)
+        code, plan, days, rub, stars, dev, sub_id = r
+        await fulfill(update, context, row, code, plan, days, dev, sub_id, "yk:" + charge, stars,
+                      method="yookassa", money=f"{rub} ₽")
+        return
     p = parse_payload(sp.invoice_payload)
     if not p:
         log.error("оплата с непонятным счётом: %s", sp.invoice_payload)
@@ -773,7 +922,6 @@ async def paid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                      f"<code>{esc(charge)}</code>. Проверьте /payments.")
         return
     code, plan, days, _price, dev, sub_id, token = p
-    name = (find_plan(plan, u.id) or (plan,))[0]
 
     # очередное автосписание
     if sp.is_recurring and not sp.is_first_recurring:
@@ -814,21 +962,33 @@ async def paid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                      f"charge: <code>{esc(charge)}</code>")
         return
 
-    first_payment = db.payments_count(u.id) == 0
+    await fulfill(update, context, row, code, plan, days, dev, sub_id, charge, sp.total_amount, token=token)
+
+
+async def fulfill(update, context: ContextTypes.DEFAULT_TYPE, u, code: str, plan: str, days: int, dev: int,
+                  sub_id: int, charge: str, amount: int, token: str = "-", method: str = "stars",
+                  money: str | None = None) -> None:
+    """Оплата прошла: новая подписка, продление или подарок. Общая часть для звёзд, ЮKassa и крипты.
+    u — строка гостя из базы; amount — цена в звёздах (для рублей — цена тарифа в звёздах);
+    update нужен только для экрана (у крипты это заглушка с чатом гостя)."""
+    row = u
+    name = (find_plan(plan, u["id"]) or (plan,))[0]
+    paid_text = money or f"{amount} ⭐"
+    first_payment = db.payments_count(u["id"]) == 0
     kind = {"b": "buy", "a": "auto", "e": "ext", "x": "auto", "g": "gift"}[code]
     try:
         full = config.plan_price(plan, dev)
     except KeyError:  # тариф убрали из настроек после выставления счёта
-        full = sp.total_amount
-    discounted = code in ("b", "e") and sp.total_amount < full
-    if not db.add_payment(u.id, plan, sp.total_amount, days, charge, kind, None, dev,
-                          full_price=full if discounted else None):
+        full = amount
+    discounted = code in ("b", "e") and amount < full
+    if not db.add_payment(u["id"], plan, amount, days, charge, kind, None, dev,
+                          full_price=full if discounted else None, method=method, money=money):
         return  # Telegram прислал тот же платёж повторно
     if discounted:
-        db.use_offer(u.id)
+        db.use_offer(u["id"])
 
     if code == "g":
-        gift = db.create_gift(u.id, days, dev)
+        gift = db.create_gift(u["id"], days, dev)
         db.set_payment_target(charge, None, gift)
         link = f"https://t.me/{STATE['username'] or context.bot.username}?start=gift_{gift}"
         await show(update, context,
@@ -838,20 +998,20 @@ async def paid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                    f"Отправьте другу ссылку, по ней подарок активируется в один шаг:\n<code>{link}</code>",
                    KB([B("📤 Отправить подарок", url=share_url(link, f"Дарю доступ к {config.BRAND} 🎀"))],
                       [BACK]), banner="welcome", effect=CONFETTI)
-        await notify_admins(context, f"🎀 Подарок: {who(u)} · {esc(name)} · {sp.total_amount} ⭐\n"
+        await notify_admins(context, f"🎀 Подарок: {who(u)} · {esc(name)} · {paid_text}\n"
                                      f"charge: <code>{esc(charge)}</code>")
         return
 
     sub = db.get_sub(sub_id) if code in ("e", "x") else None
-    if not sub or sub["user_id"] != u.id:
-        sub = db.create_sub(u.id, dev)
+    if not sub or sub["user_id"] != u["id"]:
+        sub = db.create_sub(u["id"], dev)
     db.extend_sub(sub["id"], days)
     db.run("UPDATE subscriptions SET trial=0 WHERE id=?", sub["id"])  # оплаченная — уже не пробная
     if code in ("a", "x"):
         db.set_auto(sub["id"], token, charge, True)
     db.set_payment_target(charge, sub["id"])
     sub = await issue_key(sub["id"])
-    await refresh_menu(context, u.id)
+    await refresh_menu(context, u["id"])
 
     if first_payment and row["referrer_id"] and not config.REF_ON_JOIN:
         rsub = await grant_days(row["referrer_id"], config.REF_BONUS_DAYS)
@@ -875,7 +1035,7 @@ async def paid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                banner="welcome", effect=CONFETTI)
     auto_mark = " · 🔁" if code in ("a", "x") else ""
     await notify_admins(context, f"💰 Оплата: {who(u)} · {esc(name)} · {plural_dev(dev)} · "
-                                 f"{sp.total_amount} ⭐{auto_mark}\ncharge: <code>{esc(charge)}</code>")
+                                 f"{paid_text}{auto_mark}\ncharge: <code>{esc(charge)}</code>")
 
 
 # ---------------------------------------------------------------- кнопки
@@ -937,6 +1097,24 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             return
         await q.answer()
         await choose_payment(update, context, "e", parts[1], sub["devices"], sub["id"])
+        return
+    if parts[0] == "pm" and len(parts) == 6 and parts[1] in ("s", "y", "c") and parts[2] in ("n", "e", "g") \
+            and parts[3] in config.PLANS and parts[4].isdigit() and parts[5].isdigit():
+        method, kind, plan, dev, sid = parts[1], parts[2], parts[3], int(parts[4]), int(parts[5])
+        if kind == "e":
+            sub = await own_sub(q, uid, parts[5])
+            if not sub:
+                return
+            dev = sub["devices"]
+        if dev not in config.DEVICE_OPTIONS or (method == "y" and not pay_cfg.yookassa) \
+                or (method == "c" and not pay_cfg.crypto):
+            await q.answer("Откройте тарифы заново", show_alert=True)
+            return
+        await q.answer("Счёт ниже 👇" if method != "c" else "Создаю счёт…")
+        if method == "s":
+            await send_order(update, context, kind, plan, dev, sid, auto=False, stars_only=True)
+        else:
+            await send_rub_order(update, context, method, kind, plan, dev, sid)
         return
     if parts[0] == "up" and len(parts) == 2:
         sub = await own_sub(q, uid, parts[1])
@@ -1351,7 +1529,8 @@ def admin_text() -> str:
             f"◆ С автопродлением: {s['auto']}\n"
             f"◆ Брали пробный период: {s['trials']}\n"
             f"◆ Оплат: {s['payments']}\n"
-            f"◆ Выручка: <b>{s['stars']} ⭐</b> (+{s['stars_today']} за сутки)</blockquote>\n\n"
+            f"◆ Выручка: <b>{s['stars']} ⭐</b> (+{s['stars_today']} за сутки)"
+            + (f"\n◆ Рублями (карта, крипта): <b>{s['rub']} ₽</b>" if s.get("rub") else "") + "</blockquote>\n\n"
             "<b>Команды</b>\n"
             "/give <code>id</code> <code>дней</code>: начислить дни\n"
             "/addpromo <code>КОД</code> <code>дней</code> <code>активаций</code>\n"
@@ -1361,6 +1540,7 @@ def admin_text() -> str:
             "/autoproxy: страны из бесплатных публичных прокси\n"
             "/sni: сайт маскировки и его смена\n"
             "/webshare: купленные прокси списком по ссылке\n"
+            "/pay: оплата картой (ЮKassa) и криптой\n"
             "/update: обновить сервер сейчас (сам он проверяет обновления раз в 10 минут)\n"
             "/traffic: трафик и устройства, /funnel: воронка продаж\n"
             f"/testpay: тестовая оплата на {config.TEST_PLAN[2]} ⭐\n"
@@ -1647,10 +1827,12 @@ async def do_refund(context: ContextTypes.DEFAULT_TYPE, charge: str) -> str:
         return "Платёж не найден."
     if p["refunded"]:
         return "Этот платёж уже возвращён."
-    try:
-        await context.bot.refund_star_payment(p["user_id"], charge)
-    except TelegramError as e:
-        return f"Telegram не принял возврат: {esc(str(e))}"
+    method = p["method"] if "method" in p.keys() else "stars"
+    if method == "stars":
+        try:
+            await context.bot.refund_star_payment(p["user_id"], charge)
+        except TelegramError as e:
+            return f"Telegram не принял возврат: {esc(str(e))}"
     sub = db.mark_refunded(charge)
     if sub and p["kind"] == "upgrade" and str(p["plan"]).startswith("up") and str(p["plan"])[2:].isdigit():
         db.run("UPDATE subscriptions SET devices=? WHERE id=?", int(str(p["plan"])[2:]), sub["id"])
@@ -1665,6 +1847,10 @@ async def do_refund(context: ContextTypes.DEFAULT_TYPE, charge: str) -> str:
             await vpn.revoke(sub["id"])
             db.set_key(sub["id"], sub["vpn_key"], False)
         await refresh_menu(context, sub["user_id"])
+    if method != "stars":  # деньги возвращаются в кабинете ЮKassa или в @CryptoBot, бот снимает доступ
+        where = "в личном кабинете ЮKassa" if method == "yookassa" else "в @CryptoBot (Crypto Pay → Счета)"
+        return (f"Оплаченные дни списаны. Деньги ({esc(p['money'] or '')}) верните вручную {where}: "
+                "бот сам вернуть их не может.")
     try:
         await context.bot.send_message(p["user_id"], f"↩️ Вам возвращено {p['stars']} ⭐.")
     except TelegramError:
@@ -2641,6 +2827,82 @@ async def webshare_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         await send_admins(context.bot, report)
 
 
+def pay_text() -> str:
+    on, off = "✅ включена", "◇ выключена"
+    ex = ", ".join(f"{config.PLANS[k][0]} {pay_cfg.rub(config.plan_price(k, 1))} ₽" for k in config.PLANS)
+    return ("<b>Оплата картой и криптой</b>\n\n"
+            f"◆ ЮKassa (карта, СБП): {on if pay_cfg.yookassa else off}"
+            + (" · чеки 54-ФЗ" if pay_cfg.receipt else "") + "\n"
+            f"◆ Крипта (@CryptoBot): {on if pay_cfg.crypto else off}" + (" · тестовая сеть" if pay_cfg.crypto_test else "")
+            + f"\n◆ Курс: 1 ⭐ = {pay_cfg.rate:g} ₽ → {ex}\n\n"
+            "Звёзды работают всегда. Когда включён хотя бы один способ, гость при разовой оплате выбирает, "
+            "чем платить. Автопродление и доплата за устройства — только звёздами.\n\n"
+            "<b>Как подключить ЮKassa</b>\n"
+            "1. Магазин в ЮKassa (самозанятый, ИП или ООО).\n"
+            "2. @BotFather → /mybots → этот бот → Payments → ЮKassa → подключить, получить токен.\n"
+            "3. /pay yookassa <code>токен</code>\n\n"
+            "<b>Как подключить крипту</b>\n"
+            "1. @CryptoBot → Crypto Pay → Create App → скопировать API Token.\n"
+            "2. /pay crypto <code>токен</code> (для проверки в тестовой сети: @CryptoTestnetBot и "
+            "/pay crypto <code>токен</code> test)\n\n"
+            "<b>Команды</b>\n"
+            "/pay rate 1.5: курс рубля к звезде\n"
+            "/pay receipt on|off: передавать данные для чека в ЮKassa\n"
+            "/pay yookassa off, /pay crypto off: выключить\n\n"
+            "Сообщение с токеном бот сразу удаляет, токен хранится только на сервере.")
+
+
+@admin_only
+async def pay_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    args = context.args or []
+    reply = update.message.reply_text
+    what = args[0].lower() if args else ""
+    if what in ("yookassa", "ykassa", "юкасса", "crypto", "крипта") and len(args) >= 2:
+        key = "yookassa" if what in ("yookassa", "ykassa", "юкасса") else "crypto"
+        token = args[1].strip()
+        if token.lower() == "off":
+            pay_cfg.set(**{key: None})
+            await reply(("ЮKassa" if key == "yookassa" else "Оплата криптой") + " выключена.\n\n" + pay_text())
+            return
+        try:  # в сообщении секрет: не оставляем его в чате
+            await update.message.delete()
+        except TelegramError:
+            pass
+        if key == "crypto":
+            test = len(args) > 2 and args[2].lower() == "test"
+            try:
+                me = await paymod.CryptoPay(token, test).me()
+            except Exception as e:
+                await reply(f"Crypto Pay не принял токен: {esc(str(e))}. Проверьте его в @CryptoBot → Crypto Pay.")
+                return
+            pay_cfg.set(crypto=token, crypto_test=test or None)
+            await reply(f"🪙 Оплата криптой включена: приложение «{esc(str(me.get('name', '')))}».\n\n" + pay_text())
+            return
+        if ":" not in token:
+            await reply("Это не похоже на токен ЮKassa из @BotFather (вида <code>123456:LIVE:…</code>).")
+            return
+        pay_cfg.set(yookassa=token)
+        note = " Это <b>тестовый</b> токен: деньги не списываются." if ":TEST:" in token.upper() else ""
+        await reply("💳 Оплата картой через ЮKassa включена." + note + "\n\n" + pay_text())
+        return
+    if what == "rate" and len(args) == 2:
+        try:
+            rate = float(args[1].replace(",", "."))
+            if not 0.1 <= rate <= 100:
+                raise ValueError
+        except ValueError:
+            await reply("Курс — число, например /pay rate 1.5")
+            return
+        pay_cfg.set(rate=rate)
+        await reply(pay_text())
+        return
+    if what == "receipt" and len(args) == 2 and args[1].lower() in ("on", "off"):
+        pay_cfg.set(receipt=True if args[1].lower() == "on" else None)
+        await reply(pay_text())
+        return
+    await reply(pay_text())
+
+
 @admin_only
 async def webshare_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not hasattr(vpn, "set_paid_location"):
@@ -2969,7 +3231,7 @@ def build_app(token: str) -> Application:
                     ("addloc", addloc), ("delloc", delloc), ("addbridge", addbridge),
                     ("delbridge", delbridge), ("server", server), ("backup", backup),
                     ("autoproxy", autoproxy), ("sni", sni_cmd), ("bridgesite", bridgesite_cmd),
-                    ("funnel", funnel), ("traffic", traffic), ("webshare", webshare_cmd),
+                    ("funnel", funnel), ("traffic", traffic), ("webshare", webshare_cmd), ("pay", pay_cmd),
                     ("app", app_cmd), ("update", update_cmd)]:
         app.add_handler(CommandHandler(cmd, fn))
     app.add_handler(CallbackQueryHandler(on_button))
@@ -2984,6 +3246,7 @@ def build_app(token: str) -> Application:
     app.job_queue.run_repeating(auto_proxy_job, interval=300, first=45)
     app.job_queue.run_repeating(masking_job, interval=600, first=150)
     app.job_queue.run_repeating(webshare_job, interval=3 * 3600, first=200)
+    app.job_queue.run_repeating(crypto_job, interval=20, first=15)
     app.job_queue.run_repeating(traffic_job, interval=600, first=90)
     app.job_queue.run_repeating(devices_job, interval=300, first=120)
     return app
