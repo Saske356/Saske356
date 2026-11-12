@@ -40,6 +40,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger("vpn-bot")
 
 db = DB(config.DB_PATH)
+public_proxies.MAX_MS = int(os.environ.get("AUTO_PROXY_MAX_MS", "1500"))
 vpn = get_provider()
 auto_mgr = AutoProxy(vpn) if hasattr(vpn, "auto") else None
 guard = DeviceGuard(config.DEVICE_LIMIT, block_minutes=config.DEVICE_BLOCK_MINUTES)
@@ -1417,6 +1418,8 @@ async def store_backup() -> list[str]:
 
 
 async def backup_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    if hasattr(vpn, "reload_tls"):
+        vpn.reload_tls()  # сертификат подписки мог обновиться
     if db.stats()["users"] == 0:
         return
     try:

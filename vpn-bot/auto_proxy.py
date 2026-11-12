@@ -118,7 +118,8 @@ class AutoProxy:
     async def _alive(urls: list[str], cc: str) -> list[tuple[str, int]]:
         async def one(u):
             res = await pp.probe(u) or await pp.probe(u)
-            return (u, res.ms) if res and res.country == cc else None
+            # Работающий в работе прокси терпим чуть дольше, чем нового: чтобы не дёргать замены.
+            return (u, res.ms) if res and res.country == cc and res.ms <= pp.MAX_MS * 1.5 else None
         return [r for r in await asyncio.gather(*(one(u) for u in urls)) if r]
 
     async def _classify(self, pool: dict) -> dict:
@@ -137,7 +138,7 @@ class AutoProxy:
             async with sem:
                 return u, await pp.probe(u)
         for u, res in await asyncio.gather(*(one(u) for u in todo)):
-            if res:
+            if res and res.ms <= pp.MAX_MS:
                 self.geo[u] = (res.country, res.ms, now)
             else:
                 self.bad[u] = now + BAD_CANDIDATE

@@ -54,7 +54,8 @@ class XrayProvider(VpnProvider):
                  restart_cmd: tuple = ("systemctl", "restart", "xray"),
                  auto_enabled: bool = False, auto_countries: tuple = (), auto_max: int = 8,
                  relay_port: int = 20808, api_port: int = 10085, hy2: dict | None = None,
-                 xhttp_port: int = 0, hy2_first: bool = False, hy2_extra: dict | None = None):
+                 xhttp_port: int = 0, hy2_first: bool = False, hy2_extra: dict | None = None,
+                 sub_tls: dict | None = None):
         self.state_path, self.config_path, self.xray_bin = state_path, config_path, xray_bin
         self.host, self.port, self.env_sni = public_host, port, sni
         self.private_key, self.public_key, self.short_id = private_key, public_key, short_id
@@ -70,6 +71,12 @@ class XrayProvider(VpnProvider):
             self.hy2.extra_ports = self.hy2_extra["ports"]
             self.hy2.locs = {c: p for c, p in self.state["hy2_ports"].items() if p in self.hy2_extra["ports"]}
         self.xhttp_port, self.hy2_first = xhttp_port, hy2_first
+        # Подписка по HTTPS: {"host": имя с сертификатом, "port": порт, "cert": путь, "key": путь}.
+        # Тогда по дороге не видно ни ключей, ни что это VPN. Старый HTTP-адрес отправляет на новый.
+        self.sub_tls = sub_tls
+        self._tls_ctx = None
+        self._tls_mtime = 0.0
+        self._tls_server: asyncio.base_events.Server | None = None
         self.live: set[str] = set()  # подписки, которые сейчас есть в запущенном Xray
         self._api_lock = asyncio.Lock()  # изменения через API по одному, чтобы не мешали друг другу
         self.usage = None            # функция(подписка) -> (отдано, получено): бот берёт из базы
@@ -247,6 +254,8 @@ class XrayProvider(VpnProvider):
         return hmac.new(self.state["secret"].encode(), str(user_id).encode(), hashlib.sha256).hexdigest()[:24]
 
     def sub_url(self, user_id: int) -> str:
+        if self.sub_tls:
+            return f"https://{self.sub_tls['host']}:{self.sub_tls['port']}/sub/{user_id}/{self.sub_token(user_id)}"
         return f"http://{self.host}:{self.sub_port}/sub/{user_id}/{self.sub_token(user_id)}"
 
     # ---------- интерфейс для бота ----------
@@ -521,6 +530,8 @@ class XrayProvider(VpnProvider):
                 "realitySettings": {"show": False, "dest": f"{site or self.sni}:443", "xver": 0,
                                     "serverNames": [site] if site else self.server_names(),
                                     "privateKey": self.private_key, "shortIds": [self.short_id]},
+                # TCP Fast Open: повторное подключение без лишнего круга до сервера, если телефон умеет
+                "sockopt": {"tcpFastOpen": True},
             },
             "sniffing": {"enabled": True, "destOverride": ["http", "tls", "quic"]},
         }
@@ -554,7 +565,8 @@ class XrayProvider(VpnProvider):
             # попадают в свою страну. Старый Xray без шаблонов обходится явным списком.
             return [f"u{uid}.{code}" for uid in active] + [f"regexp:^u[0-9]+\\.{code}$"]
 
-        outbounds = [{"tag": "direct", "protocol": "freedom"},
+        # Свой кэш DNS в Xray: адрес сайта узнаётся один раз, а не при каждом подключении.
+        outbounds = [{"tag": "direct", "protocol": "freedom", "settings": {"domainStrategy": "UseIPv4"}},
                      {"tag": "block", "protocol": "blackhole"}]
         rules = [{"type": "field", "ip": ["geoip:private"], "outboundTag": "block"},
                  {"type": "field", "protocol": ["bittorrent"], "outboundTag": "block"}]
@@ -585,6 +597,7 @@ class XrayProvider(VpnProvider):
 
         cfg = {
             "log": {"loglevel": "warning", "access": "none"},
+            "dns": {"servers": ["1.1.1.1", "8.8.8.8"], "queryStrategy": "UseIPv4"},
             "inbounds": inbounds,
             "outbounds": outbounds,
             "routing": {"domainStrategy": "AsIs", "rules": rules},
@@ -884,6 +897,52 @@ class XrayProvider(VpnProvider):
         }
         return body, headers
 
+    async def _handle_plain(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        """Старый адрес по HTTP, когда включён HTTPS: ничего не отдаёт, а отправляет на новый адрес.
+        Приложения переходят по такой ссылке сами, а в боте у гостя уже новая ссылка."""
+        headers = {"Content-Type": "text/plain"}
+        status, body = "404 Not Found", b"not found"
+        try:
+            line = await asyncio.wait_for(reader.readline(), 10)
+            for _ in range(50):
+                h = await asyncio.wait_for(reader.readline(), 10)
+                if h in (b"\r\n", b"\n", b""):
+                    break
+            parts = line.decode(errors="replace").split()
+            m = re.fullmatch(r"/sub/(\d+)/([0-9a-f]{24})", parts[1]) if len(parts) >= 2 else None
+            if m and hmac.compare_digest(m.group(2), self.sub_token(int(m.group(1)))):
+                status, body = "301 Moved Permanently", b""
+                headers["Location"] = self.sub_url(int(m.group(1)))
+        except (asyncio.TimeoutError, ConnectionError, UnicodeError):
+            pass
+        await self._reply(writer, status, body, headers)
+
+    @staticmethod
+    async def _reply(writer, status: str, body: bytes, headers: dict) -> None:
+        head = f"HTTP/1.1 {status}\r\nContent-Length: {len(body)}\r\nConnection: close\r\n"
+        head += "".join(f"{k}: {v}\r\n" for k, v in headers.items())
+        try:
+            writer.write(head.encode() + b"\r\n" + body)
+            await writer.drain()
+        except (ConnectionError, OSError):
+            pass
+        finally:
+            writer.close()
+
+    def _tls_context(self):
+        """Сертификат Let's Encrypt обновляется раз в пару месяцев: подхватываем новый без перезапуска."""
+        import ssl
+        try:
+            mtime = max(os.stat(self.sub_tls["cert"]).st_mtime, os.stat(self.sub_tls["key"]).st_mtime)
+        except OSError:
+            return self._tls_ctx
+        if self._tls_ctx is None or mtime != self._tls_mtime:
+            ctx = self._tls_ctx or ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+            ctx.load_cert_chain(self.sub_tls["cert"], self.sub_tls["key"])
+            self._tls_ctx, self._tls_mtime = ctx, mtime
+        return self._tls_ctx
+
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         status, body, headers = "404 Not Found", b"not found", {"Content-Type": "text/plain"}
         try:
@@ -900,7 +959,7 @@ class XrayProvider(VpnProvider):
                     status, (body, headers) = "200 OK", res
                 else:
                     status, body = "403 Forbidden", b"subscription expired"
-        except (asyncio.TimeoutError, ConnectionError, UnicodeError):
+        except (asyncio.TimeoutError, OSError, UnicodeError):
             pass
         head = f"HTTP/1.1 {status}\r\nContent-Length: {len(body)}\r\nConnection: close\r\n"
         head += "".join(f"{k}: {v}\r\n" for k, v in headers.items())
@@ -913,8 +972,32 @@ class XrayProvider(VpnProvider):
             writer.close()
 
     async def start_sub_server(self, host: str = "0.0.0.0") -> None:
+        if self.sub_tls:
+            try:
+                ctx = self._tls_context()
+            except Exception as e:
+                ctx = None
+                await self._problem(f"Сертификат подписки не загрузился, подписка остаётся по HTTP: {e}")
+            else:
+                if ctx is None:
+                    await self._problem("Сертификат подписки не найден, подписка остаётся по HTTP: "
+                                        + self.sub_tls["cert"])
+            if ctx:
+                self._tls_server = await asyncio.start_server(self._handle, host, self.sub_tls["port"], ssl=ctx)
+                self._server = await asyncio.start_server(self._handle_plain, host, self.sub_port)
+                log.info("Подписки раздаются по HTTPS: %s:%d", self.sub_tls["host"], self.sub_tls["port"])
+                return
+            self.sub_tls = None
         self._server = await asyncio.start_server(self._handle, host, self.sub_port)
         log.info("Подписки раздаются на порту %d", self.sub_port)
+
+    def reload_tls(self) -> None:
+        """Раз в сутки бот проверяет, не обновился ли сертификат."""
+        if self.sub_tls and self._tls_ctx:
+            try:
+                self._tls_context()
+            except Exception:
+                log.exception("сертификат подписки не перечитан")
 
 
 def hy2_from_env(e) -> dict | None:
@@ -936,6 +1019,14 @@ def hy2_extra_from_env(e) -> dict | None:
         return None
     return {"ports": range(int(m.group(1)), int(m.group(2)) + 1),
             "dir": e.get("HY2_DIR", "/etc/hysteria"), "unit": "hysteria-loc@", "systemctl": ("systemctl",)}
+
+
+def sub_tls_from_env(e) -> dict | None:
+    """HTTPS для подписки: установщик получает сертификат и вписывает SUB_DOMAIN и пути."""
+    if not (e.get("SUB_DOMAIN") and e.get("SUB_TLS_CERT") and e.get("SUB_TLS_KEY")):
+        return None
+    return {"host": e["SUB_DOMAIN"], "port": int(e.get("SUB_TLS_PORT", "2097")),
+            "cert": e["SUB_TLS_CERT"], "key": e["SUB_TLS_KEY"]}
 
 
 def from_env() -> XrayProvider:
@@ -962,4 +1053,5 @@ def from_env() -> XrayProvider:
         hy2_extra=hy2_extra_from_env(e),
         hy2_first=e.get("HY2_FIRST", "1") == "1",
         xhttp_port=int(e.get("XRAY_XHTTP_PORT", "8443")),
+        sub_tls=sub_tls_from_env(e),
     )

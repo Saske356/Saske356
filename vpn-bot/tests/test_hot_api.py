@@ -411,6 +411,50 @@ class XhttpAndCountries(Base):
         self.assertEqual(self.v.hy2.stats_ports(), [self.stats.port, self.stats.port + 2, self.stats.port + 3])
 
 
+class SubscriptionTls(Base):
+    async def test_https_subscription_and_redirect_from_http(self):
+        import shutil, ssl, subprocess
+        if not shutil.which("openssl"):
+            self.skipTest("нет openssl")
+        cert, key = os.path.join(self.d, "c.pem"), os.path.join(self.d, "k.pem")
+        subprocess.run(["openssl", "req", "-x509", "-nodes", "-newkey", "rsa:2048", "-days", "2",
+                        "-keyout", key, "-out", cert, "-subj", "/CN=localhost",
+                        "-addext", "subjectAltName=DNS:localhost"], check=True, capture_output=True)
+        self.v = self.make(sub_tls={"host": "localhost", "port": 0, "cert": cert, "key": key})
+        await self.started()
+        await self.v.start_sub_server("127.0.0.1")
+        tls_port = self.v._tls_server.sockets[0].getsockname()[1]
+        plain_port = self.v._server.sockets[0].getsockname()[1]
+        self.v.sub_tls["port"] = tls_port
+        url = self.v.sub_url(1)
+        self.assertTrue(url.startswith(f"https://localhost:{tls_port}/sub/1/"))
+        path = urlparse(url).path
+
+        r, w = await asyncio.open_connection("127.0.0.1", plain_port)
+        w.write(f"GET {path} HTTP/1.1\r\nHost: x\r\n\r\n".encode()); await w.drain()
+        head = (await r.read()).decode(); w.close()
+        self.assertTrue(head.startswith("HTTP/1.1 301"), head)
+        self.assertIn(f"Location: {url}", head)
+        self.assertNotIn("vless", head, "по HTTP ключи больше не отдаются")
+
+        ctx = ssl.create_default_context(cafile=cert)
+        r, w = await asyncio.open_connection("127.0.0.1", tls_port, ssl=ctx, server_hostname="localhost")
+        w.write(f"GET {path} HTTP/1.1\r\nHost: localhost\r\n\r\n".encode()); await w.drain()
+        data = await r.read(); w.close()
+        head, _, body = data.partition(b"\r\n\r\n")
+        self.assertTrue(head.startswith(b"HTTP/1.1 200"), head)
+        import base64
+        self.assertIn("vless://", base64.b64decode(body).decode())
+        self.v._server.close(); self.v._tls_server.close()
+
+    async def test_broken_certificate_keeps_plain_http(self):
+        self.v = self.make(sub_tls={"host": "localhost", "port": 0, "cert": "/nonexistent", "key": "/nonexistent"})
+        await self.v.start_sub_server("127.0.0.1")
+        self.assertIsNone(self.v.sub_tls)
+        self.assertTrue(self.v.sub_url(1).startswith("http://203.0.113.7:"))
+        self.v._server.close()
+
+
 class Guard(unittest.TestCase):
     def test_warn_then_block_then_unblock(self):
         g = DeviceGuard("block", warn_after=2, block_after=3, block_minutes=30)

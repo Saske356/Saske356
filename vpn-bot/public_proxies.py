@@ -398,9 +398,14 @@ async def direct_ok(timeout: float = 8.0) -> bool:
     return False
 
 
+# Прокси, через который проверочный запрос идёт дольше, бот не берёт: с ним сайты открываются
+# секундами, а пинг выше. Меняется в .env: AUTO_PROXY_MAX_MS.
+MAX_MS = 1500
+
+
 async def pick_working(urls, country: str, need: int = 1, *, timeout: float = 6.0,
                        concurrency: int = 6, tries: int = 12,
-                       failed: set | None = None) -> list[tuple[str, int]]:
+                       failed: set | None = None, max_ms: int | None = None) -> list[tuple[str, int]]:
     """Ищет среди кандидатов прокси, которые работают и выходят из нужной страны.
     Возвращает до need штук (url, мс), самые быстрые первыми. В failed попадают непрошедшие."""
     urls = list(urls)[:tries]
@@ -417,7 +422,7 @@ async def pick_working(urls, country: str, need: int = 1, *, timeout: float = 6.
     try:
         for fut in asyncio.as_completed(tasks):
             u, res = await fut
-            if res and res.country == country:
+            if res and res.country == country and res.ms <= (max_ms or MAX_MS):
                 good.append((u, res.ms))
                 if len(good) > need:  # один запасной, чтобы было из чего выбрать быстрый
                     break

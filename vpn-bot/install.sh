@@ -199,6 +199,7 @@ retry apt-get install -y -qq curl unzip git python3 python3-venv python3-pip ope
   || fail "не удалось поставить пакеты"
 # rclone нужен только для копий в облако (BACKUP_RCLONE), поэтому без него установка продолжается
 apt-get install -y -qq rclone >/dev/null 2>&1 || echo "rclone не поставился: копии в облако работать не будут"
+apt-get install -y -qq certbot >/dev/null 2>&1 || echo "certbot не поставился: подписка останется по HTTP"
 
 say "Ставлю Xray"
 if ! retry3 install_xray; then
@@ -363,9 +364,46 @@ EOF
   fi
 fi
 
+# ---------- HTTPS для подписки: ключи не видны по дороге ----------
+# Свой домен не нужен: имя вида 1-2-3-4.sslip.io само указывает на IP сервера,
+# а Let's Encrypt бесплатно выдаёт на него сертификат (проверка идёт через порт 80).
+SUB_TLS_OK=0
+if [ -z "$(envget SUB_DOMAIN)" ] && command -v certbot >/dev/null; then
+  say "Сертификат для подписки по HTTPS"
+  IP_NOW=$(envget PUBLIC_HOST)
+  if printf '%s' "$IP_NOW" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'; then
+    if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then ufw allow 80/tcp >/dev/null; fi
+    for zone in sslip.io nip.io; do
+      NAME="$(printf '%s' "$IP_NOW" | tr . -).$zone"
+      if certbot certonly --standalone --non-interactive --agree-tos --register-unsafely-without-email \
+           --preferred-challenges http -d "$NAME" >/dev/null 2>&1; then
+        umask 077
+        cat >> "$ENV" <<EOF
+SUB_DOMAIN=$NAME
+SUB_TLS_PORT=2097
+SUB_TLS_CERT=/etc/letsencrypt/live/$NAME/fullchain.pem
+SUB_TLS_KEY=/etc/letsencrypt/live/$NAME/privkey.pem
+EOF
+        umask 022
+        echo "Подписка будет по HTTPS: https://$NAME:2097"
+        SUB_TLS_OK=1
+        break
+      fi
+      echo "Сертификат на $NAME не выдан, пробую другое имя"
+    done
+    [ "$SUB_TLS_OK" = 1 ] || echo "Сертификат не получен (нужен открытый TCP 80). Подписка пока по HTTP, повторный запуск попробует снова."
+  fi
+elif [ -n "$(envget SUB_DOMAIN)" ]; then
+  SUB_TLS_OK=1
+fi
+
 say "Ускорение сети (BBR и буферы UDP)"
 if ! grep -q "tcp_congestion_control=bbr" /etc/sysctl.conf 2>/dev/null; then
   printf 'net.core.default_qdisc=fq\nnet.ipv4.tcp_congestion_control=bbr\n' >> /etc/sysctl.conf
+fi
+# TCP Fast Open: повторное подключение к серверу без лишнего круга.
+if ! grep -q "net.ipv4.tcp_fastopen=3" /etc/sysctl.conf 2>/dev/null; then
+  printf 'net.ipv4.tcp_fastopen=3\n' >> /etc/sysctl.conf
 fi
 # Большие буферы UDP: без них QUIC (Hysteria2) упирается в скорость на быстрых каналах.
 if ! grep -q "net.core.rmem_max=16777216" /etc/sysctl.conf 2>/dev/null; then
@@ -418,6 +456,9 @@ if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
     ufw allow "$(envget HY2_PORT)"/udp >/dev/null
     HY_EXTRA=$(envget HY2_EXTRA_PORTS); HY_EXTRA=${HY_EXTRA:-30000-30049}
     [ "$HY_EXTRA" = 0 ] || ufw allow "${HY_EXTRA/-/:}"/udp >/dev/null
+  fi
+  if [ "$SUB_TLS_OK" = 1 ]; then
+    T_PORT=$(envget SUB_TLS_PORT); ufw allow "${T_PORT:-2097}"/tcp >/dev/null
   fi
   XH_PORT=$(envget XRAY_XHTTP_PORT); XH_PORT=${XH_PORT:-8443}
   [ "$XH_PORT" = 0 ] || ufw allow "$XH_PORT"/tcp >/dev/null
