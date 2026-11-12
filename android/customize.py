@@ -36,6 +36,89 @@ def edit(path: str, pairs: list[tuple[str, str]], count_ok=lambda n: n >= 1) -> 
         f.write(s)
 
 
+def mask_servers(kt: str) -> None:
+    """Адреса и пароли серверов из приложения не достать: убраны «Поделиться», QR-код, копирование,
+    редактирование, «Экспорт всего» и резервная копия. Серверы приходят только из подписки бота,
+    так что ключ нельзя переслать другу в обход подписки. Удаление и выбор сервера остались."""
+    main = os.path.join(kt, "ui", "main")
+    edit(os.path.join(main, "MainImportMenu.kt"), [
+        ("    (includeManagementActions || action.isShareAction) && (!isComplexProfile || action.supportsComplexProfiles)\n",
+         "    includeManagementActions && action == ServerMenuAction.Delete\n"),
+        ("    items = MainMoreMenuAction.entries,\n",
+         "    items = MainMoreMenuAction.entries.filter { it != MainMoreMenuAction.ExportAll },\n"),
+    ], count_ok=lambda n: n == 1)
+    edit(os.path.join(main, "MainServerPager.kt"), [
+        (re.compile(r"\n *IconButton\(onClick = \{ actions\.(share|edit)\(row\.guid, row\.profile\) \}, Modifier\.size\(36\.dp\)\) \{"
+                    r"\n(?: *.*\n){5} *\}"), ""),
+    ], count_ok=lambda n: n == 2)
+    edit(os.path.join(main, "MainDrawer.kt"), [
+        ("    MainDestination.BackupRestore,\n", ""),
+    ], count_ok=lambda n: n == 1)
+
+
+# Фирменные цвета бота: чёрный и золото.
+GOLD, GOLD_DARK, INK = "0xFFE8C46A", "0xFF8A6A1F", "0xFF070609"
+DARK_SCHEME = f"""private val DarkColor = darkColorScheme(
+    primary = Color({GOLD}),
+    onPrimary = Color({INK}),
+    primaryContainer = Color(0xFF3A2E12),
+    onPrimaryContainer = Color(0xFFF6E3B0),
+    secondary = Color({GOLD}),
+    onSecondary = Color({INK}),
+    secondaryContainer = Color(0xFF2E2615),
+    onSecondaryContainer = Color(0xFFF6E3B0),
+    tertiary = Color(0xFF83D6B5),
+    onTertiary = Color(0xFF00382E),
+    tertiaryContainer = Color(0xFF005143),
+    onTertiaryContainer = Color(0xFFA0F2D0),
+    error = Color(0xFFFFB4AB),
+    errorContainer = Color(0xFF93000A),
+    onError = Color(0xFF690005),
+    onErrorContainer = Color(0xFFFFDAD6),
+    background = Color(0xFF0B0A0D),
+    onBackground = Color(0xFFF3E6C4),
+    surface = Color(0xFF0B0A0D),
+    onSurface = Color(0xFFF3E6C4),
+    surfaceVariant = Color(0xFF2A2620),
+    onSurfaceVariant = Color(0xFFCFC2A3),
+    outline = Color(0xFF8C8170),
+    outlineVariant = Color(0xFF3A342A),
+    inverseSurface = Color(0xFFF3E6C4),
+    inverseOnSurface = Color(0xFF0B0A0D),
+    inversePrimary = Color({GOLD_DARK}),
+    scrim = Color(0xFF000000),
+    surfaceTint = Color({GOLD}),
+    surfaceContainerLowest = Color(0xFF070609),
+    surfaceContainerLow = Color(0xFF121014),
+    surfaceContainer = Color(0xFF17151A),
+    surfaceContainerHigh = Color(0xFF201D22),
+    surfaceContainerHighest = Color(0xFF2A262B),
+)"""
+
+
+def brand_theme(kt: str) -> None:
+    """Тёмная чёрно-золотая тема по умолчанию; цвета обоев Android (Material You) выключены,
+    иначе приложение перекрашивалось бы под каждый телефон."""
+    theme = os.path.join(kt, "ui", "compose", "Theme.kt")
+    edit(theme, [
+        (re.compile(r"private val DarkColor = darkColorScheme\((?:.|\n)*?\n\)"), DARK_SCHEME),
+        ("    primary = Color(0xFF000000), // Black\n", f"    primary = Color({GOLD_DARK}),\n"),
+        ("    secondary = Color(0xFFf97910), // Orange\n    onSecondary = Color(0xFFFFFFFF)",
+         f"    secondary = Color({GOLD_DARK}),\n    onSecondary = Color(0xFFFFFFFF)"),
+        ("val colorConfigType = Color(0xFFf97910)", f"val colorConfigType = Color({GOLD})"),
+        ("val colorFabActive = Color(0xFFf97910)", f"val colorFabActive = Color({GOLD})"),
+        ("decodeSettingsBool(AppConfig.PREF_DYNAMIC_COLOR, true)", "decodeSettingsBool(AppConfig.PREF_DYNAMIC_COLOR, false)"),
+        ('decodeSettingsString(AppConfig.PREF_UI_MODE_NIGHT, "0") ?: "0"',
+         'decodeSettingsString(AppConfig.PREF_UI_MODE_NIGHT, "2") ?: "2"'),
+    ])
+    edit(os.path.join(kt, "ui", "settings", "SettingsActivity.kt"), [
+        ('rememberMmkvString(AppConfig.PREF_UI_MODE_NIGHT, "0")', 'rememberMmkvString(AppConfig.PREF_UI_MODE_NIGHT, "2")'),
+    ], count_ok=lambda n: n == 1)
+    edit(os.path.join(kt, "ui", "settings", "SettingsActivity.kt"), [
+        ("rememberMmkvBool(AppConfig.PREF_DYNAMIC_COLOR, true)", "rememberMmkvBool(AppConfig.PREF_DYNAMIC_COLOR, false)"),
+    ], count_ok=lambda n: n == 1)
+
+
 def main(root: str) -> None:
     app = os.path.join(root, "V2rayNG", "app")
     src = os.path.join(app, "src", "main")
@@ -95,6 +178,9 @@ def main(root: str) -> None:
         ("if (URLUtil.isHttpsUrl(value)) return true",
          "if (URLUtil.isHttpsUrl(value) || URLUtil.isHttpUrl(value)) return true"),
     ], count_ok=lambda n: n == 1)
+
+    mask_servers(kt)
+    brand_theme(kt)
 
     # По умолчанию: после обновления подписки сразу замерить пинг и поставить быстрые сверху.
     for key in ("PREF_AUTO_TEST_AFTER_UPDATE_SUBSCRIPTION", "PREF_AUTO_SORT_AFTER_TEST"):

@@ -113,6 +113,7 @@ class XrayProvider(VpnProvider):
         # «Лучший сервер» держит по подключению к каждой стране, приложения проверяют пинг.
         # Поэтому запоминаем, из каких сетей был вход (подписка -> сеть -> когда), и считаем их.
         self._hy2_nets: dict[int, dict[str, float]] = {}
+        self.support_url = ""  # ссылка на бота, бот ставит её при запуске
         self.usage = None            # функция(подписка) -> (отдано, получено): бот берёт из базы
         # Hysteria для стран через прокси: {"ports": диапазон UDP, "dir": папка конфигов,
         # "stats_base": первый порт статистики, "systemctl": команда}. У каждой страны своя служба
@@ -1312,6 +1313,10 @@ class XrayProvider(VpnProvider):
             "subscription-userinfo": f"upload={int(up)}; download={int(down)}; total=0; expire={int(exp)}",
             "profile-update-interval": "1",
         }
+        if self.support_url:
+            # кнопки «Поддержка» и «Сайт» в карточке подписки (Aurora, v2rayNG, Happ) ведут в бота
+            headers["support-url"] = self.support_url
+            headers["profile-web-page-url"] = self.support_url
         return body, headers
 
     def app_link(self, user_id: int) -> str:

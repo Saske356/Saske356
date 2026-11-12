@@ -334,6 +334,9 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
             _, _, body = await get(path, agent)
             self.assertEqual(set(map(str, quic(json.loads(body)))), {"None"}, f"{agent}: без quicParams")
 
+        self.v.support_url = "https://t.me/aurora_bot"
+        head, _, _ = await get(path, "AuroraVPN/1.0.5 v2rayNG/1.0.5")
+        self.assertIn(b"support-url: https://t.me/aurora_bot", head)
         head, _, body = await get(path + "/app", "Mozilla/5.0")
         self.assertIn(b"text/html", head)
         page = body.decode()

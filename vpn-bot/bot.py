@@ -2654,6 +2654,8 @@ async def setup_profile(app: Application) -> None:
                 except TelegramError:
                     pass
         vpn.on_problem = alert
+    if hasattr(vpn, "support_url") and bot.username:
+        vpn.support_url = f"https://t.me/{bot.username}"
     if hasattr(vpn, "sync"):
         active = db.all_active_subs()
         vpn.usage = db.sub_traffic
