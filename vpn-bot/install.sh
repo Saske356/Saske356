@@ -217,10 +217,11 @@ env_set() { sed -i -E "/^$1=/d" "$ENV"; echo "$1=$2" >> "$ENV"; }
 hy_free_ports() {
   local key port owner name pid unit ans s1 s2
   systemctl stop aurora-hy2@plain aurora-hy2@obfs >/dev/null 2>&1 || true
-  # Службы прежней версии установщика: одна Hysteria на 443/udp, отдельные серверы стран,
-  # перенаправление портов и AmneziaWG. Бот ими больше не управляет, а порты они занимают.
+  # Службы прежних версий: одна Hysteria на 443/udp, отдельные серверы стран, перенаправление
+  # портов, WireGuard и AmneziaWG. Бот ими больше не управляет, а порты они занимают.
   local old
-  for old in hysteria-server aurora-hop awg-quick@awg0 \
+  sed -i -E '/^A?WG_(PORT|PUBLIC_KEY|PARAMS|NET|IFACE)=/d' "$ENV" 2>/dev/null || true
+  for old in hysteria-server aurora-hop awg-quick@awg0 wg-quick@wg0 \
              $(systemctl list-units --all --plain --no-legend 'hysteria-loc@*' 2>/dev/null | awk '{print $1}'); do
     if systemctl is-enabled -q "$old" 2>/dev/null || systemctl is-active -q "$old" 2>/dev/null; then
       echo "Отключаю службу прежней версии: $old"
