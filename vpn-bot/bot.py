@@ -1694,6 +1694,9 @@ async def server_text() -> str:
                          + ("" if vpn.sub_https else ", не запустилась, ссылки идут по HTTP"))
         lines.append(f"{'✅' if sub_ok else '❌'} Подписки (порт {vpn.sub_port}): "
                      + ("раздаются" if sub_ok else "не раздаются"))
+        if getattr(vpn, "guard", None):
+            g = vpn.guard
+            lines.append(f"🛡 Защита подписок: отброшено соединений {g.dropped}, адресов в бане {g.bans()}")
         if vpn.last_error:
             lines.append("❌ Последняя ошибка VPN:\n<code>" + esc(vpn.last_error[:300]) + "</code>")
         elif vpn.last_apply:

@@ -341,15 +341,23 @@ class SourceTests(unittest.TestCase):
             "geonode": {"data": [{"ip": "198.51.100.1", "port": "1080", "protocols": ["socks5"], "country": "NL",
                                   "upTime": 50}]},
         }
-        real = pp._fetch_json
+        text = {"hideip": "198.51.100.20:1080:Netherlands\n198.51.100.21:1080:Atlantis\nmusor\n",
+                "plain": "198.51.100.30:1080\n198.51.100.1:1080\n"}
+        real, real_text = pp._fetch_json, pp._fetch_text
         pp._fetch_json = lambda url, timeout=25.0: data[next(n for n, u in pp.SOURCES if u == url)]
+        pp._fetch_text = lambda url, timeout=25.0: text[next(n for n, u in pp.SOURCES if u == url)]
         try:
             pool = pp._collect()
         finally:
-            pp._fetch_json = real
-        self.assertEqual(pool, {"nl": ["socks5://198.51.100.1:1080",   # есть в двух списках
-                                       "http://198.51.100.2:8080",     # почти всегда отвечал
-                                       "http://198.51.100.3:8080"]})   # отвечал редко
+            pp._fetch_json, pp._fetch_text = real, real_text
+        self.assertEqual(pool["nl"][0], "socks5://198.51.100.1:1080", "есть в двух списках")
+        self.assertLess(pool["nl"].index("http://198.51.100.2:8080"), pool["nl"].index("http://198.51.100.3:8080"),
+                        "почти всегда отвечал — раньше, чем отвечал редко")
+        self.assertIn("socks5://198.51.100.20:1080", pool["nl"], "страна из hideip.me по названию")
+        self.assertEqual(set(pool), {"nl", pp.UNKNOWN})
+        self.assertIn("socks5://198.51.100.30:1080", pool[pp.UNKNOWN], "без страны — в общий котёл")
+        self.assertIn("socks5://198.51.100.21:1080", pool[pp.UNKNOWN], "незнакомая страна — тоже")
+        self.assertNotIn("socks5://198.51.100.1:1080", pool[pp.UNKNOWN], "уже известный со страной — не дублируется")
 
 
 class RelayTests(Base):
@@ -585,7 +593,8 @@ class ManagerTests(Base):
         self.assertEqual((await self.through("nl")).country, "nl")
 
     async def test_discovery_respects_limit_order_and_exclusions(self):
-        px = {cc: await self.proxy("socks5", cc) for cc in ("bd", "us", "nl", "de", "pl")}
+        # bd (Бангладеш) нет среди хороших стран: бот её не берёт, даже если прокси есть
+        px = {cc: await self.proxy("socks5", cc) for cc in ("bd", "se", "us", "nl", "de", "pl")}
         self.pool = {cc: [p.url] for cc, p in px.items()}
         mgr = await self.manager(maxn=2)
         self.vpn.add_location("pl", "🇵🇱 Купленная", "socks5://127.0.0.1:9")
@@ -609,8 +618,12 @@ class ManagerTests(Base):
         self.loc("nl")["down_since"] -= 7 * 3600  # долго без прокси: место занимает другая страна
         report = await mgr.refresh()
         self.assertIn("Убраны", report)
-        self.assertEqual(sorted(l["code"] for l in self.vpn.auto_locations()), ["bd", "us"])
-        self.assertEqual(self.applies, applies + 1)
+        for _ in range(6):  # очередь стран сдвигается каждый цикл: до Швеции дойдёт за несколько
+            if len(self.vpn.auto_locations()) == 2:
+                break
+            await mgr.refresh()
+        self.assertEqual(sorted(l["code"] for l in self.vpn.auto_locations()), ["se", "us"])
+        self.assertEqual(self.applies, applies + 2, "удаление и добавление — по одному перезапуску")
 
     async def test_no_changes_when_server_itself_is_offline(self):
         a = await self.proxy("socks5", "nl")
@@ -679,6 +692,13 @@ class ManagerTests(Base):
             pp.probe = real
         self.assertLessEqual(len(first), auto_proxy.PROBE_BUDGET // auto_proxy.PER_COUNTRY + 1)
         self.assertTrue(second - first, "во втором цикле пробуются другие страны")
+
+    async def test_unknown_country_proxies_find_their_country(self):
+        de = await self.proxy("socks5", "de")
+        self.pool = {pp.UNKNOWN: [de.url]}  # в списке без страны
+        mgr = await self.manager(maxn=3)
+        await mgr.refresh()
+        self.assertEqual([(l["code"], l["proxy"]) for l in self.vpn.auto_locations()], [("de", de.url)])
 
     async def test_proxy_from_another_country_is_kept_for_it(self):
         # список записал прокси в Нидерланды, а выходит он из Германии: Германии он и достаётся

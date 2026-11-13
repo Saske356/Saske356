@@ -127,7 +127,7 @@ def outbound(e: dict, tuned: bool = False) -> dict:
             "streamSettings": stream}
 
 
-def _routing(server_ips: list[str], final: dict, tuned: bool = False) -> dict:
+def _routing(server_ips: list[str], final: dict, tuned: bool = False, ads: bool = True) -> dict:
     """Правила: сам сервер, реклама, российские сайты и локальная сеть — мимо VPN, остальное — final.
     tuned (своё приложение): AsIs — без DNS-запроса на каждый новый сайт. Трафик из VPN приходит
     с адресами, по ним и так работают правила geoip, а имя сайта даёт sniffing. С IPIfNonMatch
@@ -138,7 +138,7 @@ def _routing(server_ips: list[str], final: dict, tuned: bool = False) -> dict:
         "domainStrategy": "AsIs" if tuned else "IPIfNonMatch",
         "rules": [
             *server,
-            {"type": "field", "domain": ["geosite:category-ads-all"], "outboundTag": "block"},
+            *([{"type": "field", "domain": ["geosite:category-ads-all"], "outboundTag": "block"}] if ads else []),
             {"type": "field", "ip": ["77.88.8.8"], "outboundTag": "direct"},
             {"type": "field", "domain": RU_DOMAINS, "outboundTag": "direct"},
             {"type": "field", "ip": ["geoip:private", "geoip:ru"], "outboundTag": "direct"},
@@ -192,11 +192,27 @@ def best(entries: list[dict], name: str = "🚀 Лучший сервер", tune
     return cfg
 
 
+GAME_NAME = "🎮 Игры"
+
+
 def config(e: dict, tuned: bool = False) -> dict:
-    return _base(e["name"], [outbound(e, tuned)], _routing(_ip(e["host"]), {"outboundTag": "proxy"}, tuned))
+    return _base(e["name"], [outbound(e, tuned)],
+                 _routing(_ip(e["host"]), {"outboundTag": "proxy"}, tuned, ads=not e.get("game")))
 
 
-def configs(entries: list[dict], with_best: bool = True, tuned: bool = False) -> list[dict]:
-    """Конфиги подписки: первым «Лучший сервер» (если подключений больше одного), затем страны."""
+def game_entry(entries: list[dict]) -> dict | None:
+    """Игровое подключение: только напрямую через основной сервер (первое подключение), без
+    бесплатных прокси стран — они медленные и почти не пропускают UDP, а игры идут по UDP.
+    Российские игровые серверы и так идут мимо VPN (geoip:ru), пинг на них как без VPN.
+    Реклама не режется: блокировка иногда ломает вход в игры и награды за рекламу."""
+    if not entries:
+        return None
+    return {**entries[0], "name": GAME_NAME, "game": True}
+
+
+def configs(entries: list[dict], with_best: bool = True, tuned: bool = False, game: bool = True) -> list[dict]:
+    """Конфиги подписки: первым «Лучший сервер» (если подключений больше одного), «🎮 Игры», затем страны."""
     out = [config(e, tuned) for e in entries]
-    return ([best(entries, tuned=tuned)] if with_best and len(entries) > 1 else []) + out
+    g = game_entry(entries) if game and len(entries) > 1 else None  # с одной страной смысла нет
+    head = [best(entries, tuned=tuned)] if with_best and len(entries) > 1 else []
+    return head + ([config(g, tuned)] if g else []) + out

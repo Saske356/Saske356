@@ -345,6 +345,19 @@ EOF
   # QUIC работает быстрее с большими буферами UDP
   printf 'net.core.rmem_max=16777216\nnet.core.wmem_max=16777216\n' > /etc/sysctl.d/99-aurora-quic.conf
   sysctl -q -p /etc/sysctl.d/99-aurora-quic.conf 2>/dev/null || true
+  # Защита от SYN-флуда и подделанных адресов: сервер не задыхается от полуоткрытых соединений.
+  cat > /etc/sysctl.d/99-aurora-guard.conf <<'EOG'
+net.ipv4.tcp_syncookies=1
+net.ipv4.tcp_max_syn_backlog=8192
+net.ipv4.tcp_synack_retries=2
+net.core.somaxconn=4096
+net.core.netdev_max_backlog=16384
+net.ipv4.conf.all.rp_filter=2
+net.ipv4.conf.default.rp_filter=2
+net.ipv4.icmp_echo_ignore_broadcasts=1
+net.ipv4.tcp_fin_timeout=15
+EOG
+  sysctl -q -p /etc/sysctl.d/99-aurora-guard.conf 2>/dev/null || true
   systemctl daemon-reload
   if ! hy_obfs_on; then systemctl disable --now aurora-hy2@obfs >/dev/null 2>&1 || true; fi
   # shellcheck disable=SC2046

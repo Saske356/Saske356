@@ -37,7 +37,16 @@ SOURCES = [
                 "&sort_by=lastChecked&sort_type=desc"),
     # Список, который сам проверяет прокси и пишет страну выхода и время ответа.
     ("monosans", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies.json"),
+    # Списки текстом «адрес:порт[:Страна]». Где страны нет, прокси идёт в общий котёл «??»:
+    # страну бот узнаёт сам при проверке (по реальному выходу), так что ошибки списков не мешают.
+    ("hideip", "https://raw.githubusercontent.com/zloi-user/hideip.me/main/socks5.txt"),
+    ("hideip", "https://raw.githubusercontent.com/zloi-user/hideip.me/main/http.txt"),
+    ("plain", "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt"),
+    ("plain", "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt"),
+    ("plain", "https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/proxies/socks5.txt"),
 ]
+UNKNOWN = "??"          # котёл прокси без страны
+MAX_UNKNOWN = 600       # сколько из него держать (случайная выборка)
 
 CACHE_TTL = 900
 MAX_PER_COUNTRY = 150
@@ -54,7 +63,7 @@ SPEED_PORT = 443
 SPEED_PATH = "/__down?bytes={n}"
 SPEED_BYTES = 262144
 SPEED_TIMEOUT = 12.0
-MIN_KBPS = 80          # КБ/с: ниже этого сайты и видео грузятся с перебоями
+MIN_KBPS = 150         # КБ/с (~1,2 Мбит/с): ниже этого сайты и видео грузятся с перебоями
 MAX_MS = 3500          # полная проверка дольше этого — прокси слишком далеко или перегружен
 SPEEDS: dict[str, int] = {}   # последний замер скорости прокси, КБ/с
 _ssl_ctx: ssl.SSLContext | None = None
@@ -137,29 +146,74 @@ def _parse_monosans(data, pool) -> None:
         _add(pool, country, p.get("protocol"), p.get("host"), p.get("port"), quality)
 
 
+# Английские названия стран из списков hideip.me -> код
+EN_NAMES = {
+    "united states": "us", "united kingdom": "gb", "germany": "de", "netherlands": "nl", "france": "fr",
+    "canada": "ca", "japan": "jp", "singapore": "sg", "finland": "fi", "sweden": "se", "norway": "no",
+    "poland": "pl", "spain": "es", "italy": "it", "switzerland": "ch", "austria": "at", "belgium": "be",
+    "ireland": "ie", "portugal": "pt", "czechia": "cz", "czech republic": "cz", "romania": "ro",
+    "hungary": "hu", "greece": "gr", "denmark": "dk", "bulgaria": "bg", "slovakia": "sk", "ukraine": "ua",
+    "turkey": "tr", "türkiye": "tr", "india": "in", "indonesia": "id", "brazil": "br", "mexico": "mx",
+    "argentina": "ar", "chile": "cl", "colombia": "co", "australia": "au", "new zealand": "nz",
+    "south korea": "kr", "korea": "kr", "hong kong": "hk", "taiwan": "tw", "thailand": "th", "vietnam": "vn",
+    "viet nam": "vn", "malaysia": "my", "philippines": "ph", "south africa": "za",
+    "united arab emirates": "ae", "israel": "il", "kazakhstan": "kz", "moldova": "md", "latvia": "lv",
+    "lithuania": "lt", "estonia": "ee", "serbia": "rs", "croatia": "hr", "slovenia": "si", "iceland": "is",
+    "luxembourg": "lu", "georgia": "ge", "armenia": "am", "cyprus": "cy", "malta": "mt", "russia": "ru",
+    "china": "cn", "iran": "ir", "bangladesh": "bd", "pakistan": "pk", "egypt": "eg", "nigeria": "ng",
+}
+
+
+def _parse_lines(text: str, pool, proto: str, with_country: bool) -> None:
+    for line in text.splitlines():
+        parts = line.strip().split(":")
+        if len(parts) < 2 or not parts[1].isdigit():
+            continue
+        cc = EN_NAMES.get(parts[2].strip().lower(), UNKNOWN) if with_country and len(parts) > 2 else UNKNOWN
+        if cc == UNKNOWN:
+            pool.setdefault(UNKNOWN, {})[f"{proto}://{parts[0]}:{int(parts[1])}"] = 0.5
+        else:
+            _add(pool, cc, proto, parts[0], parts[1])
+
+
 PARSERS = {"proxifly": _parse_proxifly, "proxyscrape": _parse_proxyscrape, "geonode": _parse_geonode,
            "monosans": _parse_monosans}
 
 
-def _fetch_json(url: str, timeout: float = 25.0):
+def _fetch_text(url: str, timeout: float = 25.0) -> str:
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8", "replace"))
+        return r.read(8 * 1024 * 1024).decode("utf-8", "replace")
+
+
+def _fetch_json(url: str, timeout: float = 25.0):
+    return json.loads(_fetch_text(url, timeout))
 
 
 def _collect() -> dict[str, list[str]]:
     pool: dict[str, dict] = {}
     for name, url in SOURCES:
         try:
-            PARSERS[name](_fetch_json(url), pool)
+            if name in ("hideip", "plain"):
+                proto = "http" if url.endswith("/http.txt") else "socks5"
+                _parse_lines(_fetch_text(url), pool, proto, with_country=name == "hideip")
+            else:
+                PARSERS[name](_fetch_json(url), pool)
         except Exception as e:
             log.warning("источник прокси %s недоступен: %s", name, e)
+    unknown = pool.pop(UNKNOWN, {})
+    unknown.update(pool.pop("zz", {}))  # «zz» в списках — тоже «страна неизвестна»
+    known = {u for urls in pool.values() for u in urls}
+    rest = [u for u in unknown if u not in known]  # прокси со страной уже в своём списке
+    random.shuffle(rest)
     out = {}
     for cc, urls in pool.items():
         lst = list(urls)
         random.shuffle(lst)                      # при равной оценке порядок случайный
         lst.sort(key=lambda u: -urls[u])
         out[cc] = lst[:MAX_PER_COUNTRY]
+    if rest:
+        out[UNKNOWN] = rest[:MAX_UNKNOWN]
     log.info("публичные прокси: %d стран, %d адресов", len(out), sum(len(v) for v in out.values()))
     return out
 

@@ -32,6 +32,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import client_config
 import public_proxies
+from guard import RateGuard
 from vpn import VpnProvider
 
 log = logging.getLogger("vpn-bot.xray")
@@ -83,7 +84,7 @@ class XrayProvider(VpnProvider):
                  port: int, sni: str, private_key: str, public_key: str, short_id: str,
                  sub_port: int, brand: str = "VPN", default_location: str = "🌍 Основной",
                  restart_cmd: tuple = ("systemctl", "restart", "xray"),
-                 auto_enabled: bool = False, auto_countries: tuple = (), auto_max: int = 8,
+                 auto_enabled: bool = False, auto_countries: tuple = (), auto_max: int = 15,
                  relay_port: int = 20808, api_port: int = 10085, bridge_port: int = 8444,
                  xhttp: bool = True, sub_base: str = "", hy2: dict | None = None, hy2_auth_port: int = 20809,
                  hy2_locs: dict | None = None, json_sub: bool = True,
@@ -114,6 +115,7 @@ class XrayProvider(VpnProvider):
         # Поэтому запоминаем, из каких сетей был вход (подписка -> сеть -> когда), и считаем их.
         self._hy2_nets: dict[int, dict[str, float]] = {}
         self.support_url = ""  # ссылка на бота, бот ставит её при запуске
+        self.guard = RateGuard()  # защита раздачи подписок от флуда и перебора ссылок
         self.usage = None            # функция(подписка) -> (отдано, получено): бот берёт из базы
         # Hysteria для стран через прокси: {"ports": диапазон UDP, "dir": папка конфигов,
         # "stats_base": первый порт статистики, "systemctl": команда}. У каждой страны своя служба
@@ -160,6 +162,11 @@ class XrayProvider(VpnProvider):
                                "max": int(auto_max)})
         st["auto"].setdefault("notify", True)
         st["auto"].setdefault("exclude", [])
+        # 13.11: бесплатных стран по умолчанию до 15 (было 8); заданное админом число не трогаем
+        if not st["auto"].get("max15"):
+            if int(st["auto"].get("max") or 8) == 8:
+                st["auto"]["max"] = 15
+            st["auto"]["max15"] = True
         # Сайт маскировки: пока его не меняли из бота, действует значение из .env.
         m = st.setdefault("masking", {})
         for key, value in (("site", ""), ("prev", []), ("auto", True), ("every", 0), ("changed", 0)):
@@ -1395,12 +1402,28 @@ class XrayProvider(VpnProvider):
                 "</main></body></html>")
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        status, body, headers = "404 Not Found", b"not found", {"Content-Type": "text/plain"}
+        peer = writer.get_extra_info("peername")
+        ip = str(peer[0]) if isinstance(peer, tuple) and peer else ""
+        if not self.guard.enter(ip):  # флуд или адрес в бане: молча закрываем
+            writer.close()
+            return
         try:
-            line = await asyncio.wait_for(reader.readline(), 10)
+            await self._serve(reader, writer, ip)
+        finally:
+            self.guard.leave(ip)
+
+    async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, ip: str) -> None:
+        status, body, headers = "404 Not Found", b"not found", {"Content-Type": "text/plain"}
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 10  # на весь запрос 10 с: медленные «атаки по строчке» не держат соединения
+
+        def left() -> float:
+            return max(0.05, deadline - loop.time())
+        try:
+            line = await asyncio.wait_for(reader.readline(), left())
             agent = ""
             for _ in range(50):  # заголовки запроса: нужен только User-Agent
-                h = await asyncio.wait_for(reader.readline(), 10)
+                h = await asyncio.wait_for(reader.readline(), left())
                 if h in (b"\r\n", b"\n", b""):
                     break
                 k, _, v = h.decode(errors="replace").partition(":")
@@ -1440,6 +1463,8 @@ class XrayProvider(VpnProvider):
                 headers = {"Content-Type": "text/html; charset=utf-8"}
         except (asyncio.TimeoutError, ConnectionError, UnicodeError, OSError):
             pass
+        if status.startswith("404"):
+            self.guard.fail(ip)  # неверная ссылка или сканер: за перебор — бан на час
         head = f"HTTP/1.1 {status}\r\nContent-Length: {len(body)}\r\nConnection: close\r\n"
         head += "".join(f"{k}: {v}\r\n" for k, v in headers.items())
         try:
@@ -1500,7 +1525,7 @@ def from_env() -> XrayProvider:
         brand=e.get("BRAND", "VPN"), default_location=e.get("DEFAULT_LOCATION_NAME", "🌍 Основной"),
         auto_enabled=e.get("AUTO_PROXY", "0") == "1",
         auto_countries=[c.strip().lower() for c in e.get("AUTO_PROXY_COUNTRIES", "").replace(" ", "").split(",") if c.strip()],
-        auto_max=int(e.get("AUTO_PROXY_MAX", "8")),
+        auto_max=int(e.get("AUTO_PROXY_MAX", "15")),
         relay_port=int(e.get("AUTO_RELAY_PORT", "20808")),
         api_port=int(e.get("XRAY_API_PORT", "10085")),
         bridge_port=int(e.get("BRIDGE_PORT", "8444")),

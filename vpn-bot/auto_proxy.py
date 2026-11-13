@@ -33,9 +33,12 @@ SLOW_MS = 1500           # рабочий прокси медленнее это
 REP_LIMIT = 5000         # сколько прокси помнить в репутации
 MISSES_TO_HIDE = 2       # страна прячется после стольких проверок подряд без живых прокси
 
-# В режиме подбора страны берутся в этом порядке, затем остальные по числу прокси.
+# В режиме подбора берутся только эти страны (пользователь просил оставить хорошие), в этом порядке.
+# Россию, Китай, Иран и подобные не берём: через них VPN бессмыслен или медленный.
 PREFERRED = ["nl", "de", "us", "gb", "fr", "fi", "se", "ch", "jp", "sg", "ca", "tr",
-             "it", "es", "at", "no", "dk", "cz", "kz", "ae", "hk", "kr", "au", "br"]
+             "it", "es", "at", "no", "dk", "cz", "pl", "kz", "ae", "hk", "kr", "au",
+             "be", "ie", "pt", "ro", "hu", "lv", "lt", "ee", "bg", "rs", "ge", "am", "il", "tw", "br"]
+UNKNOWN_BUDGET = 60      # сколько прокси без страны проверять за цикл: страна узнаётся по выходу
 
 
 class AutoProxy:
@@ -150,6 +153,21 @@ class AutoProxy:
         # Порядок из списков сохраняется, но проверенные нами хорошие идут раньше, плохие позже.
         return sorted(urls, key=lambda u: -self.rep.get(u, 0.0))
 
+    async def _scan_unknown(self, pool: dict) -> None:
+        now = time.time()
+        urls = [u for u in pool.get(pp.UNKNOWN, []) if self.bad.get(u, 0) < now]
+        if not urls:
+            return
+        k = (self.rot * UNKNOWN_BUDGET) % len(urls)
+        batch = (urls[k:] + urls[:k])[:UNKNOWN_BUDGET]
+        failed: set[str] = set()
+        strays: dict = {}
+        await pp.pick_working(batch, pp.UNKNOWN, 1, tries=len(batch), concurrency=8, failed=failed, strays=strays)
+        until = now + BAD_CANDIDATE * 4  # мёртвые из котла долго не перепроверяем
+        for u in failed:
+            self.bad[u] = until
+        self._keep_strays(strays)
+
     def _keep_strays(self, strays: dict) -> None:
         until = time.time() + SPARE_TTL
         for cc, found in strays.items():
@@ -203,9 +221,7 @@ class AutoProxy:
         wanted = [c for c in cfg.get("countries") or [] if c not in skip]
         if wanted:
             return wanted, False
-        ranked = sorted((c for c in pool if c not in skip),
-                        key=lambda c: (PREFERRED.index(c) if c in PREFERRED else len(PREFERRED),
-                                       -len(pool[c])))
+        ranked = sorted((c for c in PREFERRED if c not in skip), key=PREFERRED.index)
         # Уже добавленные страны идут первыми: пока их прокси живы, набор стран не меняется.
         current = [l["code"] for l in self.vpn.auto_locations() if l["code"] not in skip]
         return list(dict.fromkeys(current + ranked)), True
@@ -269,9 +285,13 @@ class AutoProxy:
             if alive:
                 self.misses.pop(cc, None)
                 best = min(alive, key=lambda x: x[1])
-                slow = alive[0][1] > SLOW_MS and alive[0][1] > 2 * best[1]
-                if alive[0][0] != was_active or slow:  # рабочий умер или тормозит: берём самый быстрый
-                    alive.sort(key=lambda x: x[1])
+                kb = lambda u: pp.SPEEDS.get(u, 0)
+                fastest = max(alive, key=lambda x: kb(x[0]))
+                slow = (alive[0][1] > SLOW_MS and alive[0][1] > 2 * best[1]) or \
+                       (kb(alive[0][0]) and kb(fastest[0]) > 2 * kb(alive[0][0]))
+                if alive[0][0] != was_active or slow:
+                    # рабочий умер или тормозит: берём самый быстрый по скорости, при равной — по задержке
+                    alive.sort(key=lambda x: (-(kb(x[0]) // 200), x[1]))
                 res = vpn.set_auto_location(cc, nm(cc), [u for u, _ in alive], ms=alive[0][1])
                 if was_down:
                     back.append(cc)
@@ -289,6 +309,9 @@ class AutoProxy:
                 if vpn.remove_location(cc, apply=False):
                     removed.append(cc)
 
+        # 2б) котёл прокси без страны: проверяем понемногу, рабочие и быстрые достаются стране выхода
+        await self._scan_unknown(pool)
+
         # 3) недостающие страны. Раньше каждый цикл весь лимит проверок съедали одни и те же
         # первые страны очереди, и до остальных дело не доходило. Теперь: сначала страны, для
         # которых уже есть найденные прокси, остальные — со сдвигом, который растёт каждый цикл;
@@ -297,7 +320,8 @@ class AutoProxy:
         missing = [cc for cc in targets if cc not in have]
         if discovery:
             skip = vpn.manual_codes() | set(vpn.auto.get("exclude") or [])
-            missing += [cc for cc in self.spare if cc not in have and cc not in skip and cc not in missing]
+            missing += [cc for cc in self.spare if cc in PREFERRED and cc not in have and cc not in skip
+                        and cc not in missing]
         ready = [cc for cc in missing if self.spare.get(cc)]
         rest = [cc for cc in missing if cc not in ready]
         if rest:

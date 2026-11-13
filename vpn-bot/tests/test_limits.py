@@ -292,7 +292,13 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         head, _, body = await get(path, "Happ/3.7.0")
         self.assertIn(b"application/json", head)
         cfgs = json.loads(body)
-        self.assertEqual([c["remarks"] for c in cfgs], ["🚀 Лучший сервер", "🇵🇱 Польша", "🇩🇪 Германия"])
+        self.assertEqual([c["remarks"] for c in cfgs], ["🚀 Лучший сервер", "🎮 Игры", "🇵🇱 Польша", "🇩🇪 Германия"])
+        game = cfgs[1]
+        self.assertEqual(game["outbounds"][0]["settings"], cfgs[2]["outbounds"][0]["settings"],
+                         "игры — напрямую через основной сервер")
+        self.assertNotIn("block", {r.get("outboundTag") for r in game["routing"]["rules"]}, "без блокировки рекламы")
+        self.assertIn({"type": "field", "ip": ["geoip:private", "geoip:ru"], "outboundTag": "direct"},
+                      game["routing"]["rules"], "российские игровые серверы — мимо VPN")
         best = cfgs[0]
         self.assertEqual([o["tag"] for o in best["outbounds"]], ["p0", "p1", "direct", "block"])
         self.assertEqual(best["routing"]["balancers"][0]["strategy"]["type"], "leastPing")
@@ -300,7 +306,7 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(best["observatory"]["subjectSelector"], ["p"])
         self.assertFalse(any(o["tag"].startswith("p") for o in best["outbounds"][2:]),
                          "direct и block не попадают в автовыбор")
-        cfgs = cfgs[1:]
+        cfgs = cfgs[2:]  # без «Лучшего сервера» и «Игр»
         out = cfgs[1]["outbounds"][0]
         self.assertEqual((out["protocol"], out["settings"]["port"], out["streamSettings"]["hysteriaSettings"]["auth"]),
                          ("hysteria", 30000, self.v.hy2_password(1)))
@@ -341,7 +347,7 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         _, _, body = await get(path, "AuroraVPN/1.0.5 v2rayNG/1.0.5")
         cfgs = json.loads(body)
         self.assertEqual([c["remarks"] for c in cfgs],
-                         ["🚀 Лучший сервер", "🇵🇱 Польша", "🇩🇪 Германия"])
+                         ["🚀 Лучший сервер", "🎮 Игры", "🇵🇱 Польша", "🇩🇪 Германия"])
         turbo = {"keepAlivePeriod": 10, "maxIdleTimeout": 60, "congestion": "brutal",
                  "brutalUp": "20 mbps", "brutalDown": "150 mbps"}
         self.assertTrue(quic(cfgs) and all(q == turbo for q in quic(cfgs)), "турбо везде, и в «Лучшем сервере»")
@@ -367,8 +373,7 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         raw = base64.b64decode(body[len(b"aurora1:"):])
         key = hashlib.sha256((cc.SUB_SECRET + path).encode()).digest()  # как в AuroraCrypto.kt
         plain = json.loads(AESGCM(key).decrypt(raw[:12], raw[12:], None))
-        self.assertEqual([c["remarks"] for c in plain], [c["remarks"] for c in cfgs[:1]] +
-                         ["🇵🇱 Польша", "🇩🇪 Германия"])
+        self.assertEqual([c["remarks"] for c in plain], ["🚀 Лучший сервер", "🎮 Игры", "🇵🇱 Польша", "🇩🇪 Германия"])
         _, _, again = await get(path, "AuroraVPN/1.0.9 (enc1) v2rayNG/1.0.9")
         self.assertNotEqual(again, body, "каждый раз новый nonce")
         # короткая ссылка: ключ от её пути
