@@ -785,6 +785,26 @@ class XrayProvider(VpnProvider):
         """Сайт, под который маскируется Hysteria в ссылках. Бот меняет его раз в день."""
         return self.state.get("hy2_sni") or (self.hy2 or {}).get("sni") or self.sni
 
+    # ---------- обход белых списков по имени сайта ----------
+
+    BS_DEFAULT = "vk.com"
+
+    @property
+    def bs_site(self) -> str:
+        return self.state.get("bs_site") or self.bridge_site or self.BS_DEFAULT
+
+    def bs_on(self) -> bool:
+        """Пункт «· обход БС» в подписке: включён по умолчанию, но только если сервер Hysteria
+        принимает любое имя сайта (иначе он отклонил бы подключение с российским именем)."""
+        return bool(self.hy2 and self.state.get("bs_on", True) and self.hy2_sni_rotatable())
+
+    def set_bs(self, on: bool | None = None, site: str | None = None) -> None:
+        if on is not None:
+            self.state["bs_on"] = bool(on)
+        if site is not None:
+            self.state["bs_site"] = site
+        self._save()
+
     def hy2_sni_rotatable(self) -> bool:
         """Менять сайт можно, только если сервер Hysteria принимает любое имя (sniGuard: disable):
         иначе ссылки с новым сайтом он бы отклонил. Такой конфиг пишет установщик этой версии."""
@@ -819,6 +839,10 @@ class XrayProvider(VpnProvider):
         out = []
         if h.get("port"):
             out.append(e(self.host, h["port"], sni, f"{main}{tag}"))
+            # Обход белых списков без моста: то же подключение, но представляется российским сайтом
+            # из белого списка. Помогает, если оператор пропускает по имени сайта, а не только по адресу.
+            if self.bs_on():
+                out.append(e(self.host, h["port"], self.bs_site, f"{main} · обход БС"))
         if h.get("obfs_port") and h.get("obfs"):
             out.append(e(self.host, h["obfs_port"], sni, f"{main} · Hysteria 2", h["obfs"]))
         # Страны через прокси: у каждой свой порт Hysteria, пароль тот же.

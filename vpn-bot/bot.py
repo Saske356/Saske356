@@ -1546,6 +1546,7 @@ ADMIN_COMMANDS = [
     ("delbridge", "Убрать мост: /delbridge код"),
     ("bridgesite", "Сайт маскировки мостов"),
     ("sni", "Сайт маскировки"),
+    ("bs", "Обход белых списков без моста"),
     ("pay", "Оплата картой (ЮKassa) и криптой"),
     ("payments", "Платежи и возвраты: /payments id или @ник"),
     ("give", "Начислить дни: /give id дней"),
@@ -1560,7 +1561,7 @@ ADMIN_COMMANDS = [
 ]
 # Кнопки админ-панели, которые просто запускают команду без параметров
 ADMIN_BUTTONS = {"loc": "locations", "auto": "autoproxy", "ws": "webshare", "pay": "pay",
-                 "sni": "sni", "bs": "bridgesite", "upd": "update"}
+                 "sni": "sni", "bs": "bridgesite", "wl": "bs", "upd": "update"}
 
 
 def commands_text() -> str:
@@ -1604,6 +1605,7 @@ def admin_kb() -> InlineKeyboardMarkup:
               [B("🌍 Страны и мосты", "adm:run:loc"), B("🤖 Авто-страны", "adm:run:auto")],
               [B("🛒 Купленные прокси", "adm:run:ws"), B("💰 Карта и крипта", "adm:run:pay")],
               [B("🎭 Маскировка", "adm:run:sni"), B("🌉 Сайт мостов", "adm:run:bs")],
+              [B("🛡 Обход белых списков", "adm:run:wl")],
               [B("⬆️ Обновить сервер", "adm:run:upd"), B("📋 Все команды", "adm:cmds")],
               *([[B("🧩 Happ/v2rayNG: JSON-конфиги · выключить" if vpn.json_sub
                     else "🧩 Happ/v2rayNG: обычные ссылки · включить JSON", "adm:json")]]
@@ -1946,7 +1948,8 @@ async def admin_button(update: Update, context: ContextTypes.DEFAULT_TYPE, row, 
     if act == "run" and len(parts) == 3 and parts[2] in ADMIN_BUTTONS:
         await q.answer()
         fn = {"locations": locations, "autoproxy": autoproxy, "webshare": webshare_cmd, "pay": pay_cmd,
-              "sni": sni_cmd, "bridgesite": bridgesite_cmd, "update": update_cmd}[ADMIN_BUTTONS[parts[2]]]
+              "sni": sni_cmd, "bridgesite": bridgesite_cmd, "bs": bs_cmd,
+              "update": update_cmd}[ADMIN_BUTTONS[parts[2]]]
         saved_args = context.args
         context.args = []
         try:
@@ -2922,6 +2925,40 @@ def pay_text() -> str:
             "Сообщение с токеном бот сразу удаляет, токен хранится только на сервере.")
 
 
+def bs_text() -> str:
+    if not getattr(vpn, "hy2", None):
+        return "Обход белых списков работает через Hysteria, а она на сервере не включена."
+    ok = vpn.hy2_sni_rotatable()
+    state = ("✅ включён" if vpn.bs_on() else "◇ выключен") if ok else \
+        "⚠️ недоступен: сервер Hysteria проверяет имя сайта. Обновите сервер установщиком этой версии."
+    return ("<b>Обход белых списков без моста</b>\n\n"
+            f"◆ Пункт «{esc(vpn.direct_location()['name'])} · обход БС» в подписке: {state}\n"
+            f"◆ Представляется сайтом: <code>{esc(vpn.bs_site)}</code>\n\n"
+            "Это то же подключение к серверу, но для оператора оно выглядит как обращение к российскому "
+            "сайту из белого списка. Поможет, если оператор при белых списках пропускает по имени сайта. "
+            "Если он пропускает только по адресам серверов, поможет только мост в РФ (/addbridge).\n\n"
+            "/bs on, /bs off: включить или выключить пункт\n"
+            "/bs site ya.ru: другой сайт (лучше из белого списка: "
+            + ", ".join(masking.RU_SITES[:6]) + ")\n\n"
+            "Новый пункт появится у гостей при обновлении подписки (приложения обновляют её сами).")
+
+
+@admin_only
+async def bs_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    args = [a.lower() for a in context.args or []]
+    if hasattr(vpn, "set_bs"):
+        if args[:1] in (["on"], ["off"]):
+            vpn.set_bs(on=args[0] == "on")
+        elif len(args) == 2 and args[0] == "site":
+            site = args[1].removeprefix("https://").strip("/")
+            if not masking.valid_name(site):
+                await update.message.reply_text("Нужно имя сайта, например <code>ya.ru</code>")
+                return
+            vpn.set_bs(site=site)
+    await update.message.reply_text(bs_text() if hasattr(vpn, "set_bs") else
+                                    "Обход настраивается, когда подключён настоящий VPN.")
+
+
 @admin_only
 async def pay_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     args = context.args or []
@@ -3310,7 +3347,7 @@ def build_app(token: str) -> Application:
                     ("addloc", addloc), ("delloc", delloc), ("addbridge", addbridge),
                     ("delbridge", delbridge), ("server", server), ("backup", backup),
                     ("autoproxy", autoproxy), ("sni", sni_cmd), ("bridgesite", bridgesite_cmd),
-                    ("funnel", funnel), ("traffic", traffic), ("webshare", webshare_cmd), ("pay", pay_cmd),
+                    ("funnel", funnel), ("traffic", traffic), ("webshare", webshare_cmd), ("pay", pay_cmd), ("bs", bs_cmd),
                     ("app", app_cmd), ("update", update_cmd)]:
         app.add_handler(CommandHandler(cmd, fn))
     app.add_handler(CallbackQueryHandler(on_button))
