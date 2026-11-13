@@ -176,6 +176,15 @@ def connect_screen(kt: str) -> None:
     here = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(here, "kt", "AuroraConnect.kt"), encoding="utf-8") as f:
         code = f.read()
+    # Ник бота для приветствия («Попробовать бесплатно»): файл android/BOT или AURORA_BOT в сборке.
+    bot = os.environ.get("AURORA_BOT", "")
+    if not bot and os.path.exists(os.path.join(here, "BOT")):
+        with open(os.path.join(here, "BOT"), encoding="utf-8") as f:
+            bot = f.read().strip()
+    bot = bot.lstrip("@")
+    if bot and not re.fullmatch(r"[A-Za-z0-9_]{5,32}", bot):
+        sys.exit(f"customize: странный ник бота в android/BOT: {bot!r}")
+    code = code.replace("%AURORA_BOT%", bot)
     with open(os.path.join(main, "AuroraConnect.kt"), "w", encoding="utf-8") as f:
         f.write(code)
     # Панель вверху, под заголовком (снизу по центру неудобно): список стран начинается под ней.

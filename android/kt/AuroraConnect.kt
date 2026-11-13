@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import com.v2ray.ang.AppConfig
 import com.v2ray.ang.handler.MmkvManager
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -69,6 +70,60 @@ private val AuroraRed = Color(0xFFE57373)
 private const val KEY_STARTED_AT = "aurora_connected_since"
 private const val PING_EVERY_MS = 15_000L
 private const val ALL_PING_EVERY_MS = 300_000L
+
+/** Бот Aurora VPN: подставляется при сборке из android/BOT (пусто — кнопки «в бота» скрыты). */
+private const val AURORA_BOT = "%AURORA_BOT%"
+private const val SWITCH_AFTER_FAILS = 2       // столько замеров подряд без связи — и переключаемся
+private const val SWITCH_COOLDOWN_MS = 120_000L // не чаще раза в 2 минуты: если пропал весь интернет, не скачем
+
+/** Российские приложения, которые не работают через зарубежный адрес: банки, Госуслуги,
+ *  маркетплейсы, операторы. По умолчанию идут мимо VPN; переключатель в панели. Пакеты,
+ *  которых нет на телефоне, Android просто пропускает. */
+object AuroraRuApps {
+    private const val KEY_DONE = "aurora_ru_apps_v1"
+    val PACKAGES = setOf(
+        "ru.sberbankmobile", "ru.sberbank.sberbankid", "com.idamob.tinkoff.android", "ru.tinkoff.investing",
+        "ru.vtb24.mobilebanking.android", "ru.alfabank.mobile.android", "ru.alfabank.oavdo.amc",
+        "ru.raiffeisennews", "ru.gazprombank.android.mobilebank.app", "ru.rosbank.android", "ru.psbank.online",
+        "ru.mkb.mobile", "ru.sovcomcard.halva.v1", "ru.ozon.fintech.finance", "ru.pochta.bank", "ru.openbank.mobile",
+        "ru.nspk.mirpay", "ru.nspk.sbpay", "ru.rostel", "ru.gosuslugi.goskey", "ru.fns.lkfl", "com.gnivts.selfemployed",
+        "ru.mos.app", "ru.mos.polls", "ru.pfr.mobile", "ru.nalog.www",
+        "com.wildberries.ru", "ru.ozon.app.android", "com.avito.android", "ru.yandex.taxi", "ru.yandex.market",
+        "ru.yandex.yandexmaps", "ru.yandex.searchplugin", "ru.yandex.music", "ru.kinopoisk", "ru.vk.store",
+        "com.vkontakte.android", "ru.ok.android", "ru.mail.mailapp", "ru.rutube.app", "ru.dublgis.dgismobile",
+        "ru.mts.mymts", "ru.megafon.mlk", "ru.beeline.services", "ru.tele2.mytele2", "ru.yota.android",
+        "ru.mts.money", "ru.rzd.pass", "ru.hh.android", "ru.foodfox.client", "ru.samokat.app", "ru.vprok",
+    )
+
+    fun enabled(): Boolean =
+        MmkvManager.decodeSettingsBool(AppConfig.PREF_PER_APP_PROXY, false) &&
+            MmkvManager.decodeSettingsBool(AppConfig.PREF_BYPASS_APPS, false) &&
+            (MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PER_APP_PROXY_SET)?.any { it in PACKAGES } == true)
+
+    fun setEnabled(on: Boolean) {
+        val set = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PER_APP_PROXY_SET)?.toMutableSet() ?: mutableSetOf()
+        if (on) {
+            set.addAll(PACKAGES)
+            MmkvManager.encodeSettings(AppConfig.PREF_PER_APP_PROXY, true)
+            MmkvManager.encodeSettings(AppConfig.PREF_BYPASS_APPS, true)
+        } else {
+            set.removeAll(PACKAGES)
+            if (set.isEmpty()) MmkvManager.encodeSettings(AppConfig.PREF_PER_APP_PROXY, false)
+        }
+        MmkvManager.encodeSettings(AppConfig.PREF_PER_APP_PROXY_SET, set)
+    }
+
+    /** Один раз при первом запуске: включить, если человек сам не настраивал выбор приложений
+     *  (свой список «только эти приложения через VPN» не трогаем). */
+    fun applyDefaultsOnce() {
+        if (MmkvManager.decodeSettingsBool(KEY_DONE, false)) return
+        val perApp = MmkvManager.decodeSettingsBool(AppConfig.PREF_PER_APP_PROXY, false)
+        val bypass = MmkvManager.decodeSettingsBool(AppConfig.PREF_BYPASS_APPS, false)
+        val set = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PER_APP_PROXY_SET)
+        if (!perApp || set.isNullOrEmpty() || bypass) setEnabled(true)
+        MmkvManager.encodeSettings(KEY_DONE, true)
+    }
+}
 
 /** Срок, устройства и ссылка на бота из заголовков подписки (их отдаёт бот Aurora). */
 private data class SubInfo(val expire: Long, val devices: String, val botUrl: String)
@@ -99,6 +154,20 @@ fun AuroraConnectPanel(
     // Живая задержка через туннель: 0 — ещё не мерили, -1 — замер не прошёл.
     var livePing by remember { mutableLongStateOf(0L) }
     val act by rememberUpdatedState(onAction)
+    var fails by remember { mutableStateOf(0) }
+    var lastSwitch by remember { mutableLongStateOf(0L) }
+    var switchNote by remember { mutableStateOf("") }
+    var ruApps by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        AuroraRuApps.applyDefaultsOnce()
+        ruApps = AuroraRuApps.enabled()
+    }
+    LaunchedEffect(switchNote) {
+        if (switchNote.isNotEmpty()) {
+            delay(15_000)
+            switchNote = ""
+        }
+    }
 
     // Время подключения хранится в настройках: таймер не сбрасывается, если закрыть и открыть приложение.
     LaunchedEffect(isRunning) {
@@ -144,6 +213,30 @@ fun AuroraConnectPanel(
     LaunchedEffect(status) {
         if (status is MainStatus.ConnectionTest) {
             livePing = if (status.result.delayMillis >= 0) status.result.delayMillis else -1L
+            fails = if (status.result.delayMillis >= 0) 0 else fails + 1
+            // Связь пропала: переключаемся на страну с лучшим недавним пингом. «Лучший сервер»
+            // сам выбирает живое подключение, его не трогаем.
+            val current = selectedGuid
+            val now = System.currentTimeMillis()
+            val currentName = current?.let { MmkvManager.decodeServerConfig(it)?.remarks }.orEmpty()
+            if (isRunning && fails >= SWITCH_AFTER_FAILS && now - lastSwitch > SWITCH_COOLDOWN_MS &&
+                !currentName.startsWith("🚀")
+            ) {
+                val best = MmkvManager.decodeAllServerList()
+                    .filter { it != current }
+                    .mapNotNull { g ->
+                        val d = MmkvManager.decodeServerAffiliationInfo(g)?.testDelayMillis ?: 0L
+                        if (d > 0) g to d else null
+                    }
+                    .minByOrNull { it.second }
+                if (best != null) {
+                    lastSwitch = now
+                    fails = 0
+                    switchNote = "Связь пропала — переключено на «" +
+                        (MmkvManager.decodeServerConfig(best.first)?.remarks ?: "другую страну") + "»"
+                    act(MainAction.SelectServer(best.first))
+                }
+            }
         }
     }
     LaunchedEffect(connecting) {
@@ -173,6 +266,11 @@ fun AuroraConnectPanel(
         label = "accent"
     )
 
+    val empty = remember(displayText, isRunning) { MmkvManager.decodeAllServerList().isEmpty() }
+    if (empty && !isRunning) {
+        WelcomeCard(onAction = onAction, modifier = modifier)
+        return
+    }
     Column(
         modifier = modifier
             .widthIn(max = 560.dp)
@@ -219,6 +317,33 @@ fun AuroraConnectPanel(
                 }
             )
         }
+        if (switchNote.isNotEmpty()) {
+            Text(text = switchNote, color = AuroraGold, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .clickable {
+                    AuroraRuApps.setEnabled(!ruApps)
+                    ruApps = AuroraRuApps.enabled()
+                    if (isRunning) onAction(MainAction.RestartService)  // настройка вступает в силу сразу
+                }
+                .padding(vertical = 2.dp)
+        ) {
+            Text(
+                text = "🏦 Банки и Госуслуги мимо VPN",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 13.sp,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = if (ruApps) "вкл" else "выкл",
+                color = if (ruApps) AuroraGold else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+            )
+        }
         if (sub != null) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -256,6 +381,77 @@ fun AuroraConnectPanel(
             }
         }
     }
+}
+
+@Composable
+private fun WelcomeCard(onAction: (MainAction) -> Unit, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .widthIn(max = 560.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .shadow(10.dp, RoundedCornerShape(28.dp))
+            .clip(RoundedCornerShape(28.dp))
+            .background(
+                Brush.verticalGradient(
+                    listOf(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.colorScheme.surfaceContainerLowest)
+                )
+            )
+            .border(1.dp, AuroraGold.copy(alpha = 0.35f), RoundedCornerShape(28.dp))
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(text = "Добро пожаловать", color = AuroraGold, fontWeight = FontWeight.Bold, fontSize = 24.sp)
+        Text(
+            text = "Чтобы подключиться, нужна подписка из нашего Telegram-бота. Уже есть? В боте откройте " +
+                "подписку и нажмите «⚡ Открыть в приложении» — всё добавится само.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 14.sp,
+        )
+        if (AURORA_BOT.isNotBlank() && !AURORA_BOT.startsWith("%")) {
+            GoldButton("✦ Попробовать бесплатно") {
+                onAction(MainAction.OpenSubscriptionLink("https://t.me/$AURORA_BOT?start=trial"))
+            }
+            GhostButton("Открыть бота") {
+                onAction(MainAction.OpenSubscriptionLink("https://t.me/$AURORA_BOT"))
+            }
+        }
+        GhostButton("📋 Вставить ссылку подписки") { onAction(MainAction.ImportClipboard) }
+    }
+}
+
+@Composable
+private fun GoldButton(text: String, onClick: () -> Unit) {
+    Text(
+        text = text,
+        color = AuroraInk,
+        fontWeight = FontWeight.Bold,
+        fontSize = 15.sp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Brush.horizontalGradient(listOf(AuroraGoldLight, AuroraGold)))
+            .clickable(onClick = onClick)
+            .padding(vertical = 13.dp),
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+    )
+}
+
+@Composable
+private fun GhostButton(text: String, onClick: () -> Unit) {
+    Text(
+        text = text,
+        color = MaterialTheme.colorScheme.onSurface,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 15.sp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .border(1.dp, AuroraGold.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 13.dp),
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+    )
 }
 
 @Composable
