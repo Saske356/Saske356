@@ -134,6 +134,25 @@
                       display: grid; place-items: center; font: 700 13px var(--serif);
                       color: #1b1408; background: linear-gradient(180deg, #f3dc95, var(--gold)); }
 
+  /* страны */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .chip { font-size: 13.5px; padding: 7px 12px; border-radius: 99px; background: var(--panel);
+          border: 1px solid var(--line-soft); color: var(--text); white-space: nowrap; }
+  /* своё приложение */
+  .appcard { display: flex; gap: 14px; align-items: center; }
+  .appcard .ic { flex: 0 0 54px; height: 54px; border-radius: 14px; display: grid; place-items: center;
+                 background: radial-gradient(circle at 50% 35%, #2a2210, #0c0a08); border: 1px solid var(--line); }
+  .appcard .t { flex: 1; min-width: 0; }
+  .appcard .t b { font-family: var(--serif); font-size: 21px; }
+  .appcard .t p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  .feats { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 14px; }
+  .feats span { font-size: 11.5px; color: var(--gold-hi); border: 1px solid var(--line-soft); border-radius: 99px;
+                padding: 3px 9px; background: rgba(212,175,55,.06); }
+  .plan .rub { font-size: 12.5px; color: var(--text); opacity: .85; font-variant-numeric: tabular-nums; }
+  .btn.sm { padding: 11px 10px; font-size: 13.5px; }
+  .methods { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .methods span { font-size: 12px; color: var(--muted); border: 1px solid var(--line-soft); border-radius: 99px; padding: 3px 10px; }
+
   .ref .big { font-family: var(--serif); font-size: 40px; font-weight: 700; line-height: 1; }
   .ref p { margin: 6px 0 14px; color: var(--muted); font-size: 13.5px; }
 
@@ -190,12 +209,28 @@
     <button class="btn gold" id="trialBtn" type="button">Попробовать</button>
   </section>
 
+  <section class="card appear" id="appCard" hidden>
+    <div class="appcard">
+      <div class="ic"><svg viewBox="0 0 100 100" width="34" height="34" aria-hidden="true"><path d="M50 3 93 18 89 56 50 97 11 56 7 18Z" fill="url(#g)"/><path d="M50 30v22M36 38a20 20 0 1 0 28 0" fill="none" stroke="#0c0a08" stroke-width="7" stroke-linecap="round"/></svg></div>
+      <div class="t"><b class="gold-text">Приложение для Android</b><p>Подключение в одно касание, всё уже настроено.</p></div>
+    </div>
+    <div class="feats"><span>⚡ Турбо-режим</span><span>📶 Живой пинг</span><span>🛡 Обход блокировок</span><span>🔄 Само обновляется</span></div>
+    <button class="btn gold" id="appBtn" type="button">Скачать приложение</button>
+  </section>
+
+  <section class="appear" id="locSec" hidden>
+    <div class="eyebrow">Серверы</div>
+    <h2 class="gold-text">Страны</h2>
+    <div class="chips" id="locList"></div>
+  </section>
+
   <section class="appear" id="plansSec">
     <div class="eyebrow">Тарифы</div>
     <h2 class="gold-text">Выберите срок</h2>
     <p class="sub">Чем дольше, тем выгоднее. Продление добавляется к текущему сроку.</p>
     <div class="plans" id="plans" style="margin-top:14px"></div>
-    <p class="note">Число устройств и автопродление выбираются на следующем шаге. Оплата звёздами Telegram ⭐.</p>
+    <p class="note" id="plansNote">Число устройств и автопродление выбираются на следующем шаге. Оплата звёздами Telegram ⭐.</p>
+    <div class="methods" id="methods"></div>
   </section>
 
   <section class="appear" id="keySec" hidden>
@@ -327,11 +362,16 @@
       <div class="tier" style="margin-top:8px">Здравствуйте${D.n ? ", " + D.n.replace(/[<>&]/g, "") : ""}</div>
       <div class="until">Оформите доступ, и персональный ключ появится здесь.</div></div>`;
   }
-  if (D.loc && D.loc.length > 1) {
-    const l = document.createElement("div");
-    l.className = "until"; l.style.marginTop = "12px";
-    l.textContent = "Страны: " + D.loc.join(" · ");
-    card.appendChild(l);
+  if (D.loc && D.loc.length) {
+    $("locSec").hidden = false;
+    D.loc.forEach(n => { const c = document.createElement("span"); c.className = "chip"; c.textContent = n; $("locList").appendChild(c); });
+  }
+
+  // ---- своё приложение (Android) ----
+  const isApple = /iPhone|iPad|Macintosh/.test(navigator.userAgent);
+  if (D.app && D.bu && !isApple) {
+    $("appCard").hidden = false;
+    $("appBtn").onclick = () => { haptic("medium"); openTg(`https://t.me/${D.bu}?start=app`); try { tg.close(); } catch {} };
   }
 
   // ---- пробный период ----
@@ -352,11 +392,18 @@
     const badge = i === plans.length - 1 && plans.length > 1 ? `<span class="badge">Лучшая цена</span>`
                 : (i === 1 && plans.length > 2 ? `<span class="badge soft">Популярный</span>` : "");
     b.innerHTML = `${badge}<span class="nm"></span><span class="pr gold-text"><span>от</span> ${p.price} <span>⭐</span></span>
+      ${p.rub ? `<span class="rub">или от ${p.rub} ₽</span>` : ""}
       <span class="pm">${perMonth} ⭐ в месяц за 1 устройство</span><span class="save">${p.disc >= 3 ? "выгода " + p.disc + "%" : ""}</span>`;
     b.querySelector(".nm").textContent = p.name;
     b.onclick = () => buy(p);
     plansEl.appendChild(b);
   });
+  const pm = D.pm || "s";
+  const names = { s: "⭐ Звёзды Telegram", y: "💳 Карта или СБП", c: "🪙 Крипта: USDT, TON, BTC" };
+  if (pm.length > 1) {
+    $("plansNote").textContent = "Число устройств и способ оплаты выбираются на следующем шаге.";
+    [...pm].forEach(k => { if (names[k]) { const m = document.createElement("span"); m.textContent = names[k]; $("methods").appendChild(m); } });
+  }
   if (!plans.length) plansEl.innerHTML = `<p class="sub">Тарифы появятся, когда вы откроете приложение из чата с ботом.</p>`;
 
   // Покупка идёт в боте: там выбираются устройства, продление и автопродление
@@ -386,10 +433,20 @@
           <button class="btn gold" type="button" data-f="copy">Скопировать</button>
           <button class="btn ghost" type="button" data-f="qrb">QR-код</button>
         </div>
+        <div class="row" style="margin-top:10px;flex-wrap:wrap" data-f="more"></div>
         <div data-f="qr" class="qrbox" hidden></div>
         ${D.dm ? '<div class="demo">Демо-режим: сервер ещё не подключён, ключ пока не работает.</div>' : ""}`;
       const f = n => c.querySelector(`[data-f="${n}"]`);
       f("name").textContent = s.n;
+      const more = f("more");
+      const add = (label, fn, gold) => { const b = document.createElement("button"); b.type = "button";
+        b.className = "btn sm " + (gold ? "gold" : "ghost"); b.textContent = label; b.onclick = fn;
+        if (gold) b.style.flexBasis = "100%";
+        more.appendChild(b); };
+      const toBot = arg => () => { haptic(); if (D.bu) { openTg(`https://t.me/${D.bu}?start=${arg}`); try { tg.close(); } catch {} } };
+      if (s.al && !isApple) add("⚡ Открыть в приложении Aurora", () => { haptic("medium"); try { tg.openLink(s.al); } catch { window.open(s.al, "_blank"); } }, true);
+      if (s.up) add("➕ Устройства", toBot("renew"));
+      add("Продлить", toBot("renew"));
       f("key").textContent = s.k;
       f("copy").onclick = () => copy(s.k, "Ключ скопирован", f("key"));
       let made = false;
@@ -408,13 +465,18 @@
 
   // ---- инструкции ----
   const OS = {
-    android: ["Установите v2rayNG или Hiddify из Google Play.", "Скопируйте ключ выше.",
-              "В приложении нажмите «+», затем «Импорт из буфера обмена».", "Нажмите кнопку подключения ▶"],
-    ios: ["Установите Streisand, V2Box или Hiddify из App Store.", "Скопируйте ключ выше.",
+    android: D.app
+      ? ["Скачайте приложение Aurora VPN кнопкой выше и установите его.",
+         "В карточке подписки нажмите «⚡ Открыть в приложении»: всё добавится само.",
+         "Нажмите большую золотую кнопку, и VPN включится.",
+         "Можно и через Happ или v2rayNG: «+» → «Импорт из буфера обмена» с ключом выше."]
+      : ["Установите Happ или v2rayNG из Google Play.", "Скопируйте ключ выше.",
+         "В приложении нажмите «+», затем «Импорт из буфера обмена».", "Нажмите кнопку подключения ▶"],
+    ios: ["Установите Happ или Streisand из App Store.", "Скопируйте ключ выше.",
           "В приложении нажмите «+» и добавьте ключ из буфера.", "Включите подключение и разрешите VPN."],
-    windows: ["Установите Hiddify или v2rayN с официального сайта.", "Скопируйте ключ выше.",
+    windows: ["Установите Hiddify или Happ с официального сайта.", "Скопируйте ключ выше.",
               "Нажмите «+» и выберите импорт из буфера обмена.", "Нажмите «Подключить»."],
-    mac: ["Установите Hiddify или V2Box из App Store.", "Скопируйте ключ выше.",
+    mac: ["Установите Happ или Hiddify из App Store.", "Скопируйте ключ выше.",
           "Добавьте профиль из буфера обмена.", "Включите подключение."],
   };
   function showOS(os) {

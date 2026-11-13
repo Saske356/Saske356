@@ -21,7 +21,7 @@ import types
 
 import qrcode
 from urllib.parse import unquote
-from telegram import (BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto,
+from telegram import (BotCommand, BotCommandScopeChat, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto,
                       LabeledPrice, MenuButtonWebApp, Update, WebAppInfo)
 from telegram.constants import ParseMode
 from telegram.error import BadRequest, Forbidden, RetryAfter, TelegramError
@@ -445,13 +445,16 @@ def sub_kb(s) -> InlineKeyboardMarkup:
 
 def miniapp_url(row) -> str:
     """Адрес мини-приложения с данными этого гостя после #d=."""
-    plans = [{"id": k, "name": n, "days": d, "price": pr, "disc": plan_discount(d, pr)}
+    plans = [{"id": k, "name": n, "days": d, "price": pr, "disc": plan_discount(d, pr),
+              "rub": pay_cfg.rub(config.plan_price(k, 1)) if pay_cfg.any_on() else 0}
              for k, (n, d, pr) in config.PLANS.items()]
     subs = []
     for s in db.user_subs(row["id"])[-8:]:
         act = sub_active(s)
         subs.append({"n": s["name"], "d": s["devices"], "e": int(s["expires_at"]) if act else 0,
-                     "k": (s["vpn_key"] or "") if act else "", "a": bool(s["auto_active"] and act)})
+                     "k": (s["vpn_key"] or "") if act else "", "a": bool(s["auto_active"] and act),
+                     "al": vpn.app_link(s["id"]) if act and android_app else "",
+                     "up": bool(act and can_upgrade(s))})
     data = {
         "b": config.BRAND, "tg": config.TAGLINE, "n": row["first_name"] or "",
         "e": max((s["e"] for s in subs), default=0),
@@ -460,6 +463,9 @@ def miniapp_url(row) -> str:
         "rf": f"https://t.me/{STATE['username']}?start=ref_{row['id']}" if STATE["username"] else "",
         "rb": config.REF_BONUS_DAYS, "rj": config.REF_ON_JOIN,
         "rc": db.referral_count(row["id"]), "p": plans, "loc": location_names(),
+        # способы оплаты: s — звёзды, y — карта/СБП (ЮKassa), c — крипта
+        "pm": "s" + ("y" if pay_cfg.yookassa else "") + ("c" if pay_cfg.crypto else ""),
+        "app": bool(android_app),
     }
     raw = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode()
     return config.MINIAPP_URL + "#d=" + base64.urlsafe_b64encode(raw).decode().rstrip("=")
@@ -603,6 +609,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     elif arg.startswith("gift_"):
         await redeem(update, context, arg[5:])
+        return
+    elif arg == "app" and android_app:  # «Скачать приложение» в мини-приложении
+        await send_app(update, context)
         return
     elif arg == "renew":  # кнопка «Продлить · устройства» в приложении Aurora VPN
         subs = db.user_subs(u.id)
@@ -1525,6 +1534,55 @@ async def promo_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 # ---------------------------------------------------------------- админка
 
+# Команды админа: меню «/» у админов (setup_profile) и экран «📋 Все команды»
+ADMIN_COMMANDS = [
+    ("admin", "Админ-панель: статистика и рассылка"),
+    ("locations", "Страны и мосты"),
+    ("addloc", "Добавить страну: /addloc код Название | прокси"),
+    ("delloc", "Убрать страну: /delloc код"),
+    ("webshare", "Купленные прокси (Webshare)"),
+    ("autoproxy", "Бесплатные авто-страны"),
+    ("addbridge", "Добавить мост: /addbridge код Название | IP | ru"),
+    ("delbridge", "Убрать мост: /delbridge код"),
+    ("bridgesite", "Сайт маскировки мостов"),
+    ("sni", "Сайт маскировки"),
+    ("pay", "Оплата картой (ЮKassa) и криптой"),
+    ("payments", "Платежи и возвраты: /payments id или @ник"),
+    ("give", "Начислить дни: /give id дней"),
+    ("addpromo", "Промокод: /addpromo КОД дней активаций"),
+    ("refund", "Возврат звёзд: /refund charge_id"),
+    ("testpay", "Тестовая оплата"),
+    ("server", "Состояние сервера"),
+    ("update", "Обновить сервер сейчас"),
+    ("backup", "Резервная копия"),
+    ("traffic", "Трафик и устройства"),
+    ("funnel", "Воронка продаж"),
+]
+# Кнопки админ-панели, которые просто запускают команду без параметров
+ADMIN_BUTTONS = {"loc": "locations", "auto": "autoproxy", "ws": "webshare", "pay": "pay",
+                 "sni": "sni", "bs": "bridgesite", "upd": "update"}
+
+
+def commands_text() -> str:
+    return ("<b>Все команды админа</b>\n<i>Они же в меню «/» рядом с полем ввода.</i>\n\n"
+            + "\n".join(f"/{c} — {esc(d)}" for c, d in ADMIN_COMMANDS)
+            + "\n\nТикеты: ответьте на сообщение гостя, и ответ уйдёт ему.")
+
+
+def cmd_stub(update, context):
+    """update для запуска команды кнопкой: ответы команды приходят новым сообщением в этот чат."""
+    chat = update.effective_chat
+
+    async def reply_text(text, **kw):
+        return await context.bot.send_message(chat.id, text, **kw)
+
+    async def delete():
+        return True
+    msg = types.SimpleNamespace(reply_text=reply_text, delete=delete, text="", chat_id=chat.id)
+    return types.SimpleNamespace(effective_user=update.effective_user, effective_chat=chat,
+                                 callback_query=None, message=msg)
+
+
 def admin_text() -> str:
     s = db.stats()
     return ("<b>Админ-панель</b>\n\n"
@@ -1535,26 +1593,18 @@ def admin_text() -> str:
             f"◆ Оплат: {s['payments']}\n"
             f"◆ Выручка: <b>{s['stars']} ⭐</b> (+{s['stars_today']} за сутки)"
             + (f"\n◆ Рублями (карта, крипта): <b>{s['rub']} ₽</b>" if s.get("rub") else "") + "</blockquote>\n\n"
-            "<b>Команды</b>\n"
-            "/give <code>id</code> <code>дней</code>: начислить дни\n"
-            "/addpromo <code>КОД</code> <code>дней</code> <code>активаций</code>\n"
-            "/payments <code>id</code> или <code>@ник</code>: платежи гостя\n"
-            "/locations: страны и мосты для обхода\n"
-            "/server: состояние сервера, /backup: резервная копия\n"
-            "/autoproxy: страны из бесплатных публичных прокси\n"
-            "/sni: сайт маскировки и его смена\n"
-            "/webshare: купленные прокси списком по ссылке\n"
-            "/pay: оплата картой (ЮKassa) и криптой\n"
-            "/update: обновить сервер сейчас (сам он проверяет обновления раз в 10 минут)\n"
-            "/traffic: трафик и устройства, /funnel: воронка продаж\n"
-            f"/testpay: тестовая оплата на {config.TEST_PLAN[2]} ⭐\n"
-            "Тикеты: ответьте на сообщение гостя, и ответ уйдёт ему")
+            "Разделы — кнопками ниже, все команды — в меню «/» рядом с полем ввода и по кнопке "
+            "«📋 Все команды».")
 
 
 def admin_kb() -> InlineKeyboardMarkup:
     return KB([B("💳 Платежи", "adm:pays"), B("📢 Рассылка", "adm:bc")],
               [B("📈 Воронка", "adm:fun"), B("📊 Трафик", "adm:trf")],
               [B("🖥 Сервер", "adm:srv"), B("💾 Резервная копия", "adm:bak")],
+              [B("🌍 Страны и мосты", "adm:run:loc"), B("🤖 Авто-страны", "adm:run:auto")],
+              [B("🛒 Купленные прокси", "adm:run:ws"), B("💰 Карта и крипта", "adm:run:pay")],
+              [B("🎭 Маскировка", "adm:run:sni"), B("🌉 Сайт мостов", "adm:run:bs")],
+              [B("⬆️ Обновить сервер", "adm:run:upd"), B("📋 Все команды", "adm:cmds")],
               *([[B("🧩 Happ/v2rayNG: JSON-конфиги · выключить" if vpn.json_sub
                     else "🧩 Happ/v2rayNG: обычные ссылки · включить JSON", "adm:json")]]
                 if hasattr(vpn, "json_sub") else []),
@@ -1887,6 +1937,22 @@ async def admin_button(update: Update, context: ContextTypes.DEFAULT_TYPE, row, 
         await q.answer(result[:190], show_alert=True)
         text, kb = payments_view()
         await show(update, context, text, kb)
+        return
+    if act == "cmds":
+        await q.answer()
+        await context.bot.send_message(update.effective_chat.id, commands_text(),
+                                       reply_markup=KB([B("‹ Админ-панель", "adm:stats")]))
+        return
+    if act == "run" and len(parts) == 3 and parts[2] in ADMIN_BUTTONS:
+        await q.answer()
+        fn = {"locations": locations, "autoproxy": autoproxy, "webshare": webshare_cmd, "pay": pay_cmd,
+              "sni": sni_cmd, "bridgesite": bridgesite_cmd, "update": update_cmd}[ADMIN_BUTTONS[parts[2]]]
+        saved_args = context.args
+        context.args = []
+        try:
+            await fn(cmd_stub(update, context), context)
+        finally:
+            context.args = saved_args
         return
     if act == "bak":
         await q.answer("Отправляю копию 👇")
@@ -3155,6 +3221,15 @@ async def setup_profile(app: Application) -> None:
     if auto_mgr:
         auto_mgr.notify = lambda text: send_admins(bot, text)
         await auto_mgr.start()
+    # У админов в меню «/» все команды, чтобы их не искать; гости видят только свои.
+    guest_cmds = [BotCommand("start", "Главное меню"), BotCommand("promo", "Промокод или подарок"),
+                  *([BotCommand("app", "Приложение для Android")] if android_app else [])]
+    for admin_id in config.ADMIN_IDS:
+        try:
+            await bot.set_my_commands(guest_cmds + [BotCommand(c, d[:256]) for c, d in ADMIN_COMMANDS],
+                                      scope=BotCommandScopeChat(admin_id))
+        except TelegramError as e:
+            log.warning("меню команд админа %s: %s", admin_id, e)
     if not config.SET_PROFILE:
         return
     steps = [

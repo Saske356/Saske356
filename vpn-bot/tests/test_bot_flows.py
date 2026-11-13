@@ -647,6 +647,16 @@ async def main():
     app.bot.get_my_name = AsyncMock(return_value=MagicMock(name="x"))
     app.bot.send_message = AsyncMock()
     await bot.setup_profile(app)
+    # у админа в меню «/» все команды админа, у гостей — только свои
+    scoped = [c for c in app.bot.set_my_commands.await_args_list if c.kwargs.get("scope")]
+    assert scoped and scoped[0].kwargs["scope"].chat_id == 1
+    names = {c.command for c in scoped[0].args[0]}
+    registered = {"admin", "give", "addpromo", "refund", "testpay", "payments", "locations", "addloc", "delloc",
+                  "addbridge", "delbridge", "server", "backup", "autoproxy", "sni", "bridgesite", "funnel",
+                  "traffic", "webshare", "pay", "update"}
+    assert registered <= names, registered - names
+    guest = [c for c in app.bot.set_my_commands.await_args_list if not c.kwargs.get("scope")]
+    assert guest and not ({c.command for c in guest[0].args[0]} & {"admin", "give", "pay"})
     await prov.on_problem("Xray отклонил конфиг <тест>")
     assert app.bot.send_message.await_args.args[0] == 1
     check_caption(app.bot.send_message.await_args.args[1])
@@ -754,6 +764,19 @@ async def main():
     await press(1, "adm:json", ctx); assert not prov.json_sub
     await press(owner, "adm:json", ctx); assert not prov.json_sub, "не админ не переключает"
     await press(1, "adm:json", ctx); assert prov.json_sub
+    # разделы админки кнопками: каждая запускает свою команду, ответ приходит сообщением
+    check_caption(bot.admin_text())
+    for key in bot.ADMIN_BUTTONS:
+        if key == "upd":
+            continue  # обновление сервера запускает systemctl
+        ctx.bot.send_message.reset_mock()
+        await press(1, f"adm:run:{key}", ctx)
+        assert ctx.bot.send_message.await_count >= 1, key
+    ctx.bot.send_message.reset_mock()
+    await press(1, "adm:cmds", ctx)
+    assert "/webshare" in ctx.bot.send_message.await_args.args[1]
+    ctx.bot.send_message.reset_mock()
+    await press(owner, "adm:run:pay", ctx); assert ctx.bot.send_message.await_count == 0, "не админ не запускает"
     # сайт Hysteria меняется по расписанию, сообщение только админам
     prov.hy2 = {"port": 443, "sni": "www.example.com", "pin": "", "obfs": "", "obfs_port": 0,
                 "stats_ports": [], "stats_secret": "s"}
