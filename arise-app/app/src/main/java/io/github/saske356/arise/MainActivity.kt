@@ -109,26 +109,26 @@ import java.util.Date
 import java.util.Locale
 
 // Чёрный и холодный синий
-private val Ink = Color(0xFF04070F)
-private val Night = Color(0xFF071433)
-private val Deep = Color(0xFF0B2A6B)
-private val Glass = Color(0x0BFFFFFF)
-private val GlassLine = Color(0x14FFFFFF)
-private val Sheet = Color(0xFF0D1526)
-private val Blue = Color(0xFF8CB8FF)
-private val BlueMid = Color(0xFF6FA4FF)
-private val BlueLight = Color(0xFFCFE0FF)
-private val BlueDeep = Color(0xFF2F5FC8)
-private val TextMain = Color(0xFFEAF1FF)
-private val TextSoft = Color(0xFF9FB0D3)
-private val TextDim = Color(0xFF7F8DAB)
-private val Green = Color(0xFF6FD08C)
-private val Amber = Color(0xFFE8C46A)
-private val Red = Color(0xFFE57373)
+internal val Ink = Color(0xFF04070F)
+internal val Night = Color(0xFF071433)
+internal val Deep = Color(0xFF0B2A6B)
+internal val Glass = Color(0x0BFFFFFF)
+internal val GlassLine = Color(0x14FFFFFF)
+internal val Sheet = Color(0xFF0D1526)
+internal val Blue = Color(0xFF8CB8FF)
+internal val BlueMid = Color(0xFF6FA4FF)
+internal val BlueLight = Color(0xFFCFE0FF)
+internal val BlueDeep = Color(0xFF2F5FC8)
+internal val TextMain = Color(0xFFEAF1FF)
+internal val TextSoft = Color(0xFF9FB0D3)
+internal val TextDim = Color(0xFF7F8DAB)
+internal val Green = Color(0xFF6FD08C)
+internal val Amber = Color(0xFFE8C46A)
+internal val Red = Color(0xFFE57373)
 
 private const val BOT = "AriseVPN_bot"
 
-private enum class Screen { HOME, MODES, TOOLS, APPS, DNS }
+private enum class Screen { HOME, MODES, TOOLS, APPS, DNS, CHAT }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -255,11 +255,13 @@ class MainActivity : ComponentActivity() {
                     Repo.setDns(d)
                     apply()
                 }
+                screen == Screen.CHAT -> ChatRoot(back = { screen = Screen.HOME })
                 screen == Screen.APPS -> AppsScreen(data, back = { screen = Screen.TOOLS }, onChange = apply)
                 else -> Home(
                     vpn, data, onToggle = toggle, onOpen = { open(it) },
                     openSheet = { sheet = true }, openModes = { screen = Screen.MODES },
-                    openTools = { screen = Screen.TOOLS }, onRuApps = { Repo.setRuApps(!data.ruApps); apply() }
+                    openTools = { screen = Screen.TOOLS }, onRuApps = { Repo.setRuApps(!data.ruApps); apply() },
+                    openChat = { screen = Screen.CHAT }
                 )
             }
             CountrySheet(sheet && data.servers.isNotEmpty(), vpn, data, close = { sheet = false }) { name ->
@@ -274,7 +276,7 @@ class MainActivity : ComponentActivity() {
 // ---------------------------------------------------------------- фон
 
 @Composable
-private fun Backdrop(on: Boolean) {
+internal fun Backdrop(on: Boolean) {
     val glow by animateFloatAsState(if (on) 0.45f else 0.18f, tween(900), label = "glow")
     val t = rememberInfiniteTransition(label = "sparks")
     val time by t.animateFloat(0f, 1f, infiniteRepeatable(tween(14_000, easing = LinearEasing)), label = "time")
@@ -303,7 +305,7 @@ private fun Backdrop(on: Boolean) {
 @Composable
 private fun Home(
     vpn: VpnUi, data: Data, onToggle: () -> Unit, onOpen: (String) -> Unit, openSheet: () -> Unit,
-    openModes: () -> Unit, openTools: () -> Unit, onRuApps: () -> Unit,
+    openModes: () -> Unit, openTools: () -> Unit, onRuApps: () -> Unit, openChat: () -> Unit,
 ) {
     val running = vpn.status == Status.RUNNING
     Box(Modifier.fillMaxSize()) {
@@ -314,7 +316,7 @@ private fun Home(
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 120.dp)
         ) {
-            TopBar(openTools)
+            TopBar(openTools, openChat)
             UpdateCard()
             SubBar(data, onOpen)
             Spacer(Modifier.height(if (running) 14.dp else 30.dp))
@@ -355,7 +357,7 @@ private fun Home(
 }
 
 @Composable
-private fun Logo(size: Dp = 30.dp) {
+internal fun Logo(size: Dp = 30.dp) {
     Box(
         Modifier
             .size(size)
@@ -369,11 +371,22 @@ private fun Logo(size: Dp = 30.dp) {
 }
 
 @Composable
-private fun TopBar(openTools: () -> Unit) {
+private fun TopBar(openTools: () -> Unit, openChat: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(start = 22.dp, end = 22.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
         Logo()
         Spacer(Modifier.width(10.dp))
         Text("Arise", color = TextMain, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        // Зашифрованный чат: только с подпиской (без неё сервер его не откроет)
+        Box(
+            Modifier
+                .padding(end = 10.dp)
+                .size(42.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Glass)
+                .border(1.dp, GlassLine, RoundedCornerShape(14.dp))
+                .clickable(onClick = openChat),
+            contentAlignment = Alignment.Center
+        ) { Text("💬", fontSize = 18.sp) }
         Box(
             Modifier
                 .size(42.dp)
@@ -602,7 +615,7 @@ private fun Graph(vpn: VpnUi) {
 }
 
 @Composable
-private fun ToggleRow(icon: String, text: String, on: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+internal fun ToggleRow(icon: String, text: String, on: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Row(modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Text("$icon  $text", color = TextSoft, fontSize = 14.sp, modifier = Modifier.weight(1f))
@@ -786,7 +799,7 @@ private fun PingLabel(ping: Long) {
 // ---------------------------------------------------------------- режимы
 
 @Composable
-private fun Page(title: String, lead: String, back: () -> Unit, content: @Composable () -> Unit) {
+internal fun Page(title: String, lead: String, back: () -> Unit, content: @Composable () -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
@@ -1013,7 +1026,7 @@ private fun Metric(k: String, v: String) {
 }
 
 @Composable
-private fun Tool(icon: String, title: String, sub: String, right: String, onClick: () -> Unit) {
+internal fun Tool(icon: String, title: String, sub: String, right: String, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -1137,7 +1150,7 @@ private fun Welcome(data: Data, onOpen: (String) -> Unit) {
 // ---------------------------------------------------------------- общие кусочки
 
 @Composable
-private fun Field(value: String, label: String, modifier: Modifier = Modifier, onChange: (String) -> Unit) {
+internal fun Field(value: String, label: String, modifier: Modifier = Modifier, onChange: (String) -> Unit) {
     OutlinedTextField(
         value = value, onValueChange = onChange, singleLine = true,
         placeholder = { Text(label, color = TextDim) },
@@ -1152,7 +1165,7 @@ private fun Field(value: String, label: String, modifier: Modifier = Modifier, o
 }
 
 @Composable
-private fun Big(text: String, gold: Boolean, onClick: () -> Unit) {
+internal fun Big(text: String, gold: Boolean, onClick: () -> Unit) {
     val m = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
     Text(
         text, color = if (gold) Ink else TextMain, fontSize = 16.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,

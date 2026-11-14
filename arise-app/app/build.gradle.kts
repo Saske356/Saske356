@@ -67,4 +67,5 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.lifecycle.runtime.compose)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.tink.android)
 }

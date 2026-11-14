@@ -7,6 +7,8 @@ activity = "1.13.0"
 composeBom = "2026.09.00"
 lifecycle = "2.11.0"
 kotlinxCoroutines = "1.11.0"
+# Шифрование чата (HPKE X25519 + Ed25519) — библиотека Google, без самописной криптографии
+tink = "1.24.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -17,6 +19,7 @@ androidx-compose-foundation = { group = "androidx.compose.foundation", name = "f
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "kotlinxCoroutines" }
+tink-android = { group = "com.google.crypto.tink", name = "tink-android", version.ref = "tink" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

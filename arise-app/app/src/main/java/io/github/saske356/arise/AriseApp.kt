@@ -11,6 +11,7 @@ class AriseApp : Application() {
     override fun onCreate() {
         super.onCreate()
         Store.init(this)
+        ChatVault.init(this)
         // Номер устройства для лимита устройств: ANDROID_ID не меняется при переустановке приложения.
         // Серверу уходит только его отпечаток.
         val id = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID).orEmpty()
