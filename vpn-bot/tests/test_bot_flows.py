@@ -747,7 +747,7 @@ async def main():
     prov.online = AsyncMock(return_value={some: some_sub["devices"] + 2})
     prov.suspend, prov.resume = AsyncMock(), AsyncMock()
     ctx.bot.send_message.reset_mock()
-    for _ in range(5):
+    for _ in range(8):  # 3 замера до предупреждения, ещё 5 до отключения
         await bot.devices_job(ctx)
     texts = [(c.args[0], c.args[1]) for c in ctx.bot.send_message.await_args_list]
     owner = some_sub["user_id"]
@@ -758,6 +758,14 @@ async def main():
     bot.guard.blocked[some] = time.time() - 1
     await bot.devices_job(ctx)
     prov.resume.assert_awaited_once_with(some)
+    # экран «Устройства» и сброс: новая ссылка, старая больше не работает
+    check_caption(bot.devices_view(db.get_sub(some)))
+    old_key = db.get_sub(some)["vpn_key"]
+    await press(owner, f"dev:{some}", ctx)
+    await press(owner, f"devrok:{some}", ctx)
+    new_key = db.get_sub(some)["vpn_key"]
+    assert new_key and new_key != old_key, (old_key, new_key)
+    assert prov.sub_url(some) == new_key
     bot.guard.__init__("block")
     # JSON-конфиги для Happ включаются и выключаются в /admin
     assert prov.json_sub and any("JSON-конфиги" in b.text for r in bot.admin_kb().inline_keyboard for b in r)

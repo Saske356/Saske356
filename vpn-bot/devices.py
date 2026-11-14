@@ -59,6 +59,11 @@ class DeviceGuard:
                 self.over.pop(sid)
         return actions
 
+    def forget(self, sid: int) -> None:
+        """После сброса устройств подписки: начать отсчёт заново."""
+        for d in (self.over, self.warned, self.blocked, self.last):
+            d.pop(sid, None)
+
     def due_unblock(self, now: float | None = None) -> list[int]:
         now = time.time() if now is None else now
         due = [s for s, t in self.blocked.items() if t <= now]

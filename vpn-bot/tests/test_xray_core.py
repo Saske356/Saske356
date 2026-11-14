@@ -258,6 +258,9 @@ class XrayProvider(unittest.IsolatedAsyncioTestCase):
         assert v.hy2_check(v.hy2_password(5)) == 5
         assert v.hy2_check(v.hy2_password(6)) is None, "истёкший доступ"
         assert v.hy2_check("5.000") is None and v.hy2_check("") is None and v.hy2_check("x.y") is None
+        assert v.hy2_check_variant(v.hy2_password(5) + ".3") == (5, 3), "вариант пункта"
+        assert v.hy2_check_variant(v.hy2_password(5)) == (5, -1)
+        assert v.hy2_check(v.hy2_password(5) + ".x") is None and v.hy2_check(v.hy2_password(6) + ".1") is None
         # мост «ru» пересылает UDP: в подписке появляется Hysteria через мост с российским сайтом
         v.add_bridge("ru1", "🇷🇺 Обход", "198.51.100.40", ru=True)
         v.set_bridge_site("vk.com")

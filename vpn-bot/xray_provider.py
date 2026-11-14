@@ -55,7 +55,19 @@ def parse_proxy(url: str) -> dict:
             "settings": {"servers": [server]}}
 
 
-HY2_NET_WINDOW = 600  # вход по Hysteria за последние 10 минут — устройство ещё в сети
+HY2_ID_RE = re.compile(r"u(\d+)(v\d+)?")
+HY2_VARIANTS = 100  # сколько вариантов пароля обрывать при отключении (пунктов на один сервер меньше)
+
+
+def hy2_id(uid: int, variant: int = -1) -> str:
+    """Имя клиента в статистике Hysteria: u5 — пароль без варианта (ссылки и старые подписки),
+    u5v2 — пункт с вариантом 2 (JSON-подписка этой версии)."""
+    return f"u{uid}v{variant}" if variant >= 0 else f"u{uid}"
+
+
+# Вход по Hysteria за последние 4 минуты — устройство ещё в сети. Окно короче, чем проверок до
+# предупреждения (3 по 2 мин): переход телефона с Wi-Fi на мобильную сеть не сочтётся вторым устройством.
+HY2_NET_WINDOW = 240
 
 
 def device_net(addr: str) -> str:
@@ -304,17 +316,36 @@ class XrayProvider(VpnProvider):
         """Страна самого сервера (без прокси): через неё выходит трафик мостов."""
         return next((l for l in self.locations if not l["proxy"]), self.locations[0])
 
+    def _kid(self, user_id: int) -> str:
+        """Основа ключей подписки. После «Сбросить устройства» (reset_key) к ней добавляется
+        номер поколения: ссылка подписки и пароли меняются, старые устройства теряют доступ."""
+        gen = int(self.state.get("gen", {}).get(str(user_id), 0))
+        return f"{user_id}g{gen}" if gen else str(user_id)
+
     def user_uuid(self, user_id: int, code: str) -> str:
-        return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{self.state['secret']}:{user_id}:{code}"))
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{self.state['secret']}:{self._kid(user_id)}:{code}"))
 
     def sub_token(self, user_id: int) -> str:
-        return hmac.new(self.state["secret"].encode(), str(user_id).encode(), hashlib.sha256).hexdigest()[:24]
+        return hmac.new(self.state["secret"].encode(), self._kid(user_id).encode(), hashlib.sha256).hexdigest()[:24]
+
+    async def reset_key(self, user_id: int) -> str:
+        """Новые ссылка и пароли подписки: все подключённые устройства отключаются, и подключиться
+        снова можно только по новой ссылке. Возвращает новую ссылку."""
+        gens = self.state.setdefault("gen", {})
+        gens[str(user_id)] = int(gens.get(str(user_id), 0)) + 1
+        self._short = {}
+        self._hy2_nets.pop(user_id, None)
+        self._save()
+        self.schedule_apply()
+        if self.hy2:
+            await self.hy2_kick(user_id)
+        return self.sub_url(user_id)
 
     B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
     def short_token(self, user_id: int) -> str:
         """16 символов из букв и цифр, по ним нельзя угадать ни номер, ни чужую подписку."""
-        n = int.from_bytes(hmac.new(self.state["secret"].encode(), f"sub16:{user_id}".encode(),
+        n = int.from_bytes(hmac.new(self.state["secret"].encode(), f"sub16:{self._kid(user_id)}".encode(),
                                     hashlib.sha256).digest(), "big")
         out = ""
         for _ in range(16):
@@ -441,7 +472,7 @@ class XrayProvider(VpnProvider):
                     pair[0 if parts[3] == "uplink" else 1] += int(st.get("value") or 0)
         for data in await self._hy2_all("/traffic?clear=1"):
             for ident, v in data.items():
-                m = re.fullmatch(r"u(\d+)", str(ident))
+                m = HY2_ID_RE.fullmatch(str(ident))
                 if m and isinstance(v, dict):
                     pair = out.setdefault(int(m.group(1)), [0, 0])
                     pair[0] += int(v.get("tx") or 0)
@@ -452,8 +483,8 @@ class XrayProvider(VpnProvider):
         """Сколько устройств подключено к каждой подписке сейчас. None — узнать не удалось.
         Устройство — отдельная сеть (адреса из одной /24 — один телефон за NAT оператора):
         для Xray это адреса подключений, для Hysteria — адреса входов за последние HY2_NET_WINDOW
-        секунд, но не больше, чем подключений. Подключение Hysteria без известного адреса
-        (например, бот перезапускался) считается одним устройством."""
+        секунд, но не больше, чем подключений, и не меньше, чем соединений на одном пункте одного
+        сервера (у каждого пункта свой вариант пароля, см. hy2_entries)."""
         nets: dict[int, set] = {}
         got = False
         if self._xray_stats_ready():
@@ -471,12 +502,17 @@ class XrayProvider(VpnProvider):
         if self.hy2:
             answers = await self._hy2_all("/online")
             got = got or bool(answers)
-            conns: dict[int, int] = {}
+            conns: dict[int, int] = {}   # подписка -> соединений всего
+            same: dict[int, int] = {}    # подписка -> больше всего соединений на одном пункте одного сервера
             for data in answers:
                 for ident, n in data.items():
-                    m = re.fullmatch(r"u(\d+)", str(ident))
+                    m = HY2_ID_RE.fullmatch(str(ident))
                     if m:
-                        conns[int(m.group(1))] = conns.get(int(m.group(1)), 0) + int(n or 0)
+                        uid, n = int(m.group(1)), int(n or 0)
+                        conns[uid] = conns.get(uid, 0) + n
+                        # Без варианта (старая подписка) все пункты на одном пароле — по ним не судим
+                        if m.group(2):
+                            same[uid] = max(same.get(uid, 0), n)
             now = time.time()
             for uid in list(self._hy2_nets):
                 fresh = {k: t for k, t in self._hy2_nets[uid].items() if now - t < HY2_NET_WINDOW}
@@ -487,8 +523,13 @@ class XrayProvider(VpnProvider):
             for uid, n in conns.items():
                 if n <= 0:
                     continue
-                recent = sorted(self._hy2_nets.get(uid, {}).items(), key=lambda kv: -kv[1])[:n]
-                nets.setdefault(uid, set()).update([k for k, _ in recent] or ["hy2?"])
+                # Разные сети за последние минуты (не больше числа соединений) — и соединения одного
+                # пункта: два телефона в одном Wi-Fi видны как одна сеть, но как два соединения.
+                recent = [k for k, _ in sorted(self._hy2_nets.get(uid, {}).items(), key=lambda kv: -kv[1])[:n]]
+                hy = set(recent)
+                for i in range(len(hy), max(1, same.get(uid, 1))):
+                    hy.add(f"hy2#{i}")  # адрес входа неизвестен (бот перезапускался) или одна сеть на двоих
+                nets.setdefault(uid, set()).update(hy)
         return {sid: len(v) for sid, v in nets.items()} if got else None
 
     def add_location(self, code: str, name: str, proxy: str) -> None:
@@ -671,15 +712,28 @@ class XrayProvider(VpnProvider):
     # ---------- Hysteria2 ----------
 
     def hy2_password(self, user_id: int) -> str:
-        token = hmac.new(self.state["secret"].encode(), f"hy2:{user_id}".encode(), hashlib.sha256).hexdigest()[:20]
+        token = hmac.new(self.state["secret"].encode(), f"hy2:{self._kid(user_id)}".encode(),
+                         hashlib.sha256).hexdigest()[:20]
         return f"{user_id}.{token}"
 
     def hy2_check(self, password: str) -> int | None:
         """Пароль клиента Hysteria -> номер подписки, если доступ активен."""
-        uid, _, token = (password or "").partition(".")
+        got = self.hy2_check_variant(password)
+        return got[0] if got else None
+
+    def hy2_check_variant(self, password: str) -> tuple[int, int] | None:
+        """Пароль -> (подписка, вариант пункта). Вариант -1 — пароль без приписки (ссылки, старые подписки)."""
+        parts = (password or "").split(".")
+        variant = -1
+        if len(parts) == 3 and parts[2].isdigit() and len(parts[2]) <= 3:
+            variant = int(parts[2])
+            password = ".".join(parts[:2])
+        elif len(parts) != 2:
+            return None
+        uid = parts[0]
         if not uid.isdigit() or not hmac.compare_digest(self.hy2_password(int(uid)), password):
             return None
-        return int(uid) if self.allowed(int(uid)) else None
+        return (int(uid), variant) if self.allowed(int(uid)) else None
 
     def _hy2_link(self, user_id: int, host: str, port: int, sni: str, name: str, obfs: bool = False) -> str:
         h = self.hy2
@@ -861,9 +915,18 @@ class XrayProvider(VpnProvider):
         tag = " · Hysteria" if self.xray_enabled else ""
         auth, pin = self.hy2_password(user_id), h.get("pin", "")
 
-        def e(host, port, site, name, obfs=""):
-            return {"kind": "hy2", "name": name, "host": host, "port": port, "sni": site, "auth": auth,
-                    "pin": pin, "obfs": obfs}
+        # У каждого пункта, ведущего на тот же сервер Hysteria, свой вариант пароля («….1», «….2»):
+        # «Лучший сервер» держит по соединению на каждый пункт, и без вариантов один телефон
+        # выглядел бы как несколько устройств. С вариантами сервер считает соединения по каждому
+        # пункту отдельно, и два соединения одного пункта — это точно два устройства.
+        used: dict[int, int] = {}
+
+        def e(host, port, site, name, obfs="", server_port=None):
+            key = server_port or port
+            k = used.get(key, 0)
+            used[key] = k + 1
+            return {"kind": "hy2", "name": name, "host": host, "port": port, "sni": site,
+                    "auth": f"{auth}.{k}", "pin": pin, "obfs": obfs}
         out = []
         if h.get("port"):
             out.append(e(self.host, h["port"], sni, f"{main}{tag}"))
@@ -886,7 +949,7 @@ class XrayProvider(VpnProvider):
             for b in self.visible_bridges():
                 if not b.get("ru"):
                     continue
-                out.append(e(b["host"], b["port"], self.bridge_site, f"{b['name']}{tag}"))
+                out.append(e(b["host"], b["port"], self.bridge_site, f"{b['name']}{tag}", server_port=h["port"]))
                 for loc in self.locations:
                     port = self.hy2_loc_port(loc)
                     if port and not loc.get("down"):
@@ -915,8 +978,9 @@ class XrayProvider(VpnProvider):
             m = re.search(rb"(?i)\r\ncontent-length:\s*(\d+)", head)
             n = min(int(m.group(1)), 4096) if m else 0
             body = json.loads(await asyncio.wait_for(reader.readexactly(n), 5) or b"{}")
-            uid = self.hy2_check(str(body.get("auth", "")))
-            ok = uid is not None
+            got = self.hy2_check_variant(str(body.get("auth", "")))
+            ok = got is not None
+            uid, variant = got if got else (None, -1)
             if ok:
                 net = device_net(str(body.get("addr", "")))
                 if net:
@@ -926,7 +990,7 @@ class XrayProvider(VpnProvider):
             pass
         if ok:
             self.hy2_logins += 1
-        data = json.dumps({"ok": ok, "id": f"u{uid}" if ok else ""}).encode()
+        data = json.dumps({"ok": ok, "id": hy2_id(uid, variant) if ok else ""}).encode()
         try:
             writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n"
                          + f"Content-Length: {len(data)}\r\n\r\n".encode() + data)
@@ -961,7 +1025,8 @@ class XrayProvider(VpnProvider):
         """Обрывает уже открытые сессии Hysteria у клиента, которому отключили доступ."""
         for port in self._stats_ports():
             try:
-                await asyncio.to_thread(self._hy2_stats, port, "POST", "/kick", [f"u{user_id}"])
+                await asyncio.to_thread(self._hy2_stats, port, "POST", "/kick",
+                                        [hy2_id(user_id, k) for k in range(-1, HY2_VARIANTS)])
             except Exception as e:
                 log.warning("Hysteria: не удалось отключить u%s: %s", user_id, e)
 

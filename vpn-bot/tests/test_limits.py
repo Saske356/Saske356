@@ -71,7 +71,7 @@ class Provider(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.v.hy2_check(self.v.hy2_password(1)), 1)
         await self.v.suspend(1, 600)
         self.assertIsNone(self.v.hy2_check(self.v.hy2_password(1)), "Hysteria больше не принимает пароль")
-        self.assertEqual(self.stats.kicked, ["u1"], "открытые подключения разорваны")
+        self.assertEqual(self.stats.kicked[:3], ["u1", "u1v0", "u1v1"], "открытые подключения разорваны, все варианты")
         emails = [c["email"] for c in self.v.build_config()["inbounds"][0]["settings"]["clients"]]
         self.assertFalse([e for e in emails if e.startswith("u1.")], "ключей Xray тоже нет")
         self.assertTrue([e for e in emails if e.startswith("u2.")])
@@ -108,6 +108,12 @@ class Provider(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.v.online(), {1: 2}, "вторая сеть — второе устройство, старый вход забыт")
         self.stats.online = {"u1": 1}
         self.assertEqual(await self.v.online(), {1: 1}, "устройств не больше, чем подключений")
+        # Подписка с вариантами паролей: два соединения одного пункта — два устройства, даже из одной сети
+        self.stats.online = {"u1v0": 2, "u1v1": 1, "u1v2": 1}
+        self.assertEqual(await self.v.online(), {1: 2}, "два телефона в одном Wi-Fi")
+        self.stats.online = {"u1v0": 1, "u1v1": 1, "u1v2": 1}
+        self.v._hy2_nets.clear()
+        self.assertEqual(await self.v.online(), {1: 1}, "«Лучший сервер» одного телефона — одно устройство")
         self.v._hy2_nets.clear()
         self.stats.online = {"u1": 2}
         # вместе с Xray: трафик по ключам всех стран и разные адреса складываются
@@ -314,7 +320,7 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         cfgs = cfgs[2:]  # без «Лучшего сервера» и «Игр»
         out = cfgs[1]["outbounds"][0]
         self.assertEqual((out["protocol"], out["settings"]["port"], out["streamSettings"]["hysteriaSettings"]["auth"]),
-                         ("hysteria", 30000, self.v.hy2_password(1)))
+                         ("hysteria", 30000, self.v.hy2_password(1) + ".0"))
         tls = out["streamSettings"]["tlsSettings"]
         self.assertEqual((tls["serverName"], tls["alpn"], tls["pinnedPeerCertSha256"]), ("www.example.com", ["h3"], "ab" * 32))
         self.assertNotIn("allowInsecure", json.dumps(cfgs))

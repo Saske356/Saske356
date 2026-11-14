@@ -48,7 +48,9 @@ db = DB(config.DB_PATH)
 public_proxies.MAX_MS = int(os.environ.get("AUTO_PROXY_MAX_MS", "1500"))
 vpn = get_provider()
 auto_mgr = AutoProxy(vpn) if hasattr(vpn, "auto") else None
-guard = DeviceGuard(config.DEVICE_LIMIT, block_minutes=config.DEVICE_BLOCK_MINUTES)
+# Проверка раз в 2 минуты: предупреждение после 3 замеров подряд с превышением (~6 мин),
+# отключение — если превышение держится ещё 5 замеров (~10 мин).
+guard = DeviceGuard(config.DEVICE_LIMIT, warn_after=3, block_after=5, block_minutes=config.DEVICE_BLOCK_MINUTES)
 # Оплата картой (ЮKassa) и криптой (Crypto Pay): ключи задаёт админ командой /pay
 pay_cfg = paymod.Settings(os.path.join(os.path.dirname(os.path.abspath(config.DB_PATH)), "payments.json"))
 # Своё приложение для Android: только у настоящего VPN (у демо нет подписки для него)
@@ -432,7 +434,10 @@ def sub_kb(s) -> InlineKeyboardMarkup:
         if android_app:
             rows.append([B(f"⚡ Открыть в приложении {config.BRAND}", url=vpn.app_link(s["id"]))])
     rows.append([B("◆ Продлить", f"ext:{s['id']}"), B("✏️ Переименовать", f"ren:{s['id']}")])
-    if can_upgrade(s):
+    if sub_active(s) and hasattr(vpn, "reset_key"):
+        rows.append([B("📱 Устройства", f"dev:{s['id']}")] +
+                    ([B("➕ Добавить", f"up:{s['id']}")] if can_upgrade(s) else []))
+    elif can_upgrade(s):
         rows.append([B("➕ Добавить устройства", f"up:{s['id']}")])
     if s["auto_active"] and sub_active(s):
         rows.append([B("🔁 Отключить автопродление", f"noauto:{s['id']}")])
@@ -1176,6 +1181,40 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     # ---- подписки
+    if parts[0] in ("dev", "devr", "devrok") and len(parts) == 2:
+        sub = await own_sub(q, uid, parts[1])
+        if not sub:
+            return
+        if not sub_active(sub) or not hasattr(vpn, "reset_key"):
+            await q.answer("Подписка неактивна", show_alert=True)
+            return
+        if parts[0] == "devrok":
+            last = context.bot_data.setdefault("dev_resets", {}).get(sub["id"], 0)
+            if time.time() - last < DEV_RESET_EVERY:
+                await q.answer("Сбрасывать можно раз в 10 минут", show_alert=True)
+                return
+            context.bot_data["dev_resets"][sub["id"]] = time.time()
+            await q.answer("Готово")
+            db.set_key(sub["id"], await vpn.reset_key(sub["id"]), True)
+            guard.forget(sub["id"])
+            if getattr(vpn, "is_suspended", None) and vpn.is_suspended(sub["id"]):
+                await vpn.resume(sub["id"])
+            sub = db.get_sub(sub["id"])
+            await show(update, context, "✅ <b>Все устройства отключены.</b>\n\nСтарая ссылка больше не работает. "
+                                        "Добавьте новую в приложение на тех устройствах, где VPN нужен:\n\n"
+                                        + sub_text(sub), sub_kb(sub), banner="key")
+            return
+        await q.answer()
+        if parts[0] == "devr":
+            await show(update, context, f"<b>Сбросить устройства «{esc(sub['name'])}»?</b>\n\n"
+                                        "Все телефоны и компьютеры с этой подпиской сразу отключатся, а ссылка "
+                                        "подписки сменится. Новую ссылку нужно будет добавить заново на своих "
+                                        "устройствах.\n\nПригодится, если ссылку кто-то узнал или телефон потерялся.",
+                       KB([B("🔄 Да, сбросить", f"devrok:{sub['id']}"), B("‹ Отмена", f"dev:{sub['id']}")]),
+                       banner="key")
+            return
+        await show(update, context, devices_view(sub), devices_manage_kb(sub), banner="key")
+        return
     if parts[0] in ("sub", "qr", "raw", "ren", "ext", "noauto", "noautook") and len(parts) == 2:
         sub = await own_sub(q, uid, parts[1])
         if not sub:
@@ -3179,12 +3218,51 @@ async def traffic_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         db.add_traffic(deltas)
 
 
+DEV_RESET_EVERY = 600
+
+
+def devices_view(sub) -> str:
+    """Экран «Устройства» подписки: сколько оплачено, сколько подключено сейчас и что можно сделать."""
+    now_n = guard.last.get(sub["id"])
+    checked = guard.last_at
+    if not checked or time.time() - checked > 900:
+        online = "<i>проверяется, загляните через пару минут</i>"
+    else:
+        n = now_n or 0
+        mark = "⚠️" if n > sub["devices"] else "✅"
+        online = f"{mark} <b>{n}</b> (проверено в {time.strftime('%H:%M', time.localtime(checked))})"
+    paused = ""
+    if getattr(vpn, "is_suspended", None) and vpn.is_suspended(sub["id"]):
+        paused = "\n⛔ <b>Подписка временно отключена</b>: устройств было больше, чем оплачено.\n"
+    rule = {"block": "Если устройств дольше нескольких минут больше, чем оплачено, бот сначала предупредит, "
+                     f"а потом отключит подписку на {config.DEVICE_BLOCK_MINUTES} мин.",
+            "warn": "Если устройств больше, чем оплачено, бот пришлёт предупреждение.",
+            "off": "Сейчас число устройств не ограничивается."}[guard.mode]
+    return (f"<b>📱 Устройства «{esc(sub['name'])}»</b>\n\n"
+            f"◆ Оплачено: <b>{sub['devices']}</b>\n"
+            f"◆ Подключено сейчас: {online}\n{paused}\n"
+            "Устройство — это телефон, компьютер или телевизор, на котором включён VPN с этой подпиской. "
+            f"{rule}\n\n"
+            "<b>Что можно сделать</b>\n"
+            "➕ <b>Добавить</b> — доплатить за ещё устройства до конца срока.\n"
+            "🔄 <b>Сбросить</b> — отключить все устройства и получить новую ссылку (если ссылку кто-то узнал "
+            "или телефон потерялся).")
+
+
+def devices_manage_kb(sub) -> InlineKeyboardMarkup:
+    rows = [[B("🔄 Обновить", f"dev:{sub['id']}"), B("🔄 Сбросить все", f"devr:{sub['id']}")]]
+    if can_upgrade(sub):
+        rows.append([B("➕ Добавить устройства", f"up:{sub['id']}")])
+    rows.append([B("‹ К подписке", f"sub:{sub['id']}")])
+    return InlineKeyboardMarkup(rows)
+
+
 def dev_word(n: int) -> str:
     return plural(n, "устройство", "устройства", "устройств")
 
 
 async def devices_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Раз в 5 минут сверяет, сколько устройств подключено, с оплаченным числом."""
+    """Раз в 2 минуты сверяет, сколько устройств подключено, с оплаченным числом."""
     if vpn.is_demo or not hasattr(vpn, "online") or guard.mode == "off":
         return
     # Отключение закончилось: по памяти бота или по сохранённому на сервере (после перезапуска бота).
@@ -3369,7 +3447,7 @@ def build_app(token: str) -> Application:
     app.job_queue.run_repeating(webshare_job, interval=3 * 3600, first=200)
     app.job_queue.run_repeating(crypto_job, interval=20, first=15)
     app.job_queue.run_repeating(traffic_job, interval=600, first=90)
-    app.job_queue.run_repeating(devices_job, interval=300, first=120)
+    app.job_queue.run_repeating(devices_job, interval=120, first=90)
     return app
 
 
