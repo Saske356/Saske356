@@ -412,6 +412,14 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         page = body.decode()
         self.assertIn("aurora://install-sub?url=" + quote(self.v.sub_url(1), safe=""), page)
         self.assertEqual(self.v.app_link(1), self.v.sub_url(1) + "/app")
+        # мини-приложение Telegram — с нашего сервера
+        head, _, body = await get("/m/", "Mozilla/5.0 Telegram")
+        self.assertIn(b"text/html", head)
+        self.assertIn(b"telegram-web-app.js", body)
+        self.assertEqual(self.v.miniapp_url(), "", "без своего домена с HTTPS — адрес из настроек")
+        self.v.sub_domain, self.v.sub_cert, self.v.sub_tls_port = "vpn.example.com", "/x.pem", 443
+        self.assertEqual(self.v.miniapp_url(), "https://vpn.example.com/m/")
+        self.v.sub_domain = ""
         # обновление приложения изнутри: версия и файл по адресу подписки
         import android_app
         d = tempfile.mkdtemp()

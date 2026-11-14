@@ -1469,6 +1469,16 @@ class XrayProvider(VpnProvider):
             headers["profile-web-page-url"] = self.support_url
         return body, headers
 
+    MINIAPP_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "index.html")
+
+    def miniapp_url(self) -> str:
+        """Мини-приложение Telegram с нашего сервера (нужен HTTPS на своём домене). GitHub Pages
+        (*.github.io) в России часто режут — Telegram показывал «ERR_CONNECTION_CLOSED»."""
+        if self.sub_domain and self.sub_cert and self.sub_https is not False and os.path.exists(self.MINIAPP_FILE):
+            port = "" if self.sub_tls_port == 443 else f":{self.sub_tls_port}"
+            return f"https://{self.sub_domain}{port}/m/"
+        return ""
+
     def app_link(self, user_id: int) -> str:
         """Ссылка на страницу, которая одним касанием добавляет подписку в приложение Arise VPN."""
         return self.sub_url(user_id) + "/app"
@@ -1600,6 +1610,9 @@ class XrayProvider(VpnProvider):
                     status, (body, headers) = "200 OK", res
                 else:
                     status, body = "403 Forbidden", b"subscription expired"
+            elif path in ("/m", "/m/") and parts and parts[0] == "GET" and os.path.exists(self.MINIAPP_FILE):
+                status, headers, file_path = "200 OK", {"Content-Type": "text/html; charset=utf-8",
+                                                        "Cache-Control": "no-cache"}, self.MINIAPP_FILE
             elif path == "/" and parts and parts[0] in ("GET", "HEAD"):
                 # корень выглядит как обычная страница, а не как VPN
                 status, body = "200 OK", (f"<!doctype html><title>{self.brand}</title>"

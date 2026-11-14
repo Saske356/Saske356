@@ -224,7 +224,7 @@ def main_kb(row) -> InlineKeyboardMarkup:
     pct = offer_pct(uid)
     label = "◆ Продлить доступ" if user_active(uid) else "◆ Оформить доступ"
     rows = [[B(label + (f" · −{pct}%" if pct else ""), "plans")]]
-    if config.MINIAPP_URL:
+    if miniapp_base():
         rows.append([B("✨ Открыть приложение", webapp=miniapp_url(row))])
     if can_trial(row):
         rows.append([B(f"✦ {plural_days(config.TRIAL_DAYS).capitalize()} бесплатно", "trial")])
@@ -485,6 +485,12 @@ def sub_kb(s) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def miniapp_base() -> str:
+    """Своё мини-приложение с сервера подписок, иначе адрес из MINIAPP_URL (GitHub Pages)."""
+    own = vpn.miniapp_url() if hasattr(vpn, "miniapp_url") else ""
+    return own or config.MINIAPP_URL
+
+
 def miniapp_url(row) -> str:
     """Адрес мини-приложения с данными этого гостя после #d=."""
     plans = [{"id": k, "name": n, "days": d, "price": pr, "disc": plan_discount(d, pr),
@@ -510,12 +516,12 @@ def miniapp_url(row) -> str:
         "app": bool(android_app),
     }
     raw = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode()
-    return config.MINIAPP_URL + "#d=" + base64.urlsafe_b64encode(raw).decode().rstrip("=")
+    return miniapp_base() + "#d=" + base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
 
 async def refresh_menu(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> None:
     """Кнопка «Приложение» в меню чата гостя со свежими данными."""
-    if not config.MINIAPP_URL:
+    if not miniapp_base():
         return
     row = db.get_user(user_id)
     if not row:
