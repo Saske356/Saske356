@@ -70,6 +70,7 @@ private sealed class ChatPage {
     object Home : ChatPage()
     object New : ChatPage()
     object Protect : ChatPage()
+    object Admin : ChatPage()
     class Talk(val code: String) : ChatPage()
     class Info(val code: String) : ChatPage()
 }
@@ -107,7 +108,8 @@ fun ChatRoot(back: () -> Unit) {
         ChatPage.Home -> ChatList(ui, back, open = { Chat.read(it); page = ChatPage.Talk(it) },
             add = { page = ChatPage.New }, protect = { page = ChatPage.Protect })
         ChatPage.New -> NewChat(toList) { page = ChatPage.Talk(it) }
-        ChatPage.Protect -> ProtectScreen(ui, toList)
+        ChatPage.Protect -> ProtectScreen(ui, toList) { page = ChatPage.Admin }
+        ChatPage.Admin -> AdminScreen(ui) { page = ChatPage.Protect }
         is ChatPage.Talk -> Talk(ui, p.code, toList) { page = ChatPage.Info(p.code) }
         is ChatPage.Info -> ContactInfo(ui, p.code, back = { page = ChatPage.Talk(p.code) }, deleted = toList)
     }
@@ -288,6 +290,12 @@ private fun ChatList(ui: ChatUi, back: () -> Unit, open: (String) -> Unit, add: 
                         }.padding(horizontal = 12.dp, vertical = 9.dp)
                 )
             }
+            if (ui.notice.isNotEmpty()) Text(
+                "📢 " + ui.notice, color = TextMain, fontSize = 13.5.sp,
+                modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp)
+                    .clip(RoundedCornerShape(16.dp)).background(Amber.copy(alpha = 0.12f))
+                    .border(1.dp, Amber.copy(alpha = 0.35f), RoundedCornerShape(16.dp)).padding(12.dp)
+            )
             ErrorLine(ui.error)
             val rows = (ui.contacts.map { it.code } + ui.msgs.keys).distinct()
                 .sortedByDescending { ui.msgs[it]?.lastOrNull()?.t ?: 0L }
@@ -480,6 +488,14 @@ private fun ContactInfo(ui: ChatUi, code: String, back: () -> Unit, deleted: () 
         Field(name, "Как подписать") { name = it.take(32) }
         Spacer(Modifier.height(10.dp))
         Big("Сохранить", gold = false) { Chat.rename(code, name.ifBlank { Chat.pretty(code) }) }
+        if (ui.admin) {
+            Section("Админ")
+            val isBanned = code in ui.banned
+            Big(if (isBanned) "Разблокировать этот код" else "⛔ Заблокировать этот код в чате", gold = false) {
+                if (isBanned) Chat.unban(code) else Chat.ban(code)
+            }
+            Note("Заблокированный не сможет писать никому, письма ему не доставляются.")
+        }
         Section("Удаление")
         Big(if (confirm) "Точно удалить? Нажмите ещё раз" else "🗑 Удалить чат и переписку", gold = false) {
             if (confirm) {
@@ -503,7 +519,7 @@ private fun Note(text: String) {
 // ---------------------------------------------------------------- защита и админ
 
 @Composable
-private fun ProtectScreen(ui: ChatUi, back: () -> Unit) {
+private fun ProtectScreen(ui: ChatUi, back: () -> Unit, openAdmin: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var dialog by remember { mutableStateOf("") }  // "pin" | "decoy" | "wipe"
@@ -566,12 +582,7 @@ private fun ProtectScreen(ui: ChatUi, back: () -> Unit) {
         }
         if (ui.admin) {
             Section("Админ · только у твоей подписки")
-            ToggleRow("💬", "Чат для всех (выключить — гости не смогут писать)", ui.enabled) { Chat.setEnabled(!ui.enabled) }
-            Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatBox("Устройств в чате", ui.adminUsers.toString(), Modifier.weight(1f))
-                StatBox("Ждут доставки", ui.adminQueued.toString(), Modifier.weight(1f))
-            }
-            Note("Админ видит только цифры. Прочитать чужие сообщения не может никто — ни админ, ни сервер.")
+            Tool("👑", "Админ-панель", "Сводка, чат, объявление, блокировки", "›", openAdmin)
         }
         val clip = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         if (ui.code.isNotEmpty()) {
@@ -616,5 +627,67 @@ private fun StatBox(k: String, v: String, modifier: Modifier) {
     ) {
         Text(k.uppercase(), color = TextDim, fontSize = 10.5.sp, letterSpacing = 1.sp)
         Text(v, color = TextMain, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
+// ---------------------------------------------------------------- админ-панель
+
+@Composable
+private fun AdminScreen(ui: ChatUi, back: () -> Unit) {
+    var notice by remember { mutableStateOf(ui.notice) }
+    var banCode by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        while (true) {  // пока экран открыт — свежие цифры раз в 15 секунд
+            Chat.refreshAdmin()
+            kotlinx.coroutines.delay(15_000)
+        }
+    }
+    val st = ui.adminStats
+    fun n(k: String) = st[k]?.toString() ?: "—"
+    Page("Админ-панель", "Видно только с твоей подписки. Чужую переписку админ не видит — только цифры.", back) {
+        Section("Сводка")
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            StatBox("Подписок", n("subs"), Modifier.weight(1f))
+            StatBox("Платящих", n("people"), Modifier.weight(1f))
+            StatBox("Онлайн устр.", n("online"), Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            StatBox("Новых за сутки", n("new_today"), Modifier.weight(1f))
+            StatBox("Всего в боте", n("users_all"), Modifier.weight(1f))
+            StatBox("Автопродл.", n("auto"), Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            StatBox("⭐ за сутки", n("stars_today"), Modifier.weight(1f))
+            StatBox("⭐ всего", n("stars"), Modifier.weight(1f))
+            StatBox("₽ всего", n("rub"), Modifier.weight(1f))
+        }
+        Section("Чат")
+        ToggleRow("💬", "Чат для всех (выключить — никто не сможет писать)", ui.enabled) { Chat.setEnabled(!ui.enabled) }
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            StatBox("Устройств в чате", ui.adminUsers.toString(), Modifier.weight(1f))
+            StatBox("Ждут доставки", ui.adminQueued.toString(), Modifier.weight(1f))
+        }
+        Section("Объявление всем")
+        Field(notice, "Например: технические работы в 23:00") { notice = it.take(500) }
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.weight(1f)) { Big("Опубликовать", gold = true) { Chat.setNotice(notice) } }
+            Box(Modifier.weight(1f)) { Big("Убрать", gold = false) { notice = ""; Chat.setNotice("") } }
+        }
+        Note("Видно сверху списка чатов у всех. Объявление не шифруется — не пишите в нём секретов.")
+        Section("Блокировки")
+        Field(banCode, "Код, например K7M-2QX-9TR") { banCode = it.uppercase().take(11) }
+        Spacer(Modifier.height(10.dp))
+        Big("⛔ Заблокировать", gold = false) {
+            if (banCode.isNotBlank()) Chat.ban(banCode)
+            banCode = ""
+        }
+        if (ui.banned.isEmpty()) Note("Заблокированных нет.")
+        for (c in ui.banned) {
+            Tool("⛔", Chat.pretty(c), "Не может писать, письма ему не доставляются", "Разблокировать") { Chat.unban(c) }
+        }
+        ErrorLine(ui.error)
     }
 }

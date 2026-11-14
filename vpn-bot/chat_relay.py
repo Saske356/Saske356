@@ -26,6 +26,7 @@ ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # без похожих O/0, I/1/L
 CODE_LEN = 9
 MAX_BOX = 24 * 1024           # одно зашифрованное сообщение, байт (после base64 — чуть больше)
 MAX_QUEUE = 1000              # писем в ящике одного получателя
+MAX_FROM_ONE = 200            # из них — недоставленных от одного отправителя
 MAX_AGE = 7 * 86400           # сколько письмо ждёт получателя
 SEND_PER_MIN = 60             # сообщений в минуту от одного отправителя
 MAX_KEY = 4096                # открытый ключ (набор ключей Tink в JSON/base64)
@@ -36,10 +37,12 @@ def norm_code(code: str) -> str:
 
 
 class ChatRelay:
-    def __init__(self, path: str, is_admin=None):
+    def __init__(self, path: str, is_admin=None, stats=None):
         self.path = path
         self.is_admin = is_admin or (lambda uid: False)
-        self.data = {"enabled": True, "users": {}, "codes": {}, "boxes": {}}
+        # Сводка для админа в приложении (подписки, онлайн, деньги) — её даёт бот
+        self.stats = stats or (lambda: {})
+        self.data = {"enabled": True, "users": {}, "codes": {}, "boxes": {}, "banned": [], "notice": ""}
         self._rate: dict[str, list[float]] = {}
         try:
             with open(path, encoding="utf-8") as f:
@@ -100,17 +103,34 @@ class ChatRelay:
             return 400, {"error": "bad json"}
         admin = bool(self.is_admin(uid))
         if action == "status":
-            return 200, {"enabled": bool(self.data["enabled"]), "admin": admin, "code": self.code_of(uid, device)}
+            return 200, {"enabled": bool(self.data["enabled"]), "admin": admin, "code": self.code_of(uid, device),
+                         "notice": self.data.get("notice", "")}
         if action == "admin":
             if not admin:
                 return 403, {"error": "not admin"}
-            if method == "POST" and "enabled" in req:
-                self.data["enabled"] = bool(req["enabled"])
+            if method == "POST":
+                if "enabled" in req:
+                    self.data["enabled"] = bool(req["enabled"])
+                if "notice" in req:  # объявление всем в чате: видно сверху списка чатов, не шифруется
+                    self.data["notice"] = str(req["notice"] or "").strip()[:500]
+                for key, on in (("ban", True), ("unban", False)):
+                    code = norm_code(str(req.get(key, "")))
+                    if len(code) == CODE_LEN:
+                        banned = set(self.data.get("banned", []))
+                        banned = banned | {code} if on else banned - {code}
+                        self.data["banned"] = sorted(banned)
+                        if on:
+                            self.data["boxes"].pop(code, None)  # и письма для него — в никуда
                 self._save()
             now = time.time()
             self._prune(now)
+            try:
+                extra = dict(self.stats() or {})
+            except Exception:
+                extra = {}
             return 200, {"enabled": bool(self.data["enabled"]), "users": len(self.data["users"]),
-                         "queued": sum(len(b) for b in self.data["boxes"].values())}
+                         "queued": sum(len(b) for b in self.data["boxes"].values()),
+                         "notice": self.data.get("notice", ""), "banned": self.data.get("banned", []), **extra}
         if not self.data["enabled"]:
             return 403, {"error": "disabled"}
         if action == "register" and method == "POST":
@@ -124,6 +144,8 @@ class ChatRelay:
         me = self.code_of(uid, device)
         if not me:
             return 409, {"error": "not registered"}
+        if me in self.data.get("banned", []):
+            return 403, {"error": "banned"}
         if action == "send" and method == "POST":
             return self._send(uid, me, norm_code(str(req.get("to", ""))), str(req.get("box", "")))
         if action == "inbox":
@@ -174,7 +196,7 @@ class ChatRelay:
         return 200, {"code": code}
 
     def _send(self, uid: int, me: str, to: str, box: str) -> tuple[int, dict]:
-        if to not in self.data["codes"]:
+        if to not in self.data["codes"] or to in self.data.get("banned", []):
             return 404, {"error": "no such code"}
         if not box or len(box) > MAX_BOX * 4 // 3 + 4:
             return 400, {"error": "bad box"}
@@ -191,6 +213,9 @@ class ChatRelay:
         q = self.data["boxes"].setdefault(to, [])
         if len(q) >= MAX_QUEUE:
             return 507, {"error": "recipient box full"}
+        # Один отправитель не может забить чужой ящик целиком и закрыть его для остальных
+        if sum(1 for m in q if m["from"] == me) >= MAX_FROM_ONE:
+            return 429, {"error": "too fast"}
         # «from» ставит сервер по подписке отправителя: подделать отправителя нельзя
         q.append({"id": secrets.token_hex(8), "from": me, "box": box, "t": now})
         self._save()

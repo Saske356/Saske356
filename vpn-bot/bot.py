@@ -69,8 +69,18 @@ def is_admin_sub(sid: int) -> bool:
     return bool(sub and sub["user_id"] in config.ADMIN_IDS)
 
 
+def admin_stats() -> dict:
+    """Сводка для админа в приложении Arise: подписки, люди, онлайн, деньги."""
+    st = db.stats()
+    online = guard.last if guard.last_at and time.time() - guard.last_at < 900 else {}
+    return {"subs": st["subs"], "people": st["active"], "users_all": st["users"], "new_today": st["new_today"],
+            "online": sum(online.values()), "stars_today": st["stars_today"], "stars": st["stars"],
+            "rub": st["rub"], "auto": st["auto"]}
+
+
 if hasattr(vpn, "chat"):
     vpn.chat.is_admin = is_admin_sub
+    vpn.chat.stats = admin_stats
 esc = html.escape
 
 CONFETTI = "5046509860389126442"   # встроенный эффект Telegram «🎉»

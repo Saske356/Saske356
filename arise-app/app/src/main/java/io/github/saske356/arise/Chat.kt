@@ -39,6 +39,9 @@ data class ChatUi(
     val enabled: Boolean = true,
     val adminUsers: Int = 0,
     val adminQueued: Int = 0,
+    val adminStats: Map<String, Long> = emptyMap(),  // подписки, люди, онлайн, деньги — из бота
+    val banned: List<String> = emptyList(),
+    val notice: String = "",          // объявление админа всем в чате
     val error: String = "",
     val busy: Boolean = false,
 )
@@ -103,6 +106,7 @@ object Chat {
         "too fast" -> "Слишком часто — подождите минуту"
         "recipient box full" -> "У собеседника переполнен ящик: пусть откроет чат"
         "no such code" -> "Такого кода нет"
+        "banned" -> "Ваш код заблокирован администратором"
         else -> "Ошибка сервера: $err"
     }
 
@@ -234,7 +238,9 @@ object Chat {
                 flow.update { it.copy(error = explain(st.getString("error"))) }
                 return
             }
-            flow.update { it.copy(admin = st.optBoolean("admin"), enabled = st.optBoolean("enabled", true)) }
+            flow.update {
+                it.copy(admin = st.optBoolean("admin"), enabled = st.optBoolean("enabled", true), notice = st.optString("notice"))
+            }
             val data = d() ?: return
             if (st.optString("code").isEmpty() || st.optString("code") != data.optString("code")) {
                 val r = request("register", JSONObject().put("key", data.getString("pk")))
@@ -471,25 +477,35 @@ object Chat {
 
     // ---------- админ ----------
 
-    fun refreshAdmin() = scope.launch {
-        try {
-            val r = request("admin")
-            if (!r.has("error")) flow.update {
-                it.copy(enabled = r.optBoolean("enabled", true), adminUsers = r.optInt("users"), adminQueued = r.optInt("queued"))
-            }
-        } catch (e: Exception) {
-            // нет связи
+    private val STAT_KEYS = listOf("subs", "people", "users_all", "new_today", "online", "stars_today", "stars", "rub", "auto")
+
+    private fun applyAdmin(r: JSONObject) {
+        if (r.has("error")) {
+            flow.update { it.copy(error = explain(r.getString("error"))) }
+            return
+        }
+        val banned = r.optJSONArray("banned")
+        flow.update {
+            it.copy(
+                enabled = r.optBoolean("enabled", true), adminUsers = r.optInt("users"), adminQueued = r.optInt("queued"),
+                notice = r.optString("notice"),
+                banned = if (banned == null) emptyList() else List(banned.length()) { i -> banned.getString(i) },
+                adminStats = STAT_KEYS.filter { k -> r.has(k) }.associateWith { k -> r.optLong(k) },
+            )
         }
     }
 
-    fun setEnabled(on: Boolean) = scope.launch {
+    private fun admin(body: JSONObject? = null) = scope.launch {
         try {
-            val r = request("admin", JSONObject().put("enabled", on))
-            if (!r.has("error")) flow.update {
-                it.copy(enabled = r.optBoolean("enabled", on), adminUsers = r.optInt("users"), adminQueued = r.optInt("queued"))
-            }
+            applyAdmin(request("admin", body))
         } catch (e: Exception) {
             flow.update { it.copy(error = "Нет связи с сервером") }
         }
     }
+
+    fun refreshAdmin() = admin()
+    fun setEnabled(on: Boolean) = admin(JSONObject().put("enabled", on))
+    fun setNotice(text: String) = admin(JSONObject().put("notice", text))
+    fun ban(code: String) = admin(JSONObject().put("ban", code))
+    fun unban(code: String) = admin(JSONObject().put("unban", code))
 }

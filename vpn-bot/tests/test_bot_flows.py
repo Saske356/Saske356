@@ -777,6 +777,7 @@ async def main():
     new_key = db.get_sub(some)["vpn_key"]
     assert new_key and new_key != old_key, (old_key, new_key)
     assert prov.sub_url(some) == new_key
+    assert {"subs", "people", "online", "stars_today", "rub"} <= set(bot.admin_stats()), "сводка для админа"
     bot.guard.__init__("block")
     # JSON-конфиги для Happ включаются и выключаются в /admin
     assert prov.json_sub and any("JSON-конфиги" in b.text for r in bot.admin_kb().inline_keyboard for b in r)
