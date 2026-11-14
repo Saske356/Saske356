@@ -1,4 +1,4 @@
-"""Баннеры бота и аватарка: чёрный и холодный синий, «восхождение из тени» (Arise — восстань).
+"""Баннеры бота и аватарка: чёрный и холодный синий.
 
 Синий свет поднимается снизу из темноты, вверх летят искры, сверху — тень. Металл — сталь с синим отливом.
 
@@ -18,7 +18,7 @@ OUT_DIR = os.path.join(HERE, "banners")
 
 # раздел -> (крупная надпись, мелкая надпись над ней). None = название бренда.
 SECTIONS = {
-    "main": (None, "RISE  FROM  THE  SHADOWS"),
+    "main": (None, "PRIVATE  ACCESS"),
     "plans": ("ТАРИФЫ", None),
     "key": ("ВАШ КЛЮЧ", None),
     "howto": ("ПОДКЛЮЧЕНИЕ", None),
@@ -219,7 +219,7 @@ def render(section="main", path=None):
     gl = gold_fill(img.size)
     gl.putalpha(line)
     img.alpha_composite(gl)
-    tag = config.TAGLINE if section == "main" else "RISE  FROM  THE  SHADOWS  ·  " + brand
+    tag = config.TAGLINE if section == "main" else "PRIVATE  ACCESS  ·  " + brand
     f_tag = font(SANS, 30 if section == "main" else 22)
     sp_tag = 1 if section == "main" else 6
     d.text((x0 + 4, 432), "", font=f_tag)

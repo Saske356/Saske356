@@ -58,7 +58,7 @@ def mask_servers(kt: str) -> None:
     ], count_ok=lambda n: n == 1)
 
 
-# Фирменные цвета: чёрный и холодный синий («восстань из тени»). Имена GOLD* остались от прежней темы.
+# Фирменные цвета: чёрный и холодный синий. Имена GOLD* остались от прежней темы.
 GOLD, GOLD_DARK, INK = "0xFF7AAEFF", "0xFF2F5FC8", "0xFF03050B"
 DARK_SCHEME = f"""private val DarkColor = darkColorScheme(
     primary = Color({GOLD}),
