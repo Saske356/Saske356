@@ -263,6 +263,8 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
             json.dump({"tls": {"sniGuard": "disable"}}, f, indent=1)
         self.assertTrue(self.v.hy2_sni_rotatable())
         n = len(self.units())
+        self.assertFalse(self.v.bs_on(), "«обход БС» по умолчанию выключен")
+        self.v.set_bs(on=True)
         self.assertEqual(self.v.set_hy2_sni("www.wp.pl"), "www.example.com")
         links = self.v.links(1)
         bs = [l for l in links if unquote(l.rsplit("#", 1)[1]).startswith("🇵🇱 Польша · обход БС")]

@@ -186,6 +186,9 @@ class XrayProvider(VpnProvider):
             if int(st["auto"].get("max") or 15) == 15:
                 st["auto"]["max"] = 25
             st["auto"]["max25"] = True
+        # 14.11: пункты «обход БС» убраны (не помогали); вернуть — /bs on
+        if not st.get("bs_off1"):
+            st["bs_on"], st["bs_off1"] = False, True
         # Сайт маскировки: пока его не меняли из бота, действует значение из .env.
         m = st.setdefault("masking", {})
         for key, value in (("site", ""), ("prev", []), ("auto", True), ("every", 0), ("changed", 0)):
@@ -876,7 +879,8 @@ class XrayProvider(VpnProvider):
     def bs_on(self) -> bool:
         """Пункт «· обход БС» в подписке: включён по умолчанию, но только если сервер Hysteria
         принимает любое имя сайта (иначе он отклонил бы подключение с российским именем)."""
-        return bool(self.hy2 and self.state.get("bs_on", True) and self.hy2_sni_rotatable())
+        # 14.11 по умолчанию выключено: пользователь проверил — при белых списках не помогает
+        return bool(self.hy2 and self.state.get("bs_on", False) and self.hy2_sni_rotatable())
 
     def set_bs(self, on: bool | None = None, site: str | None = None,
                sites: list[str] | None = None) -> None:
