@@ -59,19 +59,19 @@ jobs:
           bash android/build.sh "$RUNNER_TEMP/v2rayng"
           # бот скачивает APK по постоянным именам
           cd android/out
-          cp AuroraVPN_*_arm64-v8a.apk AuroraVPN-arm64-v8a.apk
-          cp AuroraVPN_*_armeabi-v7a.apk AuroraVPN-armeabi-v7a.apk
+          cp AriseVPN_*_arm64-v8a.apk AriseVPN-arm64-v8a.apk
+          cp AriseVPN_*_armeabi-v7a.apk AriseVPN-armeabi-v7a.apk
 
       - name: Выпуск в Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
-          name: Aurora VPN 1.0.${{ github.run_number }}
+          name: Arise VPN 1.0.${{ github.run_number }}
           target_commitish: ${{ github.sha }}
           make_latest: true
           body: |
-            Aurora VPN для Android. Большинству телефонов нужен файл arm64-v8a, старым — armeabi-v7a.
+            Arise VPN для Android. Большинству телефонов нужен файл arm64-v8a, старым — armeabi-v7a.
             Собрано из v2rayNG (GPL-3.0) с правками из папки android/ этого репозитория.
           files: |
-            android/out/AuroraVPN-arm64-v8a.apk
-            android/out/AuroraVPN-armeabi-v7a.apk
+            android/out/AriseVPN-arm64-v8a.apk
+            android/out/AriseVPN-armeabi-v7a.apk

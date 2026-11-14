@@ -15,7 +15,7 @@ BOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.environ.update(DB_PATH=os.path.join(S, "test.db"), ADMIN_IDS="1", SUPPORT_USERNAME="aurora_help",
                   BOT_TOKEN="1:x", CHANNEL="@aurora_news", MINIAPP_URL="", VPN_MODE="demo",
                   TRIAL_DAYS="1", REF_BONUS_DAYS="3", REF_ON_JOIN="1", REFUND_DAYS="3", AUTO_RENEW="1",
-                  CHANNEL_BONUS_DAYS="1", BACKUP_DAILY="1", SET_PROFILE="1", BRAND="Aurora VPN")
+                  CHANNEL_BONUS_DAYS="1", BACKUP_DAILY="1", SET_PROFILE="1", BRAND="Arise VPN")
 sys.path.insert(0, BOT_DIR)
 try:
     import bot, config
@@ -150,7 +150,7 @@ def make_provider(d):
     return xp.XrayProvider(state_path=os.path.join(d, "s.json"), config_path=os.path.join(d, "c.json"),
                            xray_bin=p, public_host="203.0.113.7", port=443, sni="www.microsoft.com",
                            private_key="PRIV", public_key="PUB", short_id="00ff", sub_port=0,
-                           brand="Aurora VPN", default_location="🇸🇪 Швеция", restart_cmd=("true",))
+                           brand="Arise VPN", default_location="🇸🇪 Швеция", restart_cmd=("true",))
 
 
 async def main():
@@ -201,7 +201,7 @@ async def main():
     doc = MagicMock(); doc.document.file_id = "APK1"
     ctx.bot.send_document = AsyncMock(return_value=doc)
     await press(200, "apk", ctx)
-    assert ctx.bot.send_document.await_args.kwargs["filename"] == "AuroraVPN-1.0.3.apk"
+    assert ctx.bot.send_document.await_args.kwargs["filename"] == "AriseVPN-1.0.3.apk"
     await press(200, "apk", ctx)
     assert ctx.bot.send_document.await_args.args[1] == "APK1", "второй раз — без повторной загрузки"
     bot.android_app = None

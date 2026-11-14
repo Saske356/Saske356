@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Aurora VPN</title>
+<title>Arise VPN</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -197,7 +197,7 @@
     </svg>
     <div>
       <div class="eyebrow">Private access</div>
-      <h1 class="gold-text" id="brand">AURORA VPN</h1>
+      <h1 class="gold-text" id="brand">ARISE VPN</h1>
       <div class="tag" id="tagline">Приватный доступ к свободному интернету</div>
     </div>
   </header>
@@ -299,7 +299,7 @@
       return JSON.parse(new TextDecoder().decode(bytes));
     } catch { return null; }
   }
-  const D = readData() || { b: "Aurora VPN", tg: "Приватный доступ к свободному интернету", p: [], e: 0 };
+  const D = readData() || { b: "Arise VPN", tg: "Приватный доступ к свободному интернету", p: [], e: 0 };
 
   const plural = n => {
     const a = n % 10, b = n % 100;
@@ -331,10 +331,10 @@
   const openTg = url => { if (tg && tg.openTelegramLink) tg.openTelegramLink(url); else window.open(url, "_blank"); };
 
   // ---- шапка ----
-  $("brand").textContent = (D.b || "Aurora VPN").toUpperCase();
+  $("brand").textContent = (D.b || "Arise VPN").toUpperCase();
   $("mono").textContent = (D.b || "A").charAt(0).toUpperCase();
   $("tagline").textContent = D.tg || "";
-  document.title = D.b || "Aurora VPN";
+  document.title = D.b || "Arise VPN";
 
   // ---- статус ----
   const now = Date.now() / 1000;
@@ -444,7 +444,7 @@
         if (gold) b.style.flexBasis = "100%";
         more.appendChild(b); };
       const toBot = arg => () => { haptic(); if (D.bu) { openTg(`https://t.me/${D.bu}?start=${arg}`); try { tg.close(); } catch {} } };
-      if (s.al && !isApple) add("⚡ Открыть в приложении Aurora", () => { haptic("medium"); try { tg.openLink(s.al); } catch { window.open(s.al, "_blank"); } }, true);
+      if (s.al && !isApple) add("⚡ Открыть в приложении Arise", () => { haptic("medium"); try { tg.openLink(s.al); } catch { window.open(s.al, "_blank"); } }, true);
       if (s.up) add("➕ Устройства", toBot("renew"));
       add("Продлить", toBot("renew"));
       f("key").textContent = s.k;
@@ -466,7 +466,7 @@
   // ---- инструкции ----
   const OS = {
     android: D.app
-      ? ["Скачайте приложение Aurora VPN кнопкой выше и установите его.",
+      ? ["Скачайте приложение Arise VPN кнопкой выше и установите его.",
          "В карточке подписки нажмите «⚡ Открыть в приложении»: всё добавится само.",
          "Нажмите большую золотую кнопку, и VPN включится.",
          "Можно и через Happ или v2rayNG: «+» → «Импорт из буфера обмена» с ключом выше."]

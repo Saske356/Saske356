@@ -613,7 +613,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     elif arg == "app" and android_app:  # «Скачать приложение» в мини-приложении
         await send_app(update, context)
         return
-    elif arg == "renew":  # кнопка «Продлить · устройства» в приложении Aurora VPN
+    elif arg == "renew":  # кнопка «Продлить · устройства» в приложении Arise VPN
         subs = db.user_subs(u.id)
         active = [x for x in subs if sub_active(x)]
         if len(subs) == 1 or len(active) == 1:
@@ -3324,7 +3324,7 @@ async def send_app(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     except TelegramError:
         cache.pop(ver, None)
     with open(path, "rb") as f:
-        msg = await context.bot.send_document(chat, f, filename=f"AuroraVPN-{ver}.apk", caption=caption,
+        msg = await context.bot.send_document(chat, f, filename=f"{config.BRAND.replace(' ', '')}-{ver}.apk", caption=caption,
                                               read_timeout=180, write_timeout=180)
     if msg.document:
         cache[ver] = msg.document.file_id

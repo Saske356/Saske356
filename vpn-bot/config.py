@@ -22,7 +22,7 @@ _load_env_file()
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 ADMIN_IDS = {int(x) for x in os.environ.get("ADMIN_IDS", "").replace(" ", "").split(",") if x}
-BRAND = os.environ.get("BRAND", "Aurora VPN")
+BRAND = os.environ.get("BRAND", "Arise VPN")
 TAGLINE = os.environ.get("TAGLINE", "Приватный доступ к свободному интернету")
 SUPPORT = os.environ.get("SUPPORT_USERNAME", "").lstrip("@")
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot.db"))

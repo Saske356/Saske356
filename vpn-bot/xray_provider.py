@@ -1348,7 +1348,7 @@ class XrayProvider(VpnProvider):
             body = base64.b64encode("\n".join(self.links(user_id)).encode())
         if enc_path:  # своё приложение: тело зашифровано, адресов и паролей в ответе не видно
             body = client_config.encrypt_sub(body, enc_path)
-        # Название подписки с числом устройств: «Aurora VPN · 2 устройства» (приложение Aurora
+        # Название подписки с числом устройств: «Arise VPN · 2 устройства» (приложение Arise
         # показывает это рядом со сроком и кнопкой «Продлить»)
         n = int(self.state["devices"].get(str(user_id)) or 1)
         word = "устройство" if n % 10 == 1 and n % 100 != 11 else (
@@ -1373,7 +1373,7 @@ class XrayProvider(VpnProvider):
         return body, headers
 
     def app_link(self, user_id: int) -> str:
-        """Ссылка на страницу, которая одним касанием добавляет подписку в приложение Aurora VPN."""
+        """Ссылка на страницу, которая одним касанием добавляет подписку в приложение Arise VPN."""
         return self.sub_url(user_id) + "/app"
 
     def app_deeplink(self, user_id: int) -> str:
@@ -1434,7 +1434,7 @@ class XrayProvider(VpnProvider):
             fmt = parse_qs(query).get("format", [""])[0]
             as_json = fmt == "json" or (fmt != "links" and self.json_sub and client_config.wants_json(agent))
             uid = None
-            app_page = path.endswith("/app")  # страница «Открыть в Aurora VPN» для этой подписки
+            app_page = path.endswith("/app")  # страница «Открыть в Arise VPN» для этой подписки
             if app_page:
                 path = path[:-4]
             m = re.fullmatch(r"/sub/(\d+)/([0-9a-f]{24})", path)
@@ -1522,7 +1522,7 @@ def from_env() -> XrayProvider:
         sni=e.get("REALITY_SNI", "www.microsoft.com"),
         private_key=e["REALITY_PRIVATE_KEY"], public_key=e["REALITY_PUBLIC_KEY"],
         short_id=e["REALITY_SHORT_ID"], sub_port=int(e.get("SUB_PORT", "2096")),
-        brand=e.get("BRAND", "VPN"), default_location=e.get("DEFAULT_LOCATION_NAME", "🌍 Основной"),
+        brand=e.get("BRAND", "Arise VPN"), default_location=e.get("DEFAULT_LOCATION_NAME", "🌍 Основной"),
         auto_enabled=e.get("AUTO_PROXY", "0") == "1",
         auto_countries=[c.strip().lower() for c in e.get("AUTO_PROXY_COUNTRIES", "").replace(" ", "").split(",") if c.strip()],
         auto_max=int(e.get("AUTO_PROXY_MAX", "15")),

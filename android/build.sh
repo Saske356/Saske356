@@ -1,5 +1,5 @@
 #!/bin/bash
-# Сборка Aurora VPN для Android из v2rayNG: bash android/build.sh [рабочая папка]
+# Сборка Arise VPN для Android из v2rayNG: bash android/build.sh [рабочая папка]
 # Нужны: Java 17+, Android SDK ($ANDROID_HOME) с NDK ($NDK_HOME), git, curl, python3 с Pillow.
 # Подпись: KEYSTORE, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD (иначе — ключ из android/aurora.keystore).
 # Готовые APK кладутся в android/out/.
@@ -54,5 +54,5 @@ chmod 755 gradlew
 
 mkdir -p "$OUT"
 rm -f "$OUT"/*.apk
-cp app/build/outputs/apk/playstore/release/AuroraVPN_*.apk "$OUT/"
+cp app/build/outputs/apk/playstore/release/AriseVPN_*.apk "$OUT/"
 ls -la "$OUT"

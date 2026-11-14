@@ -1,4 +1,4 @@
-# 🛡 Aurora VPN: бот для продажи подписки
+# Arise VPN (бывший Aurora VPN): Telegram-бот и VPN-сервер
 
 Telegram-бот, который продаёт доступ к VPN за **Telegram Stars**. Карта, банк и платёжный провайдер не нужны: оплата идёт внутри Telegram.
 

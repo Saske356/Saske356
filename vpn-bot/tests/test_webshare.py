@@ -52,7 +52,7 @@ class Provider(unittest.IsolatedAsyncioTestCase):
         self.v = xp.XrayProvider(
             state_path=os.path.join(self.d, "vpn.json"), config_path=os.path.join(self.d, "config.json"),
             xray_bin="/nonexistent", public_host="203.0.113.7", port=443, sni="www.example.com",
-            private_key="PRIV", public_key="PUB", short_id="00ff", sub_port=0, brand="Aurora VPN",
+            private_key="PRIV", public_key="PUB", short_id="00ff", sub_port=0, brand="Arise VPN",
             default_location="🇵🇱 Польша", restart_cmd=("true",), xray_enabled=False,
             hy2={"port": 443, "sni": "www.example.com", "pin": "", "obfs": "", "obfs_port": 0,
                  "stats_ports": [], "stats_secret": "s"},

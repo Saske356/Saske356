@@ -1,4 +1,4 @@
-"""Свежий APK приложения Aurora VPN из Releases репозитория (собирает .github/workflows/android.yml).
+"""Свежий APK приложения Arise VPN из Releases репозитория (собирает .github/workflows/android.yml).
 
 Файл скачивается на сервер один раз на версию и раздаётся гостям через Telegram: так он доходит,
 даже если у гостя не открывается GitHub. Версия проверяется не чаще раза в CHECK_EVERY секунд.
@@ -13,7 +13,8 @@ import urllib.request
 
 log = logging.getLogger(__name__)
 
-ASSET = "AuroraVPN-arm64-v8a.apk"  # подходит почти всем телефонам последних лет
+ASSET = "AriseVPN-arm64-v8a.apk"  # подходит почти всем телефонам последних лет
+OLD_ASSETS = ("AuroraVPN-arm64-v8a.apk",)  # прежнее название: релизы до переименования
 CHECK_EVERY = 3600
 CHECK_EMPTY = 300  # пока приложения ещё нет (идёт первая сборка) — проверяем чаще
 MAX_SIZE = 49 * 1024 * 1024  # Telegram-бот отправляет файлы до 50 МБ
@@ -67,7 +68,7 @@ class AppRelease:
         rel = json.loads(await asyncio.to_thread(self._fetch, api, 1 << 20))
         ver = str(rel.get("tag_name") or "").lstrip("v")
         url = next((a.get("browser_download_url") for a in rel.get("assets") or []
-                    if a.get("name") == ASSET), None)
+                    if a.get("name") in (ASSET, *OLD_ASSETS)), None)
         if not ver or not url or ver == self.version:
             return
         data = await asyncio.to_thread(self._fetch, url, MAX_SIZE)

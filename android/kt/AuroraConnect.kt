@@ -1,6 +1,6 @@
 package com.v2ray.ang.ui.main
 
-// Главная панель Aurora VPN вверху экрана: кнопка подключения, статус, таймер, выбранная страна
+// Главная панель Arise VPN вверху экрана: кнопка подключения, статус, таймер, выбранная страна
 // с живым пингом, срок подписки, число устройств и кнопка «Продлить».
 // Подменяет нижнюю полоску v2rayNG (MainBottomBar) — кладётся в сборку из android/kt/ скриптом customize.py.
 
@@ -71,7 +71,7 @@ private const val KEY_STARTED_AT = "aurora_connected_since"
 private const val PING_EVERY_MS = 15_000L
 private const val ALL_PING_EVERY_MS = 300_000L
 
-/** Бот Aurora VPN: подставляется при сборке из android/BOT (пусто — кнопки «в бота» скрыты). */
+/** Бот Arise VPN: подставляется при сборке из android/BOT (пусто — кнопки «в бота» скрыты). */
 private const val AURORA_BOT = "%AURORA_BOT%"
 private const val SWITCH_AFTER_FAILS = 2       // столько замеров подряд без связи — и переключаемся
 private const val SWITCH_COOLDOWN_MS = 120_000L // не чаще раза в 2 минуты: если пропал весь интернет, не скачем
@@ -125,14 +125,14 @@ object AuroraRuApps {
     }
 }
 
-/** Срок, устройства и ссылка на бота из заголовков подписки (их отдаёт бот Aurora). */
+/** Срок, устройства и ссылка на бота из заголовков подписки (их отдаёт бот Arise). */
 private data class SubInfo(val expire: Long, val devices: String, val botUrl: String)
 
 private fun subInfo(): SubInfo? {
     val usage = MmkvManager.decodeSubscriptions()
         .mapNotNull { it.subscription.usageInfo }
         .firstOrNull { it.expire > 0 || !it.supportUrl.isNullOrBlank() } ?: return null
-    // Заголовок подписки: «Aurora VPN · 2 устройства»
+    // Заголовок подписки: «Arise VPN · 2 устройства»
     val devices = usage.title?.substringAfter(" · ", "").orEmpty()
     return SubInfo(usage.expire, devices, usage.supportUrl.orEmpty())
 }
@@ -354,7 +354,7 @@ fun AuroraConnectPanel(
                     if (sub.devices.isNotBlank()) add(sub.devices)
                 }
                 Text(
-                    text = if (parts.isEmpty()) "Подписка Aurora VPN" else "Подписка " + parts.joinToString(" · "),
+                    text = if (parts.isEmpty()) "Подписка Arise VPN" else "Подписка " + parts.joinToString(" · "),
                     color = if (sub.expire in 1 until System.currentTimeMillis() / 1000) AuroraRed
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,

@@ -27,7 +27,7 @@ def make(ok=True, name="p"):
         state_path=os.path.join(T, name, "state.json"), config_path=os.path.join(T, name, "config.json"),
         xray_bin=fake_xray(ok), public_host="203.0.113.7", port=443, sni="www.microsoft.com",
         private_key="PRIV", public_key="PUBKEY", short_id="a1b2c3d4e5f60718", sub_port=0,
-        brand="Aurora VPN", default_location="🇸🇪 Швеция", restart_cmd=("true",))
+        brand="Arise VPN", default_location="🇸🇪 Швеция", restart_cmd=("true",))
 
 
 def read_json(path):

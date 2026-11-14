@@ -1,4 +1,4 @@
-"""Превращает исходники v2rayNG в Aurora VPN: python3 customize.py <папка v2rayNG>.
+"""Превращает исходники v2rayNG в Arise VPN: python3 customize.py <папка v2rayNG>.
 
 Меняется только оформление и настройки по умолчанию, ядро и логика v2rayNG остаются как есть.
 Каждая правка проверяет, что нужный кусок нашёлся: если v2rayNG поменяет код, сборка упадёт
@@ -14,8 +14,10 @@ import sys
 
 import make_icon
 
+# Пакет и схема ссылок остались от прежнего названия (Aurora): с ними новая версия ставится
+# поверх уже установленной, а ссылки из бота продолжают открывать приложение.
 APP_ID = "io.github.saske356.aurora"
-APP_NAME = "Aurora VPN"
+APP_NAME = "Arise VPN"
 SCHEME = "aurora"  # ссылка aurora://install-sub?url=... добавляет подписку одним касанием
 REPO = "Saske356/Saske356"
 # Проверка пинга: обычный HTTP без TLS — замер не включает лишнее рукопожатие TLS до Google,
@@ -171,7 +173,7 @@ def encrypt_subscription(kt: str) -> None:
 
 def connect_screen(kt: str) -> None:
     """Главный экран как у крупных VPN: большая золотая кнопка, статус, таймер, выбранная страна
-    (android/kt/AuroraConnect.kt) вместо узкой полоски v2rayNG внизу; заголовок — «Aurora VPN»."""
+    (android/kt/AuroraConnect.kt) вместо узкой полоски v2rayNG внизу; заголовок — название приложения."""
     main = os.path.join(kt, "ui", "main")
     here = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(here, "kt", "AuroraConnect.kt"), encoding="utf-8") as f:
@@ -253,7 +255,7 @@ def main(root: str) -> None:
         ('applicationId = "com.v2ray.ang"', f'applicationId = "{APP_ID}"'),
         (re.compile(r"versionCode = \d+"), f"versionCode = {code}"),
         (re.compile(r'versionName = "[^"]*"'), f'versionName = "{name}"'),
-        ('"v2rayNG_${variant.versionName}', '"AuroraVPN_${variant.versionName}'),
+        ('"v2rayNG_${variant.versionName}', '"AriseVPN_${variant.versionName}'),
         ("compileSdk = ", (f'ndkVersion = "{ndk}"\n    ' if ndk else "") + "compileSdk = "),
     ])
 
