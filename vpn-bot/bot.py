@@ -210,9 +210,7 @@ def share_url(link: str, text: str = "") -> str:
 
 def main_text(row) -> str:
     name = esc(row["first_name"] or "Гость")
-    feats = list(config.FEATURES)
-    if len(location_names()) > 1:
-        feats.append("Страны: " + ", ".join(location_names()))
+    feats = list(config.FEATURES)  # список стран не показываем: он длинный и меняется
     return (f"<b>{name}, добро пожаловать.</b>\n"
             f"<i>{esc(config.TAGLINE)}.</i>\n\n"
             f"<blockquote>{bullets(esc(f) for f in feats)}</blockquote>\n\n"
@@ -391,8 +389,9 @@ def howto_text(platform: str) -> str:
             "   Не открылось? Нажмите на ссылку подписки (она скопируется), в приложении «+» → "
             "«Из буфера обмена».\n"
             "3. Выберите «🚀 Лучший сервер» и включите VPN.</blockquote>"
-            + ("\n\nНа телевизоре удобнее так: на телефоне нажмите «📷 QR-код», а в Happ на телевизоре — "
-               "«+» → «Сканировать QR»." if platform == "tv" else "")
+            + ("\n\nНа телевизоре проще всего открыть этого бота в Telegram для ТВ и нажать "
+               "«📲 Подключить в один клик». Или в Happ на телевизоре «+» → ввести ссылку подписки вручную."
+               if platform == "tv" else "")
             + AFTER)
 
 
@@ -414,8 +413,6 @@ def fix_text() -> str:
     bridges = [b["name"] for b in (vpn.visible_bridges() if hasattr(vpn, "visible_bridges") else [])]
     if bridges:
         steps.append(f"Если мобильный интернет ограничен (белые списки), выберите «{bridges[0]}».")
-    if hasattr(vpn, "links"):
-        steps.append("Если подписка не обновляется, откройте подписку в боте и нажмите «🔑 Ключи без подписки».")
     steps += ["Переключитесь между Wi-Fi и мобильным интернетом: так станет ясно, в какой сети проблема.",
               "Проверьте в «Мои подписки», что срок не закончился.",
               "Удалите профиль в приложении и добавьте ключ заново."]
@@ -469,20 +466,19 @@ def sub_text(s) -> str:
 def sub_kb(s) -> InlineKeyboardMarkup:
     rows = []
     if sub_active(s):
-        rows.append([B("📷 QR-код", f"qr:{s['id']}"), B("📲 Подключение", "howto")])
         if hasattr(vpn, "app_link"):
             rows.append([B("📲 Подключить в один клик", url=vpn.app_link(s["id"]))])
+        rows.append([B("📖 Инструкция", "howto")])
     rows.append([B("◆ Продлить", f"ext:{s['id']}"), B("✏️ Переименовать", f"ren:{s['id']}")])
     if sub_active(s) and hasattr(vpn, "reset_key"):
-        rows.append([B("📱 Устройства", f"dev:{s['id']}")] +
-                    ([B("➕ Добавить", f"up:{s['id']}")] if can_upgrade(s) else []))
+        # одна кнопка: внутри и список устройств, и «➕ Добавить устройства»
+        rows.append([B("📱 Устройства" + (" · ➕ добавить" if can_upgrade(s) else ""), f"dev:{s['id']}")])
     elif can_upgrade(s):
         rows.append([B("➕ Добавить устройства", f"up:{s['id']}")])
     if s["auto_active"] and sub_active(s):
         rows.append([B("🔁 Отключить автопродление", f"noauto:{s['id']}")])
     if sub_active(s):
-        rows.append([B("🛠 Не работает?", "fix")] + ([B("🔑 Ключи без подписки", f"raw:{s['id']}")]
-                                                    if hasattr(vpn, "links") else []))
+        rows.append([B("🛠 Не работает?", "fix")])
     rows.append([B("‹ Мои подписки", "subs")])
     return InlineKeyboardMarkup(rows)
 
@@ -761,7 +757,7 @@ def parse_rub_payload(payload: str):
     """Счёт ЮKassa: r1:код:тариф:дней:рубли:звёзды:устройства:подписка."""
     try:
         v, code, plan, days, rub, stars, dev, sub_id = payload.split(":")
-        if v != "r1" or code not in ("b", "e", "g"):
+        if v != "r1" or code not in ("b", "e", "g", "u"):  # u — доплата за устройства
             return None
         return code, plan, int(days), int(rub), int(stars), int(dev), int(sub_id)
     except ValueError:
@@ -837,6 +833,13 @@ async def send_rub_order(update: Update, context: ContextTypes.DEFAULT_TYPE, met
     code = {"n": "b", "e": "e", "g": "g"}[kind]
     payload = f"r1:{code}:{plan}:{days}:{rub}:{stars}:{dev}:{sub_id}"
     title, desc = order_title(kind, plan, dev)
+    await send_rub_invoice(update, context, method, title, desc, name, rub, payload)
+
+
+async def send_rub_invoice(update, context: ContextTypes.DEFAULT_TYPE, method: str, title: str, desc: str,
+                           name: str, rub: int, payload: str) -> None:
+    """Счёт в рублях по готовому payload: y — ЮKassa, c — Crypto Pay."""
+    uid = update.effective_user.id
     chat = update.effective_chat.id
     if method == "y":
         extra = {}
@@ -927,6 +930,15 @@ async def precheckout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     q = update.pre_checkout_query
     stale = "Счёт устарел. Откройте меню и выберите тариф заново."
     r = parse_rub_payload(q.invoice_payload)
+    if r and r[0] == "u":  # доплата за устройства картой: та же подписка, сумма не ниже текущей
+        code, plan, days, rub, stars, dev, sub_id = r
+        sub = db.get_sub(sub_id)
+        ok = bool(pay_cfg.yookassa and sub and sub["user_id"] == q.from_user.id and q.currency == "RUB"
+                  and q.total_amount == rub * 100 and plan == f"up{sub['devices']}" and can_upgrade(sub)
+                  and dev in config.DEVICE_OPTIONS and dev > sub["devices"]
+                  and rub >= pay_cfg.rub(upgrade_price(sub, dev)))
+        await q.answer(ok=ok, error_message=None if ok else stale)
+        return
     if r:  # ЮKassa: сумма в копейках, цена та же, что показали гостю
         code, plan, days, rub, stars, dev, sub_id = r
         who_pays = None if code == "g" else q.from_user.id
@@ -1011,24 +1023,30 @@ async def paid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not sub or sub["user_id"] != u.id:
             log.error("доплата за устройства без подписки: %s", sp.invoice_payload)
             return
-        if not db.add_payment(u.id, plan, sp.total_amount, 0, charge, "upgrade", sub["id"], dev):
-            return
-        db.set_payment_target(charge, sub["id"])
-        db.run("UPDATE subscriptions SET devices=? WHERE id=?", max(dev, sub["devices"]), sub["id"])
-        sub = await issue_key(sub["id"])
-        await refresh_menu(context, u.id)
-        await show(update, context,
-                   f"<b>Готово: {plural_dev(sub['devices'])}</b>\n\n"
-                   f"◆ «{esc(sub['name'])}» до <b>{fmt_date(sub['expires_at'])}</b>\n"
-                   "Ключ тот же, новые устройства можно подключать сразу.",
-                   KB([B("📲 Подключение", "howto"), B("🗝 Подписка", f"sub:{sub['id']}")], [BACK]),
-                   banner="welcome", effect=CONFETTI)
-        await notify_admins(context, f"➕ Устройства: {who(u)} · «{esc(sub['name'])}» → "
-                                     f"{plural_dev(sub['devices'])} · {sp.total_amount} ⭐\n"
-                                     f"charge: <code>{esc(charge)}</code>")
+        await grant_upgrade(update, context, row, sub, plan, dev, charge, sp.total_amount)
         return
 
     await fulfill(update, context, row, code, plan, days, dev, sub_id, charge, sp.total_amount, token=token)
+
+
+async def grant_upgrade(update, context: ContextTypes.DEFAULT_TYPE, u, sub, plan: str, dev: int, charge: str,
+                        stars: int, method: str = "stars", money: str | None = None) -> None:
+    """Доплата за устройства прошла (звёзды, карта или крипта): больше устройств в той же подписке."""
+    if not db.add_payment(u["id"], plan, stars, 0, charge, "upgrade", sub["id"], dev, method=method, money=money):
+        return  # тот же платёж повторно
+    db.set_payment_target(charge, sub["id"])
+    db.run("UPDATE subscriptions SET devices=? WHERE id=?", max(dev, sub["devices"]), sub["id"])
+    sub = await issue_key(sub["id"])
+    await refresh_menu(context, u["id"])
+    await show(update, context,
+               f"<b>Готово: {plural_dev(sub['devices'])}</b>\n\n"
+               f"◆ «{esc(sub['name'])}» до <b>{fmt_date(sub['expires_at'])}</b>\n"
+               "Ключ тот же, новые устройства можно подключать сразу.",
+               KB([B("📲 Подключение", "howto"), B("🗝 Подписка", f"sub:{sub['id']}")], [BACK]),
+               banner="welcome", effect=CONFETTI)
+    await notify_admins(context, f"➕ Устройства: {who(u)} · «{esc(sub['name'])}» → "
+                                 f"{plural_dev(sub['devices'])} · {money or f'{stars} ⭐'}\n"
+                                 f"charge: <code>{esc(charge)}</code>")
 
 
 async def fulfill(update, context: ContextTypes.DEFAULT_TYPE, u, code: str, plan: str, days: int, dev: int,
@@ -1037,6 +1055,13 @@ async def fulfill(update, context: ContextTypes.DEFAULT_TYPE, u, code: str, plan
     """Оплата прошла: новая подписка, продление или подарок. Общая часть для звёзд, ЮKassa и крипты.
     u — строка гостя из базы; amount — цена в звёздах (для рублей — цена тарифа в звёздах);
     update нужен только для экрана (у крипты это заглушка с чатом гостя)."""
+    if code == "u":  # доплата за устройства картой или криптой
+        sub = db.get_sub(sub_id)
+        if sub and sub["user_id"] == u["id"]:
+            await grant_upgrade(update, context, u, sub, plan, dev, charge, amount, method, money)
+        else:
+            log.error("доплата за устройства без подписки: %s %s", sub_id, charge)
+        return
     row = u
     name = (find_plan(plan, u["id"]) or (plan,))[0]
     paid_text = money or f"{amount} ⭐"
@@ -1193,7 +1218,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await q.answer()
         await show(update, context, upgrade_text(sub), upgrade_kb(sub), banner="plans")
         return
-    if parts[0] == "upd" and len(parts) == 3 and parts[2].isdigit():
+    if parts[0] == "upd" and len(parts) in (3, 4) and parts[2].isdigit():
         sub = await own_sub(q, uid, parts[1])
         if not sub:
             return
@@ -1201,12 +1226,35 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not can_upgrade(sub) or n not in config.DEVICE_OPTIONS or n <= sub["devices"]:
             await q.answer("Откройте подписку заново", show_alert=True)
             return
-        await q.answer("Счёт ниже 👇")
         amount = upgrade_price(sub, n)
+        method = parts[3] if len(parts) == 4 else ""
+        if pay_cfg.any_on() and method not in ("s", "y", "c"):  # сначала — чем платить
+            await q.answer()
+            rub = pay_cfg.rub(amount)
+            rows = [[B(f"⭐ Звёздами Telegram — {amount} ⭐", f"upd:{sub['id']}:{n}:s")]]
+            if pay_cfg.yookassa:
+                rows.append([B(f"💳 Картой или СБП — {rub} ₽", f"upd:{sub['id']}:{n}:y")])
+            if pay_cfg.crypto:
+                rows.append([B(f"🪙 Криптой (USDT, TON, BTC) — {rub} ₽", f"upd:{sub['id']}:{n}:c")])
+            rows.append([B("‹ Устройства", f"up:{sub['id']}")])
+            await show(update, context, f"<b>{plural_dev(sub['devices'])} → {plural_dev(n)}</b>\n"
+                                        f"<i>«{esc(sub['name'])}» до {fmt_date(sub['expires_at'])}. "
+                                        "Как удобнее оплатить?</i>", InlineKeyboardMarkup(rows), banner="plans")
+            return
+        if method in ("y", "c") and not (pay_cfg.yookassa if method == "y" else pay_cfg.crypto):
+            await q.answer("Этот способ оплаты сейчас выключен", show_alert=True)
+            return
+        await q.answer("Счёт ниже 👇" if method != "c" else "Создаю счёт…")
+        title = f"{config.BRAND} · устройства"
+        desc = (f"«{sub['name']}»: {plural_dev(sub['devices'])} → {plural_dev(n)} до "
+                f"{fmt_date(sub['expires_at'])}.")
+        if method in ("y", "c"):
+            rub = pay_cfg.rub(amount)
+            payload = f"r1:u:up{sub['devices']}:0:{rub}:{amount}:{n}:{sub['id']}"
+            await send_rub_invoice(update, context, method, title, desc, "Устройства", rub, payload)
+            return
         await context.bot.send_invoice(
-            chat_id=update.effective_chat.id, title=f"{config.BRAND} · устройства",
-            description=f"«{sub['name']}»: {plural_dev(sub['devices'])} → {plural_dev(n)} до "
-                        f"{fmt_date(sub['expires_at'])}.",
+            chat_id=update.effective_chat.id, title=title, description=desc,
             payload=f"v2:u:up{sub['devices']}:0:{amount}:{n}:{sub['id']}:-", provider_token="",
             currency="XTR", prices=[LabeledPrice("Устройства", amount)])
         return

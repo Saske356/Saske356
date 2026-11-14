@@ -683,7 +683,7 @@ async def main():
     some = next(iter(active)); assert db.get_sub(some)["vpn_key"] == prov.sub_url(some)
     u = make_update(1, text="/addloc nl 🇳🇱 Нидерланды | socks5://u:p@1.2.3.4:1080")
     await bot.addloc(u, ctx); assert len(prov.locations) == 2
-    assert "Страны:" in bot.main_text(db.get_user(200))
+    assert "Страны:" not in bot.main_text(db.get_user(200)), "список стран в приветствии не показываем"
     assert "другую страну" in bot.fix_text() and "Обход" not in bot.fix_text()
     u = make_update(1, text="/addbridge ru1 🇷🇺 Обход | 198.51.100.9"); await bot.addbridge(u, ctx)
     assert "Мост добавлен" in u.message.reply_text.await_args.args[0] and len(prov.bridges) == 1
@@ -702,7 +702,8 @@ async def main():
     sent = "\n".join(c.args[1] for c in ctx.bot.send_message.await_args_list)
     assert "без подписки" in sent and sent.count("vless://") == len(prov.links(some)) and "· запасной" in sent
     u = await press(300, f"raw:{some}", ctx); assert alerted(u), "чужие ключи не выдаются"
-    assert "запасной" in bot.fix_text() and "Ключи без подписки" in bot.fix_text()
+    assert "запасной" in bot.fix_text()
+    assert "Ключи без подписки" not in bot.fix_text(), "подсказку про ключи убрали"
     # мост для белых списков: бот сам подбирает российский сайт маскировки
     real_pick = bot.pick_bridge_site
     bot.pick_bridge_site = AsyncMock(return_value="vk.com")

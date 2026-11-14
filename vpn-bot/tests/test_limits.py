@@ -370,7 +370,7 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([c["remarks"] for c in cfgs],
                          ["🚀 Лучший сервер", "🎮 Игры", "🇵🇱 Польша", "🇩🇪 Германия"])
         turbo = {"keepAlivePeriod": 10, "maxIdleTimeout": 60, "congestion": "brutal",
-                 "brutalUp": "20 mbps", "brutalDown": "150 mbps"}
+                 "brutalUp": "100 mbps", "brutalDown": "500 mbps"}
         self.assertTrue(quic(cfgs) and all(q == turbo for q in quic(cfgs)), "турбо везде, и в «Лучшем сервере»")
         self.assertEqual({c["routing"]["domainStrategy"] for c in cfgs}, {"AsIs"}, "без лишних DNS-запросов")
         # обфускация и настройки QUIC уживаются в одном finalmask
