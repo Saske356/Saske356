@@ -43,8 +43,14 @@ object Core {
     }
 
     /** Конфиг для работы VPN: вход tun (трафик телефона) и локальный SOCKS для обновления подписки. */
-    fun runConfig(server: String): String {
+    fun runConfig(server: String, mode: Mode = Mode.BALANCE): String {
         val o = JSONObject(server)
+        mode.apply(o)
+        // Счётчики трафика: из них график скорости и «за сеанс»
+        o.put("stats", JSONObject())
+        val policy = o.optJSONObject("policy") ?: JSONObject().also { o.put("policy", it) }
+        val system = policy.optJSONObject("system") ?: JSONObject().also { policy.put("system", it) }
+        system.put("statsOutboundUplink", true).put("statsOutboundDownlink", true)
         val sniffing = JSONObject()
             .put("enabled", true)
             .put("destOverride", JSONArray(listOf("http", "tls", "quic")))

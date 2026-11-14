@@ -6,10 +6,16 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- Российские приложения, которые по умолчанию идут мимо VPN: Android 11+ показывает
          приложению только те чужие пакеты, что перечислены здесь (без QUERY_ALL_PACKAGES). -->
     <queries>
+        <!-- список приложений на экране «Приложения мимо VPN» -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
         <package android:name="ru.sberbankmobile" />
         <package android:name="ru.sberbank.sberbankid" />
         <package android:name="com.idamob.tinkoff.android" />
@@ -101,6 +107,24 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="vpn" />
+        </service>
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <service
+            android:name=".AriseTile"
+            android:exported="true"
+            android:icon="@drawable/ic_shield"
+            android:label="Arise VPN"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
         </service>
     </application>
 </manifest>

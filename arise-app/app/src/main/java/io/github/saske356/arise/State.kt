@@ -21,7 +21,26 @@ data class VpnUi(
     val ping: Long = 0L,      // живая задержка через туннель: 0 — ещё не мерили, -1 — нет связи
     val note: String = "",    // «Связь пропала — переключено на …»
     val error: String = "",
+    val downBps: Long = 0L,   // скорость прямо сейчас, байт/с
+    val upBps: Long = 0L,
+    val sessionBytes: Long = 0L,
+    val history: List<Float> = emptyList(),  // скорость скачивания за последнюю минуту, Мбит/с
 )
+
+/** Тест скорости через VPN. */
+data class SpeedUi(
+    val running: Boolean = false,
+    val stage: String = "",
+    val downMbps: Double = 0.0,
+    val upMbps: Double = 0.0,
+    val ping: Long = 0L,
+    val jitter: Long = 0L,
+    val error: String = "",
+)
+
+object SpeedState {
+    val flow = MutableStateFlow(SpeedUi())
+}
 
 object VpnState {
     val flow = MutableStateFlow(VpnUi())
@@ -38,6 +57,10 @@ data class Data(
     val title: String = "",
     val botUrl: String = "",
     val ruApps: Boolean = true,
+    val mode: Mode = Mode.BALANCE,
+    val dns: Dns = Dns.CLOUDFLARE,
+    val autoConnect: Boolean = false,
+    val bypass: Set<String> = emptySet(),
     val loading: Boolean = false,
     val pinging: Boolean = false,
     val error: String = "",
@@ -53,7 +76,8 @@ object Repo {
             it.copy(
                 subUrl = Store.subUrl, servers = Store.servers(), pings = Store.pings,
                 selected = Store.current()?.name ?: "", expire = Store.expire, title = Store.title,
-                botUrl = Store.botUrl, ruApps = Store.ruApps,
+                botUrl = Store.botUrl, ruApps = Store.ruApps, mode = Store.mode, dns = Store.dns,
+                autoConnect = Store.autoConnect, bypass = Store.bypass,
             )
         }
     }
@@ -108,6 +132,51 @@ object Repo {
     fun setRuApps(on: Boolean) {
         Store.ruApps = on
         flow.update { it.copy(ruApps = on) }
+    }
+
+    fun setMode(m: Mode) {
+        Store.mode = m
+        flow.update { it.copy(mode = m) }
+    }
+
+    fun nextDns() {
+        val d = Store.dns.next()
+        Store.dns = d
+        flow.update { it.copy(dns = d) }
+    }
+
+    fun setAutoConnect(on: Boolean) {
+        Store.autoConnect = on
+        flow.update { it.copy(autoConnect = on) }
+    }
+
+    fun toggleBypass(pkg: String) {
+        val s = Store.bypass.toMutableSet()
+        if (!s.add(pkg)) s.remove(pkg)
+        Store.bypass = s
+        flow.update { it.copy(bypass = s) }
+    }
+
+    /** Тест скорости через VPN: задержка и её разброс, скачивание, отдача. */
+    fun speedTest() = scope.launch {
+        if (SpeedState.flow.value.running) return@launch
+        if (VpnState.flow.value.status != Status.RUNNING) {
+            SpeedState.flow.value = SpeedUi(error = "Сначала включите VPN — тест идёт через него")
+            return@launch
+        }
+        SpeedState.flow.value = SpeedUi(running = true, stage = "Пинг…")
+        try {
+            val pings = (1..6).map { AriseVpnService.measure() }.filter { it > 0 }
+            val ping = pings.minOrNull() ?: -1L
+            val jitter = if (pings.size > 1) pings.zipWithNext { a, b -> kotlin.math.abs(a - b) }.average().toLong() else 0L
+            SpeedState.flow.update { it.copy(ping = ping, jitter = jitter, stage = "Скачивание…") }
+            val down = SpeedTest.download { mbps -> SpeedState.flow.update { it.copy(downMbps = mbps) } }
+            SpeedState.flow.update { it.copy(downMbps = down, stage = "Отдача…") }
+            val up = SpeedTest.upload { mbps -> SpeedState.flow.update { it.copy(upMbps = mbps) } }
+            SpeedState.flow.update { it.copy(upMbps = up, running = false, stage = "") }
+        } catch (e: Exception) {
+            SpeedState.flow.update { it.copy(running = false, stage = "", error = "Тест не удался: ${e.message}") }
+        }
     }
 
     fun forget() {

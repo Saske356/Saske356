@@ -44,6 +44,16 @@ class AriseVpnService : VpnService() {
         fun stop(ctx: Context) {
             ctx.startService(Intent(ctx, AriseVpnService::class.java).setAction(ACTION_STOP))
         }
+
+        @Volatile
+        private var running: CoreController? = null
+
+        /** Задержка через работающий туннель (для теста скорости). -1 — нет связи или VPN выключен. */
+        fun measure(): Long = try {
+            running?.measureDelay(Core.PING_URL) ?: -1L
+        } catch (e: Exception) {
+            -1L
+        }
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -51,6 +61,7 @@ class AriseVpnService : VpnService() {
     private var tun: ParcelFileDescriptor? = null
     private var controller: CoreController? = null
     private var pingJob: Job? = null
+    private var trafficJob: Job? = null
 
     private val callback = object : CoreCallbackHandler {
         override fun onEmitStatus(p0: Long, p1: String?): Long = 0L
@@ -74,7 +85,9 @@ class AriseVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        running = null
         pingJob?.cancel()
+        trafficJob?.cancel()
         try {
             controller?.stopLoop()
         } catch (e: Exception) {
@@ -106,14 +119,16 @@ class AriseVpnService : VpnService() {
             Core.init(applicationContext)
             val fd = tun ?: buildTun().also { tun = it }
             val c = Libv2ray.newCoreController(callback)
-            c.startLoop(Core.runConfig(server.json), fd.fd)
+            c.startLoop(Core.runConfig(server.json, Store.mode), fd.fd)
             if (!c.getIsRunning()) throw IllegalStateException("ядро не запустилось")
             controller = c
+            running = c
             if (Store.startedAt == 0L) Store.startedAt = System.currentTimeMillis()
             Repo.select(server.name)
             VpnState.update { it.copy(status = Status.RUNNING, server = server.name, ping = 0L) }
             goForeground(server.name)
             startPingLoop()
+            startTrafficLoop()
         } catch (e: Exception) {
             Log.e(TAG, "запуск VPN", e)
             VpnState.update { it.copy(status = Status.STOPPED, error = "Не удалось подключиться: ${e.message}") }
@@ -127,13 +142,16 @@ class AriseVpnService : VpnService() {
         stopCore()
         closeTun()
         Store.startedAt = 0L
-        VpnState.update { it.copy(status = Status.STOPPED, ping = 0L) }
+        VpnState.update { it.copy(status = Status.STOPPED, ping = 0L, downBps = 0L, upBps = 0L, sessionBytes = 0L, history = emptyList()) }
         finish()
     }
 
     private fun stopCore() {
         pingJob?.cancel()
         pingJob = null
+        trafficJob?.cancel()
+        trafficJob = null
+        running = null
         try {
             controller?.stopLoop()
         } catch (e: Exception) {
@@ -162,7 +180,7 @@ class AriseVpnService : VpnService() {
             .setMtu(1500)
             .addAddress("10.10.14.1", 30)
             .addRoute("0.0.0.0", 0)
-            .addDnsServer("1.1.1.1")
+            .addDnsServer(Store.dns.ip)
         try {
             // IPv6 тоже в туннель: иначе сайты по IPv6 шли бы мимо VPN
             b.addAddress("fdfe:dcba:9876::1", 126)
@@ -172,13 +190,13 @@ class AriseVpnService : VpnService() {
         }
         // Само приложение (и ядро внутри него) — мимо туннеля, иначе трафик ядра ушёл бы в петлю
         b.addDisallowedApplication(packageName)
-        if (Store.ruApps) {
-            for (pkg in RuApps.PACKAGES) {
-                try {
-                    b.addDisallowedApplication(pkg)
-                } catch (e: PackageManager.NameNotFoundException) {
-                    // приложения нет на телефоне
-                }
+        val skip = Store.bypass + if (Store.ruApps) RuApps.PACKAGES else emptyList()
+        for (pkg in skip) {
+            if (pkg == packageName) continue
+            try {
+                b.addDisallowedApplication(pkg)
+            } catch (e: PackageManager.NameNotFoundException) {
+                // приложения нет на телефоне
             }
         }
         if (Build.VERSION.SDK_INT >= 29) b.setMetered(false)
@@ -201,6 +219,7 @@ class AriseVpnService : VpnService() {
                     -1L
                 }
                 VpnState.update { it.copy(ping = if (ms > 0) ms else -1L) }
+                if (ms > 0) Store.pings = Store.pings + (Store.current()?.name.orEmpty() to ms)
                 fails = if (ms > 0) 0 else fails + 1
                 val now = System.currentTimeMillis()
                 val current = Store.current()?.name ?: ""
@@ -212,12 +231,54 @@ class AriseVpnService : VpnService() {
                     if (best != null) {
                         lastSwitch = now
                         Repo.select(best.name)
-                        VpnState.update { it.copy(note = "Связь пропала — переключено на «${best.name}»") }
+                        // Обычные страны молчат, а мост через Россию отвечает — похоже, включились белые списки
+                        val whitelist = isBridge(best.name) && !isBridge(current)
+                        VpnState.update {
+                            it.copy(note = if (whitelist) "Похоже, включились белые списки — переключено на «${best.name}»"
+                            else "Связь пропала — переключено на «${best.name}»")
+                        }
                         scope.launch { startVpn() }
                         return@launch
                     }
                 }
-                delay(15_000)
+                delay(Store.mode.pingEveryMs)
+            }
+        }
+    }
+
+    private fun isBridge(name: String) = name.contains("🇷🇺") || name.contains("Обход", ignoreCase = true)
+
+    /** Скорость и трафик за сеанс из счётчиков ядра: «тег,направление,байты;…», значения с прошлого запроса. */
+    private fun startTrafficLoop() {
+        trafficJob?.cancel()
+        trafficJob = scope.launch {
+            var last = System.nanoTime()
+            while (isActive) {
+                delay(1000)
+                val payload = try {
+                    controller?.queryAllOutboundTrafficStats() ?: ""
+                } catch (e: Exception) {
+                    ""
+                }
+                val now = System.nanoTime()
+                val secs = ((now - last) / 1e9).coerceAtLeast(0.2)
+                last = now
+                var down = 0L
+                var up = 0L
+                for (entry in payload.split(';')) {
+                    val parts = entry.split(',', limit = 3)
+                    if (parts.size != 3 || parts[0] == "block") continue
+                    val v = parts[2].trim().toLongOrNull() ?: continue
+                    if (parts[1] == "downlink") down += v else if (parts[1] == "uplink") up += v
+                }
+                val dBps = (down / secs).toLong()
+                val uBps = (up / secs).toLong()
+                VpnState.update {
+                    it.copy(
+                        downBps = dBps, upBps = uBps, sessionBytes = it.sessionBytes + down + up,
+                        history = (it.history + (dBps * 8f / 1_000_000f)).takeLast(60)
+                    )
+                }
             }
         }
     }
@@ -231,7 +292,7 @@ class AriseVpnService : VpnService() {
         val n = notificationBuilder()
             .setContentTitle("Arise VPN")
             .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
+            .setSmallIcon(R.drawable.ic_shield)
             .setContentIntent(pi)
             .setOngoing(true)
             .build()

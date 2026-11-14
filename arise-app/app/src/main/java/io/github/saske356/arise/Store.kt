@@ -49,6 +49,23 @@ object Store {
         get() = p.getBoolean("ru_apps", true)
         set(v) = p.edit().putBoolean("ru_apps", v).apply()
 
+    var mode: Mode
+        get() = Mode.of(str("mode"))
+        set(v) = put("mode", v.key)
+
+    var dns: Dns
+        get() = Dns.of(str("dns"))
+        set(v) = put("dns", v.key)
+
+    var autoConnect: Boolean
+        get() = p.getBoolean("auto_connect", false)
+        set(v) = p.edit().putBoolean("auto_connect", v).apply()
+
+    /** Свои приложения мимо VPN (кроме встроенного списка российских). */
+    var bypass: Set<String>
+        get() = p.getStringSet("bypass", emptySet())?.toSet() ?: emptySet()
+        set(v) = p.edit().putStringSet("bypass", v).apply()
+
     var lastRefresh: Long
         get() = p.getLong("last_refresh", 0L)
         set(v) = p.edit().putLong("last_refresh", v).apply()
