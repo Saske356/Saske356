@@ -25,7 +25,10 @@ object Subscription {
     data class Info(val configs: List<String>, val expire: Long, val title: String, val botUrl: String)
 
     fun fetch(url: String, socksPort: Int? = null): Info {
-        val u = URL(url.trim())
+        // Явно просим JSON: если в /admin выключены «JSON-конфиги», сервер иначе отдал бы
+        // список ссылок, а приложение умеет только JSON («Ссылка не от Arise VPN»).
+        val clean = url.trim()
+        val u = URL(clean + (if ('?' in clean) "&" else "?") + "format=json")
         val conn = (if (socksPort != null)
             u.openConnection(Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", socksPort)))
         else u.openConnection()) as HttpURLConnection
@@ -38,11 +41,13 @@ object Subscription {
             if (code == 404) throw IOException("Ссылка подписки не найдена — возьмите новую в боте")
             if (code != 200) throw IOException("Сервер ответил $code")
             val body = conn.inputStream.bufferedReader().use { it.readText() }
-            val text = decrypt(URI(url.trim()).rawPath ?: "", body)
+            val text = decrypt(URI(clean).rawPath ?: "", body)
             val arr = try {
                 JSONArray(text)
             } catch (e: Exception) {
-                throw IOException("Ссылка не от Arise VPN: откройте подписку из бота")
+                val start = text.take(40).replace(Regex("\\s+"), " ")
+                throw IOException("Сервер ответил не подпиской Arise VPN (${conn.contentType ?: "?"}: «$start…»). " +
+                    "Проверьте ссылку или напишите в бот")
             }
             val configs = List(arr.length()) { arr.getJSONObject(it).toString() }
             if (configs.isEmpty()) throw IOException("В подписке нет стран")
