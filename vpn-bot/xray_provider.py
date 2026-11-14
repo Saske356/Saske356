@@ -1553,7 +1553,11 @@ class XrayProvider(VpnProvider):
         return self.sub_url(user_id) + "/app"
 
     def app_deeplink(self, user_id: int) -> str:
-        # aurora://install-sub — обработчик ссылок v2rayNG: добавляет подписку и сразу её обновляет
+        # arise://install-sub — новое приложение Arise: добавляет подписку и сразу её обновляет
+        return f"arise://install-sub?url={quote(self.sub_url(user_id), safe='')}#{quote(self.brand)}"
+
+    def legacy_deeplink(self, user_id: int) -> str:
+        # aurora://install-sub — старое приложение (сборка v2rayNG), у кого оно ещё стоит
         return f"aurora://install-sub?url={quote(self.sub_url(user_id), safe='')}#{quote(self.brand)}"
 
     def app_page(self, user_id: int) -> str:
@@ -1567,6 +1571,7 @@ class XrayProvider(VpnProvider):
         # (название, ссылка, для каких систем: a — Android, i — iPhone/Mac, w — Windows, * — все)
         apps = [
             (self.brand, self.app_deeplink(user_id), "a", True),
+            (f"{self.brand} (старая версия)", self.legacy_deeplink(user_id), "a", False),
             ("Happ", f"happ://add/{url}", "*", False),
             ("Hiddify", f"hiddify://import/{url}#{name}", "*", False),
             ("v2rayNG", f"v2rayng://install-sub?url={q}#{name}", "a", False),

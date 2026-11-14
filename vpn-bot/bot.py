@@ -54,13 +54,16 @@ guard = DeviceGuard(config.DEVICE_LIMIT, warn_after=3, block_after=5, block_minu
 # Оплата картой (ЮKassa) и криптой (Crypto Pay): ключи задаёт админ командой /pay
 pay_cfg = paymod.Settings(os.path.join(os.path.dirname(os.path.abspath(config.DB_PATH)), "payments.json"))
 # Своё приложение для Android: только у настоящего VPN (у демо нет подписки для него)
-android_app = AppRelease(config.APP_REPO, config.APP_DIR) if config.APP_REPO and hasattr(vpn, "app_link") else None
+_has_app = bool(config.APP_REPO and hasattr(vpn, "app_link"))
+# Бот раздаёт новое приложение Arise (arise-app/, выпуски arise-new-0.1.N). Старое (сборка v2rayNG,
+# выпуски v1.0.N) больше не раздаётся, но сервер держит его APK: у кого оно стоит, обновляются изнутри.
+legacy_app = AppRelease(config.APP_REPO, config.APP_DIR) if _has_app else None
 # Новое приложение (arise-app/): предварительные версии arise-new-0.1.N. Бот его не рассылает,
 # но приложение обновляется изнутри через сервер подписок.
-arise_app = AppRelease(config.APP_REPO, os.path.join(config.APP_DIR, "new"), asset="AriseNew-arm64-v8a.apk",
-                       old_assets=(), prefix="arise-new-") if android_app else None
+android_app = AppRelease(config.APP_REPO, os.path.join(config.APP_DIR, "new"), asset="AriseNew-arm64-v8a.apk",
+                         old_assets=(), prefix="arise-new-") if _has_app else None
 if android_app:
-    vpn.app_releases = {"aurora": android_app, "arise": arise_app}
+    vpn.app_releases = {"aurora": legacy_app, "arise": android_app}
 
 
 def is_admin_sub(sid: int) -> bool:
@@ -3579,7 +3582,7 @@ def dev_word(n: int) -> str:
 
 async def app_release_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Свежие APK обоих приложений на сервере: из них приложения обновляются изнутри."""
-    for rel in (android_app, arise_app):
+    for rel in (legacy_app, android_app):
         if rel:
             await rel.latest()
 

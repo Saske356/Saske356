@@ -412,7 +412,8 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         head, _, body = await get(path + "/app", "Mozilla/5.0")
         self.assertIn(b"text/html", head)
         page = body.decode()
-        self.assertIn("aurora://install-sub?url=" + quote(self.v.sub_url(1), safe=""), page)
+        self.assertIn("arise://install-sub?url=" + quote(self.v.sub_url(1), safe=""), page)
+        self.assertIn("aurora://install-sub?url=" + quote(self.v.sub_url(1), safe=""), page, "и для старой версии")
         self.assertEqual(self.v.app_link(1), self.v.sub_url(1) + "/app")
         # лимит устройств по номеру (x-hwid): третье устройство при двух оплаченных — заглушка
         self.v.state["devices"]["1"] = 2
