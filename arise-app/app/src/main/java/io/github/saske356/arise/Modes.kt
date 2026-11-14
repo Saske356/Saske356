@@ -98,15 +98,22 @@ enum class Mode(
     }
 }
 
-/** DNS для телефона внутри туннеля. */
-enum class Dns(val key: String, val title: String, val ip: String, val note: String) {
-    CLOUDFLARE("cf", "Cloudflare", "1.1.1.1", "быстрый"),
-    ADGUARD("adguard", "AdGuard", "94.140.14.14", "режет рекламу во всех приложениях"),
-    GOOGLE("google", "Google", "8.8.8.8", "надёжный");
+/**
+ * DNS для телефона внутри туннеля. Запросы идут через VPN (кроме Яндекса — российский адрес
+ * по правилам идёт напрямую). Второй адрес — запасной, если первый не ответил.
+ */
+enum class Dns(val key: String, val title: String, val ip: String, val ip2: String, val note: String) {
+    CLOUDFLARE("cf", "Cloudflare", "1.1.1.1", "1.0.0.1", "самый быстрый, без фильтров"),
+    GOOGLE("google", "Google", "8.8.8.8", "8.8.4.4", "надёжный, без фильтров"),
+    ADGUARD("adguard", "AdGuard", "94.140.14.14", "94.140.15.15", "режет рекламу и трекеры во всех приложениях"),
+    ADGUARD_FAMILY("adguard_family", "AdGuard Семейный", "94.140.14.15", "94.140.15.16", "реклама + сайты 18+ и безопасный поиск"),
+    QUAD9("quad9", "Quad9", "9.9.9.9", "149.112.112.112", "блокирует вирусные и мошеннические сайты"),
+    CLOUDFLARE_FAMILY("cf_family", "Cloudflare Семейный", "1.1.1.3", "1.0.0.3", "вирусы + сайты 18+"),
+    CONTROLD("controld", "Control D", "76.76.2.0", "76.76.10.0", "быстрый, без фильтров"),
+    OPENDNS("opendns", "OpenDNS", "208.67.222.222", "208.67.220.220", "защита от фишинга"),
+    YANDEX("yandex", "Яндекс", "77.88.8.8", "77.88.8.1", "быстрее для российских сайтов, идёт мимо VPN");
 
     companion object {
         fun of(key: String): Dns = entries.firstOrNull { it.key == key } ?: CLOUDFLARE
     }
-
-    fun next(): Dns = entries[(ordinal + 1) % entries.size]
 }

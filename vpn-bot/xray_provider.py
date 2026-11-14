@@ -162,11 +162,16 @@ class XrayProvider(VpnProvider):
                                "max": int(auto_max)})
         st["auto"].setdefault("notify", True)
         st["auto"].setdefault("exclude", [])
-        # 13.11: бесплатных стран по умолчанию до 15 (было 8); заданное админом число не трогаем
+        # 13.11: бесплатных стран по умолчанию до 15 (было 8), 14.11: до 25;
+        # заданное админом число не трогаем
         if not st["auto"].get("max15"):
             if int(st["auto"].get("max") or 8) == 8:
                 st["auto"]["max"] = 15
             st["auto"]["max15"] = True
+        if not st["auto"].get("max25"):
+            if int(st["auto"].get("max") or 15) == 15:
+                st["auto"]["max"] = 25
+            st["auto"]["max25"] = True
         # Сайт маскировки: пока его не меняли из бота, действует значение из .env.
         m = st.setdefault("masking", {})
         for key, value in (("site", ""), ("prev", []), ("auto", True), ("every", 0), ("changed", 0)):
@@ -795,21 +800,37 @@ class XrayProvider(VpnProvider):
     # ---------- обход белых списков по имени сайта ----------
 
     BS_DEFAULT = "vk.com"
+    # Ещё сайты для запасных пунктов «обход БС 2/3»: операторы держат в белых списках разные
+    # наборы, и какой-то из них может пройти, когда первый не проходит.
+    BS_EXTRA = ("ya.ru", "www.gosuslugi.ru")
+    BS_MAX = 3
 
     @property
     def bs_site(self) -> str:
         return self.state.get("bs_site") or self.bridge_site or self.BS_DEFAULT
+
+    @property
+    def bs_sites(self) -> list[str]:
+        """Сайты пунктов «обход БС»: первый — основной (/bs site), дальше запасные."""
+        extra = self.state.get("bs_extra")
+        if extra is None:
+            extra = list(self.BS_EXTRA)
+        return list(dict.fromkeys([self.bs_site, *extra]))[:self.BS_MAX]
 
     def bs_on(self) -> bool:
         """Пункт «· обход БС» в подписке: включён по умолчанию, но только если сервер Hysteria
         принимает любое имя сайта (иначе он отклонил бы подключение с российским именем)."""
         return bool(self.hy2 and self.state.get("bs_on", True) and self.hy2_sni_rotatable())
 
-    def set_bs(self, on: bool | None = None, site: str | None = None) -> None:
+    def set_bs(self, on: bool | None = None, site: str | None = None,
+               sites: list[str] | None = None) -> None:
+        """site — только основной сайт; sites — весь список (первый основной, остальные запасные)."""
         if on is not None:
             self.state["bs_on"] = bool(on)
         if site is not None:
             self.state["bs_site"] = site
+        if sites:
+            self.state["bs_site"], self.state["bs_extra"] = sites[0], list(sites[1:self.BS_MAX])
         self._save()
 
     def hy2_sni_rotatable(self) -> bool:
@@ -849,7 +870,8 @@ class XrayProvider(VpnProvider):
             # Обход белых списков без моста: то же подключение, но представляется российским сайтом
             # из белого списка. Помогает, если оператор пропускает по имени сайта, а не только по адресу.
             if self.bs_on():
-                out.append(e(self.host, h["port"], self.bs_site, f"{main} · обход БС"))
+                for i, site in enumerate(self.bs_sites):
+                    out.append(e(self.host, h["port"], site, f"{main} · обход БС" + (f" {i + 1}" if i else "")))
         if h.get("obfs_port") and h.get("obfs"):
             out.append(e(self.host, h["obfs_port"], sni, f"{main} · Hysteria 2", h["obfs"]))
         # Страны через прокси: у каждой свой порт Hysteria, пароль тот же.

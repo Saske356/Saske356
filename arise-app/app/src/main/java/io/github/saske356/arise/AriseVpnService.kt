@@ -181,6 +181,7 @@ class AriseVpnService : VpnService() {
             .addAddress("10.10.14.1", 30)
             .addRoute("0.0.0.0", 0)
             .addDnsServer(Store.dns.ip)
+            .addDnsServer(Store.dns.ip2)
         try {
             // IPv6 тоже в туннель: иначе сайты по IPv6 шли бы мимо VPN
             b.addAddress("fdfe:dcba:9876::1", 126)

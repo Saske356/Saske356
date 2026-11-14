@@ -2935,13 +2935,15 @@ def bs_text() -> str:
     state = ("✅ включён" if vpn.bs_on() else "◇ выключен") if ok else \
         "⚠️ недоступен: сервер Hysteria проверяет имя сайта. Обновите сервер установщиком этой версии."
     return ("<b>Обход белых списков без моста</b>\n\n"
-            f"◆ Пункт «{esc(vpn.direct_location()['name'])} · обход БС» в подписке: {state}\n"
-            f"◆ Представляется сайтом: <code>{esc(vpn.bs_site)}</code>\n\n"
+            f"◆ Пункты «{esc(vpn.direct_location()['name'])} · обход БС» в подписке: {state}\n"
+            "◆ Представляются сайтами: " + ", ".join(f"<code>{esc(x)}</code>" for x in vpn.bs_sites) + "\n\n"
             "Это то же подключение к серверу, но для оператора оно выглядит как обращение к российскому "
             "сайту из белого списка. Поможет, если оператор при белых списках пропускает по имени сайта. "
             "Если он пропускает только по адресам серверов, поможет только мост в РФ (/addbridge).\n\n"
-            "/bs on, /bs off: включить или выключить пункт\n"
-            "/bs site ya.ru: другой сайт (лучше из белого списка: "
+            "Пунктов несколько, с разными сайтами: у операторов разные белые списки, и если "
+            "не проходит один, может пройти другой.\n\n"
+            "/bs on, /bs off: включить или выключить пункты\n"
+            "/bs site vk.com ya.ru ozon.ru: сайты, до 3 (лучше из белого списка: "
             + ", ".join(masking.RU_SITES[:6]) + ")\n\n"
             "Новый пункт появится у гостей при обновлении подписки (приложения обновляют её сами).")
 
@@ -2952,12 +2954,12 @@ async def bs_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if hasattr(vpn, "set_bs"):
         if args[:1] in (["on"], ["off"]):
             vpn.set_bs(on=args[0] == "on")
-        elif len(args) == 2 and args[0] == "site":
-            site = args[1].removeprefix("https://").strip("/")
-            if not masking.valid_name(site):
-                await update.message.reply_text("Нужно имя сайта, например <code>ya.ru</code>")
+        elif len(args) >= 2 and args[0] == "site":
+            sites = list(dict.fromkeys(a.removeprefix("https://").strip("/") for a in args[1:]))
+            if not all(masking.valid_name(x) for x in sites):
+                await update.message.reply_text("Нужны имена сайтов, например <code>/bs site vk.com ya.ru</code>")
                 return
-            vpn.set_bs(site=site)
+            vpn.set_bs(sites=sites)
     await update.message.reply_text(bs_text() if hasattr(vpn, "set_bs") else
                                     "Обход настраивается, когда подключён настоящий VPN.")
 

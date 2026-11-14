@@ -139,8 +139,7 @@ object Repo {
         flow.update { it.copy(mode = m) }
     }
 
-    fun nextDns() {
-        val d = Store.dns.next()
+    fun setDns(d: Dns) {
         Store.dns = d
         flow.update { it.copy(dns = d) }
     }
@@ -172,7 +171,13 @@ object Repo {
             SpeedState.flow.update { it.copy(ping = ping, jitter = jitter, stage = "Скачивание…") }
             val down = SpeedTest.download { mbps -> SpeedState.flow.update { it.copy(downMbps = mbps) } }
             SpeedState.flow.update { it.copy(downMbps = down, stage = "Отдача…") }
-            val up = SpeedTest.upload { mbps -> SpeedState.flow.update { it.copy(upMbps = mbps) } }
+            // Отдача не удалась — скачивание всё равно показываем
+            val up = try {
+                SpeedTest.upload { mbps -> SpeedState.flow.update { it.copy(upMbps = mbps) } }
+            } catch (e: Exception) {
+                SpeedState.flow.update { it.copy(error = "Отдачу измерить не удалось: ${e.message}") }
+                0.0
+            }
             SpeedState.flow.update { it.copy(upMbps = up, running = false, stage = "") }
         } catch (e: Exception) {
             SpeedState.flow.update { it.copy(running = false, stage = "", error = "Тест не удался: ${e.message}") }

@@ -128,7 +128,7 @@ private val Red = Color(0xFFE57373)
 
 private const val BOT = "AriseVPN_bot"
 
-private enum class Screen { HOME, MODES, TOOLS, APPS }
+private enum class Screen { HOME, MODES, TOOLS, APPS, DNS }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -219,7 +219,7 @@ class MainActivity : ComponentActivity() {
         var sheet by remember { mutableStateOf(false) }
         BackHandler(enabled = sheet || screen != Screen.HOME) {
             if (sheet) sheet = false
-            else screen = if (screen == Screen.APPS) Screen.TOOLS else Screen.HOME
+            else screen = if (screen == Screen.APPS || screen == Screen.DNS) Screen.TOOLS else Screen.HOME
         }
         val toggle = {
             if (VpnState.flow.value.status == Status.STOPPED) {
@@ -243,13 +243,17 @@ class MainActivity : ComponentActivity() {
                 screen == Screen.TOOLS -> ToolsScreen(
                     data, back = { screen = Screen.HOME },
                     onApps = { screen = Screen.APPS }, onLeak = { leakProtection() }, onTile = { addTile() },
-                    onDns = { Repo.nextDns(); apply() },
+                    onDns = { screen = Screen.DNS },
                     onForget = {
                         if (VpnState.flow.value.status != Status.STOPPED) AriseVpnService.stop(ctx)
                         Repo.forget()
                         screen = Screen.HOME
                     }
                 )
+                screen == Screen.DNS -> DnsScreen(data, back = { screen = Screen.TOOLS }) { d ->
+                    Repo.setDns(d)
+                    apply()
+                }
                 screen == Screen.APPS -> AppsScreen(data, back = { screen = Screen.TOOLS }, onChange = apply)
                 else -> Home(
                     vpn, data, onToggle = toggle, onOpen = { open(it) },
@@ -837,6 +841,41 @@ private fun ModesScreen(data: Data, back: () -> Unit, onPick: (Mode) -> Unit) {
                         Text("− ${m.minus}", color = Color(0xFFE8A06A), fontSize = 12.sp, modifier = Modifier.weight(1f))
                     }
                 }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- DNS
+
+@Composable
+private fun DnsScreen(data: Data, back: () -> Unit, onPick: (Dns) -> Unit) {
+    Page("DNS", "Через какой сервер телефон узнаёт адреса сайтов. Запросы идут через VPN, оператор их не видит. Меняется сразу.", back) {
+        for (d in Dns.entries) {
+            val sel = d == data.dns
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(
+                        if (sel) Brush.linearGradient(listOf(BlueMid.copy(alpha = 0.25f), Color(0x40203264)))
+                        else Brush.linearGradient(listOf(Glass, Glass))
+                    )
+                    .border(1.dp, if (sel) Blue.copy(alpha = 0.55f) else GlassLine, RoundedCornerShape(16.dp))
+                    .clickable { onPick(d) }
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(d.title, color = TextMain, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        if (d == Dns.CLOUDFLARE) Text("  по умолчанию", color = TextSoft, fontSize = 11.sp)
+                    }
+                    Text(d.note, color = TextSoft, fontSize = 12.5.sp)
+                    Text("${d.ip} · ${d.ip2}", color = TextDim, fontSize = 11.5.sp)
+                }
+                if (sel) Text("✓", color = Blue, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
         }
     }

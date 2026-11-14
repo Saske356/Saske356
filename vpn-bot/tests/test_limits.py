@@ -258,14 +258,19 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         n = len(self.units())
         self.assertEqual(self.v.set_hy2_sni("www.wp.pl"), "www.example.com")
         links = self.v.links(1)
-        bs = [l for l in links if unquote(l.rsplit("#", 1)[1]) == "🇵🇱 Польша · обход БС"]
-        self.assertEqual(len(bs), 1, "обход БС: отдельный пункт, когда сервер принимает любое имя")
-        self.assertEqual(parse_qs(urlparse(bs[0]).query)["sni"], ["vk.com"])
+        bs = [l for l in links if unquote(l.rsplit("#", 1)[1]).startswith("🇵🇱 Польша · обход БС")]
+        self.assertEqual([unquote(l.rsplit("#", 1)[1]) for l in bs],
+                         ["🇵🇱 Польша · обход БС", "🇵🇱 Польша · обход БС 2", "🇵🇱 Польша · обход БС 3"],
+                         "обход БС: отдельные пункты, когда сервер принимает любое имя")
+        self.assertEqual([parse_qs(urlparse(l).query)["sni"][0] for l in bs], ["vk.com", "ya.ru", "www.gosuslugi.ru"])
         self.assertTrue(all(parse_qs(urlparse(l).query)["sni"] == ["www.wp.pl"] for l in links if l not in bs))
         self.v.set_bs(site="ya.ru")
         self.assertIn("sni=ya.ru", next(l for l in self.v.links(1) if "%D0%91%D0%A1" in l))
+        self.assertEqual(sum("%D0%91%D0%A1" in l for l in self.v.links(1)), 2, "ya.ru не дублируется")
+        self.v.set_bs(sites=["ok.ru", "dzen.ru"])
+        self.assertEqual(self.v.bs_sites, ["ok.ru", "dzen.ru"])
         self.v.set_bs(on=False)
-        self.assertEqual(len(self.v.links(1)), len(links) - 1, "выключается командой /bs off")
+        self.assertEqual(len(self.v.links(1)), len(links) - 3, "выключается командой /bs off")
         self.v.set_bs(on=True)
         cfgs = __import__("client_config").configs(self.v.json_entries(1), tuned=True)
         self.assertIn("🇵🇱 Польша · обход БС", [c["remarks"] for c in cfgs], "и в JSON для приложений")
