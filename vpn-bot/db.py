@@ -101,6 +101,8 @@ MIGRATIONS = {
     "subscriptions": [("trial", "INTEGER NOT NULL DEFAULT 0"),
                       ("up_bytes", "INTEGER NOT NULL DEFAULT 0"),
                       ("down_bytes", "INTEGER NOT NULL DEFAULT 0")],
+    # промокод на скидку: percent > 0 (скидка на разовую оплату, действует hours часов после ввода)
+    "promos": [("percent", "INTEGER NOT NULL DEFAULT 0"), ("hours", "INTEGER NOT NULL DEFAULT 72")],
     "payments": [("full_price", "INTEGER"),
                  # чем заплатили: stars, yookassa, crypto; money — сумма в деньгах для отчёта («149 ₽»)
                  ("method", "TEXT NOT NULL DEFAULT 'stars'"), ("money", "TEXT")],
@@ -333,11 +335,25 @@ class DB:
 
     # ---------- промокоды и подарки ----------
 
-    def add_promo(self, code: str, days: int, uses: int) -> None:
-        self.run("INSERT OR REPLACE INTO promos (code, days, uses_left) VALUES (?,?,?)", code.upper(), days, uses)
+    def add_promo(self, code: str, days: int, uses: int, percent: int = 0, hours: int = 72) -> None:
+        """Промокод: days — бонусные дни, или percent — скидка на разовую оплату на hours часов."""
+        self.run("INSERT OR REPLACE INTO promos (code, days, uses_left, percent, hours) VALUES (?,?,?,?,?)",
+                 code.upper(), days, uses, percent, hours)
+
+    def get_promo(self, code: str) -> sqlite3.Row | None:
+        return self.q1("SELECT * FROM promos WHERE code=?", code.strip().upper())
+
+    def list_promos(self) -> list[sqlite3.Row]:
+        return self.qa("SELECT p.*, (SELECT COUNT(*) FROM promo_uses u WHERE u.code = p.code) AS used "
+                       "FROM promos p ORDER BY p.code")
+
+    def del_promo(self, code: str) -> bool:
+        cur = self.conn.execute("DELETE FROM promos WHERE code=?", (code.strip().upper(),))
+        self.conn.commit()
+        return cur.rowcount > 0
 
     def redeem_promo(self, code: str, user_id: int) -> tuple[str, int]:
-        """Возвращает (статус, дней): ok | not_found | used_up | already."""
+        """Возвращает (статус, дней): ok | not_found | used_up | already. Скидку см. get_promo."""
         code = code.strip().upper()
         promo = self.q1("SELECT * FROM promos WHERE code=?", code)
         if not promo:

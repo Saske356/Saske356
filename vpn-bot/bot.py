@@ -97,6 +97,10 @@ def plural_days(n: int) -> str:
     return plural(n, "день", "дня", "дней")
 
 
+def plural_hours(n: int) -> str:
+    return plural_days(n // 24) if n % 24 == 0 else plural(n, "час", "часа", "часов")
+
+
 def plural_dev(n: int) -> str:
     return plural(n, "устройство", "устройства", "устройств")
 
@@ -614,6 +618,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     elif arg.startswith("gift_"):
         await redeem(update, context, arg[5:])
+        return
+    elif arg.startswith("promo_"):  # ссылка-промокод из /addpromo
+        await redeem(update, context, arg[6:])
         return
     elif arg == "app" and android_app:  # «Скачать приложение» в мини-приложении
         await send_app(update, context)
@@ -1554,6 +1561,20 @@ async def redeem(update: Update, context: ContextTypes.DEFAULT_TYPE, code: str) 
         await show(update, context, f"<b>Промокод не принят</b>\n\n{reason}",
                    KB([B("🎟 Ввести другой", "promo"), BACK]))
         return
+    promo = db.get_promo(code)
+    if promo and promo["percent"] > 0:
+        db.set_offer(uid, promo["percent"], promo["hours"], reason=f"promo {promo['code']}")
+        o = db.get_offer(uid)
+        if o and o["percent"] > promo["percent"]:
+            note = f"У вас уже есть скидка больше — {o['percent']}%, она и останется."
+        else:
+            note = "Скидка уже учтена в ценах тарифов."
+        await refresh_menu(context, uid)
+        await show(update, context,
+                   f"<b>Промокод принят</b>\n\n🎁 Скидка <b>{promo['percent']}%</b> на оплату подписки "
+                   f"(разово) — действует {plural_hours(promo['hours'])}.\n{note}",
+                   KB([B("◆ Выбрать тариф", "plans")], [BACK]), banner="plans", effect=CONFETTI)
+        return
     sub = await grant_days(uid, days)
     await refresh_menu(context, uid)
     await show(update, context,
@@ -1589,7 +1610,9 @@ ADMIN_COMMANDS = [
     ("pay", "Оплата картой (ЮKassa) и криптой"),
     ("payments", "Платежи и возвраты: /payments id или @ник"),
     ("give", "Начислить дни: /give id дней"),
-    ("addpromo", "Промокод: /addpromo КОД дней активаций"),
+    ("addpromo", "Промокод: /addpromo КОД 7|20% активаций"),
+    ("promos", "Все промокоды"),
+    ("delpromo", "Удалить промокод"),
     ("refund", "Возврат звёзд: /refund charge_id"),
     ("testpay", "Тестовая оплата"),
     ("server", "Состояние сервера"),
@@ -2213,19 +2236,61 @@ async def give(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         pass
 
 
+PROMO_HELP = ("<b>Промокоды</b>\n\n"
+              "/addpromo <code>КОД 7 100</code> — +7 дней, 100 активаций\n"
+              "/addpromo <code>КОД 20% 100</code> — скидка 20% на разовую оплату, 100 активаций, "
+              "действует 72 часа после ввода\n"
+              "/addpromo <code>КОД 30% 50 24</code> — скидка 30%, 50 активаций, 24 часа\n"
+              "/promos — все промокоды, /delpromo <code>КОД</code> — удалить\n\n"
+              "Гость вводит код в меню «🎟 Промокод» или ссылкой "
+              "<code>t.me/бот?start=promo_КОД</code>.")
+
+
 @admin_only
 async def addpromo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    a = context.args or []
     try:
-        code, days, uses = context.args[0], int(context.args[1]), int(context.args[2])
+        code, amount, uses = a[0], a[1], int(a[2])
+        hours = int(a[3]) if len(a) > 3 else 72
+        percent = int(amount.rstrip("%")) if amount.endswith("%") else 0
+        days = 0 if percent else int(amount)
     except (IndexError, ValueError):
-        await update.message.reply_text("Формат: /addpromo <code>КОД</code> <code>дней</code> <code>активаций</code>")
+        await update.message.reply_text(PROMO_HELP)
         return
     if code.upper().startswith("GIFT-"):
         await update.message.reply_text("Промокод не может начинаться с GIFT-: так начинаются подарочные коды.")
         return
-    db.add_promo(code, days, uses)
+    if not re.fullmatch(r"[A-Za-z0-9_-]{2,32}", code) or uses < 1 or not (0 < percent < 100 or days > 0) \
+            or not 1 <= hours <= 24 * 90:
+        await update.message.reply_text("Код — латиница и цифры; скидка от 1 до 99%; дней и активаций больше 0.\n\n"
+                                        + PROMO_HELP)
+        return
+    db.add_promo(code, days, uses, percent, hours)
+    what = f"скидка {percent}% на {plural_hours(hours)}" if percent else f"+{plural_days(days)}"
+    link = f"https://t.me/{STATE['username'] or context.bot.username}?start=promo_{code.upper()}"
     await update.message.reply_text(
-        f"Промокод <code>{esc(code.upper())}</code>: +{plural_days(days)}, активаций: {uses}.")
+        f"Промокод <code>{esc(code.upper())}</code>: {what}, активаций: {uses}.\n\nСсылка для гостей: {link}")
+
+
+@admin_only
+async def promos_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    rows = db.list_promos()
+    if not rows:
+        await update.message.reply_text("Промокодов нет.\n\n" + PROMO_HELP)
+        return
+    lines = [f"<code>{esc(r['code'])}</code> · "
+             + (f"−{r['percent']}% на {plural_hours(r['hours'])}" if r["percent"] else f"+{plural_days(r['days'])}")
+             + f" · использовано {r['used']}, осталось {max(0, r['uses_left'])}" for r in rows]
+    await update.message.reply_text("<b>Промокоды</b>\n\n" + "\n".join(lines[:60]) + "\n\n/delpromo КОД — удалить")
+
+
+@admin_only
+async def delpromo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not context.args:
+        await update.message.reply_text("Формат: /delpromo <code>КОД</code>")
+        return
+    ok = db.del_promo(context.args[0])
+    await update.message.reply_text("Промокод удалён." if ok else "Такого промокода нет.")
 
 
 def xray_warning() -> str:
@@ -3425,7 +3490,7 @@ def build_app(token: str) -> Application:
     app.bot_data["banners"] = banners
 
     for cmd, fn in [("start", start), ("terms", terms), ("paysupport", paysupport), ("promo", promo_cmd),
-                    ("admin", admin), ("give", give), ("addpromo", addpromo), ("refund", refund),
+                    ("admin", admin), ("give", give), ("addpromo", addpromo), ("promos", promos_cmd), ("delpromo", delpromo), ("refund", refund),
                     ("testpay", testpay), ("payments", payments), ("locations", locations),
                     ("addloc", addloc), ("delloc", delloc), ("addbridge", addbridge),
                     ("delbridge", delbridge), ("server", server), ("backup", backup),

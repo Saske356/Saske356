@@ -415,6 +415,15 @@ async def main():
     await bot.on_message(make_update(400, text="summer"), ctx)
     assert near(db.primary_sub(400)["expires_at"] - time.time(), 35 * DAY, 60)
     assert db.redeem_promo("SUMMER", 400)[0] == "already"
+    # промокод на скидку: ссылкой ?start=promo_КОД, цена тарифа снижается
+    ctx.args = ["SALE30", "30%", "5"]; await bot.addpromo(make_update(1), ctx); ctx.args = []
+    plan = next(iter(config.PLANS))
+    full = config.plan_price(plan, 1)
+    ctx.args = ["promo_sale30"]; await bot.start(make_update(401), ctx); ctx.args = []
+    assert db.get_offer(401)["percent"] == 30 and bot.price(401, plan, 1) == max(1, round(full * 0.7))
+    assert any(r["code"] == "SALE30" and r["used"] == 1 for r in db.list_promos())
+    ctx.args = ["SALE30"]; await bot.delpromo(make_update(1), ctx); ctx.args = []
+    assert db.get_promo("SALE30") is None
 
     # 9. тикеты поддержки
     await press(400, "tk", ctx)
@@ -653,7 +662,7 @@ async def main():
     names = {c.command for c in scoped[0].args[0]}
     registered = {"admin", "give", "addpromo", "refund", "testpay", "payments", "locations", "addloc", "delloc",
                   "addbridge", "delbridge", "server", "backup", "autoproxy", "sni", "bridgesite", "funnel",
-                  "traffic", "webshare", "pay", "update"}
+                  "traffic", "webshare", "pay", "update", "promos", "delpromo"}
     assert registered <= names, registered - names
     guest = [c for c in app.bot.set_my_commands.await_args_list if not c.kwargs.get("scope")]
     assert guest and not ({c.command for c in guest[0].args[0]} & {"admin", "give", "pay"})
