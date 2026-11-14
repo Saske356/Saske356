@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Тёмный фон с первого кадра, пока Compose не нарисовал экран -->
+    <style name="Theme.Arise" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/arise_bg</item>
+        <item name="android:statusBarColor">@color/arise_bg</item>
+        <item name="android:navigationBarColor">@color/arise_bg</item>
+    </style>
+</resources>

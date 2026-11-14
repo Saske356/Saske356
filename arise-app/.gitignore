@@ -1,0 +1,7 @@
+.gradle/
+build/
+app/build/
+local.properties
+out/
+app/libs/*.aar
+app/src/main/assets/*.dat

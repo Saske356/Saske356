@@ -1,0 +1,84 @@
+# Новое приложение Arise VPN, написанное с нуля (папка arise-app/). Собирается отдельно от
+# текущего приложения (android/) и выкладывается как предварительная версия (prerelease):
+# бот такие не раздаёт — он берёт только «последний» релиз текущего приложения.
+name: Arise app (new)
+
+on:
+  push:
+    paths:
+      - "arise-app/**"
+      - ".github/workflows/arise-app.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: arise-app
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v3
+        with:
+          log-accepted-android-sdk-licenses: false
+          packages: "platforms;android-37.0 build-tools;37.0.0 platform-tools"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.8.2"
+
+      - name: Ядро Xray и файлы правил
+        run: |
+          set -e
+          source <(grep -E '^[A-Z0-9_]+=' android/UPSTREAM)
+          mkdir -p arise-app/app/libs arise-app/app/src/main/assets
+          curl -fsSL -o arise-app/app/libs/libv2ray.aar \
+            "https://github.com/2dust/AndroidLibXrayLite/releases/download/$LIBXRAY_TAG/libv2ray.aar"
+          for f in geoip.dat geosite.dat; do
+            curl -fsSL -o "arise-app/app/src/main/assets/$f" \
+              "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/$f"
+          done
+          ls -la arise-app/app/libs arise-app/app/src/main/assets
+
+      - name: Сборка
+        env:
+          ARISE_VERSION_CODE: ${{ github.run_number }}
+        run: |
+          cd arise-app
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          gradle --no-daemon :app:assembleRelease \
+            "-Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/android/aurora.keystore" \
+            "-Pandroid.injected.signing.store.password=aurora-public" \
+            "-Pandroid.injected.signing.key.alias=aurora" \
+            "-Pandroid.injected.signing.key.password=aurora-public"
+          mkdir -p out
+          cp app/build/outputs/apk/release/*arm64-v8a*.apk out/AriseNew-arm64-v8a.apk
+          cp app/build/outputs/apk/release/*armeabi-v7a*.apk out/AriseNew-armeabi-v7a.apk
+          ls -la out
+
+      - name: Предварительная версия
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: arise-new-0.1.${{ github.run_number }}
+          name: Arise VPN (новое приложение) 0.1.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          prerelease: true
+          make_latest: false
+          body: |
+            Новое приложение Arise VPN, написанное с нуля (без кода v2rayNG). Тестовая версия:
+            ставится рядом с текущим приложением и его не заменяет. Большинству телефонов нужен arm64-v8a.
+            Ядро: Xray (AndroidLibXrayLite, LGPL-3.0). Правила geoip/geosite: Loyalsoldier/v2ray-rules-dat.
+          files: |
+            arise-app/out/AriseNew-arm64-v8a.apk
+            arise-app/out/AriseNew-armeabi-v7a.apk
