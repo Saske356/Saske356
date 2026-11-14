@@ -40,6 +40,14 @@ RU_DOMAINS = [
     "domain:sberbank.com", "domain:tinkoff.com", "domain:tbank.com", "domain:avito.st",
     "domain:wildberries.kz", "domain:ozon.travel", "domain:gosuslugi.com",
 ]
+# Telegram (адреса с core.telegram.org/resources/cidr.txt и его домены). Из стран через прокси он идёт
+# через основной сервер: бесплатные прокси часто не пропускают его соединения, и Telegram висит
+# на «Соединение…», хотя сайты открываются.
+TG_IPS = ["91.108.56.0/22", "91.108.4.0/22", "91.108.8.0/22", "91.108.16.0/22", "91.108.12.0/22",
+          "149.154.160.0/20", "91.105.192.0/23", "91.108.20.0/22", "185.76.151.0/24",
+          "2001:b28:f23d::/48", "2001:b28:f23f::/48", "2001:67c:4e8::/48", "2001:b28:f23c::/48", "2a0a:f280::/32"]
+TG_DOMAINS = ["domain:telegram.org", "domain:t.me", "domain:telegram.me", "domain:telegra.ph",
+              "domain:telesco.pe", "domain:tdesktop.com", "domain:cdn-telegram.org", "domain:telegram-cdn.org"]
 RU_DNS = "https://77.88.8.8/dns-query"
 DNS = ["https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"]
 
@@ -127,13 +135,16 @@ def outbound(e: dict, tuned: bool = False) -> dict:
             "streamSettings": stream}
 
 
-def _routing(server_ips: list[str], final: dict, tuned: bool = False, ads: bool = True) -> dict:
+def _routing(server_ips: list[str], final: dict, tuned: bool = False, ads: bool = True,
+             tg: dict | None = None) -> dict:
     """Правила: сам сервер, реклама, российские сайты и локальная сеть — мимо VPN, остальное — final.
     tuned (своё приложение): AsIs — без DNS-запроса на каждый новый сайт. Трафик из VPN приходит
     с адресами, по ним и так работают правила geoip, а имя сайта даёт sniffing. С IPIfNonMatch
     Xray для каждого имени не из списка сначала спрашивает DNS — при белых списках этот запрос
     упирается в блокировку и страница ждёт секунды."""
     server = [{"type": "field", "ip": server_ips, "outboundTag": "direct"}] if server_ips else []
+    if tg:
+        server += [{"type": "field", "ip": TG_IPS, **tg}, {"type": "field", "domain": TG_DOMAINS, **tg}]
     return {
         "domainStrategy": "AsIs" if tuned else "IPIfNonMatch",
         "rules": [
@@ -176,8 +187,11 @@ def _base(name: str, outbounds: list[dict], routing: dict) -> dict:
 
 
 def best(entries: list[dict], name: str = "🚀 Лучший сервер", tuned: bool = False) -> dict:
-    """Один конфиг со всеми подключениями: Xray в приложении раз в минуту замеряет каждое
-    и ведёт трафик через самое быстрое из живых. Упавшее подключение выпадает само."""
+    """Один конфиг с подключениями к нашему серверу (напрямую, «обход БС», мосты): Xray в приложении
+    раз в минуту замеряет каждое и ведёт трафик через самое быстрое из живых. Упавшее выпадает само.
+    Страны через прокси сюда не входят: бесплатные прокси медленные и нестабильные, а выбор «по пингу»
+    перескакивал на них — скорость и пинг скакали, Telegram не грузился."""
+    entries = [e for e in entries if not e.get("tg")] or entries
     outs = []
     for i, e in enumerate(entries):
         o = outbound(e, tuned)
@@ -196,8 +210,15 @@ GAME_NAME = "🎮 Игры"
 
 
 def config(e: dict, tuned: bool = False) -> dict:
-    return _base(e["name"], [outbound(e, tuned)],
-                 _routing(_ip(e["host"]), {"outboundTag": "proxy"}, tuned, ads=not e.get("game")))
+    outs = [outbound(e, tuned)]
+    tg = None
+    if e.get("tg"):  # страна через прокси: Telegram — через основной сервер
+        o = outbound({**e, **e["tg"]}, tuned)
+        o["tag"] = "tg"
+        outs.append(o)
+        tg = {"outboundTag": "tg"}
+    return _base(e["name"], outs,
+                 _routing(_ip(e["host"]), {"outboundTag": "proxy"}, tuned, ads=not e.get("game"), tg=tg))
 
 
 def game_entry(entries: list[dict]) -> dict | None:

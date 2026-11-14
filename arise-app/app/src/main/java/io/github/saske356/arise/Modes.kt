@@ -12,7 +12,11 @@ enum class Mode(
     val plus: String,
     val minus: String,
 ) {
-    BALANCE("balance", "⚡", "Баланс", "Турбо-скорость, реклама режется, российские сайты напрямую.", "", ""),
+    BALANCE(
+        "balance", "⚡", "Баланс",
+        "Скорость сама подстраивается под сеть: ровный пинг и без провалов. Реклама режется, российские сайты напрямую.",
+        "", ""
+    ),
     GAME(
         "game", "🎮", "Игровой",
         "Ровный пинг без скачков: скорость ограничена, чтобы в канале не копились очереди.",
@@ -47,14 +51,20 @@ enum class Mode(
                 GAME -> q.put("congestion", "brutal").put("brutalDown", "30 mbps").put("brutalUp", "10 mbps")
                     .put("keepAlivePeriod", 5)
                 TURBO -> q.put("congestion", "brutal").put("brutalDown", "150 mbps").put("brutalUp", "30 mbps")
-                // Без Brutal ядро само подстраивается под канал (как обычный BBR): спокойнее и экономнее
+                // Без Brutal ядро само подстраивается под канал (BBR). Brutal шлёт с заданной скоростью,
+                // даже если сеть столько не тянет: на мобильном очередь у оператора переполняется,
+                // и скорость с пингом скачут. Поэтому по умолчанию — подстройка.
+                BALANCE, STEALTH -> {
+                    q.remove("congestion")
+                    q.remove("brutalDown")
+                    q.remove("brutalUp")
+                }
                 ECO -> {
                     q.remove("congestion")
                     q.remove("brutalDown")
                     q.remove("brutalUp")
                     q.put("keepAlivePeriod", 25)
                 }
-                else -> {}
             }
         }
         if (this == STEALTH) allThroughVpn(o)

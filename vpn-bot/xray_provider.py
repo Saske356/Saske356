@@ -56,7 +56,7 @@ def parse_proxy(url: str) -> dict:
 
 
 HY2_ID_RE = re.compile(r"u(\d+)(v\d+)?")
-HY2_VARIANTS = 100  # сколько вариантов пароля обрывать при отключении (пунктов на один сервер меньше)
+HY2_VARIANTS = 200  # сколько вариантов пароля обрывать при отключении (пунктов на один сервер меньше)
 
 
 def hy2_id(uid: int, variant: int = -1) -> str:
@@ -938,10 +938,17 @@ class XrayProvider(VpnProvider):
         if h.get("obfs_port") and h.get("obfs"):
             out.append(e(self.host, h["obfs_port"], sni, f"{main} · Hysteria 2", h["obfs"]))
         # Страны через прокси: у каждой свой порт Hysteria, пароль тот же.
+        def tg(host, port, site):
+            """Telegram из стран через прокси — через основной сервер (см. client_config.TG_IPS)."""
+            if not h.get("port"):
+                return None
+            x = e(host, port, site, "", server_port=h["port"])
+            return {"host": x["host"], "port": x["port"], "auth": x["auth"], "sni": x["sni"]}
+
         for loc in self.locations:
             port = self.hy2_loc_port(loc)
             if port and not loc.get("down"):
-                out.append(e(self.host, port, sni, f"{loc['name']}{tag}"))
+                out.append({**e(self.host, port, sni, f"{loc['name']}{tag}"), "tg": tg(self.host, h.get("port"), sni)})
         # Мост «ru» пересылает и UDP 443: Hysteria через мост маскируется под российский сайт.
         # Порты стран (30000–30049) мост тоже пересылает, поэтому при белых списках через мост
         # доступны и страны: «🇩🇪 Германия · 🇷🇺 Обход».
@@ -953,7 +960,8 @@ class XrayProvider(VpnProvider):
                 for loc in self.locations:
                     port = self.hy2_loc_port(loc)
                     if port and not loc.get("down"):
-                        out.append(e(b["host"], port, self.bridge_site, f"{loc['name']} · {b['name']}"))
+                        out.append({**e(b["host"], port, self.bridge_site, f"{loc['name']} · {b['name']}"),
+                                    "tg": tg(b["host"], b["port"], self.bridge_site)})
         return out
 
     def hy2_links(self, user_id: int) -> list[str]:

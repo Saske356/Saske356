@@ -11,6 +11,7 @@ from urllib.parse import quote
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import xray_provider as xp  # noqa: E402
 from devices import DeviceGuard  # noqa: E402
+import client_config  # noqa: E402
 
 
 class FakeHysteriaStats:
@@ -311,7 +312,8 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         self.assertIn({"type": "field", "ip": ["geoip:private", "geoip:ru"], "outboundTag": "direct"},
                       game["routing"]["rules"], "российские игровые серверы — мимо VPN")
         best = cfgs[0]
-        self.assertEqual([o["tag"] for o in best["outbounds"]], ["p0", "p1", "direct", "block"])
+        self.assertEqual([o["tag"] for o in best["outbounds"]], ["p0", "direct", "block"],
+                         "в автовыбор только подключения к нашему серверу, без стран через прокси")
         self.assertEqual(best["routing"]["balancers"][0]["strategy"]["type"], "leastPing")
         self.assertEqual(best["routing"]["rules"][-1], {"type": "field", "network": "tcp,udp", "balancerTag": "best"})
         self.assertEqual(best["observatory"]["subjectSelector"], ["p"])
@@ -321,6 +323,12 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         out = cfgs[1]["outbounds"][0]
         self.assertEqual((out["protocol"], out["settings"]["port"], out["streamSettings"]["hysteriaSettings"]["auth"]),
                          ("hysteria", 30000, self.v.hy2_password(1) + ".0"))
+        # Telegram из страны через прокси — через основной сервер
+        tg = cfgs[1]["outbounds"][1]
+        self.assertEqual((tg["tag"], tg["settings"]["port"], tg["streamSettings"]["hysteriaSettings"]["auth"]),
+                         ("tg", cfgs[0]["outbounds"][0]["settings"]["port"], self.v.hy2_password(1) + ".1"))
+        self.assertIn({"type": "field", "ip": client_config.TG_IPS, "outboundTag": "tg"}, cfgs[1]["routing"]["rules"])
+        self.assertEqual(len(cfgs[0]["outbounds"]), 3, "у основного сервера Telegram и так идёт через него")
         tls = out["streamSettings"]["tlsSettings"]
         self.assertEqual((tls["serverName"], tls["alpn"], tls["pinnedPeerCertSha256"]), ("www.example.com", ["h3"], "ab" * 32))
         self.assertNotIn("allowInsecure", json.dumps(cfgs))

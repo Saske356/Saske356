@@ -213,13 +213,19 @@ class AriseVpnService : VpnService() {
             delay(1500)
             var fails = 0
             var lastSwitch = 0L
+            val recent = ArrayDeque<Long>()  // последние удачные замеры: на экране среднее, без случайных скачков
             while (isActive) {
                 val ms = try {
                     controller?.measureDelay(Core.PING_URL) ?: -1L
                 } catch (e: Exception) {
                     -1L
                 }
-                VpnState.update { it.copy(ping = if (ms > 0) ms else -1L) }
+                if (ms > 0) {
+                    recent.addLast(ms)
+                    while (recent.size > 3) recent.removeFirst()
+                }
+                val shown = if (ms > 0) recent.average().toLong() else -1L
+                VpnState.update { it.copy(ping = shown) }
                 if (ms > 0) Store.pings = Store.pings + (Store.current()?.name.orEmpty() to ms)
                 fails = if (ms > 0) 0 else fails + 1
                 val now = System.currentTimeMillis()
