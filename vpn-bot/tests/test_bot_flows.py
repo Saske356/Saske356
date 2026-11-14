@@ -415,6 +415,13 @@ async def main():
     await bot.on_message(make_update(400, text="summer"), ctx)
     assert near(db.primary_sub(400)["expires_at"] - time.time(), 35 * DAY, 60)
     assert db.redeem_promo("SUMMER", 400)[0] == "already"
+    # перебор кодов: после 5 неверных — пауза, даже верный код не принимается
+    for i in range(bot.CODE_TRIES):
+        await bot.redeem(make_update(402), ctx, f"WRONG{i}")
+    assert bot.code_blocked(ctx, 402) > 0
+    db.add_promo("LATE", 3, 5)
+    await bot.redeem(make_update(402), ctx, "LATE")
+    assert db.redeem_promo("LATE", 402)[0] == "ok", "во время паузы код не тратился"
     # промокод на скидку: ссылкой ?start=promo_КОД, цена тарифа снижается
     ctx.args = ["SALE30", "30%", "5"]; await bot.addpromo(make_update(1), ctx); ctx.args = []
     plan = next(iter(config.PLANS))

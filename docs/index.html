@@ -301,6 +301,18 @@
     } catch { return null; }
   }
   const D = readData() || { b: "Arise VPN", tg: "Приватный доступ к свободному интернету", p: [], e: 0 };
+  // Данные приходят из ссылки (#d=…), а её можно подделать и прислать кому угодно. Всё, что дальше
+  // вставляется в страницу как HTML, должно быть числом — иначе в «цену» можно подсунуть код.
+  {
+    const N = x => (Number.isFinite(+x) ? +x : 0);
+    for (const k of ["e", "td", "rb", "rc"]) D[k] = N(D[k]);
+    D.p = (Array.isArray(D.p) ? D.p : []).map(p => ({ ...p, price: N(p.price), rub: N(p.rub), days: N(p.days) || 30,
+                                                     disc: N(p.disc) }));
+    D.subs = (Array.isArray(D.subs) ? D.subs : []).map(s => ({ ...s, d: N(s.d), e: N(s.e),
+                                                             al: /^https?:\/\//.test(String(s.al || "")) ? s.al : "" }));
+    D.pm = String(D.pm || "s").replace(/[^syc]/g, "");
+    D.bu = String(D.bu || "").replace(/[^A-Za-z0-9_]/g, "");
+  }
 
   const plural = n => {
     const a = n % 10, b = n % 100;

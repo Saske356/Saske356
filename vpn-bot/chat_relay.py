@@ -42,6 +42,9 @@ class ChatRelay:
         self.is_admin = is_admin or (lambda uid: False)
         # Сводка для админа в приложении (подписки, онлайн, деньги) — её даёт бот
         self.stats = stats or (lambda: {})
+        # Каждое действие из админ-панели приложения уходит админам в бот: если ссылку админской
+        # подписки кто-то получил, это сразу видно (отрезать — «Сбросить все» в «📱 Устройства»)
+        self.on_admin = lambda text: None
         self.data = {"enabled": True, "users": {}, "codes": {}, "boxes": {}, "banned": [], "notice": ""}
         self._rate: dict[str, list[float]] = {}
         try:
@@ -109,10 +112,13 @@ class ChatRelay:
             if not admin:
                 return 403, {"error": "not admin"}
             if method == "POST":
+                done = []
                 if "enabled" in req:
                     self.data["enabled"] = bool(req["enabled"])
+                    done.append("чат " + ("включён" if self.data["enabled"] else "выключен"))
                 if "notice" in req:  # объявление всем в чате: видно сверху списка чатов, не шифруется
                     self.data["notice"] = str(req["notice"] or "").strip()[:500]
+                    done.append("объявление: " + (self.data["notice"][:80] or "убрано"))
                 for key, on in (("ban", True), ("unban", False)):
                     code = norm_code(str(req.get(key, "")))
                     if len(code) == CODE_LEN:
@@ -121,7 +127,13 @@ class ChatRelay:
                         self.data["banned"] = sorted(banned)
                         if on:
                             self.data["boxes"].pop(code, None)  # и письма для него — в никуда
+                        done.append(("заблокирован " if on else "разблокирован ") + code)
                 self._save()
+                if done:
+                    try:
+                        self.on_admin(f"подписка {uid}, устройство {device[:8] or '?'}: " + "; ".join(done))
+                    except Exception:
+                        pass
             now = time.time()
             self._prune(now)
             try:

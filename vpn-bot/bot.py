@@ -81,6 +81,13 @@ def admin_stats() -> dict:
 if hasattr(vpn, "chat"):
     vpn.chat.is_admin = is_admin_sub
     vpn.chat.stats = admin_stats
+
+    def chat_admin_note(text: str) -> None:
+        """Действие из админ-панели приложения — сообщением админам (бот работает в том же цикле)."""
+        if STATE.get("bot"):
+            asyncio.get_running_loop().create_task(
+                send_admins(STATE["bot"], f"👑 Админ-панель приложения: {esc(text)}"))
+    vpn.chat.on_admin = chat_admin_note
 esc = html.escape
 
 CONFETTI = "5046509860389126442"   # встроенный эффект Telegram «🎉»
@@ -1649,12 +1656,34 @@ async def send_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE, row) -
     await show(update, context, text, KB([B("✍️ Дописать", "tk"), BACK]), banner="support")
 
 
+CODE_TRIES, CODE_WINDOW = 5, 600  # неверных кодов за 10 минут — дальше пауза (против перебора)
+
+
+def code_blocked(context, uid: int) -> int:
+    """Сколько секунд гостю ждать, прежде чем вводить коды снова (0 — можно)."""
+    now = time.time()
+    tries = [t for t in context.bot_data.setdefault("code_fails", {}).get(uid, []) if now - t < CODE_WINDOW]
+    context.bot_data["code_fails"][uid] = tries
+    return int(CODE_WINDOW - (now - tries[0])) + 1 if len(tries) >= CODE_TRIES else 0
+
+
+def code_failed(context, uid: int) -> None:
+    context.bot_data.setdefault("code_fails", {}).setdefault(uid, []).append(time.time())
+
+
 async def redeem(update: Update, context: ContextTypes.DEFAULT_TYPE, code: str) -> None:
     uid = update.effective_user.id
     current_user(update)
     code = code.strip()
+    wait = code_blocked(context, uid)
+    if wait:
+        await show(update, context, "<b>Слишком много неверных кодов</b>\n\n"
+                                    f"Попробуйте снова через {max(1, wait // 60)} мин.", KB([BACK]))
+        return
     if code.upper().startswith("GIFT-"):
         status, sub = db.redeem_gift(code, uid)
+        if status == "not_found":
+            code_failed(context, uid)
         if status != "ok":
             reason = {"not_found": "Такого подарочного кода нет.", "used": "Этот подарок уже активирован.",
                       "void": "Этот подарок отменён."}[status]
@@ -1675,6 +1704,8 @@ async def redeem(update: Update, context: ContextTypes.DEFAULT_TYPE, code: str) 
                    KB([B("🗝 Открыть ключ", f"sub:{sub['id']}")], [BACK]), banner="welcome", effect=CONFETTI)
         return
     status, days = db.redeem_promo(code, uid)
+    if status == "not_found":
+        code_failed(context, uid)
     if status != "ok":
         reason = {"not_found": "Такого промокода нет.", "used_up": "У этого промокода закончились активации.",
                   "already": "Вы уже использовали этот промокод."}[status]

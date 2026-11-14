@@ -81,12 +81,15 @@ class ChatRelayTest(unittest.TestCase):
 
     def test_admin_bans_code_posts_notice_and_sees_stats(self):
         self.c.stats = lambda: {"subs": 7, "online": 3}
+        notes = []
+        self.c.on_admin = notes.append
         a = self.call(1, "register", "POST", {"key": KEY_A})[1]["code"]
         b = self.call(2, "register", "POST", {"key": KEY_B})[1]["code"]
         ans = self.call(99, "admin", "POST", {"ban": a.lower(), "notice": "  Технические работы в 23:00  "})[1]
         self.assertEqual((ans["banned"], ans["notice"], ans["subs"], ans["online"]),
                          ([a], "Технические работы в 23:00", 7, 3))
         self.assertEqual(self.call(1, "status")[1]["notice"], "Технические работы в 23:00", "объявление видят все")
+        self.assertTrue(notes and "заблокирован " + a in notes[0] and "объявление" in notes[0], "админам приходит отчёт")
         self.assertEqual(self.call(1, "send", "POST", {"to": b, "box": BOX})[1]["error"], "banned")
         self.assertEqual(self.call(2, "send", "POST", {"to": a, "box": BOX})[0], 404, "заблокированному не написать")
         self.call(99, "admin", "POST", {"unban": a, "notice": ""})
