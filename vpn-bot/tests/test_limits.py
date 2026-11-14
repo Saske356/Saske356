@@ -432,6 +432,23 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(xp.LIMIT_NAME, await sub_for("ccc"), "место освободилось")
         self.v.state["devices"]["1"] = 1
         self.v.state.pop("hwids")
+        # зашифрованный чат по ссылке подписки
+        async def post(p, payload):
+            raw = json.dumps(payload).encode()
+            r, w = await asyncio.open_connection("127.0.0.1", port)
+            w.write(f"POST {p} HTTP/1.1\r\nHost: x\r\nUser-Agent: AriseApp/1\r\n"
+                    f"Content-Length: {len(raw)}\r\n\r\n".encode() + raw); await w.drain()
+            data = await r.read(); w.close()
+            head, _, body = data.partition(b"\r\n\r\n")
+            return head, json.loads(body)
+        head, ans = await post(path + "/chat/register", {"key": "a2V5"})
+        self.assertIn(b"200 OK", head)
+        self.assertEqual(len(ans["code"]), 9)
+        _, _, body = await get(path + "/chat/status", "AriseApp/1")
+        self.assertEqual(json.loads(body)["code"], ans["code"])
+        _, _, body = await get(path + "/chat/key?code=ZZZZZZZZZ", "AriseApp/1")
+        self.assertEqual(json.loads(body)["status"], 404, "«нет кода» не считается перебором ссылок")
+        self.assertIn(b"404", (await get("/sub/1/" + "0" * 24 + "/chat/status", "x"))[0], "чужая ссылка")
         # мини-приложение Telegram — с нашего сервера
         head, _, body = await get("/m/", "Mozilla/5.0 Telegram")
         self.assertIn(b"text/html", head)

@@ -31,6 +31,7 @@ import uuid
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import client_config
+from chat_relay import ChatRelay
 import public_proxies
 from guard import RateGuard
 from vpn import VpnProvider
@@ -107,6 +108,8 @@ class XrayProvider(VpnProvider):
                  xray_enabled: bool = True, sub_domain: str = "", sub_tls_port: int = 443,
                  sub_cert: str = "", sub_key: str = ""):
         self.state_path, self.config_path, self.xray_bin = state_path, config_path, xray_bin
+        # Зашифрованный чат приложения Arise: только шифр, хранится рядом с vpn.json (chat_relay.py)
+        self.chat = ChatRelay(os.path.join(os.path.dirname(state_path) or ".", "chat.json"))
         self.host, self.port, self.env_sni = public_host, port, sni
         self.private_key, self.public_key, self.short_id = private_key, public_key, short_id
         self.sub_port, self.brand, self.restart_cmd = sub_port, brand, restart_cmd
@@ -1633,6 +1636,7 @@ class XrayProvider(VpnProvider):
         try:
             line = await asyncio.wait_for(reader.readline(), left())
             agent = ""
+            clen = 0  # длина тела POST (чат)
             dev: dict[str, str] = {}  # номер и модель устройства (Happ и наши приложения их шлют)
             for _ in range(50):  # заголовки запроса: User-Agent и сведения об устройстве
                 h = await asyncio.wait_for(reader.readline(), left())
@@ -1644,6 +1648,8 @@ class XrayProvider(VpnProvider):
                     agent = v.strip()
                 elif k in ("x-hwid", "x-device-model", "x-device-os"):
                     dev[k] = v.strip()
+                elif k == "content-length" and v.strip().isdigit():
+                    clen = int(v.strip())
             parts = line.decode(errors="replace").split()
             path, _, query = (parts[1] if len(parts) >= 2 else "").partition("?")
             fmt = parse_qs(query).get("format", [""])[0]
@@ -1652,6 +1658,9 @@ class XrayProvider(VpnProvider):
             app_page = path.endswith("/app")  # страница «Открыть в Arise VPN» для этой подписки
             if app_page:
                 path = path[:-4]
+            chat = ""  # /chat/<действие> — зашифрованный чат приложения
+            if "/chat/" in path:
+                path, _, chat = path.partition("/chat/")
             update = ""  # /update — какая версия приложения последняя, /apk — сам файл
             for tail in ("/update", "/apk"):
                 if path.endswith(tail):
@@ -1664,7 +1673,25 @@ class XrayProvider(VpnProvider):
                 uid = self._by_short(m.group(1))
             if fmt not in ("links", "json") and client_config.is_browser(agent):
                 app_page = True  # в браузере — страница вместо ключей
-            if parts and parts[0] == "GET" and uid is not None and update:
+            if parts and parts[0] in ("GET", "POST") and uid is not None and chat:
+                body_in = b""
+                if parts[0] == "POST":
+                    if clen > 64 * 1024:
+                        raise ValueError("слишком большое тело")
+                    body_in = await asyncio.wait_for(reader.readexactly(clen), left()) if clen else b""
+                if self.state["users"].get(str(uid), 0) > time.time():
+                    code, answer = self.chat.handle(uid, chat, parts[0], parse_qs(query), body_in)
+                else:
+                    code, answer = 403, {"error": "subscription expired"}
+                status = {200: "200 OK", 400: "400 Bad Request", 403: "403 Forbidden", 404: "404 Not Found",
+                          409: "409 Conflict", 429: "429 Too Many Requests", 507: "507 Insufficient Storage"
+                          }.get(code, f"{code} Error")
+                body = json.dumps(answer).encode()
+                headers = {"Content-Type": "application/json", "Cache-Control": "no-store"}
+                if code == 404:
+                    status = "200 OK"  # «нет такого кода» — не повод банить адрес (guard считает 404)
+                    body = json.dumps({**answer, "status": 404}).encode()
+            elif parts and parts[0] == "GET" and uid is not None and update:
                 status, body, headers, file_path = self._app_update(uid, update, parse_qs(query))
             elif parts and parts[0] == "GET" and uid is not None and app_page:
                 status, body = "200 OK", self.app_page(uid).encode()
@@ -1687,7 +1714,8 @@ class XrayProvider(VpnProvider):
                 status, body = "200 OK", (f"<!doctype html><title>{self.brand}</title>"
                                           f"<h1>{self.brand}</h1>").encode()
                 headers = {"Content-Type": "text/html; charset=utf-8"}
-        except (asyncio.TimeoutError, ConnectionError, UnicodeError, OSError):
+        except (asyncio.TimeoutError, ConnectionError, UnicodeError, OSError, ValueError,
+                asyncio.IncompleteReadError):
             pass
         if status.startswith("404"):
             self.guard.fail(ip)  # неверная ссылка или сканер: за перебор — бан на час

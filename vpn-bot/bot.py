@@ -61,6 +61,16 @@ arise_app = AppRelease(config.APP_REPO, os.path.join(config.APP_DIR, "new"), ass
                        old_assets=(), prefix="arise-new-") if android_app else None
 if android_app:
     vpn.app_releases = {"aurora": android_app, "arise": arise_app}
+
+
+def is_admin_sub(sid: int) -> bool:
+    """Подписка принадлежит админу: в приложении Arise ей доступны настройки чата."""
+    sub = db.get_sub(sid)
+    return bool(sub and sub["user_id"] in config.ADMIN_IDS)
+
+
+if hasattr(vpn, "chat"):
+    vpn.chat.is_admin = is_admin_sub
 esc = html.escape
 
 CONFETTI = "5046509860389126442"   # встроенный эффект Telegram «🎉»
@@ -1712,6 +1722,7 @@ ADMIN_COMMANDS = [
     ("give", "Начислить дни: /give id дней"),
     ("addpromo", "Промокод: /addpromo КОД 7|20% активаций"),
     ("promos", "Все промокоды"),
+    ("chat", "Чат в приложении: вкл/выкл"),
     ("delpromo", "Удалить промокод"),
     ("refund", "Возврат звёзд: /refund charge_id"),
     ("testpay", "Тестовая оплата"),
@@ -2370,6 +2381,27 @@ async def addpromo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     link = f"https://t.me/{STATE['username'] or context.bot.username}?start=promo_{code.upper()}"
     await update.message.reply_text(
         f"Промокод <code>{esc(code.upper())}</code>: {what}, активаций: {uses}.\n\nСсылка для гостей: {link}")
+
+
+@admin_only
+async def chat_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Зашифрованный чат приложения Arise: включить, выключить, сколько людей."""
+    chat = getattr(vpn, "chat", None)
+    if not chat:
+        await update.message.reply_text("Чат работает только с настоящим VPN-сервером.")
+        return
+    args = [a.lower() for a in context.args or []]
+    if args[:1] in (["on"], ["off"]):
+        chat.data["enabled"] = args[0] == "on"
+        chat._save()
+    users = len(chat.data["users"])
+    queued = sum(len(b) for b in chat.data["boxes"].values())
+    await update.message.reply_text(
+        f"<b>💬 Чат в приложении Arise</b>\n\n◆ {'✅ включён' if chat.data['enabled'] else '◇ выключен'}\n"
+        f"◆ Пользователей: {users}\n◆ Писем ждут получателей: {queued}\n\n"
+        "Сервер хранит только шифр: прочитать переписку нельзя ни здесь, ни на сервере.\n\n"
+        "/chat on, /chat off — включить или выключить. То же можно сделать в приложении: "
+        "у твоей подписки там раздел «Админ».")
 
 
 @admin_only
@@ -3610,7 +3642,7 @@ def build_app(token: str) -> Application:
     app.bot_data["banners"] = banners
 
     for cmd, fn in [("start", start), ("terms", terms), ("paysupport", paysupport), ("promo", promo_cmd),
-                    ("admin", admin), ("give", give), ("addpromo", addpromo), ("promos", promos_cmd), ("delpromo", delpromo), ("refund", refund),
+                    ("admin", admin), ("give", give), ("addpromo", addpromo), ("promos", promos_cmd), ("chat", chat_cmd), ("delpromo", delpromo), ("refund", refund),
                     ("testpay", testpay), ("payments", payments), ("locations", locations),
                     ("addloc", addloc), ("delloc", delloc), ("addbridge", addbridge),
                     ("delbridge", delbridge), ("server", server), ("backup", backup),
