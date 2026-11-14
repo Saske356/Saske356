@@ -7,8 +7,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- обновление изнутри: приложение скачивает новую версию и отдаёт системному установщику -->
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Российские приложения, которые по умолчанию идут мимо VPN: Android 11+ показывает
          приложению только те чужие пакеты, что перечислены здесь (без QUERY_ALL_PACKAGES). -->
@@ -110,10 +108,6 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="vpn" />
         </service>
-        <receiver
-            android:name=".InstallReceiver"
-            android:exported="false" />
-
         <receiver
             android:name=".BootReceiver"
             android:exported="true">
