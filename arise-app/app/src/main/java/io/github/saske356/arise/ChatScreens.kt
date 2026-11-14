@@ -83,6 +83,8 @@ fun ChatRoot(back: () -> Unit) {
         if (ui.unlocked && ui.noScreens) w?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         onDispose { w?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
     }
+    // Ушли с экрана чата — он закрывается: в следующий раз снова PIN
+    DisposableEffect(Unit) { onDispose { Chat.lockNow() } }
     // Свернули приложение — чат закрывается, ключи уходят из памяти
     val owner = LocalLifecycleOwner.current
     DisposableEffect(owner) {
@@ -514,7 +516,7 @@ private fun ProtectScreen(ui: ChatUi, back: () -> Unit) {
         }
         ToggleRow("🚫", "Запрет скриншотов и превью в «недавних»", ui.noScreens) { Chat.setNoScreens(!ui.noScreens) }
         ToggleRow("⏲", "Закрывать чат, если свернули приложение", ui.lockOnLeave) { Chat.setLockOnLeave(!ui.lockOnLeave) }
-        if (!ui.decoy) {
+        run {
             Section("Вход")
             Tool("🔑", "Сменить PIN", "6 цифр", "›") { dialog = "pin"; input = ""; msg = "" }
             Tool("🎭", "Ложный PIN", "Открывает пустой чат — если заставят разблокировать",
@@ -554,7 +556,7 @@ private fun ProtectScreen(ui: ChatUi, back: () -> Unit) {
                 back()
             } else dialog = "wipe"
         }
-        if (ui.admin && !ui.decoy) {
+        if (ui.admin) {
             Section("Админ · только у твоей подписки")
             ToggleRow("💬", "Чат для всех (выключить — гости не смогут писать)", ui.enabled) { Chat.setEnabled(!ui.enabled) }
             Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -564,7 +566,7 @@ private fun ProtectScreen(ui: ChatUi, back: () -> Unit) {
             Note("Админ видит только цифры. Прочитать чужие сообщения не может никто — ни админ, ни сервер.")
         }
         val clip = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        if (ui.code.isNotEmpty() && !ui.decoy) {
+        if (ui.code.isNotEmpty()) {
             Section("Мой код")
             Tool("📋", Chat.pretty(ui.code), "Скопировать", "›") {
                 clip.setPrimaryClip(ClipData.newPlainText("code", Chat.pretty(ui.code)))

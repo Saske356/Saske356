@@ -25,6 +25,9 @@ import javax.crypto.spec.SecretKeySpec
  * нельзя вытащить из телефона. Поэтому перебрать PIN на компьютере, скопировав файлы, нельзя —
  * только на этом телефоне, через приложение, а оно после MAX_FAILS ошибок стирает всё.
  *
+ * У каждой подписки своё хранилище, свой ключ Keystore и свой счётчик ошибок: сменили подписку
+ * в приложении — чужая переписка не откроется (и наоборот).
+ *
  * Два хранилища: настоящее и ложное. Ложный PIN открывает ложное — в нём своя, пустая переписка,
  * будто чатом не пользовались.
  */
@@ -36,28 +39,49 @@ object ChatVault {
 
     enum class Slot(val file: String) { REAL("chat_real"), DECOY("chat_decoy") }
 
-    private lateinit var dir: File
+    private lateinit var root: File
     private lateinit var prefs: android.content.SharedPreferences
 
     fun init(ctx: Context) {
-        dir = File(ctx.filesDir, "chat").also { it.mkdirs() }
+        root = File(ctx.filesDir, "chat").also { it.mkdirs() }
         prefs = ctx.getSharedPreferences("chat_guard", Context.MODE_PRIVATE)
+        // Первая версия держала одно хранилище на всё приложение — его владелец неизвестен, убираем
+        for (s in Slot.entries) {
+            File(root, s.file + ".key").delete()
+            File(root, s.file + ".dat").delete()
+        }
+        try {
+            KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(ALIAS)
+        } catch (e: Exception) {
+            // ключа не было
+        }
     }
+
+    /** Отпечаток текущей подписки: по нему у каждой подписки свои файлы, ключ и счётчик. */
+    fun space(): String {
+        val sub = Store.subUrl.trim().substringBefore('?').trimEnd('/')
+        val h = java.security.MessageDigest.getInstance("SHA-256").digest(sub.toByteArray())
+        return h.take(8).joinToString("") { "%02x".format(it) }
+    }
+
+    private val dir: File get() = File(root, space()).also { it.mkdirs() }
+    private val alias: String get() = ALIAS + "_" + space()
+    private val failsKey: String get() = "fails_" + space()
 
     private fun keyFile(s: Slot) = File(dir, s.file + ".key")
     private fun dataFile(s: Slot) = File(dir, s.file + ".dat")
 
     fun exists(s: Slot = Slot.REAL) = keyFile(s).exists()
-    val fails: Int get() = prefs.getInt("fails", 0)
+    val fails: Int get() = prefs.getInt(failsKey, 0)
 
     // ---------- ключи ----------
 
     private fun keystoreKey(): SecretKey {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (ks.getKey(ALIAS, null) as? SecretKey)?.let { return it }
+        (ks.getKey(alias, null) as? SecretKey)?.let { return it }
         val gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
         gen.init(
-            KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+            KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setKeySize(256)
@@ -146,11 +170,11 @@ object ChatVault {
     fun unlock(pin: String): Unlock {
         val opened = tryOpen(Slot.REAL, pin) ?: tryOpen(Slot.DECOY, pin)
         if (opened != null) {
-            prefs.edit().putInt("fails", 0).apply()
+            prefs.edit().putInt(failsKey, 0).apply()
             return Unlock.Ok(opened)
         }
         val n = fails + 1
-        prefs.edit().putInt("fails", n).apply()
+        prefs.edit().putInt(failsKey, n).apply()
         if (n >= MAX_FAILS) {
             wipe()
             return Unlock.Wiped
@@ -162,18 +186,18 @@ object ChatVault {
     fun opensReal(pin: String) = tryOpen(Slot.REAL, pin) != null
     fun opensDecoy(pin: String) = tryOpen(Slot.DECOY, pin) != null
 
-    /** Стереть всё: оба хранилища и ключ Keystore — восстановить переписку будет невозможно. */
+    /** Стереть всё (этой подписки): оба хранилища и ключ Keystore — восстановить будет невозможно. */
     fun wipe() {
         for (s in Slot.entries) {
             keyFile(s).delete()
             dataFile(s).delete()
         }
         try {
-            KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(ALIAS)
+            KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(alias)
         } catch (e: Exception) {
             // ключа ещё не было
         }
-        prefs.edit().clear().apply()
+        prefs.edit().remove(failsKey).apply()
     }
 
     fun dropDecoy() {

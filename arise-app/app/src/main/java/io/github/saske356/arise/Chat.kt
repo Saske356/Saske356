@@ -133,6 +133,18 @@ object Chat {
         if (vault?.slot == ChatVault.Slot.REAL) {
             scope.launch { register() }
             startPolling()
+        } else {
+            // Ложный чат выглядит как настоящий: тот же раздел «Админ» у подписки админа,
+            // но ключей на сервер не шлёт и писем не забирает.
+            scope.launch {
+                try {
+                    val st = request("status")
+                    flow.update { it.copy(admin = st.optBoolean("admin"), enabled = st.optBoolean("enabled", true)) }
+                    if (flow.value.admin) refreshAdmin()
+                } catch (e: Exception) {
+                    // нет связи — ложному чату не важно
+                }
+            }
         }
     }
 
@@ -214,7 +226,10 @@ object Chat {
                 msgs = codes.associateWith { c -> msgsOf(c) },
                 unread = unread ?: it.unread,
                 ttlHours = data.optInt("ttl", 24), noScreens = data.optBoolean("secure", true),
-                lockOnLeave = data.optBoolean("lockLeave", true), hasDecoy = ChatVault.exists(ChatVault.Slot.DECOY),
+                lockOnLeave = data.optBoolean("lockLeave", true),
+                // в ложном чате «ложный PIN задан» — как в настоящем, иначе видно, что это подделка
+                hasDecoy = if (vault?.slot == ChatVault.Slot.DECOY) data.optBoolean("fd", true)
+                else ChatVault.exists(ChatVault.Slot.DECOY),
             )
         }
     }
@@ -427,7 +442,10 @@ object Chat {
     suspend fun changePin(pin: String): String? = lock.withLock {
         val v = vault ?: return@withLock "Чат закрыт"
         if (v.slot == ChatVault.Slot.REAL && ChatVault.exists(ChatVault.Slot.DECOY) && ChatVault.opensDecoy(pin)) {
-            return@withLock "Этот PIN уже стоит ложным — выберите другой"
+            return@withLock "Этот PIN не подходит — выберите другой"
+        }
+        if (v.slot == ChatVault.Slot.DECOY && ChatVault.opensReal(pin)) {
+            return@withLock "Этот PIN не подходит — выберите другой"  // то же сообщение: ничего не выдаём
         }
         v.changePin(pin)
         null
@@ -435,6 +453,12 @@ object Chat {
 
     /** Ложный PIN: отдельное пустое хранилище. Нельзя задать таким же, как настоящий. */
     suspend fun setDecoy(pin: String): String? = lock.withLock {
+        // В ложном чате «задать ложный PIN» делает вид, что получилось: настоящий не трогаем
+        if (vault?.slot == ChatVault.Slot.DECOY) {
+            d()?.put("fd", true)
+            vault?.save()
+            return@withLock null
+        }
         if (ChatVault.opensReal(pin)) return@withLock "Ложный PIN должен отличаться от настоящего"
         val fake = (1..9).map { "ABCDEFGHJKMNPQRSTUVWXYZ23456789"[rnd.nextInt(31)] }.joinToString("")
         ChatVault.create(ChatVault.Slot.DECOY, pin,
@@ -443,8 +467,14 @@ object Chat {
         null
     }.also { publish() }
 
-    fun dropDecoy() {
-        ChatVault.dropDecoy()
+    fun dropDecoy() = scope.launch {
+        lock.withLock {
+            if (vault?.slot == ChatVault.Slot.DECOY) {
+                // из ложного чата настоящий ложный PIN не убрать — только делаем вид
+                d()?.put("fd", false)
+                vault?.save()
+            } else ChatVault.dropDecoy()
+        }
         publish()
     }
 
