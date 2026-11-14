@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { background: #000; font-family: "DejaVu Sans", system-ui, sans-serif; color: #EAF1FF; }
+  .phones { display: flex; flex-wrap: wrap; gap: 28px; padding: 24px; width: 1290px; }
+  .phone { width: 390px; height: 844px; overflow: hidden; position: relative;
+           background: radial-gradient(120% 70% at 50% 100%, #0B2A6B 0%, #071433 38%, #04070F 70%), #04070F; }
+  .phone::before { content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(60% 35% at 50% 30%, rgba(66,133,255,.16), transparent 70%); }
+  .cap { position: absolute; top: 14px; left: 0; right: 0; text-align: center; font-size: 11px; letter-spacing: 2px;
+         color: #4F6390; text-transform: uppercase; }
+  .top { display: flex; align-items: center; gap: 12px; padding: 54px 20px 0; position: relative; }
+  .back { width: 40px; height: 40px; border-radius: 13px; background: rgba(255,255,255,.06);
+          border: 1px solid rgba(255,255,255,.08); display: grid; place-items: center; color: #9FB0D3; font-size: 20px; }
+  .ttl { font-size: 22px; font-weight: 700; }
+  .ttl small { display: block; font-size: 12px; color: #6FD08C; font-weight: 500; margin-top: 2px; }
+  .right { margin-left: auto; }
+  .lock { font-size: 12px; color: #8CB8FF; display: flex; align-items: center; gap: 6px; }
+  .glass { background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.07); border-radius: 18px; }
+  /* PIN */
+  .pin { text-align: center; padding-top: 120px; position: relative; }
+  .shield { width: 84px; height: 84px; margin: 0 auto; border-radius: 26px; display: grid; place-items: center; font-size: 38px;
+            background: linear-gradient(145deg, #8CB8FF, #2F5FC8); box-shadow: 0 0 50px rgba(90,150,255,.55); }
+  .pin h2 { font-size: 24px; margin-top: 26px; }
+  .pin p { color: #8E9CBB; font-size: 13.5px; margin: 8px 40px 0; line-height: 1.45; }
+  .dots { display: flex; gap: 16px; justify-content: center; margin-top: 30px; }
+  .dots i { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid #8CB8FF; }
+  .dots i.f { background: #8CB8FF; box-shadow: 0 0 12px rgba(140,184,255,.8); }
+  .pad { display: grid; grid-template-columns: repeat(3, 72px); gap: 14px 30px; justify-content: center; margin-top: 40px; }
+  .pad span { width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; font-size: 26px;
+              background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); }
+  .pad span.n { background: none; border: none; font-size: 14px; color: #8E9CBB; }
+  .tries { color: #8E9CBB; font-size: 12px; margin-top: 22px; }
+  /* мой код */
+  .me { margin: 18px 20px 0; padding: 14px 16px; position: relative; display: flex; align-items: center; gap: 12px; }
+  .me .k { font-size: 11px; letter-spacing: 1.5px; color: #7F8DAB; text-transform: uppercase; }
+  .me .code { font-family: "DejaVu Sans Mono", monospace; font-size: 22px; font-weight: 700; letter-spacing: 3px; margin-top: 3px; }
+  .me .copy { margin-left: auto; padding: 9px 12px; border-radius: 12px; background: rgba(140,184,255,.14); color: #8CB8FF;
+              font-size: 13px; font-weight: 600; }
+  .search { margin: 14px 20px 6px; padding: 12px 14px; border-radius: 14px; background: rgba(255,255,255,.05);
+            border: 1px solid rgba(255,255,255,.07); color: #7F8DAB; font-size: 14px; position: relative; }
+  .item { display: flex; align-items: center; gap: 12px; padding: 12px 20px; position: relative; }
+  .av { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 18px;
+        background: linear-gradient(145deg, #2F5FC8, #16223A); border: 1px solid rgba(140,184,255,.3); }
+  .item .n { font-size: 16px; font-weight: 600; }
+  .item .m { font-size: 13px; color: #8E9CBB; margin-top: 2px; }
+  .item .t { margin-left: auto; text-align: right; font-size: 12px; color: #7F8DAB; }
+  .badge { display: inline-block; min-width: 20px; padding: 2px 6px; border-radius: 10px; background: #6FA4FF; color: #04070F;
+           font-weight: 700; font-size: 11.5px; margin-top: 4px; }
+  .fab { position: absolute; right: 22px; bottom: 34px; width: 60px; height: 60px; border-radius: 20px; display: grid; place-items: center;
+         font-size: 30px; color: #04070F; background: linear-gradient(145deg, #CFE0FF, #6FA4FF); box-shadow: 0 10px 30px rgba(90,150,255,.5); }
+  .bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 16px 30px; display: flex; gap: 10px; align-items: center;
+         background: linear-gradient(180deg, rgba(10,16,32,0), #0A1020 30%); }
+  /* переписка */
+  .timer { margin: 12px auto 0; width: max-content; padding: 6px 12px; border-radius: 12px; font-size: 12px; color: #8CB8FF;
+           background: rgba(140,184,255,.10); border: 1px solid rgba(140,184,255,.2); position: relative; }
+  .msgs { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; position: relative; }
+  .b { max-width: 78%; padding: 10px 13px; border-radius: 18px; font-size: 14.5px; line-height: 1.4; }
+  .b small { display: block; font-size: 10.5px; color: rgba(234,241,255,.55); margin-top: 3px; text-align: right; }
+  .in { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.07); border-bottom-left-radius: 6px; }
+  .out { align-self: flex-end; background: linear-gradient(145deg, #4A86F0, #2F5FC8); border-bottom-right-radius: 6px; }
+  .out small { color: rgba(234,241,255,.75); }
+  .input { flex: 1; padding: 13px 16px; border-radius: 18px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.09);
+           color: #7F8DAB; font-size: 14.5px; }
+  .send { width: 48px; height: 48px; border-radius: 16px; display: grid; place-items: center; font-size: 20px; color: #04070F;
+          background: linear-gradient(145deg, #CFE0FF, #6FA4FF); }
+  /* настройки */
+  .sec { margin: 0 20px; position: relative; }
+  .sec h4 { font-size: 11px; letter-spacing: 1.5px; color: #7F8DAB; text-transform: uppercase; margin: 18px 4px 8px; }
+  .opt { display: flex; align-items: center; gap: 12px; padding: 13px 14px; }
+  .opt + .opt { border-top: 1px solid rgba(255,255,255,.06); }
+  .ic { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; font-size: 17px; background: rgba(90,150,255,.14); }
+  .opt .n { font-size: 15px; font-weight: 600; }
+  .opt .m { font-size: 12px; color: #7F8DAB; margin-top: 2px; }
+  .opt .v { margin-left: auto; color: #8CB8FF; font-size: 13px; font-weight: 600; }
+  .sw { margin-left: auto; width: 42px; height: 24px; border-radius: 12px; background: #2F5FC8; position: relative; flex: none; }
+  .sw::after { content: ""; position: absolute; right: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #EAF1FF; }
+  .sw.off { background: rgba(255,255,255,.15); } .sw.off::after { right: auto; left: 3px; }
+  .danger .n { color: #FF8A80; } .danger .ic { background: rgba(255,90,90,.14); }
+  .safety { font-family: "DejaVu Sans Mono", monospace; font-size: 15px; letter-spacing: 2px; line-height: 1.7;
+            text-align: center; padding: 14px; color: #CFE0FF; }
+  .note { font-size: 12px; color: #7F8DAB; margin: 8px 4px 0; line-height: 1.45; }
+  .big { margin: 18px 20px 0; padding: 15px; border-radius: 16px; text-align: center; font-weight: 700; font-size: 15.5px; position: relative;
+         color: #04070F; background: linear-gradient(90deg, #CFE0FF, #6FA4FF); }
+  .stat3 { display: flex; gap: 10px; margin: 16px 20px 0; position: relative; }
+  .stat3 div { flex: 1; padding: 12px; }
+  .stat3 .k { font-size: 11px; color: #7F8DAB; text-transform: uppercase; letter-spacing: 1px; }
+  .stat3 .v { font-size: 22px; font-weight: 700; margin-top: 4px; }
+  .field { margin: 0 20px; padding: 14px 16px; position: relative; font-family: "DejaVu Sans Mono", monospace; font-size: 20px;
+           letter-spacing: 3px; color: #EAF1FF; }
+  .lbl { margin: 22px 24px 8px; font-size: 13px; color: #9FB0D3; position: relative; }
+</style></head><body><div class="phones">
+
+<!-- 1. PIN -->
+<div class="phone"><div class="cap">1 · вход в чат</div>
+  <div class="pin">
+    <div class="shield">🔒</div>
+    <h2>Защищённый чат</h2>
+    <p>Введите PIN. Без него переписку не открыть, даже если телефон в чужих руках.</p>
+    <div class="dots"><i class="f"></i><i class="f"></i><i class="f"></i><i></i><i></i><i></i></div>
+    <div class="pad"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span>
+      <span>7</span><span>8</span><span>9</span><span class="n">Выход</span><span>0</span><span class="n">⌫</span></div>
+    <div class="tries">После 10 неверных попыток переписка стирается</div>
+  </div>
+</div>
+
+<!-- 2. Список чатов -->
+<div class="phone"><div class="cap">2 · чаты</div>
+  <div class="top"><div class="back">‹</div><div class="ttl">Чаты</div>
+    <div class="right lock">🔒 сквозное шифрование</div></div>
+  <div class="me glass"><div><div class="k">Мой код</div><div class="code">K7M-2QX-9TR</div></div><div class="copy">Поделиться</div></div>
+  <div class="search">🔍 Поиск</div>
+  <div class="item"><div class="av">А</div><div><div class="n">Артём</div><div class="m">Скинул, проверь</div></div>
+    <div class="t">12:41<br><span class="badge">2</span></div></div>
+  <div class="item"><div class="av">М</div><div><div class="n">Мама</div><div class="m">Ты: Доехал, всё ок</div></div><div class="t">вчера</div></div>
+  <div class="item"><div class="av">Д</div><div><div class="n">Дима</div><div class="m">⏱ сообщения исчезли</div></div><div class="t">пн</div></div>
+  <div class="fab">＋</div>
+</div>
+
+<!-- 3. Переписка -->
+<div class="phone"><div class="cap">3 · переписка</div>
+  <div class="top"><div class="back">‹</div><div class="av" style="width:40px;height:40px;font-size:16px">А</div>
+    <div class="ttl" style="font-size:18px">Артём<small>🔒 код безопасности сверен</small></div>
+    <div class="right back" style="font-size:16px">⋯</div></div>
+  <div class="timer">⏱ Сообщения исчезают через 24 часа</div>
+  <div class="msgs">
+    <div class="b in">Привет, ты где?<small>12:30</small></div>
+    <div class="b out">Еду, буду через 10 минут<small>12:32 ✓✓</small></div>
+    <div class="b in">Скинул адрес, проверь<small>12:41</small></div>
+    <div class="b in">Подъезд 3, домофон 47<small>12:41</small></div>
+  </div>
+  <div class="bar"><div class="input">Сообщение</div><div class="send">➤</div></div>
+</div>
+
+<!-- 4. Новый чат -->
+<div class="phone"><div class="cap">4 · новый собеседник</div>
+  <div class="top"><div class="back">‹</div><div class="ttl">Новый чат</div></div>
+  <div class="lbl">Код собеседника</div>
+  <div class="field glass">A4P-7KD-M2E</div>
+  <div class="lbl">Как подписать</div>
+  <div class="field glass" style="font-family:inherit;font-size:16px;letter-spacing:0">Артём</div>
+  <div class="big">Начать чат</div>
+  <div class="sec"><div class="note" style="margin-top:16px">Код собеседник видит у себя в «Чатах». Номер телефона, имя
+    и Telegram не нужны — сервер знает только коды.</div></div>
+</div>
+
+<!-- 5. Защита чата -->
+<div class="phone"><div class="cap">5 · защита</div>
+  <div class="top"><div class="back">‹</div><div class="ttl">Защита</div></div>
+  <div class="sec"><h4>Переписка</h4><div class="glass">
+    <div class="opt"><div class="ic">⏱</div><div><div class="n">Самоудаление</div><div class="m">Для новых сообщений</div></div><div class="v">24 ч ›</div></div>
+    <div class="opt"><div class="ic">🚫</div><div><div class="n">Запрет скриншотов</div><div class="m">И скрыть чат в недавних</div></div><div class="sw"></div></div>
+  </div></div>
+  <div class="sec"><h4>Вход</h4><div class="glass">
+    <div class="opt"><div class="ic">🔑</div><div><div class="n">Сменить PIN</div></div><div class="v">›</div></div>
+    <div class="opt"><div class="ic">🎭</div><div><div class="n">Ложный PIN</div><div class="m">Открывает пустой чат</div></div><div class="v">Задан ›</div></div>
+    <div class="opt"><div class="ic">⏲</div><div><div class="n">Закрывать чат</div><div class="m">Если свернули приложение</div></div><div class="v">сразу ›</div></div>
+  </div></div>
+  <div class="sec"><h4>Экстренно</h4><div class="glass">
+    <div class="opt danger"><div class="ic">🧨</div><div><div class="n">Стереть всё</div><div class="m">Переписку, ключи и контакты</div></div></div>
+  </div></div>
+</div>
+
+<!-- 6. Код безопасности + админ -->
+<div class="phone"><div class="cap">6 · код безопасности · админ</div>
+  <div class="top"><div class="back">‹</div><div class="ttl">Артём</div></div>
+  <div class="sec"><h4>Код безопасности</h4><div class="glass safety">48213 90562 17734<br>66059 31840 72215</div>
+    <div class="note">Сравните с кодом у собеседника при встрече или голосом. Совпадает — между вами никто не подслушивает.</div></div>
+  <div class="sec"><h4>Админ · только у твоей подписки</h4><div class="glass">
+    <div class="opt"><div class="ic">💬</div><div><div class="n">Чат для всех</div><div class="m">Выключить — гости не смогут писать</div></div><div class="sw"></div></div>
+  </div></div>
+  <div class="stat3"><div class="glass"><div class="k">Людей</div><div class="v">128</div></div>
+    <div class="glass"><div class="k">Ждут доставки</div><div class="v">14</div></div></div>
+  <div class="sec"><div class="note" style="margin-top:12px">Админ видит только цифры. Прочитать чужие сообщения не может никто —
+    ни админ, ни сервер.</div></div>
+</div>
+
+</div></body></html>
