@@ -8,9 +8,12 @@
 писал и сколько байт. Сообщение лежит на сервере, пока получатель его не заберёт (не дольше
 MAX_AGE), и после подтверждения удаляется.
 
-Адресация — по коду чата (9 знаков), его гость сам даёт собеседнику. Вход — по ссылке подписки:
-запрос приходит на <подписка>/chat/<действие>, сервер подписок проверяет её и передаёт сюда номер
-подписки. Чат включает и выключает админ (из приложения, по своей подписке).
+Адресация — по коду чата (9 знаков), его гость сам даёт собеседнику. Вход — по ссылке подписки
+и номеру устройства: запрос приходит на <подписка>/chat/<действие>, сервер подписок проверяет, что
+подписка активна и у устройства есть место в ней (те же места, что в «📱 Устройства»), и передаёт
+сюда номер подписки и устройства. У каждого устройства свой код: подписку на троих делят трое,
+и у каждого своя переписка. Нет подписки или места — нет чата.
+Чат включает и выключает админ (из приложения, по своей подписке).
 """
 
 import base64
@@ -37,7 +40,7 @@ class ChatRelay:
         self.path = path
         self.is_admin = is_admin or (lambda uid: False)
         self.data = {"enabled": True, "users": {}, "codes": {}, "boxes": {}}
-        self._rate: dict[int, list[float]] = {}
+        self._rate: dict[str, list[float]] = {}
         try:
             with open(path, encoding="utf-8") as f:
                 self.data.update(json.load(f))
@@ -54,8 +57,26 @@ class ChatRelay:
 
     # ---------- данные ----------
 
-    def code_of(self, uid: int) -> str:
-        return self.data["users"].get(str(uid), {}).get("code", "")
+    @staticmethod
+    def ident(uid: int, device: str) -> str:
+        return f"{uid}:{device}"
+
+    def code_of(self, uid: int, device: str) -> str:
+        return self.data["users"].get(self.ident(uid, device), {}).get("code", "")
+
+    def drop(self, uid: int, device: str | None = None) -> int:
+        """Убрать код чата устройства (удалили в «📱 Устройства») или всех устройств подписки
+        («Сбросить все»): ключ и письма для него пропадают. Возвращает, сколько убрано."""
+        gone = [k for k in self.data["users"]
+                if k == self.ident(uid, device or "") or (device is None and k.startswith(f"{uid}:"))]
+        for k in gone:
+            code = self.data["users"].pop(k).get("code")
+            if code:
+                self.data["codes"].pop(code, None)
+                self.data["boxes"].pop(code, None)
+        if gone:
+            self._save()
+        return len(gone)
 
     def _prune(self, now: float) -> None:
         for code, box in list(self.data["boxes"].items()):
@@ -65,8 +86,9 @@ class ChatRelay:
 
     # ---------- запросы ----------
 
-    def handle(self, uid: int, action: str, method: str, query: dict, body: bytes) -> tuple[int, dict]:
-        """Один запрос приложения. Возвращает (HTTP-код, JSON-ответ)."""
+    def handle(self, uid: int, action: str, method: str, query: dict, body: bytes,
+               device: str = "") -> tuple[int, dict]:
+        """Один запрос приложения с устройства device подписки uid. Возвращает (HTTP-код, JSON)."""
         try:
             req = json.loads(body or b"{}") if method == "POST" else {}
             if not isinstance(req, dict):
@@ -75,7 +97,7 @@ class ChatRelay:
             return 400, {"error": "bad json"}
         admin = bool(self.is_admin(uid))
         if action == "status":
-            return 200, {"enabled": bool(self.data["enabled"]), "admin": admin, "code": self.code_of(uid)}
+            return 200, {"enabled": bool(self.data["enabled"]), "admin": admin, "code": self.code_of(uid, device)}
         if action == "admin":
             if not admin:
                 return 403, {"error": "not admin"}
@@ -89,14 +111,14 @@ class ChatRelay:
         if not self.data["enabled"]:
             return 403, {"error": "disabled"}
         if action == "register" and method == "POST":
-            return self._register(uid, str(req.get("key", "")))
+            return self._register(uid, device, str(req.get("key", "")))
         if action == "key":
             code = norm_code((query.get("code") or [""])[0])
             u = self.data["codes"].get(code)
             if not u:
                 return 404, {"error": "no such code"}
-            return 200, {"code": code, "key": self.data["users"][str(u)]["key"]}
-        me = self.code_of(uid)
+            return 200, {"code": code, "key": self.data["users"][u]["key"]}
+        me = self.code_of(uid, device)
         if not me:
             return 409, {"error": "not registered"}
         if action == "send" and method == "POST":
@@ -120,16 +142,19 @@ class ChatRelay:
             return 200, {"ok": True}
         return 404, {"error": "unknown action"}
 
-    def _register(self, uid: int, key: str) -> tuple[int, dict]:
-        """Открытый ключ телефона. Код у подписки постоянный; новый телефон (или переустановка)
-        заменяет ключ — старые письма для прежнего ключа удаляются, прочитать их уже нельзя."""
+    def _register(self, uid: int, device: str, key: str) -> tuple[int, dict]:
+        """Открытый ключ устройства. Код у устройства постоянный; новый ключ (переустановка,
+        «стереть всё») заменяет прежний — письма для старого ключа удаляются, прочитать их нельзя."""
+        if not device:
+            return 400, {"error": "no device"}
         if not key or len(key) > MAX_KEY:
             return 400, {"error": "bad key"}
         try:
             base64.b64decode(key, validate=True)
         except ValueError:
             return 400, {"error": "bad key"}
-        u = self.data["users"].setdefault(str(uid), {})
+        me = self.ident(uid, device)
+        u = self.data["users"].setdefault(me, {})
         code = u.get("code")
         if not code:
             while True:
@@ -137,7 +162,7 @@ class ChatRelay:
                 if code not in self.data["codes"]:
                     break
             u["code"] = code
-            self.data["codes"][code] = uid
+            self.data["codes"][code] = me
         if u.get("key") != key:
             u["key"] = key
             self.data["boxes"].pop(code, None)
@@ -155,11 +180,11 @@ class ChatRelay:
         except ValueError:
             return 400, {"error": "bad box"}
         now = time.time()
-        recent = [t for t in self._rate.get(uid, []) if now - t < 60]
+        recent = [t for t in self._rate.get(me, []) if now - t < 60]
         if len(recent) >= SEND_PER_MIN:
             return 429, {"error": "too fast"}
         recent.append(now)
-        self._rate[uid] = recent
+        self._rate[me] = recent
         q = self.data["boxes"].setdefault(to, [])
         if len(q) >= MAX_QUEUE:
             return 507, {"error": "recipient box full"}

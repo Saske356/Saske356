@@ -346,6 +346,7 @@ class XrayProvider(VpnProvider):
         gens = self.state.setdefault("gen", {})
         gens[str(user_id)] = int(gens.get(str(user_id), 0)) + 1
         self.state.get("hwids", {}).pop(str(user_id), None)  # все устройства — заново
+        self.chat.drop(user_id)  # и коды чата: ссылку могли украсть
         self._short = {}
         self._hy2_nets.pop(user_id, None)
         self._save()
@@ -1455,6 +1456,7 @@ class XrayProvider(VpnProvider):
         mine = self.state.setdefault("hwids", {}).setdefault(str(user_id), {})
         for h in [h for h, d in mine.items() if now - d.get("t", 0) > HWID_TTL]:
             del mine[h]
+            self.chat.drop(user_id, h)  # место освободилось — и код чата этого устройства
         if hwid in mine:
             if now - mine[hwid].get("t", 0) > 3600:  # не пишем файл на каждое обновление
                 mine[hwid]["t"] = now
@@ -1479,6 +1481,7 @@ class XrayProvider(VpnProvider):
             if hashlib.sha1(h.encode()).hexdigest()[:8] == short_id:
                 del mine[h]
                 self._save()
+                self.chat.drop(user_id, h)  # и код чата этого устройства
                 return True
         return False
 
@@ -1679,10 +1682,15 @@ class XrayProvider(VpnProvider):
                     if clen > 64 * 1024:
                         raise ValueError("слишком большое тело")
                     body_in = await asyncio.wait_for(reader.readexactly(clen), left()) if clen else b""
-                if self.state["users"].get(str(uid), 0) > time.time():
-                    code, answer = self.chat.handle(uid, chat, parts[0], parse_qs(query), body_in)
+                hwid = dev.get("x-hwid", "")[:128]
+                if self.state["users"].get(str(uid), 0) <= time.time():
+                    code, answer = 403, {"error": "subscription expired"}  # нет подписки — нет чата
+                elif not hwid:
+                    code, answer = 403, {"error": "no device id"}
+                elif not self.device_seen(uid, hwid, dev.get("x-device-model", ""), dev.get("x-device-os", "")):
+                    code, answer = 403, {"error": "device limit"}  # чат только у устройств с местом в подписке
                 else:
-                    code, answer = 403, {"error": "subscription expired"}
+                    code, answer = self.chat.handle(uid, chat, parts[0], parse_qs(query), body_in, hwid)
                 status = {200: "200 OK", 400: "400 Bad Request", 403: "403 Forbidden", 404: "404 Not Found",
                           409: "409 Conflict", 429: "429 Too Many Requests", 507: "507 Insufficient Storage"
                           }.get(code, f"{code} Error")

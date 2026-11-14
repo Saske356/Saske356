@@ -436,7 +436,7 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         async def post(p, payload):
             raw = json.dumps(payload).encode()
             r, w = await asyncio.open_connection("127.0.0.1", port)
-            w.write(f"POST {p} HTTP/1.1\r\nHost: x\r\nUser-Agent: AriseApp/1\r\n"
+            w.write(f"POST {p} HTTP/1.1\r\nHost: x\r\nUser-Agent: AriseApp/1\r\nX-HWID: dev1\r\n"
                     f"Content-Length: {len(raw)}\r\n\r\n".encode() + raw); await w.drain()
             data = await r.read(); w.close()
             head, _, body = data.partition(b"\r\n\r\n")
@@ -444,10 +444,24 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         head, ans = await post(path + "/chat/register", {"key": "a2V5"})
         self.assertIn(b"200 OK", head)
         self.assertEqual(len(ans["code"]), 9)
+        async def get_dev(p, hwid):
+            r, w = await asyncio.open_connection("127.0.0.1", port)
+            w.write(f"GET {p} HTTP/1.1\r\nHost: x\r\nUser-Agent: AriseApp/1\r\nX-HWID: {hwid}\r\n\r\n".encode())
+            await w.drain()
+            data = await r.read(); w.close()
+            return json.loads(data.partition(b"\r\n\r\n")[2])
+        self.assertEqual((await get_dev(path + "/chat/status", "dev1"))["code"], ans["code"])
+        self.assertEqual((await get_dev(path + "/chat/key?code=ZZZZZZZZZ", "dev1"))["status"], 404,
+                         "«нет кода» не считается перебором ссылок")
+        self.assertEqual((await get_dev(path + "/chat/status", "dev2"))["error"], "device limit",
+                         "второе устройство при одном оплаченном — без чата")
         _, _, body = await get(path + "/chat/status", "AriseApp/1")
-        self.assertEqual(json.loads(body)["code"], ans["code"])
-        _, _, body = await get(path + "/chat/key?code=ZZZZZZZZZ", "AriseApp/1")
-        self.assertEqual(json.loads(body)["status"], 404, "«нет кода» не считается перебором ссылок")
+        self.assertEqual(json.loads(body)["error"], "no device id")
+        self.v.state["users"]["1"] = time.time() - 1
+        self.assertEqual((await get_dev(path + "/chat/status", "dev1"))["error"], "subscription expired",
+                         "нет подписки — нет чата")
+        self.v.state["users"]["1"] = time.time() + 86400
+        self.v.state.pop("hwids", None)
         self.assertIn(b"404", (await get("/sub/1/" + "0" * 24 + "/chat/status", "x"))[0], "чужая ссылка")
         # мини-приложение Telegram — с нашего сервера
         head, _, body = await get("/m/", "Mozilla/5.0 Telegram")

@@ -15,14 +15,26 @@ BOX = base64.b64encode(b"\x00ciphertext").decode()
 
 
 class ChatRelayTest(unittest.TestCase):
+    def test_each_device_of_a_subscription_has_its_own_code(self):
+        a = self.call(1, "register", "POST", {"key": KEY_A}, dev="mom")[1]["code"]
+        b = self.call(1, "register", "POST", {"key": KEY_B}, dev="son")[1]["code"]
+        self.assertNotEqual(a, b, "подписка на двоих — два разных чата")
+        self.call(1, "send", "POST", {"to": b, "box": BOX}, dev="mom")
+        self.assertEqual(self.call(1, "inbox", dev="mom")[1]["messages"], [], "мама не видит почту сына")
+        self.assertEqual(len(self.call(1, "inbox", dev="son")[1]["messages"]), 1)
+        self.assertEqual(self.c.drop(1, "son"), 1, "устройство удалили в боте — его код пропал")
+        self.assertEqual(self.call(1, "key", code=b)[0], 404)
+        self.assertEqual(self.c.drop(1), 1, "«Сбросить все» — пропали все коды подписки")
+        self.assertEqual(self.call(1, "status", dev="mom")[1]["code"], "")
+
     def setUp(self):
         self.d = tempfile.mkdtemp()
         self.path = os.path.join(self.d, "chat.json")
         self.c = chat_relay.ChatRelay(self.path, is_admin=lambda uid: uid == 99)
 
-    def call(self, uid, action, method="GET", body=None, **query):
+    def call(self, uid, action, method="GET", body=None, dev="phone", **query):
         return self.c.handle(uid, action, method, {k: [v] for k, v in query.items()},
-                             json.dumps(body).encode() if body is not None else b"")
+                             json.dumps(body).encode() if body is not None else b"", dev)
 
     def test_message_goes_through_as_ciphertext_only(self):
         code_a = self.call(1, "register", "POST", {"key": KEY_A})[1]["code"]
@@ -41,7 +53,7 @@ class ChatRelayTest(unittest.TestCase):
             self.assertNotIn("ciphertext", f.read(), "на диске нет даже шифра прочитанных писем")
         # после перезапуска данные на месте
         again = chat_relay.ChatRelay(self.path)
-        self.assertEqual(again.code_of(1), code_a)
+        self.assertEqual(again.code_of(1, "phone"), code_a)
 
     def test_new_key_drops_old_mail_and_bad_input(self):
         self.call(1, "register", "POST", {"key": KEY_A})
@@ -53,7 +65,8 @@ class ChatRelayTest(unittest.TestCase):
         self.assertEqual(self.call(1, "send", "POST", {"to": code_b, "box": "!!"})[0], 400)
         self.assertEqual(self.call(1, "send", "POST", {"to": code_b, "box": "A" * 40000})[0], 400)
         self.assertEqual(self.call(1, "register", "POST", {"key": "not base64!"})[0], 400)
-        self.assertEqual(self.c.handle(1, "send", "POST", {}, b"[1]")[0], 400)
+        self.assertEqual(self.c.handle(1, "send", "POST", {}, b"[1]", "phone")[0], 400)
+        self.assertEqual(self.call(1, "register", "POST", {"key": KEY_A}, dev="")[0], 400, "без устройства")
 
     def test_rate_limit_and_old_mail(self):
         self.call(1, "register", "POST", {"key": KEY_A})
