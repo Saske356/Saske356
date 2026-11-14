@@ -518,8 +518,6 @@ private fun ProtectScreen(ui: ChatUi, back: () -> Unit) {
         }
         ToggleRow("🚫", "Запрет скриншотов и превью в «недавних»", ui.noScreens) { Chat.setNoScreens(!ui.noScreens) }
         ToggleRow("⏲", "Закрывать чат, если свернули приложение", ui.lockOnLeave) { Chat.setLockOnLeave(!ui.lockOnLeave) }
-        val hidden by Chat.hidden.collectAsState()
-        ToggleRow("🙈", "Скрывать чат: открывать долгим нажатием на логотип Arise", hidden) { Chat.setHidden(!hidden) }
         run {
             Section("Вход")
             // Второй PIN нигде не показан: его задают долгим нажатием на «Сменить PIN».

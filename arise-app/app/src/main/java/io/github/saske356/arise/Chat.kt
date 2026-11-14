@@ -402,19 +402,8 @@ object Chat {
 
     fun read(code: String) = flow.update { it.copy(unread = it.unread - code) }
 
-    /** Чат спрятан с главного экрана: открывается долгим нажатием на логотип Arise. */
-    val hidden: MutableStateFlow<Boolean> by lazy { MutableStateFlow(ChatVault.isHidden()) }
-
-    fun setHidden(on: Boolean) {
-        ChatVault.setHidden(on)
-        hidden.value = on
-    }
-
-    /** Подписку сменили — у новой своё хранилище и своя настройка «скрывать». */
-    fun subscriptionChanged() {
-        lockNow()
-        hidden.value = ChatVault.isHidden()
-    }
+    /** Подписку сменили — у новой своё хранилище. */
+    fun subscriptionChanged() = lockNow()
 
     fun safety(code: String): String {
         val mine = d()?.optString("pk") ?: return ""

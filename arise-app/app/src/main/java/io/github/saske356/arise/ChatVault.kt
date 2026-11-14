@@ -73,9 +73,6 @@ object ChatVault {
 
     fun exists(s: Slot = Slot.REAL) = keyFile(s).exists()
 
-    // «Скрывать чат» хранится вне хранилища: главный экран решает до ввода PIN
-    fun isHidden() = prefs.getBoolean("hidden_" + space(), false)
-    fun setHidden(on: Boolean) = prefs.edit().putBoolean("hidden_" + space(), on).apply()
     val fails: Int get() = prefs.getInt(failsKey, 0)
 
     // ---------- ключи ----------
@@ -201,7 +198,7 @@ object ChatVault {
         } catch (e: Exception) {
             // ключа ещё не было
         }
-        prefs.edit().remove(failsKey).remove("hidden_" + space()).apply()
+        prefs.edit().remove(failsKey).apply()
     }
 
     fun dropDecoy() {

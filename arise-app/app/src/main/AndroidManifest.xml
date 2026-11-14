@@ -10,66 +10,15 @@
     <!-- обновление изнутри: приложение скачивает новую версию и отдаёт системному установщику -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
-    <!-- Российские приложения, которые по умолчанию идут мимо VPN: Android 11+ показывает
-         приложению только те чужие пакеты, что перечислены здесь (без QUERY_ALL_PACKAGES). -->
+    <!-- Какие приложения видно: только те, что с иконкой на рабочем столе (список «Приложения
+         мимо VPN», банки и Госуслуги мимо VPN — у них тоже есть иконка). Банки по названиям здесь
+         НЕ перечисляем: список банковских приложений в манифесте — признак банковского трояна,
+         и Play Защита из-за него называла приложение вредоносным. -->
     <queries>
-        <!-- список приложений на экране «Приложения мимо VPN» -->
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
-        <package android:name="ru.sberbankmobile" />
-        <package android:name="ru.sberbank.sberbankid" />
-        <package android:name="com.idamob.tinkoff.android" />
-        <package android:name="ru.tinkoff.investing" />
-        <package android:name="ru.vtb24.mobilebanking.android" />
-        <package android:name="ru.alfabank.mobile.android" />
-        <package android:name="ru.alfabank.oavdo.amc" />
-        <package android:name="ru.raiffeisennews" />
-        <package android:name="ru.gazprombank.android.mobilebank.app" />
-        <package android:name="ru.rosbank.android" />
-        <package android:name="ru.psbank.online" />
-        <package android:name="ru.mkb.mobile" />
-        <package android:name="ru.sovcomcard.halva.v1" />
-        <package android:name="ru.ozon.fintech.finance" />
-        <package android:name="ru.pochta.bank" />
-        <package android:name="ru.openbank.mobile" />
-        <package android:name="ru.nspk.mirpay" />
-        <package android:name="ru.nspk.sbpay" />
-        <package android:name="ru.rostel" />
-        <package android:name="ru.gosuslugi.goskey" />
-        <package android:name="ru.fns.lkfl" />
-        <package android:name="com.gnivts.selfemployed" />
-        <package android:name="ru.mos.app" />
-        <package android:name="ru.mos.polls" />
-        <package android:name="ru.pfr.mobile" />
-        <package android:name="ru.nalog.www" />
-        <package android:name="com.wildberries.ru" />
-        <package android:name="ru.ozon.app.android" />
-        <package android:name="com.avito.android" />
-        <package android:name="ru.yandex.taxi" />
-        <package android:name="ru.yandex.market" />
-        <package android:name="ru.yandex.yandexmaps" />
-        <package android:name="ru.yandex.searchplugin" />
-        <package android:name="ru.yandex.music" />
-        <package android:name="ru.kinopoisk" />
-        <package android:name="ru.vk.store" />
-        <package android:name="com.vkontakte.android" />
-        <package android:name="ru.ok.android" />
-        <package android:name="ru.mail.mailapp" />
-        <package android:name="ru.rutube.app" />
-        <package android:name="ru.dublgis.dgismobile" />
-        <package android:name="ru.mts.mymts" />
-        <package android:name="ru.megafon.mlk" />
-        <package android:name="ru.beeline.services" />
-        <package android:name="ru.tele2.mytele2" />
-        <package android:name="ru.yota.android" />
-        <package android:name="ru.mts.money" />
-        <package android:name="ru.rzd.pass" />
-        <package android:name="ru.hh.android" />
-        <package android:name="ru.foodfox.client" />
-        <package android:name="ru.samokat.app" />
-        <package android:name="ru.vprok" />
     </queries>
 
     <application

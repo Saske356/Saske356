@@ -374,23 +374,11 @@ internal fun Logo(size: Dp = 30.dp) {
 
 @Composable
 private fun TopBar(openTools: () -> Unit, openChat: () -> Unit) {
-    val hidden by Chat.hidden.collectAsState()
     Row(Modifier.fillMaxWidth().padding(start = 22.dp, end = 22.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        // Долгое нажатие на логотип всегда открывает чат — так в него попадают, когда он скрыт
+        // Чат всегда скрыт: кнопки нет, открывается только долгим нажатием на логотип
         Box(Modifier.pointerInput(Unit) { detectTapGestures(onLongPress = { openChat() }) }) { Logo() }
         Spacer(Modifier.width(10.dp))
         Text("Arise", color = TextMain, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-        // Зашифрованный чат: только с подпиской (без неё сервер его не откроет)
-        if (!hidden) Box(
-            Modifier
-                .padding(end = 10.dp)
-                .size(42.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(Glass)
-                .border(1.dp, GlassLine, RoundedCornerShape(14.dp))
-                .clickable(onClick = openChat),
-            contentAlignment = Alignment.Center
-        ) { Text("💬", fontSize = 18.sp) }
         Box(
             Modifier
                 .size(42.dp)
