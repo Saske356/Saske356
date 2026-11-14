@@ -1,4 +1,4 @@
-"""Иконка приложения из эмблемы бота (щит с «A», чёрный + золото): python3 make_icon.py <res-папка>."""
+"""Иконка приложения из эмблемы бота (щит с «A», чёрный + синий): python3 make_icon.py <res-папка>."""
 import os
 import sys
 
@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw, ImageFilter  # noqa: E402
 
 import make_banner  # noqa: E402
 
-BG = (7, 6, 9, 255)
+BG = (3, 5, 11, 255)
 # плотность -> (обычная иконка, слой переднего плана адаптивной иконки)
 SIZES = {"mdpi": (48, 108), "hdpi": (72, 162), "xhdpi": (96, 216), "xxhdpi": (144, 324), "xxxhdpi": (192, 432)}
 
@@ -25,7 +25,7 @@ def legacy(size: int, round_: bool) -> Image.Image:
     big = 512
     img = Image.new("RGBA", (big, big), BG)
     glow = Image.new("RGBA", (big, big), (0, 0, 0, 0))
-    ImageDraw.Draw(glow).ellipse([50, 50, big - 50, big - 50], fill=(90, 62, 20, 150))
+    ImageDraw.Draw(glow).ellipse([30, 170, big - 30, big + 120], fill=(24, 72, 190, 200))
     img.alpha_composite(glow.filter(ImageFilter.GaussianBlur(70)))
     em = make_banner.emblem(int(big * 0.74), "A")
     img.alpha_composite(em, ((big - em.width) // 2, (big - em.height) // 2 + 4))
@@ -49,7 +49,7 @@ def main(res: str) -> None:
         foreground(fg).save(os.path.join(d, "ic_launcher_foreground.png"))
     with open(os.path.join(res, "values", "ic_launcher_background.xml"), "w") as f:
         f.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
-                '    <color name="ic_launcher_background">#070609</color>\n</resources>\n')
+                '    <color name="ic_launcher_background">#03050B</color>\n</resources>\n')
 
 
 if __name__ == "__main__":

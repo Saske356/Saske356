@@ -62,10 +62,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val AuroraGold = Color(0xFFE8C46A)
-private val AuroraGoldLight = Color(0xFFF6E3B0)
-private val AuroraGoldDeep = Color(0xFF8A6A1F)
-private val AuroraInk = Color(0xFF070609)
+private val AuroraGold = Color(0xFF7AAEFF)       // холодный синий (имя от прежней золотой темы)
+private val AuroraGoldLight = Color(0xFFD6E6FF)
+private val AuroraGoldDeep = Color(0xFF2F5FC8)
+private val AuroraInk = Color(0xFF03050B)
 private val AuroraRed = Color(0xFFE57373)
 private const val KEY_STARTED_AT = "aurora_connected_since"
 private const val PING_EVERY_MS = 15_000L
@@ -500,7 +500,7 @@ private fun PowerButton(isRunning: Boolean, connecting: Boolean, onClick: () -> 
                 .clip(CircleShape)
                 .background(
                     if (isRunning) Brush.radialGradient(listOf(AuroraGoldLight, AuroraGold, AuroraGoldDeep))
-                    else Brush.radialGradient(listOf(Color(0xFF2A262B), Color(0xFF121014)))
+                    else Brush.radialGradient(listOf(Color(0xFF1C2537), Color(0xFF0A0F1A)))
                 )
                 .border(2.dp, if (isRunning) AuroraGoldLight else AuroraGold.copy(alpha = 0.7f), CircleShape)
                 .clickable(onClick = onClick),
@@ -574,7 +574,7 @@ private fun ServerChip(name: String, ping: Long, live: Boolean, onClick: () -> U
 private fun pingColor(ping: Long): Color = when {
     ping < 0 -> AuroraRed
     ping < 150 -> Color(0xFF6FD08C)
-    ping < 400 -> AuroraGold
+    ping < 400 -> Color(0xFFE8C46A)  // средний пинг — жёлтым, как светофор
     else -> AuroraRed
 }
 

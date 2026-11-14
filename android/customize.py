@@ -58,17 +58,17 @@ def mask_servers(kt: str) -> None:
     ], count_ok=lambda n: n == 1)
 
 
-# Фирменные цвета бота: чёрный и золото.
-GOLD, GOLD_DARK, INK = "0xFFE8C46A", "0xFF8A6A1F", "0xFF070609"
+# Фирменные цвета: чёрный и холодный синий («восстань из тени»). Имена GOLD* остались от прежней темы.
+GOLD, GOLD_DARK, INK = "0xFF7AAEFF", "0xFF2F5FC8", "0xFF03050B"
 DARK_SCHEME = f"""private val DarkColor = darkColorScheme(
     primary = Color({GOLD}),
     onPrimary = Color({INK}),
-    primaryContainer = Color(0xFF3A2E12),
-    onPrimaryContainer = Color(0xFFF6E3B0),
+    primaryContainer = Color(0xFF13285A),
+    onPrimaryContainer = Color(0xFFD6E4FF),
     secondary = Color({GOLD}),
     onSecondary = Color({INK}),
-    secondaryContainer = Color(0xFF2E2615),
-    onSecondaryContainer = Color(0xFFF6E3B0),
+    secondaryContainer = Color(0xFF16233F),
+    onSecondaryContainer = Color(0xFFD6E4FF),
     tertiary = Color(0xFF83D6B5),
     onTertiary = Color(0xFF00382E),
     tertiaryContainer = Color(0xFF005143),
@@ -77,29 +77,29 @@ DARK_SCHEME = f"""private val DarkColor = darkColorScheme(
     errorContainer = Color(0xFF93000A),
     onError = Color(0xFF690005),
     onErrorContainer = Color(0xFFFFDAD6),
-    background = Color(0xFF0B0A0D),
-    onBackground = Color(0xFFF3E6C4),
-    surface = Color(0xFF0B0A0D),
-    onSurface = Color(0xFFF3E6C4),
-    surfaceVariant = Color(0xFF2A2620),
-    onSurfaceVariant = Color(0xFFCFC2A3),
-    outline = Color(0xFF8C8170),
-    outlineVariant = Color(0xFF3A342A),
-    inverseSurface = Color(0xFFF3E6C4),
-    inverseOnSurface = Color(0xFF0B0A0D),
+    background = Color(0xFF05070D),
+    onBackground = Color(0xFFE3ECFF),
+    surface = Color(0xFF05070D),
+    onSurface = Color(0xFFE3ECFF),
+    surfaceVariant = Color(0xFF1A2233),
+    onSurfaceVariant = Color(0xFFA9B6D2),
+    outline = Color(0xFF6E7C99),
+    outlineVariant = Color(0xFF263147),
+    inverseSurface = Color(0xFFE3ECFF),
+    inverseOnSurface = Color(0xFF05070D),
     inversePrimary = Color({GOLD_DARK}),
     scrim = Color(0xFF000000),
     surfaceTint = Color({GOLD}),
-    surfaceContainerLowest = Color(0xFF070609),
-    surfaceContainerLow = Color(0xFF121014),
-    surfaceContainer = Color(0xFF17151A),
-    surfaceContainerHigh = Color(0xFF201D22),
-    surfaceContainerHighest = Color(0xFF2A262B),
+    surfaceContainerLowest = Color(0xFF03050B),
+    surfaceContainerLow = Color(0xFF0A0F1A),
+    surfaceContainer = Color(0xFF0F1522),
+    surfaceContainerHigh = Color(0xFF151C2C),
+    surfaceContainerHighest = Color(0xFF1C2537),
 )"""
 
 
 def brand_theme(kt: str) -> None:
-    """Тёмная чёрно-золотая тема по умолчанию; цвета обоев Android (Material You) выключены,
+    """Тёмная чёрно-синяя тема по умолчанию; цвета обоев Android (Material You) выключены,
     иначе приложение перекрашивалось бы под каждый телефон."""
     theme = os.path.join(kt, "ui", "compose", "Theme.kt")
     edit(theme, [

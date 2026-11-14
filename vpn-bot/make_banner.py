@@ -1,9 +1,10 @@
-"""Премиальные баннеры бота (чёрный + золото) и аватарка.
+"""Баннеры бота и аватарка: чёрный и холодный синий, «восхождение из тени» (Arise — восстань).
+
+Синий свет поднимается снизу из темноты, вверх летят искры, сверху — тень. Металл — сталь с синим отливом.
 
 python make_banner.py  — перерисовать все баннеры после смены BRAND/TAGLINE.
 """
 
-import math
 import os
 import random
 
@@ -17,7 +18,7 @@ OUT_DIR = os.path.join(HERE, "banners")
 
 # раздел -> (крупная надпись, мелкая надпись над ней). None = название бренда.
 SECTIONS = {
-    "main": (None, "PRIVATE  ACCESS"),
+    "main": (None, "RISE  FROM  THE  SHADOWS"),
     "plans": ("ТАРИФЫ", None),
     "key": ("ВАШ КЛЮЧ", None),
     "howto": ("ПОДКЛЮЧЕНИЕ", None),
@@ -48,13 +49,20 @@ def serif_for(text):
     return SERIF_CYR if any("\u0400" <= ch <= "\u04ff" for ch in text) else SERIF
 
 
+BG = (3, 5, 11)               # почти чёрный с синевой
+GLOW = (24, 72, 190)           # свет, поднимающийся снизу
+SPARK = (120, 175, 255)        # искры
+HALO = (70, 130, 255)          # свечение вокруг букв
+TEXT_SOFT = (170, 188, 222)    # подпись
+
+
 def gold_fill(size):
-    """Металлический золотой градиент с бликом."""
+    """Металлический градиент (имя прежнее): холодная сталь с синим отливом и бликом."""
     w, h = size
     g = Image.new("RGBA", size)
     d = ImageDraw.Draw(g)
-    stops = [(0.0, (255, 241, 196)), (0.32, (232, 196, 108)), (0.55, (176, 129, 42)),
-             (0.72, (222, 182, 92)), (1.0, (255, 232, 168))]
+    stops = [(0.0, (238, 246, 255)), (0.30, (160, 200, 255)), (0.55, (52, 98, 192)),
+             (0.74, (118, 168, 242)), (1.0, (214, 232, 255))]
     for y in range(h):
         t = y / max(1, h - 1)
         for i in range(len(stops) - 1):
@@ -82,7 +90,7 @@ def gold_text(img, x, y, text, f, spacing, glow=True):
     mask = Image.new("L", img.size, 0)
     draw_spaced(ImageDraw.Draw(mask), x, y, text, f, spacing, 255)
     if glow:
-        halo = Image.new("RGBA", img.size, (214, 170, 80, 0))
+        halo = Image.new("RGBA", img.size, HALO + (0,))
         halo.putalpha(mask.filter(ImageFilter.GaussianBlur(16)).point(lambda v: int(v * 0.45)))
         img.alpha_composite(halo)
     bbox = mask.getbbox()
@@ -95,7 +103,7 @@ def gold_text(img, x, y, text, f, spacing, glow=True):
 
 
 def emblem(size, letter):
-    """Золотой щит с чёрной вставкой и монограммой."""
+    """Стальной щит с тёмной вставкой и монограммой."""
     s = size
     def shield(scale):
         m = (1 - scale) / 2
@@ -109,7 +117,7 @@ def emblem(size, letter):
     out.alpha_composite(g)
     inner = Image.new("L", (s, s), 0)
     ImageDraw.Draw(inner).polygon(shield(0.84), fill=255)
-    black = Image.new("RGBA", (s, s), (12, 10, 9, 255))
+    black = Image.new("RGBA", (s, s), (6, 9, 18, 255))
     black.putalpha(inner)
     out.alpha_composite(black)
     line = Image.new("L", (s, s), 0)
@@ -127,30 +135,46 @@ def emblem(size, letter):
 
 def base(seed=11):
     rnd = random.Random(seed)
-    img = Image.new("RGBA", (W, H), (7, 6, 9, 255))
-    # тёплое свечение из центра
+    img = Image.new("RGBA", (W, H), BG + (255,))
+    # синий свет поднимается снизу: широкое зарево у нижнего края и столб над эмблемой
     glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    ImageDraw.Draw(glow).ellipse([W * .05, H * .05, W * .95, H * 1.2], fill=(70, 48, 18, 120))
-    img.alpha_composite(glow.filter(ImageFilter.GaussianBlur(160)))
-    # золотое боке
-    bok = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    bd = ImageDraw.Draw(bok)
-    for _ in range(46):
-        x, y, r = rnd.uniform(0, W), rnd.uniform(0, H), rnd.uniform(2, 14)
-        bd.ellipse([x - r, y - r, x + r, y + r], fill=(232, 190, 100, rnd.randint(14, 50)))
-    img.alpha_composite(bok.filter(ImageFilter.GaussianBlur(3)))
-    # тонкие диагональные лучи
+    gd = ImageDraw.Draw(glow)
+    gd.ellipse([-W * .1, H * .62, W * 1.1, H * 1.55], fill=GLOW + (150,))
+    gd.ellipse([90, H * .25, 470, H * 1.3], fill=(40, 100, 230, 120))
+    img.alpha_composite(glow.filter(ImageFilter.GaussianBlur(120)))
+    # лучи света, поднимающиеся вверх и гаснущие в тени
     rays = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     rd = ImageDraw.Draw(rays)
-    for i in range(7):
-        x = W * (0.48 + i * 0.075)
-        rd.line([(x, -20), (x - 380, H + 20)], fill=(240, 205, 130, 10 + i * 2), width=2)
-    img.alpha_composite(rays.filter(ImageFilter.GaussianBlur(1)))
-    # рамка ар-деко
+    for _ in range(14):
+        x = rnd.uniform(60, W - 60)
+        top = rnd.uniform(H * .05, H * .45)
+        for k in range(24):  # затухание кверху
+            y0 = H - (H - top) * k / 24
+            y1 = H - (H - top) * (k + 1) / 24
+            rd.line([(x, y0), (x + 6, y1)], fill=(90, 150, 255, int(48 * (1 - k / 24))), width=rnd.choice((2, 3, 4)))
+    img.alpha_composite(rays.filter(ImageFilter.GaussianBlur(2)))
+    # искры летят вверх: больше внизу, с короткими хвостами
+    sp = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(sp)
+    for _ in range(150):
+        y = H * (1 - rnd.random() ** 1.6)
+        x = rnd.uniform(0, W)
+        r = rnd.uniform(1, 3.2)
+        a = int(rnd.randint(120, 255) * (0.3 + 0.7 * y / H))
+        sd.line([(x, y), (x - rnd.uniform(0, 4), y + rnd.uniform(8, 26))], fill=SPARK + (a // 2,), width=max(1, int(r)))
+        sd.ellipse([x - r, y - r, x + r, y + r], fill=SPARK + (a,))
+    img.alpha_composite(sp.filter(ImageFilter.GaussianBlur(1.2)))
+    # тень сверху: из неё всё и поднимается
+    shade = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    sh = ImageDraw.Draw(shade)
+    for y in range(int(H * .45)):
+        sh.line([(0, y), (W, y)], fill=(0, 0, 0, int(150 * (1 - y / (H * .45)))))
+    img.alpha_composite(shade)
+    # рамка
     frame = Image.new("L", (W, H), 0)
     fd = ImageDraw.Draw(frame)
-    fd.rectangle([26, 26, W - 27, H - 27], outline=150, width=2)
-    fd.rectangle([36, 36, W - 37, H - 37], outline=70, width=1)
+    fd.rectangle([26, 26, W - 27, H - 27], outline=130, width=2)
+    fd.rectangle([36, 36, W - 37, H - 37], outline=55, width=1)
     for cx, cy in [(26, 26), (W - 27, 26), (26, H - 27), (W - 27, H - 27)]:
         fd.polygon([(cx, cy - 11), (cx + 11, cy), (cx, cy + 11), (cx - 11, cy)], fill=230)
     gf = gold_fill((W, H))
@@ -168,7 +192,7 @@ def render(section="main", path=None):
     em = emblem(290, brand[:1])
     halo = Image.new("RGBA", img.size, (0, 0, 0, 0))
     halo.paste(em, (110, 175), em)
-    shadow = Image.new("RGBA", img.size, (230, 180, 80, 0))
+    shadow = Image.new("RGBA", img.size, HALO + (0,))
     shadow.putalpha(halo.getchannel("A").filter(ImageFilter.GaussianBlur(30)).point(lambda v: int(v * .5)))
     img.alpha_composite(shadow)
     img.alpha_composite(em, (110, 175))
@@ -195,11 +219,11 @@ def render(section="main", path=None):
     gl = gold_fill(img.size)
     gl.putalpha(line)
     img.alpha_composite(gl)
-    tag = config.TAGLINE if section == "main" else "PRIVATE  ACCESS  ·  " + brand
+    tag = config.TAGLINE if section == "main" else "RISE  FROM  THE  SHADOWS  ·  " + brand
     f_tag = font(SANS, 30 if section == "main" else 22)
     sp_tag = 1 if section == "main" else 6
     d.text((x0 + 4, 432), "", font=f_tag)
-    draw_spaced(ImageDraw.Draw(img), x0 + 4, 432, tag, f_tag, sp_tag, (214, 200, 170, 255))
+    draw_spaced(ImageDraw.Draw(img), x0 + 4, 432, tag, f_tag, sp_tag, TEXT_SOFT + (255,))
 
     path = path or os.path.join(OUT_DIR, f"{section}.jpg")
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -209,9 +233,9 @@ def render(section="main", path=None):
 
 def render_avatar(path=None):
     s = 640
-    img = Image.new("RGBA", (s, s), (7, 6, 9, 255))
+    img = Image.new("RGBA", (s, s), BG + (255,))
     glow = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    ImageDraw.Draw(glow).ellipse([60, 60, s - 60, s - 60], fill=(90, 62, 20, 150))
+    ImageDraw.Draw(glow).ellipse([40, 180, s - 40, s + 120], fill=GLOW + (190,))
     img.alpha_composite(glow.filter(ImageFilter.GaussianBlur(90)))
     em = emblem(400, config.BRAND[:1].upper())
     img.alpha_composite(em, ((s - 400) // 2, (s - 400) // 2 + 6))

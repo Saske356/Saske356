@@ -11,16 +11,16 @@
 <style>
   /* Макет: одна колонка, премиальный тёмный экран, золото только на акцентах */
   :root {
-    --bg: #0a0908;
-    --panel: #14110d;
-    --panel-2: #1b1712;
-    --line: rgba(212, 175, 55, .22);
-    --line-soft: rgba(212, 175, 55, .12);
-    --gold: #d4af37;
-    --gold-hi: #f6e3a8;
-    --gold-lo: #9c7a26;
-    --text: #efe8da;
-    --muted: #9a917f;
+    --bg: #05070d;
+    --panel: #0a0f1a;
+    --panel-2: #0f1522;
+    --line: rgba(122, 174, 255, .22);
+    --line-soft: rgba(122, 174, 255, .12);
+    --gold: #7aaeff;
+    --gold-hi: #d6e6ff;
+    --gold-lo: #2f5fc8;
+    --text: #e3ecff;
+    --muted: #97a3bd;
     --ok: #7fd1a0;
     --serif: "Cormorant Garamond", "Times New Roman", serif;
     --sans: "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -33,7 +33,7 @@
     font-family: var(--sans); font-size: 15px; line-height: 1.5;
     -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
     background:
-      radial-gradient(120% 60% at 50% -10%, rgba(120, 86, 28, .35), transparent 60%),
+      radial-gradient(130% 55% at 50% 110%, rgba(30, 80, 200, .38), transparent 60%),
       var(--bg);
     min-height: 100vh;
   }
@@ -41,7 +41,7 @@
           padding: 18px max(16px, env(safe-area-inset-right)) 40px max(16px, env(safe-area-inset-left));
           display: flex; flex-direction: column; gap: 22px; }
 
-  .gold-text { background: linear-gradient(180deg, var(--gold-hi) 0%, var(--gold) 45%, var(--gold-lo) 75%, #e8cf86 100%);
+  .gold-text { background: linear-gradient(180deg, var(--gold-hi) 0%, var(--gold) 45%, var(--gold-lo) 75%, #b6d0ff 100%);
                -webkit-background-clip: text; background-clip: text; color: transparent; }
   .eyebrow { font-size: 11px; letter-spacing: .28em; text-transform: uppercase; color: var(--gold); }
   h1, h2 { font-family: var(--serif); font-weight: 700; margin: 0; text-wrap: balance; }
@@ -51,7 +51,7 @@
 
   /* шапка */
   .hero { display: flex; align-items: center; gap: 16px; padding-top: 6px; }
-  .hero svg { flex: 0 0 64px; filter: drop-shadow(0 6px 18px rgba(212,175,55,.35)); }
+  .hero svg { flex: 0 0 64px; filter: drop-shadow(0 6px 18px rgba(122,174,255,.35)); }
   .hero h1 { font-size: 34px; line-height: 1; letter-spacing: .04em; }
   .hero .tag { color: var(--muted); font-size: 13px; margin-top: 6px; }
 
@@ -80,8 +80,8 @@
          font: 700 15px var(--sans); letter-spacing: .02em; transition: transform .12s ease, filter .12s ease; }
   .btn:active { transform: scale(.98); }
   .btn:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 2px; }
-  .btn.gold { color: #1b1408; background: linear-gradient(180deg, #f3dc95, var(--gold) 55%, #b48c2c);
-              box-shadow: 0 8px 24px rgba(212, 175, 55, .25), inset 0 1px 0 rgba(255,255,255,.4); }
+  .btn.gold { color: #03050b; background: linear-gradient(180deg, #cfe0ff, var(--gold) 55%, #2f5fc8);
+              box-shadow: 0 8px 24px rgba(122, 174, 255, .25), inset 0 1px 0 rgba(255,255,255,.4); }
   .btn.ghost { color: var(--text); background: transparent; border: 1px solid var(--line); }
   .row { display: flex; gap: 10px; }
   .row > * { flex: 1; min-width: 0; }
@@ -105,19 +105,19 @@
   .plan .pr span { font-family: var(--sans); font-size: 15px; }
   .plan .pm { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .plan .save { font-size: 11.5px; color: var(--gold); font-weight: 600; min-height: 17px; }
-  .plan.best { border-color: var(--gold); background: linear-gradient(180deg, #221b10, var(--panel));
-               box-shadow: 0 0 0 1px rgba(212,175,55,.25), 0 10px 30px rgba(212,175,55,.12); }
+  .plan.best { border-color: var(--gold); background: linear-gradient(180deg, #0e1830, var(--panel));
+               box-shadow: 0 0 0 1px rgba(122,174,255,.25), 0 10px 30px rgba(122,174,255,.12); }
   .badge { position: absolute; top: -9px; right: 10px; font-size: 9.5px; letter-spacing: .14em;
            text-transform: uppercase; font-weight: 700; padding: 3px 8px; border-radius: 99px;
-           color: #1b1408; background: linear-gradient(180deg, #f3dc95, var(--gold)); }
+           color: #03050b; background: linear-gradient(180deg, #cfe0ff, var(--gold)); }
   .badge.soft { color: var(--gold); background: var(--bg); border: 1px solid var(--line); }
   .note { color: var(--muted); font-size: 12.5px; margin: 10px 2px 0; }
 
   /* ключ */
   .key { font-family: ui-monospace, "JetBrains Mono", Menlo, monospace; font-size: 12px; color: var(--gold-hi);
-         background: #0d0b09; border: 1px dashed var(--line); border-radius: 12px; padding: 12px;
+         background: #060912; border: 1px dashed var(--line); border-radius: 12px; padding: 12px;
          word-break: break-all; user-select: all; max-height: 92px; overflow: auto; }
-  .qrbox { display: grid; place-items: center; padding: 14px; background: #f6efe0; border-radius: 14px; margin-top: 12px; }
+  .qrbox { display: grid; place-items: center; padding: 14px; background: #eef3ff; border-radius: 14px; margin-top: 12px; }
   .qrbox img, .qrbox canvas { max-width: 100%; height: auto; }
   .demo { font-size: 12px; color: #e0b36a; margin-top: 10px; }
 
@@ -132,7 +132,7 @@
   .steps li { display: flex; gap: 12px; align-items: flex-start; font-size: 14px; }
   .steps li::before { counter-increment: s; content: counter(s); flex: 0 0 26px; height: 26px; border-radius: 50%;
                       display: grid; place-items: center; font: 700 13px var(--serif);
-                      color: #1b1408; background: linear-gradient(180deg, #f3dc95, var(--gold)); }
+                      color: #03050b; background: linear-gradient(180deg, #cfe0ff, var(--gold)); }
 
   /* страны */
   .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
@@ -141,13 +141,13 @@
   /* своё приложение */
   .appcard { display: flex; gap: 14px; align-items: center; }
   .appcard .ic { flex: 0 0 54px; height: 54px; border-radius: 14px; display: grid; place-items: center;
-                 background: radial-gradient(circle at 50% 35%, #2a2210, #0c0a08); border: 1px solid var(--line); }
+                 background: radial-gradient(circle at 50% 35%, #101c3a, #060912); border: 1px solid var(--line); }
   .appcard .t { flex: 1; min-width: 0; }
   .appcard .t b { font-family: var(--serif); font-size: 21px; }
   .appcard .t p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
   .feats { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 14px; }
   .feats span { font-size: 11.5px; color: var(--gold-hi); border: 1px solid var(--line-soft); border-radius: 99px;
-                padding: 3px 9px; background: rgba(212,175,55,.06); }
+                padding: 3px 9px; background: rgba(122,174,255,.06); }
   .plan .rub { font-size: 12.5px; color: var(--text); opacity: .85; font-variant-numeric: tabular-nums; }
   .btn.sm { padding: 11px 10px; font-size: 13.5px; }
   .methods { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
@@ -160,11 +160,11 @@
   footer a { color: var(--muted); text-decoration: none; border-bottom: 1px solid var(--line); cursor: pointer; }
 
   .toast { position: fixed; left: 50%; bottom: calc(22px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px);
-           background: #1f1a12; color: var(--gold-hi); border: 1px solid var(--line); padding: 10px 16px;
+           background: #111a2c; color: var(--gold-hi); border: 1px solid var(--line); padding: 10px 16px;
            border-radius: 99px; font-size: 13px; opacity: 0; transition: .25s; pointer-events: none; z-index: 20; }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
-  .overlay { position: fixed; inset: 0; background: rgba(5,4,3,.82); backdrop-filter: blur(6px);
+  .overlay { position: fixed; inset: 0; background: rgba(2,3,8,.85); backdrop-filter: blur(6px);
              display: grid; place-items: center; z-index: 30; padding: 24px; }
   .overlay .card { max-width: 380px; text-align: center; padding: 26px 22px; }
   .overlay h2 { font-size: 30px; margin: 10px 0 6px; }
@@ -181,8 +181,8 @@
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
     <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#fbefc5"/><stop offset=".35" stop-color="#e2c06b"/>
-      <stop offset=".6" stop-color="#b0812a"/><stop offset="1" stop-color="#f0d68a"/>
+      <stop offset="0" stop-color="#eef5ff"/><stop offset=".35" stop-color="#8fb8ff"/>
+      <stop offset=".6" stop-color="#3a6ad0"/><stop offset="1" stop-color="#a8c8ff"/>
     </linearGradient>
   </defs>
 </svg>
@@ -191,12 +191,12 @@
   <header class="hero appear">
     <svg viewBox="0 0 100 100" width="64" height="64" aria-hidden="true">
       <path d="M50 3 93 18 89 56 50 97 11 56 7 18Z" fill="url(#g)"/>
-      <path d="M50 11 85 23 82 54 50 88 18 54 15 23Z" fill="#0c0a08"/>
+      <path d="M50 11 85 23 82 54 50 88 18 54 15 23Z" fill="#060912"/>
       <path d="M50 16 80 26 77 52 50 81 23 52 20 26Z" fill="none" stroke="url(#g)" stroke-width="1"/>
       <text x="50" y="60" text-anchor="middle" font-family="Cormorant Garamond, serif" font-weight="700" font-size="40" fill="url(#g)" id="mono">A</text>
     </svg>
     <div>
-      <div class="eyebrow">Private access</div>
+      <div class="eyebrow">Rise from the shadows</div>
       <h1 class="gold-text" id="brand">ARISE VPN</h1>
       <div class="tag" id="tagline">Приватный доступ к свободному интернету</div>
     </div>
@@ -211,7 +211,7 @@
 
   <section class="card appear" id="appCard" hidden>
     <div class="appcard">
-      <div class="ic"><svg viewBox="0 0 100 100" width="34" height="34" aria-hidden="true"><path d="M50 3 93 18 89 56 50 97 11 56 7 18Z" fill="url(#g)"/><path d="M50 30v22M36 38a20 20 0 1 0 28 0" fill="none" stroke="#0c0a08" stroke-width="7" stroke-linecap="round"/></svg></div>
+      <div class="ic"><svg viewBox="0 0 100 100" width="34" height="34" aria-hidden="true"><path d="M50 3 93 18 89 56 50 97 11 56 7 18Z" fill="url(#g)"/><path d="M50 30v22M36 38a20 20 0 1 0 28 0" fill="none" stroke="#060912" stroke-width="7" stroke-linecap="round"/></svg></div>
       <div class="t"><b class="gold-text">Приложение для Android</b><p>Подключение в одно касание, всё уже настроено.</p></div>
     </div>
     <div class="feats"><span>⚡ Турбо-режим</span><span>📶 Живой пинг</span><span>🛡 Обход блокировок</span><span>🔄 Само обновляется</span></div>
@@ -272,7 +272,7 @@
 <div class="toast" id="toast" role="status"></div>
 <div class="overlay" id="paidOverlay" hidden>
   <div class="card">
-    <svg viewBox="0 0 100 100" width="62" height="62" aria-hidden="true"><path d="M50 3 93 18 89 56 50 97 11 56 7 18Z" fill="url(#g)"/><path d="M30 52 44 65 70 36" fill="none" stroke="#0c0a08" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <svg viewBox="0 0 100 100" width="62" height="62" aria-hidden="true"><path d="M50 3 93 18 89 56 50 97 11 56 7 18Z" fill="url(#g)"/><path d="M30 52 44 65 70 36" fill="none" stroke="#060912" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/></svg>
     <h2 class="gold-text">Добро пожаловать</h2>
     <p>Оплата прошла. Ключ уже в чате с ботом.</p>
     <button class="btn gold" id="closeApp" type="button">Вернуться в чат</button>
@@ -349,7 +349,7 @@
     const frac = Math.max(.04, Math.min(1, left / 30));
     const C = 2 * Math.PI * 32;
     card.innerHTML = `<div class="status">
-      <div class="ring"><svg viewBox="0 0 74 74"><circle cx="37" cy="37" r="32" fill="none" stroke="rgba(212,175,55,.15)" stroke-width="5"/>
+      <div class="ring"><svg viewBox="0 0 74 74"><circle cx="37" cy="37" r="32" fill="none" stroke="rgba(122,174,255,.15)" stroke-width="5"/>
       <circle cx="37" cy="37" r="32" fill="none" stroke="url(#g)" stroke-width="5" stroke-linecap="round"
         stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - frac)}"/></svg>
       <div class="num"><div class="gold-text">${left}<small>${plural(left).split(" ")[1].toUpperCase()}</small></div></div></div>
@@ -454,7 +454,7 @@
         haptic();
         const box = f("qr"); box.hidden = !box.hidden;
         if (!made && window.QRCode) {
-          new QRCode(box, { text: s.k, width: 220, height: 220, colorDark: "#0a0908", colorLight: "#f6efe0" });
+          new QRCode(box, { text: s.k, width: 220, height: 220, colorDark: "#05070d", colorLight: "#eef3ff" });
           made = true;
         }
         f("qrb").textContent = box.hidden ? "QR-код" : "Скрыть QR";
@@ -508,11 +508,11 @@
   if (tg) {
     try {
       tg.ready(); tg.expand();
-      tg.setHeaderColor("#0a0908"); tg.setBackgroundColor("#0a0908");
-      if (tg.setBottomBarColor) tg.setBottomBarColor("#0a0908");
+      tg.setHeaderColor("#05070d"); tg.setBackgroundColor("#05070d");
+      if (tg.setBottomBarColor) tg.setBottomBarColor("#05070d");
     } catch {}
     if (!active && plans.length && tg.MainButton) {
-      tg.MainButton.setParams({ text: "ОФОРМИТЬ ДОСТУП", color: "#d4af37", text_color: "#1b1408" });
+      tg.MainButton.setParams({ text: "ОФОРМИТЬ ДОСТУП", color: "#7aaeff", text_color: "#03050b" });
       tg.MainButton.onClick(() => { haptic(); $("plansSec").scrollIntoView({ behavior: "smooth" }); });
       tg.MainButton.show();
     }
