@@ -338,41 +338,68 @@ def upgrade_kb(s) -> InlineKeyboardMarkup:
 
 APPS = {
     "android": ("🤖 Android", "Happ или v2rayNG", "из Google Play"),
-    "ios": ("🍏 iPhone и iPad", "Hiddify, Happ или Streisand", "из App Store"),
-    "windows": ("🪟 Windows", "Hiddify или Happ", "с официального сайта"),
-    "mac": ("💻 macOS", "Hiddify или Happ", "из App Store"),
+    "ios": ("🍏 iPhone и iPad", "Happ или Streisand", "из App Store"),
+    "windows": ("🪟 Windows", "Happ или Hiddify", "с официального сайта"),
+    "mac": ("💻 macOS", "Happ или Hiddify", "из App Store"),
+    "tv": ("📺 Телевизор", "Happ", "из Google Play на телевизоре (Android TV)"),
 }
+# Где скачать приложения: кнопки под инструкцией
+APP_LINKS = {
+    "android": [("Happ", "https://play.google.com/store/apps/details?id=com.happproxy"),
+                ("v2rayNG", "https://github.com/2dust/v2rayNG/releases/latest")],
+    "ios": [("Happ", "https://apps.apple.com/app/happ-proxy-utility/id6504287215"),
+            ("Streisand", "https://apps.apple.com/app/streisand/id6450534064")],
+    "windows": [("Happ", "https://www.happ.su/"),
+                ("Hiddify", "https://github.com/hiddify/hiddify-app/releases/latest")],
+    "mac": [("Happ", "https://apps.apple.com/app/happ-proxy-utility/id6504287215"),
+            ("Hiddify", "https://github.com/hiddify/hiddify-app/releases/latest")],
+    "tv": [("Happ", "https://play.google.com/store/apps/details?id=com.happproxy")],
+}
+
+AFTER = ("\n\n<b>Какой сервер выбрать</b>\n"
+         "◆ <b>🚀 Лучший сервер</b> — сам выбирает самое быстрое подключение. Начните с него.\n"
+         "◆ <b>Страна</b> — если нужен сайт или сервис конкретной страны.\n"
+         "◆ <b>· обход БС</b> — когда мобильный интернет пускает только разрешённые сайты (белые списки).\n"
+         "◆ <b>🎮 Игры</b> — для игр: без блокировки рекламы, российские серверы напрямую.\n\n"
+         "Банки, Госуслуги и российские сайты сами идут мимо VPN — их не нужно выключать.")
 
 
 def howto_text(platform: str) -> str:
     title, apps, store = APPS[platform]
+    one_click = "нажмите «📲 Подключить в один клик», затем кнопку своего приложения"
     if platform == "android" and android_app:
         return (f"<b>{title}</b>\n\n"
-                f"<b>Наше приложение {esc(config.BRAND)}</b> — настроено под наши серверы: само выбирает "
-                "самый быстрый, держит соединение тёплым и быстрее открывает страницы.\n"
+                f"<b>Лучше всего — наше приложение {esc(config.BRAND)}</b>: настроено под наши серверы, "
+                "само выбирает быстрый, держит соединение и быстрее открывает страницы.\n"
                 "<blockquote>1. Нажмите «📥 Скачать приложение» ниже и установите файл "
                 "(телефон спросит разрешение на установку — разрешите).\n"
-                "2. Откройте «🗝 Мои подписки», выберите подписку и нажмите «⚡ Открыть в приложении».\n"
-                "3. Нажмите кнопку подключения ▶️</blockquote>\n\n"
-                f"<b>Или {esc(apps)}</b> {esc(store)}: скопируйте ключ из «🗝 Мои подписки», в приложении "
-                "нажмите «+» → «Добавить из буфера обмена».\n\n"
-                "Если что-то не получилось, консьерж поможет.")
+                f"2. Откройте «🗝 Мои подписки», выберите подписку и {one_click}.\n"
+                "3. Нажмите большую кнопку подключения.</blockquote>\n\n"
+                f"<b>Или {esc(apps)}</b> {esc(store)}: те же шаги, только на втором шаге выберите своё "
+                "приложение." + AFTER)
     return (f"<b>{title}</b>\n\n"
-            f"<blockquote>1. Установите {esc(apps)} {esc(store)}.\n"
-            "2. Откройте «🗝 Мои подписки», выберите подписку и нажмите на ключ: он скопируется.\n"
-            "3. В приложении нажмите «+», затем «Добавить из буфера обмена».\n"
-            "4. Выберите страну и нажмите кнопку подключения ▶️</blockquote>\n\n"
-            "Готово. Если что-то не получилось, консьерж поможет.")
+            f"<blockquote>1. Установите {esc(apps)} {esc(store)} — кнопки ниже.\n"
+            f"2. Откройте «🗝 Мои подписки», выберите подписку и {one_click}.\n"
+            "   Не открылось? Нажмите на ссылку подписки (она скопируется), в приложении «+» → "
+            "«Из буфера обмена».\n"
+            "3. Выберите «🚀 Лучший сервер» и включите VPN.</blockquote>"
+            + ("\n\nНа телевизоре удобнее так: на телефоне нажмите «📷 QR-код», а в Happ на телевизоре — "
+               "«+» → «Сканировать QR»." if platform == "tv" else "")
+            + AFTER)
 
 
 def fix_text() -> str:
     steps = ["Обновите подписку в приложении: потяните список вниз или нажмите «Обновить».",
-             "Отключитесь и подключитесь заново."]
+             "Отключитесь и подключитесь заново.",
+             "Выберите «🚀 Лучший сервер»: он сам переключится на рабочее подключение."]
     if len(location_names()) > 1:
         steps.append("Выберите другую страну в списке.")
-    if getattr(vpn, "hy2", None):
+    if getattr(vpn, "hy2", None) and getattr(vpn, "xray_enabled", False):
         steps.append("Выберите в списке пункт с пометкой «· Hysteria», а если не помогло, «· Hysteria 2»: "
                      "они идут по UDP и проходят там, где обычное подключение режется.")
+    if getattr(vpn, "bs_on", None) and vpn.bs_on():
+        steps.append("На мобильном интернете ничего не открывается? Похоже на белые списки: выберите "
+                     "«· обход БС», потом «· обход БС 2» и «3» — у операторов разные списки.")
     if getattr(vpn, "xhttp_on", False):
         steps.append("Выберите в списке тот же сервер с пометкой «· запасной»: "
                      "у него другой вид подключения, который оператор режет реже.")
@@ -435,8 +462,8 @@ def sub_kb(s) -> InlineKeyboardMarkup:
     rows = []
     if sub_active(s):
         rows.append([B("📷 QR-код", f"qr:{s['id']}"), B("📲 Подключение", "howto")])
-        if android_app:
-            rows.append([B(f"⚡ Открыть в приложении {config.BRAND}", url=vpn.app_link(s["id"]))])
+        if hasattr(vpn, "app_link"):
+            rows.append([B("📲 Подключить в один клик", url=vpn.app_link(s["id"]))])
     rows.append([B("◆ Продлить", f"ext:{s['id']}"), B("✏️ Переименовать", f"ren:{s['id']}")])
     if sub_active(s) and hasattr(vpn, "reset_key"):
         rows.append([B("📱 Устройства", f"dev:{s['id']}")] +
@@ -1308,9 +1335,11 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                    "<b>Подключение за минуту</b>\n<i>Выберите устройство, и я покажу шаги.</i>",
                    KB([B(APPS["android"][0], "how:android"), B(APPS["ios"][0], "how:ios")],
                       [B(APPS["windows"][0], "how:windows"), B(APPS["mac"][0], "how:mac")],
+                      [B(APPS["tv"][0], "how:tv"), B("🛠 Не работает?", "fix")],
                       [BACK]), banner="howto")
     elif data.startswith("how:") and data[4:] in APPS:
-        rows = [[B("🗝 Мои подписки", "subs"), B("‹ Устройства", "howto")], [BACK]]
+        rows = [[B(f"⬇️ {n}", url=u) for n, u in APP_LINKS[data[4:]]],
+                [B("🗝 Мои подписки", "subs"), B("‹ Устройства", "howto")], [BACK]]
         if data == "how:android" and android_app:
             rows.insert(0, [B("📥 Скачать приложение", "apk")])
         await show(update, context, howto_text(data[4:]), KB(*rows), banner="howto")
@@ -3461,7 +3490,7 @@ async def send_app(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     ver, path = got
     cache = context.bot_data.setdefault("apk_file", {})
     caption = (f"<b>{esc(config.BRAND)} {esc(ver)}</b> для Android\n"
-               "Откройте файл и установите. Потом в «🗝 Мои подписки» нажмите «⚡ Открыть в приложении».")
+               "Откройте файл и установите. Потом в «🗝 Мои подписки» нажмите «📲 Подключить в один клик».")
     try:
         if ver in cache:
             await context.bot.send_document(chat, cache[ver], caption=caption)

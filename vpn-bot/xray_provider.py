@@ -1476,25 +1476,65 @@ class XrayProvider(VpnProvider):
         return f"aurora://install-sub?url={quote(self.sub_url(user_id), safe='')}#{quote(self.brand)}"
 
     def app_page(self, user_id: int) -> str:
-        """Telegram не открывает в кнопках ссылки aurora://, поэтому кнопка ведёт на эту страницу,
-        а уже кнопка на ней открывает приложение. Сама страница приложение не открывает:
-        иначе вместе с нажатием подписка импортировалась дважды."""
+        """Страница «Подключить в один клик». Telegram не открывает в кнопках ссылки приложений
+        (aurora://, happ://), поэтому кнопка в боте ведёт сюда, а здесь — кнопки под каждое приложение.
+        Сама страница ничего не открывает: иначе подписка импортировалась бы дважды."""
         import html as _html
-        link = _html.escape(self.app_deeplink(user_id))
+        url = self.sub_url(user_id)
+        q, name = quote(url, safe=""), quote(self.brand)
         brand = _html.escape(self.brand)
+        # (название, ссылка, для каких систем: a — Android, i — iPhone/Mac, w — Windows, * — все)
+        apps = [
+            (self.brand, self.app_deeplink(user_id), "a", True),
+            ("Happ", f"happ://add/{url}", "*", False),
+            ("Hiddify", f"hiddify://import/{url}#{name}", "*", False),
+            ("v2rayNG", f"v2rayng://install-sub?url={q}#{name}", "a", False),
+            ("Streisand", f"streisand://import/{url}#{name}", "i", False),
+        ]
+        buttons = "".join(
+            f"<a class='b{' main' if main else ''}' data-os='{os_}' href='{_html.escape(link)}'>"
+            f"Добавить в {_html.escape(title)}</a>" for title, link, os_, main in apps)
         return ("<!doctype html><html lang=ru><head><meta charset=utf-8>"
                 "<meta name=viewport content='width=device-width,initial-scale=1'>"
                 f"<title>{brand}</title><style>"
-                "body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;"
-                "background:#05070d;color:#e3ecff;font:17px/1.45 system-ui,sans-serif;text-align:center}"
-                "main{padding:24px;max-width:420px}h1{font-size:24px;color:#7aaeff;margin:0 0 12px}"
-                "a.b{display:block;margin:22px 0 14px;padding:16px;border-radius:14px;background:#7aaeff;"
-                "color:#03050b;font-weight:700;text-decoration:none}p{color:#97a3bd;margin:8px 0}"
+                ":root{color-scheme:dark}"
+                "body{margin:0;min-height:100vh;background:radial-gradient(120% 60% at 50% 0,#12224a 0,#05070d 60%);"
+                "color:#e3ecff;font:16px/1.5 system-ui,sans-serif}"
+                "main{padding:28px 18px 40px;max-width:440px;margin:0 auto}"
+                "h1{font-size:26px;color:#7aaeff;margin:0 0 4px;text-align:center}"
+                ".lead{color:#97a3bd;text-align:center;margin:0 0 22px}"
+                "a.b{display:block;margin:10px 0;padding:15px;border-radius:14px;background:#111a2e;"
+                "border:1px solid #23314f;color:#e3ecff;font-weight:600;text-decoration:none;text-align:center}"
+                "a.main{background:#7aaeff;color:#03050b;border-color:#7aaeff}"
+                "button{width:100%;margin:10px 0;padding:14px;border-radius:14px;border:1px dashed #3a4c74;"
+                "background:transparent;color:#97a3bd;font:inherit;cursor:pointer}"
+                "h2{font-size:15px;color:#7aaeff;margin:26px 0 6px}ol{padding-left:20px;margin:0;color:#c3cde2}"
+                "li{margin:6px 0}small{color:#6f7b95}a{color:#7aaeff}"
                 f"</style></head><body><main><h1>{brand}</h1>"
-                "<p>Нажмите кнопку, и подписка добавится в приложение сама.</p>"
-                f"<a class=b href='{link}'>Открыть в приложении {brand}</a>"
-                "<p>Не открывается? Сначала установите приложение: его присылает бот.</p>"
-                "</main></body></html>")
+                "<p class=lead>Подключение в одно касание</p>"
+                f"{buttons}"
+                "<button id=copy>📋 Скопировать ссылку подписки</button>"
+                "<h2>Как это работает</h2><ol>"
+                "<li>Если приложения ещё нет — установите его (ссылки ниже).</li>"
+                "<li>Нажмите «Добавить в …» с названием своего приложения: подписка добавится сама.</li>"
+                "<li>В приложении выберите «🚀 Лучший сервер» и включите VPN.</li></ol>"
+                "<h2>Где взять приложение</h2><ol>"
+                "<li>Android: наше приложение присылает бот (кнопка «📥 Скачать приложение»), "
+                "или Happ / v2rayNG из Google Play.</li>"
+                "<li>iPhone, iPad, Mac: Happ или Streisand из App Store.</li>"
+                "<li>Windows: <a href='https://www.happ.su/'>Happ</a> или "
+                "<a href='https://github.com/hiddify/hiddify-app/releases/latest'>Hiddify</a>.</li></ol>"
+                "<p><small>Кнопка не сработала? Скопируйте ссылку и в приложении нажмите «+» → "
+                "«Из буфера обмена».</small></p>"
+                "</main><script>"
+                "var u=navigator.userAgent,os=/android/i.test(u)?'a':/iphone|ipad|mac/i.test(u)?'i':/windows/i.test(u)?'w':'';"
+                "if(os)document.querySelectorAll('a.b').forEach(function(a){var o=a.dataset.os;"
+                "if(o!=='*'&&o.indexOf(os)<0)a.style.display='none'});"
+                f"var link={json.dumps(url)};"
+                "document.getElementById('copy').onclick=function(){var b=this;"
+                "(navigator.clipboard?navigator.clipboard.writeText(link):Promise.reject()).then(function(){"
+                "b.textContent='✅ Скопировано'},function(){prompt('Скопируйте ссылку:',link)})};"
+                "</script></body></html>")
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         peer = writer.get_extra_info("peername")

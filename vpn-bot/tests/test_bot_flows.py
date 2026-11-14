@@ -726,7 +726,8 @@ async def main():
     st_text = await bot.server_text(); check_caption(st_text)
     assert "Xray выключен" in st_text and "HTTPS" in st_text and "Перезапусков" not in st_text
     assert "Xray выключен" in bot.locations_text() and len(bot.location_names()) == 1
-    assert all(l.startswith("hysteria2://") for l in prov.links(some)) and "Hysteria" in bot.fix_text()
+    assert all(l.startswith("hysteria2://") for l in prov.links(some)) and "Лучший сервер" in bot.fix_text()
+    assert "· Hysteria" not in bot.fix_text(), "без Xray пунктов с такой пометкой нет"
     assert "запасной" not in bot.fix_text()
     # мост «ru» без Xray: сайт подбирается без проверки Xray, Hysteria идёт через мост
     real_ranked, real_flag = bot.masking.ranked, prov.site_flagged
