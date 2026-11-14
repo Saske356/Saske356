@@ -11,6 +11,8 @@ tcp LISTEN 0 4096 0.0.0.0:443 0.0.0.0:* users:(("python3",pid=2,fd=5))
 udp UNCONN 0 0 *:443 *:* users:(("hysteria",pid=3,fd=6))
 tcp LISTEN 0 4096 127.0.0.1:10085 0.0.0.0:* users:(("xray",pid=4,fd=7))
 tcp LISTEN 0 4096 0.0.0.0:6379 0.0.0.0:* users:(("redis-server",pid=5,fd=8))
+udp UNCONN 0 0 0.0.0.0:46433 0.0.0.0:* users:(("hysteria",pid=6,fd=9))
+udp UNCONN 0 0 0.0.0.0:68 0.0.0.0:* users:(("systemd-network",pid=7,fd=10))
 """
 
 
@@ -31,6 +33,8 @@ class AuditTest(unittest.TestCase):
         ports = titles["Наружу открыты незнакомые порты"]
         self.assertIn("6379 (redis-server)", ports[2])
         self.assertNotIn("10085", ports[2], "локальные порты не считаются открытыми наружу")
+        self.assertNotIn("46433", ports[2], "исходящие сокеты Hysteria — не открытый порт")
+        self.assertNotIn("68 ", ports[2], "DHCP — не открытый порт")
         self.assertIn("Не установлены обновления безопасности: 1", titles)
         text = security.report(res)
         self.assertIn("Найдено проблем", text)
@@ -54,6 +58,23 @@ class AuditTest(unittest.TestCase):
         self.assertIn("Нет защиты от перебора паролей", names)
         self.assertIn("Учётки без пароля", names)
         self.assertIn("Файрвол", names)
+
+    def test_ssh_read_from_config_files_when_sshd_is_silent(self):
+        reads = {"/etc/ssh/sshd_config": "# comment\nPort 2222\nPermitRootLogin yes\n#PasswordAuthentication no\n"
+                                          "Match User guest\n  PasswordAuthentication no\n"}
+        a = security.Audit([], {443}, run=lambda cmd, timeout=60: "", read=lambda p: reads.get(p, ""))
+        st = a.ssh_settings()
+        self.assertEqual((st["port"], st["permitrootlogin"], st["passwordauthentication"]), ("2222", "yes", "yes"),
+                         "закомментированное и правила Match не считаются, по умолчанию пароль разрешён")
+        self.assertEqual(a.ssh_ports(), {2222})
+        self.assertEqual(a.ssh()[0][1], "SSH: вход root по паролю")
+
+    def test_firewall_command_keeps_vpn_ports_open(self):
+        a = security.Audit([], {443, 2053} | set(range(30000, 30050)), run=lambda cmd, timeout=60: "Status: inactive")
+        fix = a.firewall({2222})[0][3]
+        for part in ("ufw allow 443", "ufw allow 2053", "ufw allow 2222", "ufw allow 80", "30000:30049/udp"):
+            self.assertIn(part, fix)
+        self.assertTrue(fix.rstrip().endswith("ufw --force enable"), "включается в самом конце")
 
 
 if __name__ == "__main__":

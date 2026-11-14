@@ -2449,8 +2449,8 @@ def security_audit():
     if hasattr(vpn, "state_path"):
         sdir = os.path.dirname(vpn.state_path)
         files += [vpn.state_path, os.path.join(sdir, "chat.json"), os.path.join(sdir, "auto_cache.json")]
-        expected |= {p for p in (getattr(vpn, "port", 0), getattr(vpn, "sub_port", 0), getattr(vpn, "sub_tls_port", 0))
-                     if p}
+        expected |= {p for p in (getattr(vpn, "port", 0), getattr(vpn, "sub_port", 0), getattr(vpn, "sub_tls_port", 0),
+                                 getattr(vpn, "bridge_port", 0)) if p}
         hy = getattr(vpn, "hy2", None) or {}
         expected |= {p for p in (hy.get("port"), hy.get("obfs_port")) if p}
         expected |= set(vpn.state.get("hy2_ports", {}).values())

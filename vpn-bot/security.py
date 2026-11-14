@@ -39,13 +39,52 @@ class Audit:
 
     # ---------- проверки: каждая — (знак, что, подробно, как исправить) ----------
 
+    def ssh_settings(self) -> dict[str, str]:
+        """Настройки SSH: сначала спрашиваем сам sshd, не вышло — читаем файлы настроек."""
+        out: dict[str, str] = {}
+        for cmd in (["sshd", "-T"], ["/usr/sbin/sshd", "-T"],
+                    ["/usr/sbin/sshd", "-T", "-C", "user=root,host=localhost,addr=127.0.0.1"]):
+            for line in self.run(cmd).splitlines():
+                k, _, v = line.partition(" ")
+                if k:
+                    out[k.lower()] = v.strip().lower()
+            if out:
+                return out
+        # Запасной путь: sshd_config и подключённые файлы; у sshd действует ПЕРВОЕ встреченное значение
+        import glob
+        texts, seen = [], set()
+
+        def load(path: str) -> None:
+            if path in seen:
+                return
+            seen.add(path)
+            text = self.read(path)
+            for line in text.splitlines():
+                k, _, v = line.strip().partition(" ")
+                if k.lower() == "include":
+                    for pat in v.split():
+                        for f in sorted(glob.glob(pat if pat.startswith("/") else "/etc/ssh/" + pat)):
+                            load(f)
+                elif k.lower() == "match":
+                    break  # дальше — правила для отдельных пользователей, общие настройки кончились
+                else:
+                    texts.append(line)
+        load("/etc/ssh/sshd_config")
+        for line in texts:
+            k, _, v = line.strip().partition(" ")
+            if k and not k.startswith("#"):
+                out.setdefault(k.lower(), v.strip().lower())
+        if out:  # значения OpenSSH по умолчанию, если в файлах не заданы
+            out.setdefault("passwordauthentication", "yes")
+            out.setdefault("permitrootlogin", "prohibit-password")
+            out.setdefault("port", "22")
+        return out
+
     def ssh(self) -> list[tuple]:
-        out = {}
-        for line in self.run(["sshd", "-T"]).splitlines():
-            k, _, v = line.partition(" ")
-            out[k.lower()] = v.strip().lower()
+        out = self.ssh_settings()
         if not out:
-            return [(WARN, "SSH", "Не удалось прочитать настройки SSH", "")]
+            return [(WARN, "SSH", "Не удалось прочитать настройки SSH",
+                     "Проверить вручную: grep -Ei 'PasswordAuthentication|PermitRootLogin' /etc/ssh/sshd_config")]
         res = []
         pw = out.get("passwordauthentication") == "yes"
         root = out.get("permitrootlogin", "")
@@ -67,23 +106,27 @@ class Audit:
         return res
 
     def ssh_ports(self) -> set[int]:
-        ports = set()
-        for line in self.run(["sshd", "-T"]).splitlines():
-            if line.lower().startswith("port "):
-                try:
-                    ports.add(int(line.split()[1]))
-                except ValueError:
-                    pass
-        return ports or {22}
+        port = self.ssh_settings().get("port", "22")
+        return {int(port)} if port.isdigit() else {22}
 
-    def firewall(self) -> list[tuple]:
+    def ufw_command(self, ssh_ports: set[int]) -> str:
+        """Включить файрвол, не отрезав VPN: сначала открыть все его порты, SSH и порт 80 (сертификат)."""
+        rng = range(30000, 30050)
+        single = sorted((self.expected | ssh_ports | {80}) - set(rng))
+        cmd = " && ".join(f"ufw allow {p}" for p in single)
+        if self.expected & set(rng):
+            cmd += " && ufw allow 30000:30049/udp"
+        return cmd + " && ufw --force enable"
+
+    def firewall(self, ssh_ports: set[int] = frozenset({22})) -> list[tuple]:
         out = self.run(["ufw", "status"])
         if "Status: active" in out:
             return [(OK, "Файрвол ufw включён", "", "")]
+        cmd = self.ufw_command(set(ssh_ports))
         if not out:
-            return [(WARN, "Файрвол", "ufw не найден", "apt install -y ufw")]
+            return [(WARN, "Файрвол", "ufw не найден", "apt install -y ufw && " + cmd)]
         return [(WARN, "Файрвол выключен", "Открыт любой порт, который кто-то запустит на сервере.",
-                 "Установщик открывает нужные порты сам. Включить: ufw allow OpenSSH && ufw --force enable")]
+                 "Команда сначала открывает порты VPN и SSH, потом включает файрвол:\n" + cmd)]
 
     def bruteforce(self) -> list[tuple]:
         active = self.run(["systemctl", "is-active", "fail2ban"]).strip() == "active"
@@ -107,7 +150,12 @@ class Audit:
             if host.startswith("127.") or host in ("[::1]", "::1", "localhost") or host.startswith("[::ffff:127."):
                 continue
             proc = re.search(r'\("([^"]+)"', line)
-            seen.setdefault(int(port), proc.group(1) if proc else "?")
+            name = proc.group(1) if proc else "?"
+            # Не «открытые порты», а свои: исходящие UDP-сокеты Hysteria/Xray (случайные номера)
+            # и получение адреса от хостинга (DHCP, 68 и 546)
+            if cols[0] == "udp" and (name in ("hysteria", "xray") or int(port) in (68, 546)):
+                continue
+            seen.setdefault(int(port), name)
         if not seen:
             return [(WARN, "Открытые порты", "Не удалось получить список", "")]
         extra = {p: n for p, n in seen.items() if p not in self.expected | ssh_ports | {80}}
@@ -157,7 +205,7 @@ class Audit:
     def check(self) -> list[tuple]:
         sp = self.ssh_ports()
         res = []
-        for f in (self.ssh, self.firewall, self.bruteforce, lambda: self.ports(sp), self.files_perms,
+        for f in (self.ssh, lambda: self.firewall(sp), self.bruteforce, lambda: self.ports(sp), self.files_perms,
                   self.updates, self.accounts):
             try:
                 res += f()
