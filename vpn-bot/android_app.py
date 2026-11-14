@@ -20,11 +20,23 @@ CHECK_EMPTY = 300  # пока приложения ещё нет (идёт пе�
 MAX_SIZE = 49 * 1024 * 1024  # Telegram-бот отправляет файлы до 50 МБ
 
 
+def version_code(version: str) -> int:
+    """Номер сборки из версии: «1.0.14» → 14, «0.1.7» → 7 (versionCode = номер запуска CI)."""
+    tail = (version or "").rsplit(".", 1)[-1]
+    return int(tail) if tail.isdigit() else 0
+
+
 class AppRelease:
-    def __init__(self, repo: str, folder: str, fetch=None):
+    """asset — имя файла в релизе; prefix — брать не «последний» релиз, а самый свежий с тегом,
+    начинающимся с prefix (новое приложение выкладывается предварительными версиями arise-new-…)."""
+
+    def __init__(self, repo: str, folder: str, fetch=None, asset: str = ASSET,
+                 old_assets: tuple = OLD_ASSETS, prefix: str = ""):
         self.repo = repo
         self.folder = folder
+        self.asset, self.old_assets, self.prefix = asset, tuple(old_assets), prefix
         self._fetch = fetch or self._http
+        self.url = ""  # ссылка на файл в GitHub (запасная для обновления изнутри приложения)
         self._checked = 0.0
         self._lock = asyncio.Lock()
         self.version = ""
@@ -47,8 +59,19 @@ class AppRelease:
                 ver = f.read().strip()
         except OSError:
             return "", ""
-        path = os.path.join(self.folder, ASSET)
+        path = os.path.join(self.folder, self.asset)
+        try:
+            with open(os.path.join(self.folder, "url")) as f:
+                self.url = f.read().strip()
+        except OSError:
+            pass
         return (ver, path) if ver and os.path.exists(path) else ("", "")
+
+    def cached(self) -> tuple[str, str] | None:
+        """Уже скачанная версия без обращения к сети: для раздачи обновлений приложениям."""
+        if not self.path:
+            self.version, self.path = self._local()
+        return (self.version, self.path) if self.path else None
 
     async def latest(self) -> tuple[str, str] | None:
         """(версия, путь к APK) или None, если приложения пока нет и скачать не вышло."""
@@ -64,22 +87,31 @@ class AppRelease:
             return (self.version, self.path) if self.path else None
 
     async def _update(self) -> None:
-        api = f"https://api.github.com/repos/{self.repo}/releases/latest"
-        rel = json.loads(await asyncio.to_thread(self._fetch, api, 1 << 20))
-        ver = str(rel.get("tag_name") or "").lstrip("v")
+        if self.prefix:
+            api = f"https://api.github.com/repos/{self.repo}/releases?per_page=30"
+            rels = json.loads(await asyncio.to_thread(self._fetch, api, 4 << 20))
+            rels = [r for r in rels if str(r.get("tag_name") or "").startswith(self.prefix) and not r.get("draft")]
+            rel = max(rels, key=lambda r: version_code(str(r["tag_name"])[len(self.prefix):]), default={})
+            ver = str(rel.get("tag_name") or "")[len(self.prefix):]
+        else:
+            api = f"https://api.github.com/repos/{self.repo}/releases/latest"
+            rel = json.loads(await asyncio.to_thread(self._fetch, api, 1 << 20))
+            ver = str(rel.get("tag_name") or "").lstrip("v")
         url = next((a.get("browser_download_url") for a in rel.get("assets") or []
-                    if a.get("name") in (ASSET, *OLD_ASSETS)), None)
+                    if a.get("name") in (self.asset, *self.old_assets)), None)
         if not ver or not url or ver == self.version:
             return
         data = await asyncio.to_thread(self._fetch, url, MAX_SIZE)
         if not data.startswith(b"PK"):
             raise ValueError("скачанный файл не похож на APK")
         os.makedirs(self.folder, exist_ok=True)
-        path = os.path.join(self.folder, ASSET)
+        path = os.path.join(self.folder, self.asset)
         with open(path + ".part", "wb") as f:
             f.write(data)
         os.replace(path + ".part", path)
         with open(os.path.join(self.folder, "version"), "w") as f:
             f.write(ver)
-        self.version, self.path = ver, path
+        with open(os.path.join(self.folder, "url"), "w") as f:
+            f.write(url)
+        self.version, self.path, self.url = ver, path, url
         log.info("приложение: скачана версия %s (%d КБ)", ver, len(data) // 1024)

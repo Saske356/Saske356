@@ -189,6 +189,21 @@ def connect_screen(kt: str) -> None:
     code = code.replace("%AURORA_BOT%", bot)
     with open(os.path.join(main, "AuroraConnect.kt"), "w", encoding="utf-8") as f:
         f.write(code)
+    # Обновление изнутри (android/kt/AuroraUpdate.kt): новая версия качается с сервера подписок
+    # и ставится системным установщиком — нужны разрешение и приёмник ответа установщика.
+    with open(os.path.join(here, "kt", "AuroraUpdate.kt"), encoding="utf-8") as f:
+        upd = f.read()
+    with open(os.path.join(main, "AuroraUpdate.kt"), "w", encoding="utf-8") as f:
+        f.write(upd)
+    manifest = os.path.join(kt, "..", "..", "..", "..", "AndroidManifest.xml")
+    edit(manifest, [
+        ("    <application", '    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />\n\n'
+                           "    <application"),
+        ("    </application>", "        <receiver\n"
+                              '            android:name="com.v2ray.ang.ui.main.AuroraInstallReceiver"\n'
+                              '            android:exported="false" />\n'
+                              "    </application>"),
+    ], count_ok=lambda n: n == 1)
     # Панель вверху, под заголовком (снизу по центру неудобно): список стран начинается под ней.
     edit(os.path.join(main, "MainScreen.kt"), [
         ("""            MainBottomBar(

@@ -59,6 +59,26 @@ class AppReleaseTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(os.path.exists(os.path.join(self.d, android_app.ASSET)))
 
 
+class PrereleaseTest(unittest.IsolatedAsyncioTestCase):
+    async def test_takes_newest_tag_with_prefix(self):
+        d = tempfile.mkdtemp()
+        rels = [{"tag_name": "v1.0.20", "assets": []},
+                {"tag_name": "arise-new-0.1.9", "assets": [{"name": "AriseNew-arm64-v8a.apk",
+                                                             "browser_download_url": "https://x/9"}]},
+                {"tag_name": "arise-new-0.1.12", "assets": [{"name": "AriseNew-arm64-v8a.apk",
+                                                              "browser_download_url": "https://x/12"}]},
+                {"tag_name": "arise-new-0.1.13", "draft": True, "assets": []}]
+
+        def fetch(url, limit):
+            return json.dumps(rels).encode() if "/releases?" in url else APK
+        app = android_app.AppRelease("o/r", d, fetch=fetch, asset="AriseNew-arm64-v8a.apk",
+                                     old_assets=(), prefix="arise-new-")
+        ver, path = await app.latest()
+        self.assertEqual((ver, os.path.basename(path), app.url), ("0.1.12", "AriseNew-arm64-v8a.apk", "https://x/12"))
+        self.assertEqual(android_app.version_code(ver), 12)
+        self.assertEqual(android_app.AppRelease("o/r", d, asset="AriseNew-arm64-v8a.apk").cached()[0], "0.1.12")
+
+
 class SecretsMatch(unittest.TestCase):
     def test_app_and_bot_share_the_subscription_key(self):
         import re

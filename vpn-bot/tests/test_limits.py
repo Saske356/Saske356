@@ -412,6 +412,23 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         page = body.decode()
         self.assertIn("aurora://install-sub?url=" + quote(self.v.sub_url(1), safe=""), page)
         self.assertEqual(self.v.app_link(1), self.v.sub_url(1) + "/app")
+        # обновление приложения изнутри: версия и файл по адресу подписки
+        import android_app
+        d = tempfile.mkdtemp()
+        with open(os.path.join(d, android_app.ASSET), "wb") as f:
+            f.write(b"PK" + b"z" * 700_000)
+        with open(os.path.join(d, "version"), "w") as f:
+            f.write("1.0.21")
+        self.v.app_releases = {"aurora": android_app.AppRelease("o/r", d)}
+        _, _, body = await get(path + "/update?app=aurora", "AuroraVPN/1.0.14")
+        info = json.loads(body)
+        self.assertEqual((info["version"], info["code"], info["size"]), ("1.0.21", 21, 700_002))
+        self.assertEqual(info["url"], self.v.sub_url(1) + "/apk?app=aurora")
+        head, _, body = await get(path + "/apk?app=aurora", "AuroraVPN/1.0.14")
+        self.assertIn(b"application/vnd.android.package-archive", head)
+        self.assertEqual(len(body), 700_002)
+        self.assertEqual(json.loads((await get(path + "/update?app=arise", "x"))[2])["version"], "", "нет — пусто")
+        self.assertIn(b"404", (await get("/sub/1/" + "0" * 24 + "/apk", "x"))[0], "чужая ссылка — ничего")
         # подписка, открытая в браузере, — та же страница, ключей в ней нет
         chrome = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/131.0 Mobile Safari/537.36"
         head, _, body = await get(path, chrome)

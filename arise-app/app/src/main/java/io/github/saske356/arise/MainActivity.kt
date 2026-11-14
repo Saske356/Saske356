@@ -206,6 +206,7 @@ class MainActivity : ComponentActivity() {
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 if (Store.subUrl.isNotBlank() && System.currentTimeMillis() - Store.lastRefresh > 3_600_000L) Repo.refresh()
                 else Repo.pingAll()
+                AppUpdate.check()
                 while (true) {
                     delay(300_000L)
                     Repo.pingAll()
@@ -314,6 +315,7 @@ private fun Home(
                 .padding(bottom = 120.dp)
         ) {
             TopBar(openTools)
+            UpdateCard()
             SubBar(data, onOpen)
             Spacer(Modifier.height(if (running) 14.dp else 30.dp))
             Hero(running, vpn.status == Status.CONNECTING, onToggle)
@@ -888,6 +890,7 @@ private fun ToolsScreen(
     data: Data, back: () -> Unit, onApps: () -> Unit, onLeak: () -> Unit, onTile: () -> Unit,
     onDns: () -> Unit, onForget: () -> Unit,
 ) {
+    val ctx = LocalContext.current
     val speed by SpeedState.flow.collectAsState()
     Page("Инструменты", "", back) {
         Column(
@@ -922,9 +925,62 @@ private fun ToolsScreen(
             Repo.setAutoConnect(!data.autoConnect)
         }
         Tool("🔘", "Кнопка в шторке", "Включать VPN, не открывая приложение", "Добавить", onTile)
+        val upd by AppUpdate.flow.collectAsState()
+        Tool("⬆️", "Обновление приложения",
+            when {
+                upd.progress >= 0f -> "Скачиваю… ${(upd.progress * 100).toInt()}%"
+                upd.version.isNotEmpty() -> "Доступна версия ${upd.version}"
+                upd.note.isNotEmpty() -> upd.note
+                else -> "Сейчас ${BuildConfig.VERSION_NAME}"
+            },
+            if (upd.checking) "…" else if (upd.version.isNotEmpty()) "Обновить" else "Проверить") {
+            if (upd.version.isNotEmpty()) AppUpdate.install(ctx) else AppUpdate.check(force = true)
+        }
         Tool("🔄", "Обновить подписку", if (data.loading) "Обновляю…" else "Страны и срок — с сервера", "") { Repo.refresh() }
         Tool("↩", "Сменить подписку", "Удалить эту и добавить другую", "", onForget)
         Text("Arise VPN ${BuildConfig.VERSION_NAME}", color = TextDim, fontSize = 12.sp, modifier = Modifier.fillMaxWidth().padding(top = 10.dp), textAlign = TextAlign.Center)
+    }
+}
+
+/** Плашка «Доступна новая версия» на главном экране. */
+@Composable
+private fun UpdateCard() {
+    val ctx = LocalContext.current
+    val u by AppUpdate.flow.collectAsState()
+    if (u.version.isEmpty() && u.progress < 0f && u.note.isEmpty()) return
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Brush.linearGradient(listOf(BlueMid.copy(alpha = 0.30f), Color(0x40203264))))
+            .border(1.dp, Blue.copy(alpha = 0.45f), RoundedCornerShape(16.dp))
+            .clickable(enabled = u.version.isNotEmpty() && u.progress < 0f) { AppUpdate.install(ctx) }
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("⬆️", fontSize = 20.sp)
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                if (u.version.isNotEmpty()) "Новая версия ${u.version}" else "Обновление",
+                color = TextMain, fontSize = 15.sp, fontWeight = FontWeight.SemiBold
+            )
+            val sub = when {
+                u.progress >= 0f -> "Скачиваю… ${(u.progress * 100).toInt()}%"
+                u.note.isNotEmpty() -> u.note
+                u.size > 0 -> "${u.size / 1_048_576} МБ · нажмите, чтобы обновить"
+                else -> "Нажмите, чтобы обновить"
+            }
+            Text(sub, color = TextSoft, fontSize = 12.5.sp)
+        }
+        if (u.version.isNotEmpty() && u.progress < 0f) Text("Обновить", color = Blue, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+    }
+    if (u.note.isNotEmpty() && u.version.isEmpty()) {
+        LaunchedEffect(u.note) {
+            delay(8_000)
+            AppUpdate.onStatus("")
+        }
     }
 }
 

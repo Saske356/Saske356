@@ -116,6 +116,8 @@ class XrayProvider(VpnProvider):
         self._tls_server: asyncio.base_events.Server | None = None
         self.sub_https: bool | None = None  # HTTPS-раздача: None — ещё не запускали, False — не поднялась
         self._short: dict[str, int] = {}
+        # Приложения для обновления изнутри: {"aurora": AppRelease, "arise": AppRelease} (ставит бот)
+        self.app_releases: dict = {}
         # Hysteria2: {"port", "sni", "pin", "obfs", "obfs_port", "stats_ports", "stats_secret"}.
         # port — обычный вариант (похож на HTTP/3), obfs_port — с обфускацией (похож на случайный UDP).
         self.hy2 = hy2 if hy2 and (hy2.get("port") or hy2.get("obfs_port")) else None
@@ -1549,6 +1551,7 @@ class XrayProvider(VpnProvider):
 
     async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, ip: str) -> None:
         status, body, headers = "404 Not Found", b"not found", {"Content-Type": "text/plain"}
+        file_path = ""
         loop = asyncio.get_running_loop()
         deadline = loop.time() + 10  # на весь запрос 10 с: медленные «атаки по строчке» не держат соединения
 
@@ -1572,6 +1575,10 @@ class XrayProvider(VpnProvider):
             app_page = path.endswith("/app")  # страница «Открыть в Arise VPN» для этой подписки
             if app_page:
                 path = path[:-4]
+            update = ""  # /update — какая версия приложения последняя, /apk — сам файл
+            for tail in ("/update", "/apk"):
+                if path.endswith(tail):
+                    update, path = tail, path[:-len(tail)]
             m = re.fullmatch(r"/sub/(\d+)/([0-9a-f]{24})", path)
             if m and hmac.compare_digest(m.group(2), self.sub_token(int(m.group(1)))):
                 uid = int(m.group(1))
@@ -1580,7 +1587,9 @@ class XrayProvider(VpnProvider):
                 uid = self._by_short(m.group(1))
             if fmt not in ("links", "json") and client_config.is_browser(agent):
                 app_page = True  # в браузере — страница вместо ключей
-            if parts and parts[0] == "GET" and uid is not None and app_page:
+            if parts and parts[0] == "GET" and uid is not None and update:
+                status, body, headers, file_path = self._app_update(uid, update, parse_qs(query))
+            elif parts and parts[0] == "GET" and uid is not None and app_page:
                 status, body = "200 OK", self.app_page(uid).encode()
                 headers = {"Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store"}
             elif parts and parts[0] == "GET" and uid is not None:
@@ -1600,15 +1609,50 @@ class XrayProvider(VpnProvider):
             pass
         if status.startswith("404"):
             self.guard.fail(ip)  # неверная ссылка или сканер: за перебор — бан на час
-        head = f"HTTP/1.1 {status}\r\nContent-Length: {len(body)}\r\nConnection: close\r\n"
+        size = len(body)
+        if file_path:
+            try:
+                size = os.path.getsize(file_path)
+            except OSError:
+                file_path, status, body, size = "", "404 Not Found", b"not found", 9
+        head = f"HTTP/1.1 {status}\r\nContent-Length: {size}\r\nConnection: close\r\n"
         head += "".join(f"{k}: {v}\r\n" for k, v in headers.items())
         try:
-            writer.write(head.encode() + b"\r\n" + body)
+            writer.write(head.encode() + b"\r\n" + (b"" if file_path else body))
             await writer.drain()
-        except ConnectionError:
+            if file_path:  # APK — частями, чтобы не держать весь файл в памяти
+                with open(file_path, "rb") as f:
+                    while chunk := f.read(256 * 1024):
+                        writer.write(chunk)
+                        await writer.drain()
+        except (ConnectionError, OSError):
             pass
         finally:
             writer.close()
+
+    def _app_update(self, uid: int, what: str, query: dict) -> tuple[str, bytes, dict, str]:
+        """Обновление приложения изнутри: /update — JSON с последней версией, /apk — файл.
+        Файл идёт с нашего сервера по адресу подписки: так он доходит, даже если GitHub не открывается."""
+        app = (query.get("app") or ["aurora"])[0]
+        rel = self.app_releases.get(app)
+        got = rel.cached() if rel else None
+        if what == "/apk":
+            if not got:
+                return "503 Service Unavailable", b"no app yet", {"Content-Type": "text/plain"}, ""
+            return "200 OK", b"", {"Content-Type": "application/vnd.android.package-archive",
+                                   "Content-Disposition": f"attachment; filename={os.path.basename(got[1])}",
+                                   "Cache-Control": "no-store"}, got[1]
+        info = {"app": app, "version": "", "code": 0}
+        if got:
+            from android_app import version_code
+            try:
+                size = os.path.getsize(got[1])
+            except OSError:
+                size = 0
+            info.update(version=got[0], code=version_code(got[0]), size=size,
+                        url=f"{self.sub_url(uid)}/apk?app={app}", mirror=getattr(rel, "url", ""))
+        return "200 OK", json.dumps(info).encode(), {"Content-Type": "application/json",
+                                                      "Cache-Control": "no-store"}, ""
 
     async def start_sub_server(self, host: str = "0.0.0.0") -> None:
         self._server = await asyncio.start_server(self._handle, host, self.sub_port)

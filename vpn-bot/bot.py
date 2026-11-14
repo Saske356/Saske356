@@ -55,6 +55,12 @@ guard = DeviceGuard(config.DEVICE_LIMIT, warn_after=3, block_after=5, block_minu
 pay_cfg = paymod.Settings(os.path.join(os.path.dirname(os.path.abspath(config.DB_PATH)), "payments.json"))
 # Своё приложение для Android: только у настоящего VPN (у демо нет подписки для него)
 android_app = AppRelease(config.APP_REPO, config.APP_DIR) if config.APP_REPO and hasattr(vpn, "app_link") else None
+# Новое приложение (arise-app/): предварительные версии arise-new-0.1.N. Бот его не рассылает,
+# но приложение обновляется изнутри через сервер подписок.
+arise_app = AppRelease(config.APP_REPO, os.path.join(config.APP_DIR, "new"), asset="AriseNew-arm64-v8a.apk",
+                       old_assets=(), prefix="arise-new-") if android_app else None
+if android_app:
+    vpn.app_releases = {"aurora": android_app, "arise": arise_app}
 esc = html.escape
 
 CONFETTI = "5046509860389126442"   # встроенный эффект Telegram «🎉»
@@ -3355,6 +3361,13 @@ def dev_word(n: int) -> str:
     return plural(n, "устройство", "устройства", "устройств")
 
 
+async def app_release_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Свежие APK обоих приложений на сервере: из них приложения обновляются изнутри."""
+    for rel in (android_app, arise_app):
+        if rel:
+            await rel.latest()
+
+
 async def devices_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Раз в 2 минуты сверяет, сколько устройств подключено, с оплаченным числом."""
     if vpn.is_demo or not hasattr(vpn, "online") or guard.mode == "off":
@@ -3542,6 +3555,8 @@ def build_app(token: str) -> Application:
     app.job_queue.run_repeating(crypto_job, interval=20, first=15)
     app.job_queue.run_repeating(traffic_job, interval=600, first=90)
     app.job_queue.run_repeating(devices_job, interval=120, first=90)
+    if android_app:
+        app.job_queue.run_repeating(app_release_job, interval=1800, first=60)
     return app
 
 
