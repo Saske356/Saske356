@@ -1649,7 +1649,7 @@ class XrayProvider(VpnProvider):
                 k = k.strip().lower()
                 if k == "user-agent":
                     agent = v.strip()
-                elif k in ("x-hwid", "x-device-model", "x-device-os"):
+                elif k in ("x-hwid", "x-device-model", "x-device-os", "x-chat-profile"):
                     dev[k] = v.strip()
                 elif k == "content-length" and v.strip().isdigit():
                     clen = int(v.strip())
@@ -1690,7 +1690,10 @@ class XrayProvider(VpnProvider):
                 elif not self.device_seen(uid, hwid, dev.get("x-device-model", ""), dev.get("x-device-os", "")):
                     code, answer = 403, {"error": "device limit"}  # чат только у устройств с местом в подписке
                 else:
-                    code, answer = self.chat.handle(uid, chat, parts[0], parse_qs(query), body_in, hwid)
+                    # второй профиль чата (второй PIN) — свой код на том же месте в подписке
+                    prof = dev.get("x-chat-profile", "")
+                    who = hwid + ("#" + prof if prof.isdigit() and prof != "0" and len(prof) == 1 else "")
+                    code, answer = self.chat.handle(uid, chat, parts[0], parse_qs(query), body_in, who)
                 status = {200: "200 OK", 400: "400 Bad Request", 403: "403 Forbidden", 404: "404 Not Found",
                           409: "409 Conflict", 429: "429 Too Many Requests", 507: "507 Insufficient Storage"
                           }.get(code, f"{code} Error")

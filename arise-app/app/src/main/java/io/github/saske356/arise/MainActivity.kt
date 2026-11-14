@@ -85,6 +85,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -372,12 +374,14 @@ internal fun Logo(size: Dp = 30.dp) {
 
 @Composable
 private fun TopBar(openTools: () -> Unit, openChat: () -> Unit) {
+    val hidden by Chat.hidden.collectAsState()
     Row(Modifier.fillMaxWidth().padding(start = 22.dp, end = 22.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Logo()
+        // Долгое нажатие на логотип всегда открывает чат — так в него попадают, когда он скрыт
+        Box(Modifier.pointerInput(Unit) { detectTapGestures(onLongPress = { openChat() }) }) { Logo() }
         Spacer(Modifier.width(10.dp))
         Text("Arise", color = TextMain, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
         // Зашифрованный чат: только с подпиской (без неё сервер его не откроет)
-        Box(
+        if (!hidden) Box(
             Modifier
                 .padding(end = 10.dp)
                 .size(42.dp)

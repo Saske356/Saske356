@@ -26,7 +26,7 @@ data class ChatMsg(val id: String, val out: Boolean, val text: String, val t: Lo
 /** Состояние чата для экранов. */
 data class ChatUi(
     val unlocked: Boolean = false,
-    val decoy: Boolean = false,       // открыт ложным PIN: пустой чат, без связи с сервером
+    val decoy: Boolean = false,       // открыт вторым PIN: второй профиль со своим кодом и собеседниками
     val code: String = "",
     val contacts: List<ChatContact> = emptyList(),
     val msgs: Map<String, List<ChatMsg>> = emptyMap(),
@@ -73,6 +73,8 @@ object Chat {
                 c.setRequestProperty("x-hwid", Subscription.hwid)
                 c.setRequestProperty("x-device-model", android.os.Build.MODEL ?: "")
                 c.setRequestProperty("x-device-os", "Android")
+                // второй профиль (второй PIN) — отдельный код чата на том же месте в подписке
+                if (vault?.slot == ChatVault.Slot.DECOY) c.setRequestProperty("x-chat-profile", "1")
                 if (body != null) {
                     val raw = body.toString().toByteArray()
                     c.requestMethod = "POST"
@@ -130,22 +132,10 @@ object Chat {
 
     private fun opened() {
         publish()
-        if (vault?.slot == ChatVault.Slot.REAL) {
-            scope.launch { register() }
-            startPolling()
-        } else {
-            // Ложный чат выглядит как настоящий: тот же раздел «Админ» у подписки админа,
-            // но ключей на сервер не шлёт и писем не забирает.
-            scope.launch {
-                try {
-                    val st = request("status")
-                    flow.update { it.copy(admin = st.optBoolean("admin"), enabled = st.optBoolean("enabled", true)) }
-                    if (flow.value.admin) refreshAdmin()
-                } catch (e: Exception) {
-                    // нет связи — ложному чату не важно
-                }
-            }
-        }
+        // Оба профиля — настоящие живые чаты: второй (по второму PIN) со своим кодом и собеседниками.
+        // Пустой «ложный» чат сам вызывал подозрение, а живая обычная переписка — нет.
+        scope.launch { register() }
+        startPolling()
     }
 
     /** Закрыть чат: ключи и переписка уходят из памяти. */
@@ -227,7 +217,7 @@ object Chat {
                 unread = unread ?: it.unread,
                 ttlHours = data.optInt("ttl", 24), noScreens = data.optBoolean("secure", true),
                 lockOnLeave = data.optBoolean("lockLeave", true),
-                // в ложном чате «ложный PIN задан» — как в настоящем, иначе видно, что это подделка
+                // во втором профиле «второй PIN задан» — как в основном, иначе видно, какой профиль открыт
                 hasDecoy = if (vault?.slot == ChatVault.Slot.DECOY) data.optBoolean("fd", true)
                 else ChatVault.exists(ChatVault.Slot.DECOY),
             )
@@ -353,7 +343,6 @@ object Chat {
             vault?.save()
         }
         publish()
-        if (vault?.slot != ChatVault.Slot.REAL) return@launch  // ложный чат никуда не пишет
         try {
             val r = request("send", JSONObject().put("to", code).put("box", ChatCrypto.seal(payload, data.getString("ssk"), c.key)))
             if (r.has("error")) flow.update { it.copy(error = explain(r.getString("error"))) }
@@ -367,14 +356,6 @@ object Chat {
         val code = rawCode.uppercase().filter { it in "ABCDEFGHJKMNPQRSTUVWXYZ23456789" }
         if (code.length != 9) return "Код — 9 знаков, например K7M-2QX-9TR"
         if (code == d()?.optString("code")) return "Это ваш собственный код"
-        if (vault?.slot != ChatVault.Slot.REAL) {
-            lock.withLock {
-                putContact(ChatContact(code, name.ifBlank { pretty(code) }, "", false, false))
-                vault?.save()
-            }
-            publish()
-            return null
-        }
         val key = try {
             keyOf(code)
         } catch (e: Exception) {
@@ -421,6 +402,20 @@ object Chat {
 
     fun read(code: String) = flow.update { it.copy(unread = it.unread - code) }
 
+    /** Чат спрятан с главного экрана: открывается долгим нажатием на логотип Arise. */
+    val hidden: MutableStateFlow<Boolean> by lazy { MutableStateFlow(ChatVault.isHidden()) }
+
+    fun setHidden(on: Boolean) {
+        ChatVault.setHidden(on)
+        hidden.value = on
+    }
+
+    /** Подписку сменили — у новой своё хранилище и своя настройка «скрывать». */
+    fun subscriptionChanged() {
+        lockNow()
+        hidden.value = ChatVault.isHidden()
+    }
+
     fun safety(code: String): String {
         val mine = d()?.optString("pk") ?: return ""
         val theirs = contacts().firstOrNull { it.code == code }?.key ?: return ""
@@ -451,18 +446,19 @@ object Chat {
         null
     }
 
-    /** Ложный PIN: отдельное пустое хранилище. Нельзя задать таким же, как настоящий. */
+    /** Второй PIN: отдельное хранилище со своими ключами — второй живой чат. Не совпадает с основным. */
     suspend fun setDecoy(pin: String): String? = lock.withLock {
-        // В ложном чате «задать ложный PIN» делает вид, что получилось: настоящий не трогаем
+        // Из второго профиля «задать второй PIN» только делает вид: основной профиль не трогаем
         if (vault?.slot == ChatVault.Slot.DECOY) {
             d()?.put("fd", true)
             vault?.save()
             return@withLock null
         }
-        if (ChatVault.opensReal(pin)) return@withLock "Ложный PIN должен отличаться от настоящего"
-        val fake = (1..9).map { "ABCDEFGHJKMNPQRSTUVWXYZ23456789"[rnd.nextInt(31)] }.joinToString("")
+        if (ChatVault.opensReal(pin)) return@withLock "Второй PIN должен отличаться от основного"
+        val keys = ChatCrypto.newKeys()
         ChatVault.create(ChatVault.Slot.DECOY, pin,
-            JSONObject().put("code", fake).put("contacts", JSONArray()).put("msgs", JSONObject())
+            JSONObject().put("sk", keys.enc).put("ssk", keys.sign).put("pk", keys.public)
+                .put("code", "").put("contacts", JSONArray()).put("msgs", JSONObject())
                 .put("ttl", 24).put("secure", true).put("lockLeave", true))
         null
     }.also { publish() }
@@ -470,7 +466,7 @@ object Chat {
     fun dropDecoy() = scope.launch {
         lock.withLock {
             if (vault?.slot == ChatVault.Slot.DECOY) {
-                // из ложного чата настоящий ложный PIN не убрать — только делаем вид
+                // из второго профиля его самого не убрать — только делаем вид
                 d()?.put("fd", false)
                 vault?.save()
             } else ChatVault.dropDecoy()

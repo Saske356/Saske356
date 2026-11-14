@@ -47,6 +47,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -516,13 +518,21 @@ private fun ProtectScreen(ui: ChatUi, back: () -> Unit) {
         }
         ToggleRow("🚫", "Запрет скриншотов и превью в «недавних»", ui.noScreens) { Chat.setNoScreens(!ui.noScreens) }
         ToggleRow("⏲", "Закрывать чат, если свернули приложение", ui.lockOnLeave) { Chat.setLockOnLeave(!ui.lockOnLeave) }
+        val hidden by Chat.hidden.collectAsState()
+        ToggleRow("🙈", "Скрывать чат: открывать долгим нажатием на логотип Arise", hidden) { Chat.setHidden(!hidden) }
         run {
             Section("Вход")
-            Tool("🔑", "Сменить PIN", "6 цифр", "›") { dialog = "pin"; input = ""; msg = "" }
-            Tool("🎭", "Ложный PIN", "Открывает пустой чат — если заставят разблокировать",
-                if (ui.hasDecoy) "Задан ›" else "Задать ›") { dialog = "decoy"; input = ""; msg = "" }
+            // Второй PIN нигде не показан: его задают долгим нажатием на «Сменить PIN».
+            // Пункт «ложный PIN» в настройках сам выдавал, что второй чат может быть.
+            LongTool("🔑", "Сменить PIN", "6 цифр", "›",
+                onClick = { dialog = "pin"; input = ""; msg = "" },
+                onLong = { dialog = "decoy"; input = ""; msg = "" })
             if (dialog == "pin" || dialog == "decoy") {
-                Field(input, if (dialog == "pin") "Новый PIN, 6 цифр" else "Ложный PIN, 6 цифр") {
+                if (dialog == "decoy") Note(
+                    "Второй PIN открывает второй, отдельный чат: свой код, свои собеседники. Если заставят " +
+                        "разблокировать — введите его. Об этом экране знаете только вы."
+                )
+                Field(input, if (dialog == "pin") "Новый PIN, 6 цифр" else "Второй PIN, 6 цифр") {
                     input = it.filter { ch -> ch.isDigit() }.take(PIN_LEN)
                 }
                 if (msg.isNotEmpty()) Text(msg, color = Red, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
@@ -538,13 +548,13 @@ private fun ProtectScreen(ui: ChatUi, back: () -> Unit) {
                         val e = withContext(Dispatchers.IO) { if (what == "pin") Chat.changePin(value) else Chat.setDecoy(value) }
                         if (e == null) {
                             dialog = ""
-                            Toast.makeText(ctx, if (what == "pin") "PIN изменён" else "Ложный PIN задан", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(ctx, if (what == "pin") "PIN изменён" else "Второй PIN задан", Toast.LENGTH_SHORT).show()
                         } else msg = e
                     }
                 }
                 if (dialog == "decoy" && ui.hasDecoy) {
                     Spacer(Modifier.height(8.dp))
-                    Big("Убрать ложный PIN", gold = false) { Chat.dropDecoy(); dialog = "" }
+                    Big("Убрать второй PIN и его чат", gold = false) { Chat.dropDecoy(); dialog = "" }
                 }
             }
         }
@@ -573,6 +583,31 @@ private fun ProtectScreen(ui: ChatUi, back: () -> Unit) {
                 Toast.makeText(ctx, "Код скопирован", Toast.LENGTH_SHORT).show()
             }
         }
+    }
+}
+
+/** Как Tool, но с долгим нажатием (скрытые действия). */
+@Composable
+private fun LongTool(icon: String, title: String, sub: String, right: String, onClick: () -> Unit, onLong: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Glass)
+            .border(1.dp, GlassLine, RoundedCornerShape(16.dp))
+            .pointerInput(Unit) { detectTapGestures(onTap = { onClick() }, onLongPress = { onLong() }) }
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(BlueMid.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
+            Text(icon, fontSize = 18.sp)
+        }
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(title, color = TextMain, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(sub, color = TextDim, fontSize = 12.sp, maxLines = 2)
+        }
+        if (right.isNotEmpty()) Text(right, color = Blue, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 

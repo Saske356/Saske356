@@ -67,8 +67,11 @@ class ChatRelay:
     def drop(self, uid: int, device: str | None = None) -> int:
         """Убрать код чата устройства (удалили в «📱 Устройства») или всех устройств подписки
         («Сбросить все»): ключ и письма для него пропадают. Возвращает, сколько убрано."""
+        me = self.ident(uid, device or "")
+        # «телефон#1» — второй профиль чата на том же устройстве (второй PIN): уходит вместе с ним
         gone = [k for k in self.data["users"]
-                if k == self.ident(uid, device or "") or (device is None and k.startswith(f"{uid}:"))]
+                if (device is not None and (k == me or k.startswith(me + "#")))
+                or (device is None and k.startswith(f"{uid}:"))]
         for k in gone:
             code = self.data["users"].pop(k).get("code")
             if code:

@@ -453,6 +453,14 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await get_dev(path + "/chat/status", "dev1"))["code"], ans["code"])
         self.assertEqual((await get_dev(path + "/chat/key?code=ZZZZZZZZZ", "dev1"))["status"], 404,
                          "«нет кода» не считается перебором ссылок")
+        async def status_profile(prof):
+            r, w = await asyncio.open_connection("127.0.0.1", port)
+            w.write(f"GET {path}/chat/status HTTP/1.1\r\nHost: x\r\nUser-Agent: AriseApp/1\r\nX-HWID: dev1\r\n"
+                    f"X-Chat-Profile: {prof}\r\n\r\n".encode()); await w.drain()
+            data = await r.read(); w.close()
+            return json.loads(data.partition(b"\r\n\r\n")[2])
+        self.assertEqual((await status_profile("1"))["code"], "", "второй профиль — ещё без кода, место то же")
+        self.assertEqual((await status_profile("0"))["code"], ans["code"])
         self.assertEqual((await get_dev(path + "/chat/status", "dev2"))["error"], "device limit",
                          "второе устройство при одном оплаченном — без чата")
         _, _, body = await get(path + "/chat/status", "AriseApp/1")

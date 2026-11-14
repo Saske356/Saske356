@@ -22,7 +22,9 @@ class ChatRelayTest(unittest.TestCase):
         self.call(1, "send", "POST", {"to": b, "box": BOX}, dev="mom")
         self.assertEqual(self.call(1, "inbox", dev="mom")[1]["messages"], [], "мама не видит почту сына")
         self.assertEqual(len(self.call(1, "inbox", dev="son")[1]["messages"]), 1)
-        self.assertEqual(self.c.drop(1, "son"), 1, "устройство удалили в боте — его код пропал")
+        second = self.call(1, "register", "POST", {"key": KEY_A}, dev="son#1")[1]["code"]
+        self.assertNotIn(second, (a, b), "второй профиль на том же телефоне — свой код")
+        self.assertEqual(self.c.drop(1, "son"), 2, "устройство удалили в боте — пропали оба его профиля")
         self.assertEqual(self.call(1, "key", code=b)[0], 404)
         self.assertEqual(self.c.drop(1), 1, "«Сбросить все» — пропали все коды подписки")
         self.assertEqual(self.call(1, "status", dev="mom")[1]["code"], "")

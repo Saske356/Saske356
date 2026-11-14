@@ -96,7 +96,10 @@ object Repo {
                     Subscription.fetch(url)
                 }
             } else Subscription.fetch(url)
-            Store.subUrl = url
+            if (Store.subUrl != url) {
+                Store.subUrl = url
+                Chat.subscriptionChanged()  // у другой подписки — свой чат
+            }
             Store.save(info)
             load()
             pingAll()
@@ -186,6 +189,7 @@ object Repo {
 
     fun forget() {
         Store.subUrl = ""
+        Chat.subscriptionChanged()
         Store.configs = emptyList()
         Store.pings = emptyMap()
         Store.expire = 0L
