@@ -1764,6 +1764,7 @@ ADMIN_COMMANDS = [
     ("addpromo", "Промокод: /addpromo КОД 7|20% активаций"),
     ("promos", "Все промокоды"),
     ("chat", "Чат в приложении: вкл/выкл"),
+    ("security", "Проверка безопасности сервера"),
     ("delpromo", "Удалить промокод"),
     ("refund", "Возврат звёзд: /refund charge_id"),
     ("testpay", "Тестовая оплата"),
@@ -1775,7 +1776,7 @@ ADMIN_COMMANDS = [
 ]
 # Кнопки админ-панели, которые просто запускают команду без параметров
 ADMIN_BUTTONS = {"loc": "locations", "auto": "autoproxy", "ws": "webshare", "pay": "pay",
-                 "sni": "sni", "bs": "bridgesite", "wl": "bs", "upd": "update"}
+                 "sni": "sni", "bs": "bridgesite", "wl": "bs", "upd": "update", "sec": "security"}
 
 
 def commands_text() -> str:
@@ -1819,7 +1820,7 @@ def admin_kb() -> InlineKeyboardMarkup:
               [B("🌍 Страны и мосты", "adm:run:loc"), B("🤖 Авто-страны", "adm:run:auto")],
               [B("🛒 Купленные прокси", "adm:run:ws"), B("💰 Карта и крипта", "adm:run:pay")],
               [B("🎭 Маскировка", "adm:run:sni"), B("🌉 Сайт мостов", "adm:run:bs")],
-              [B("🛡 Обход белых списков", "adm:run:wl")],
+              [B("🛡 Обход белых списков", "adm:run:wl"), B("🔐 Безопасность", "adm:run:sec")],
               [B("⬆️ Обновить сервер", "adm:run:upd"), B("📋 Все команды", "adm:cmds")],
               *([[B("🧩 Happ/v2rayNG: JSON-конфиги · выключить" if vpn.json_sub
                     else "🧩 Happ/v2rayNG: обычные ссылки · включить JSON", "adm:json")]]
@@ -2137,6 +2138,18 @@ async def admin_button(update: Update, context: ContextTypes.DEFAULT_TYPE, row, 
         await q.answer()
         return
     act = parts[1] if len(parts) > 1 else ""
+    if act in ("sec", "secfix"):
+        await q.answer("Проверяю…")
+        if act == "secfix":
+            audit, _, _ = security_audit()
+            n = audit.fix_perms()
+            await context.bot.send_message(update.effective_chat.id, f"🔧 Исправлено файлов: {n}.")
+        text, found = await run_security()
+        context.bot_data["sec_seen"] = sorted(found)
+        await context.bot.send_message(update.effective_chat.id, text[:4000],
+                                       reply_markup=KB([B("🔧 Исправить права файлов", "adm:secfix"),
+                                                        B("🔄 Проверить снова", "adm:sec")]))
+        return
     if act in ("rf", "rfok") and len(parts) == 3 and parts[2].isdigit():
         p = db.get_payment_by_id(int(parts[2]))
         if not p:
@@ -2422,6 +2435,58 @@ async def addpromo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     link = f"https://t.me/{STATE['username'] or context.bot.username}?start=promo_{code.upper()}"
     await update.message.reply_text(
         f"Промокод <code>{esc(code.upper())}</code>: {what}, активаций: {uses}.\n\nСсылка для гостей: {link}")
+
+
+def security_audit():
+    """Проверка безопасности этой машины: файлы с секретами и порты, которые мы открываем сами."""
+    import security
+    data = os.path.dirname(os.path.abspath(config.DB_PATH))
+    files = [config.DB_PATH, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"), pay_cfg.path]
+    expected: set[int] = set()
+    if hasattr(vpn, "state_path"):
+        sdir = os.path.dirname(vpn.state_path)
+        files += [vpn.state_path, os.path.join(sdir, "chat.json"), os.path.join(sdir, "auto_cache.json")]
+        expected |= {p for p in (getattr(vpn, "port", 0), getattr(vpn, "sub_port", 0), getattr(vpn, "sub_tls_port", 0))
+                     if p}
+        hy = getattr(vpn, "hy2", None) or {}
+        expected |= {p for p in (hy.get("port"), hy.get("obfs_port")) if p}
+        expected |= set(vpn.state.get("hy2_ports", {}).values())
+        expected |= set(range(30000, 30050))
+    files = [f for f in dict.fromkeys(files) if f and os.path.exists(f)]
+    return security.Audit(files, expected), security, data
+
+
+async def run_security() -> tuple[str, set[str]]:
+    audit, sec, _ = security_audit()
+    results = await asyncio.to_thread(audit.check)
+    return sec.report(results), sec.problems(results)
+
+
+@admin_only
+async def security_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Проверка безопасности сервера: SSH, файрвол, перебор паролей, порты, права файлов, обновления."""
+    if vpn.is_demo:
+        await update.message.reply_text("Проверка работает на настоящем сервере.")
+        return
+    msg = await update.message.reply_text("🔐 Проверяю сервер… (до минуты)")
+    text, found = await run_security()
+    context.bot_data["sec_seen"] = sorted(found)
+    kb = KB([B("🔧 Исправить права файлов", "adm:secfix"), B("🔄 Проверить снова", "adm:sec")])
+    try:
+        await msg.edit_text(text[:4000], reply_markup=kb)
+    except TelegramError:
+        await update.message.reply_text(text[:4000], reply_markup=kb)
+
+
+async def security_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Раз в сутки: если появились новые проблемы безопасности — сообщить админам."""
+    if vpn.is_demo:
+        return
+    text, found = await run_security()
+    seen = set(context.bot_data.get("sec_seen", []))
+    if found - seen:
+        await send_admins(context.bot, "🔐 <b>Новые проблемы безопасности сервера</b>\n\n" + text[:3500])
+    context.bot_data["sec_seen"] = sorted(found)
 
 
 @admin_only
@@ -3683,7 +3748,7 @@ def build_app(token: str) -> Application:
     app.bot_data["banners"] = banners
 
     for cmd, fn in [("start", start), ("terms", terms), ("paysupport", paysupport), ("promo", promo_cmd),
-                    ("admin", admin), ("give", give), ("addpromo", addpromo), ("promos", promos_cmd), ("chat", chat_cmd), ("delpromo", delpromo), ("refund", refund),
+                    ("admin", admin), ("give", give), ("addpromo", addpromo), ("promos", promos_cmd), ("chat", chat_cmd), ("security", security_cmd), ("delpromo", delpromo), ("refund", refund),
                     ("testpay", testpay), ("payments", payments), ("locations", locations),
                     ("addloc", addloc), ("delloc", delloc), ("addbridge", addbridge),
                     ("delbridge", delbridge), ("server", server), ("backup", backup),
@@ -3708,6 +3773,7 @@ def build_app(token: str) -> Application:
     app.job_queue.run_repeating(devices_job, interval=120, first=90)
     if android_app:
         app.job_queue.run_repeating(app_release_job, interval=1800, first=60)
+    app.job_queue.run_repeating(security_job, interval=86400, first=600)
     return app
 
 

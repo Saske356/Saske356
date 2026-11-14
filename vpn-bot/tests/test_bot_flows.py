@@ -794,8 +794,8 @@ async def main():
     # разделы админки кнопками: каждая запускает свою команду, ответ приходит сообщением
     check_caption(bot.admin_text())
     for key in bot.ADMIN_BUTTONS:
-        if key == "upd":
-            continue  # обновление сервера запускает systemctl
+        if key in ("upd", "sec"):
+            continue  # обновление сервера запускает systemctl, проверка безопасности — системные команды
         ctx.bot.send_message.reset_mock()
         await press(1, f"adm:run:{key}", ctx)
         assert ctx.bot.send_message.await_count >= 1, key
