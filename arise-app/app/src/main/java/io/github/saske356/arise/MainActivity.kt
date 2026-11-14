@@ -934,7 +934,7 @@ private fun ToolsScreen(
                 else -> "Сейчас ${BuildConfig.VERSION_NAME}"
             },
             if (upd.checking) "…" else if (upd.version.isNotEmpty()) "Обновить" else "Проверить") {
-            if (upd.version.isNotEmpty()) AppUpdate.install(ctx) else AppUpdate.check(force = true)
+            if (upd.version.isNotEmpty()) AppUpdate.installHere(ctx) else AppUpdate.check(force = true)
         }
         Tool("🔄", "Обновить подписку", if (data.loading) "Обновляю…" else "Страны и срок — с сервера", "") { Repo.refresh() }
         Tool("↩", "Сменить подписку", "Удалить эту и добавить другую", "", onForget)
@@ -942,39 +942,59 @@ private fun ToolsScreen(
     }
 }
 
-/** Плашка «Доступна новая версия» на главном экране. */
+/** Плашка «Доступна новая версия» на главном экране: обновиться внутри или через браузер. */
 @Composable
 private fun UpdateCard() {
     val ctx = LocalContext.current
     val u by AppUpdate.flow.collectAsState()
     if (u.version.isEmpty() && u.progress < 0f && u.note.isEmpty()) return
-    Row(
+    Column(
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(Brush.linearGradient(listOf(BlueMid.copy(alpha = 0.30f), Color(0x40203264))))
             .border(1.dp, Blue.copy(alpha = 0.45f), RoundedCornerShape(16.dp))
-            .clickable(enabled = u.version.isNotEmpty() && u.progress < 0f) { AppUpdate.install(ctx) }
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
-        Text("⬆️", fontSize = 20.sp)
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                if (u.version.isNotEmpty()) "Новая версия ${u.version}" else "Обновление",
-                color = TextMain, fontSize = 15.sp, fontWeight = FontWeight.SemiBold
-            )
-            val sub = when {
-                u.progress >= 0f -> "Скачиваю… ${(u.progress * 100).toInt()}%"
-                u.note.isNotEmpty() -> u.note
-                u.size > 0 -> "${u.size / 1_048_576} МБ · нажмите, чтобы обновить"
-                else -> "Нажмите, чтобы обновить"
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("⬆️", fontSize = 20.sp)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (u.version.isNotEmpty()) "Новая версия ${u.version}" else "Обновление",
+                    color = TextMain, fontSize = 15.sp, fontWeight = FontWeight.SemiBold
+                )
+                val sub = when {
+                    u.progress >= 0f -> "Скачиваю… ${(u.progress * 100).toInt()}%"
+                    u.note.isNotEmpty() -> u.note
+                    u.size > 0 -> "${u.size / 1_048_576} МБ"
+                    else -> ""
+                }
+                if (sub.isNotEmpty()) Text(sub, color = TextSoft, fontSize = 12.5.sp)
             }
-            Text(sub, color = TextSoft, fontSize = 12.5.sp)
         }
-        if (u.version.isNotEmpty() && u.progress < 0f) Text("Обновить", color = Blue, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        if (u.version.isNotEmpty() && u.progress < 0f) {
+            Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Обновить здесь", color = Ink, fontSize = 13.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
+                        .background(Brush.horizontalGradient(listOf(BlueLight, BlueMid)))
+                        .clickable { AppUpdate.installHere(ctx) }.padding(vertical = 10.dp)
+                )
+                Text(
+                    "Через браузер", color = TextMain, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(Glass)
+                        .border(1.dp, Blue.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                        .clickable { AppUpdate.openInBrowser(ctx) }.padding(vertical = 10.dp)
+                )
+            }
+            Text(
+                "«Здесь» — быстрее, но Google Play может предупредить: нажмите «Всё равно установить». " +
+                    "Через браузер — без предупреждения.",
+                color = TextDim, fontSize = 11.5.sp, modifier = Modifier.padding(top = 8.dp)
+            )
+        }
     }
     if (u.note.isNotEmpty() && u.version.isEmpty()) {
         LaunchedEffect(u.note) {

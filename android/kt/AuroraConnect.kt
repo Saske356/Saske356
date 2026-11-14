@@ -388,39 +388,38 @@ fun AuroraConnectPanel(
     }
 }
 
-/** «Новая версия X — Обновить» в панели: приложение скачивает её с сервера подписок и ставит само. */
+/** «Новая версия X» в панели: обновиться внутри приложения или через браузер — на выбор. */
 @Composable
 private fun AuroraUpdateRow() {
     val ctx = LocalContext.current
     val u by AuroraUpdate.flow.collectAsState()
     if (u.version.isEmpty() && u.progress < 0f && u.note.isEmpty()) return
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(AuroraGold.copy(alpha = 0.14f))
             .border(1.dp, AuroraGold.copy(alpha = 0.45f), RoundedCornerShape(14.dp))
-            .clickable(enabled = u.version.isNotEmpty() && u.progress < 0f) { AuroraUpdate.install(ctx) }
-            .padding(horizontal = 12.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 12.dp, vertical = 9.dp)
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = if (u.version.isNotEmpty()) "Новая версия ${u.version}" else "Обновление",
-                color = AuroraGoldLight, fontWeight = FontWeight.SemiBold, fontSize = 14.sp
-            )
-            Text(
-                text = when {
-                    u.progress >= 0f -> "Скачиваю… ${(u.progress * 100).toInt()}%"
-                    u.note.isNotEmpty() -> u.note
-                    u.size > 0 -> "${u.size / 1_048_576} МБ · нажмите, чтобы обновить"
-                    else -> "Нажмите, чтобы обновить"
-                },
-                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp
-            )
+        Text(
+            text = if (u.version.isNotEmpty()) "Новая версия ${u.version}" else "Обновление",
+            color = AuroraGoldLight, fontWeight = FontWeight.SemiBold, fontSize = 14.sp
+        )
+        val sub = when {
+            u.progress >= 0f -> "Скачиваю… ${(u.progress * 100).toInt()}%"
+            u.note.isNotEmpty() -> u.note
+            else -> "«Здесь» — быстрее, но Google Play может предупредить. Через браузер — без предупреждения."
         }
+        Text(text = sub, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
         if (u.version.isNotEmpty() && u.progress < 0f) {
-            Text(text = "Обновить", color = AuroraGold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(modifier = Modifier.weight(1f)) { GoldButton(text = "Обновить здесь") { AuroraUpdate.installHere(ctx) } }
+                Box(modifier = Modifier.weight(1f)) { GhostButton(text = "Через браузер") { AuroraUpdate.openInBrowser(ctx) } }
+            }
         }
     }
     if (u.note.isNotEmpty() && u.version.isEmpty()) {

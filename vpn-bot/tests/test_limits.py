@@ -414,6 +414,24 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         page = body.decode()
         self.assertIn("aurora://install-sub?url=" + quote(self.v.sub_url(1), safe=""), page)
         self.assertEqual(self.v.app_link(1), self.v.sub_url(1) + "/app")
+        # лимит устройств по номеру (x-hwid): третье устройство при двух оплаченных — заглушка
+        self.v.state["devices"]["1"] = 2
+
+        async def sub_for(hwid):
+            r, w = await asyncio.open_connection("127.0.0.1", port)
+            w.write(f"GET {path} HTTP/1.1\r\nHost: x\r\nUser-Agent: Happ/3.7.0\r\nX-HWID: {hwid}\r\n"
+                    f"X-Device-Model: Pixel {hwid}\r\n\r\n".encode()); await w.drain()
+            data = await r.read(); w.close()
+            return [c["remarks"] for c in json.loads(data.partition(b"\r\n\r\n")[2])]
+        self.assertNotIn(xp.LIMIT_NAME, await sub_for("aaa"))
+        self.assertNotIn(xp.LIMIT_NAME, await sub_for("bbb"))
+        self.assertEqual((await sub_for("ccc"))[0], xp.LIMIT_NAME, "третье — сверх оплаченных")
+        self.assertNotIn(xp.LIMIT_NAME, await sub_for("aaa"), "свои устройства работают")
+        self.assertEqual(sorted(d["m"] for d in self.v.device_list(1)), ["Pixel aaa", "Pixel bbb"])
+        self.assertTrue(self.v.forget_device(1, self.v.device_list(1)[-1]["id"]))
+        self.assertNotIn(xp.LIMIT_NAME, await sub_for("ccc"), "место освободилось")
+        self.v.state["devices"]["1"] = 1
+        self.v.state.pop("hwids")
         # мини-приложение Telegram — с нашего сервера
         head, _, body = await get("/m/", "Mozilla/5.0 Telegram")
         self.assertIn(b"text/html", head)

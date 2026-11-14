@@ -189,12 +189,21 @@ def connect_screen(kt: str) -> None:
     code = code.replace("%AURORA_BOT%", bot)
     with open(os.path.join(main, "AuroraConnect.kt"), "w", encoding="utf-8") as f:
         f.write(code)
-    # Обновление изнутри (android/kt/AuroraUpdate.kt): проверяет версию на сервере подписок
-    # и открывает ссылку на файл в браузере (само не ставит — иначе Play Защита ругается).
+    # Обновление изнутри (android/kt/AuroraUpdate.kt): новая версия качается с сервера подписок
+    # и ставится системным установщиком — нужны разрешение и приёмник ответа установщика.
     with open(os.path.join(here, "kt", "AuroraUpdate.kt"), encoding="utf-8") as f:
         upd = f.read()
     with open(os.path.join(main, "AuroraUpdate.kt"), "w", encoding="utf-8") as f:
         f.write(upd)
+    manifest = os.path.join(kt, "..", "..", "..", "..", "AndroidManifest.xml")
+    edit(manifest, [
+        ("    <application", '    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />\n\n'
+                           "    <application"),
+        ("    </application>", "        <receiver\n"
+                              '            android:name="com.v2ray.ang.ui.main.AuroraInstallReceiver"\n'
+                              '            android:exported="false" />\n'
+                              "    </application>"),
+    ], count_ok=lambda n: n == 1)
     # Панель вверху, под заголовком (снизу по центру неудобно): список стран начинается под ней.
     edit(os.path.join(main, "MainScreen.kt"), [
         ("""            MainBottomBar(
@@ -298,6 +307,15 @@ def main(root: str) -> None:
         ('"v2rayNG/${BuildConfig.VERSION_NAME}"',
          '"AuroraVPN/${BuildConfig.VERSION_NAME} (enc1) v2rayNG/${BuildConfig.VERSION_NAME}"'),
     ])
+    # Номер устройства в запросе подписки (как у Happ): сервер считает устройства и сверх
+    # оплаченных отдаёт заглушку «Превышен лимит устройств».
+    edit(os.path.join(kt, "util", "HttpUtil.kt"), [
+        ('                .header("User-agent", finalUserAgent)\n                .header("Connection", "close")\n',
+         '                .header("User-agent", finalUserAgent)\n                .header("Connection", "close")\n'
+         '                .header("x-hwid", com.v2ray.ang.ui.main.AuroraDevice.id())\n'
+         '                .header("x-device-model", android.os.Build.MODEL ?: "")\n'
+         '                .header("x-device-os", "Android")\n'),
+    ], count_ok=lambda n: n == 1)
 
     # Импорт подписки по ссылке aurora://install-sub:
     # - повторный импорт той же подписки v2rayNG считает ошибкой («невозможно импортировать»),

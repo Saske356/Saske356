@@ -1,8 +1,13 @@
 package io.github.saske356.arise
 
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInstaller
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -10,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.InetSocketAddress
 import java.net.Proxy
@@ -18,8 +24,8 @@ import java.net.URL
 /**
  * Обновление приложения изнутри. Сервер подписок по адресу «<подписка>/update?app=arise» говорит,
  * какая версия последняя, а «…/apk» отдаёт сам файл — с нашего сервера, поэтому обновление доходит,
- * даже если GitHub не открывается (запасной адрес — GitHub). Сам файл приложение не ставит:
- * приложение открывает ссылку в браузере, дальше обычная установка файла.
+ * даже если GitHub не открывается (запасной адрес — GitHub). Ставить — внутри (installHere, системный
+ * установщик Android) или через браузер (openInBrowser): человек выбирает сам.
  */
 data class UpdateUi(
     val version: String = "",   // доступная версия; пусто — обновления нет
@@ -94,11 +100,12 @@ object AppUpdate {
     }
 
     /**
-     * Открыть новую версию в браузере: он скачает файл, а Android предложит установить.
-     * Само приложение APK не ставит: Play Защита считала такое приложение «загрузчиком»
-     * и помечала как вредоносное.
+     * Два способа обновиться (выбирает человек):
+     * - installHere: скачать внутри и отдать установщику Android. Удобно, но Play Защита может
+     *   предупредить: приложение, которое само ставит APK, ей не нравится;
+     * - openInBrowser: открыть ссылку на файл в браузере, дальше обычная установка.
      */
-    fun install(ctx: Context) {
+    fun openInBrowser(ctx: Context) {
         val o = info ?: return
         val url = o.optString("url").ifBlank { o.optString("mirror") }
         if (url.isBlank()) return
@@ -110,5 +117,99 @@ object AppUpdate {
         }
     }
 
+    /** Скачать внутри приложения и отдать установщику Android. */
+    fun installHere(ctx: Context) = scope.launch {
+        val o = info ?: return@launch
+        if (flow.value.progress >= 0f) return@launch
+        val app = ctx.applicationContext
+        if (Build.VERSION.SDK_INT >= 26 && !app.packageManager.canRequestPackageInstalls()) {
+            flow.update { it.copy(note = "Разрешите установку из Arise и нажмите «Обновить» ещё раз") }
+            val i = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${app.packageName}"))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            app.startActivity(i)
+            return@launch
+        }
+        flow.update { it.copy(progress = 0f, note = "") }
+        val file = File(app.cacheDir, "update.apk")
+        try {
+            download(listOf(o.optString("url"), o.optString("mirror")).filter { it.isNotBlank() }, file, o.optLong("size"))
+            flow.update { it.copy(note = "Подтвердите установку") }
+            commit(app, file)
+        } catch (e: Exception) {
+            flow.update { it.copy(note = "Не удалось обновить: ${e.message}") }
+        } finally {
+            flow.update { it.copy(progress = -1f) }
+        }
+    }
+
+    private fun download(urls: List<String>, file: File, size: Long) {
+        var last: Exception? = null
+        for (url in urls) {
+            try {
+                either(url) { c ->
+                    val total = c.contentLengthLong.takeIf { it > 0 } ?: size
+                    c.inputStream.use { input ->
+                        file.outputStream().use { out ->
+                            val buf = ByteArray(64 * 1024)
+                            var got = 0L
+                            while (true) {
+                                val n = input.read(buf)
+                                if (n < 0) break
+                                out.write(buf, 0, n)
+                                got += n
+                                if (total > 0) flow.update { it.copy(progress = (got.toFloat() / total).coerceIn(0f, 1f)) }
+                            }
+                        }
+                    }
+                }
+                val head = file.inputStream().use { val b = ByteArray(2); it.read(b); b }
+                if (head[0] != 'P'.code.toByte() || head[1] != 'K'.code.toByte()) throw IllegalStateException("файл повреждён")
+                if (size > 0 && file.length() != size) throw IllegalStateException("файл скачался не целиком")
+                return
+            } catch (e: Exception) {
+                last = e
+            }
+        }
+        throw last ?: IllegalStateException("нет адреса для скачивания")
+    }
+
+    private fun commit(ctx: Context, file: File) {
+        val installer = ctx.packageManager.packageInstaller
+        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+        params.setAppPackageName(ctx.packageName)
+        val id = installer.createSession(params)
+        installer.openSession(id).use { s ->
+            s.openWrite("arise.apk", 0, file.length()).use { out ->
+                file.inputStream().use { it.copyTo(out) }
+                s.fsync(out)
+            }
+            val intent = Intent(ctx, InstallReceiver::class.java)
+            // MUTABLE: установщик дописывает в намерение результат и окно подтверждения
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
+            s.commit(PendingIntent.getBroadcast(ctx, id, intent, flags).intentSender)
+        }
+    }
+
     fun onStatus(note: String) = flow.update { it.copy(note = note) }
+}
+
+/** Ответ установщика Android: показать окно подтверждения или сообщить, что пошло не так. */
+class InstallReceiver : BroadcastReceiver() {
+    override fun onReceive(ctx: Context, intent: Intent) {
+        when (intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
+            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                val confirm: Intent? = if (Build.VERSION.SDK_INT >= 33) {
+                    intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(Intent.EXTRA_INTENT)
+                }
+                if (confirm != null) ctx.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
+            PackageInstaller.STATUS_SUCCESS -> AppUpdate.onStatus("Обновлено")
+            PackageInstaller.STATUS_FAILURE_ABORTED -> AppUpdate.onStatus("Обновление отменено")
+            else -> AppUpdate.onStatus("Не удалось установить: " +
+                (intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "ошибка установщика"))
+        }
+    }
 }

@@ -68,6 +68,10 @@ def hy2_id(uid: int, variant: int = -1) -> str:
 # Вход по Hysteria за последние 4 минуты — устройство ещё в сети. Окно короче, чем проверок до
 # предупреждения (3 по 2 мин): переход телефона с Wi-Fi на мобильную сеть не сочтётся вторым устройством.
 HY2_NET_WINDOW = 240
+# Устройство по номеру (HWID: его шлёт Happ, наши приложения, заголовок x-hwid), которое не обновляло
+# подписку столько времени, освобождает место — например, старый телефон.
+HWID_TTL = 7 * 86400
+LIMIT_NAME = "⛔ Превышен лимит устройств"
 
 
 def device_net(addr: str) -> str:
@@ -338,6 +342,7 @@ class XrayProvider(VpnProvider):
         снова можно только по новой ссылке. Возвращает новую ссылку."""
         gens = self.state.setdefault("gen", {})
         gens[str(user_id)] = int(gens.get(str(user_id), 0)) + 1
+        self.state.get("hwids", {}).pop(str(user_id), None)  # все устройства — заново
         self._short = {}
         self._hy2_nets.pop(user_id, None)
         self._save()
@@ -1435,14 +1440,67 @@ class XrayProvider(VpnProvider):
         """Отдавать ли Happ и v2rayNG готовые JSON-конфиги. Переключается из /admin."""
         return bool(self.state.get("json_sub", self.json_default))
 
+    # ---------- устройства по номеру (HWID) ----------
+
+    def device_seen(self, user_id: int, hwid: str, model: str = "", os_: str = "") -> bool:
+        """Устройство обновляет подписку. True — пускаем; False — оплаченные места заняты другими
+        устройствами, и это получает вместо стран заглушку «Превышен лимит устройств»."""
+        hwid = (hwid or "").strip()[:128]
+        if not hwid:
+            return True  # приложение не сообщает номер (v2rayNG) — проверка по подключениям (devices.py)
+        now = time.time()
+        mine = self.state.setdefault("hwids", {}).setdefault(str(user_id), {})
+        for h in [h for h, d in mine.items() if now - d.get("t", 0) > HWID_TTL]:
+            del mine[h]
+        if hwid in mine:
+            if now - mine[hwid].get("t", 0) > 3600:  # не пишем файл на каждое обновление
+                mine[hwid]["t"] = now
+                self._save()
+            return True
+        limit = int(self.state["devices"].get(str(user_id)) or 0)
+        if limit and len(mine) >= limit:
+            return False
+        mine[hwid] = {"t": now, "m": (model or "").strip()[:60], "os": (os_ or "").strip()[:30]}
+        self._save()
+        return True
+
+    def device_list(self, user_id: int) -> list[dict]:
+        """Устройства подписки, свежие сверху: [{"id": короткий номер, "m": модель, "os", "t"}]."""
+        mine = self.state.get("hwids", {}).get(str(user_id), {})
+        out = [{"id": hashlib.sha1(h.encode()).hexdigest()[:8], **d} for h, d in mine.items()]
+        return sorted(out, key=lambda d: -d.get("t", 0))
+
+    def forget_device(self, user_id: int, short_id: str) -> bool:
+        mine = self.state.get("hwids", {}).get(str(user_id), {})
+        for h in list(mine):
+            if hashlib.sha1(h.encode()).hexdigest()[:8] == short_id:
+                del mine[h]
+                self._save()
+                return True
+        return False
+
+    def _limit_body(self, as_json: bool) -> bytes:
+        """Вместо стран — неработающий пункт с объяснением (как у крупных VPN)."""
+        if as_json:
+            cfgs = [client_config._base(LIMIT_NAME, [{"tag": "proxy", "protocol": "blackhole"}], {"rules": []}),
+                    client_config._base("👉 Освободите место в боте: подписка → 📱 Устройства",
+                                        [{"tag": "proxy", "protocol": "blackhole"}], {"rules": []})]
+            return json.dumps(cfgs, ensure_ascii=False).encode()
+        links = [f"hysteria2://limit@127.0.0.1:1/?insecure=1#{quote(LIMIT_NAME)}",
+                 f"hysteria2://limit@127.0.0.1:1/?insecure=1#{quote('👉 Освободите место в боте')}"]
+        return base64.b64encode("\n".join(links).encode())
+
     def subscription(self, user_id: int, as_json: bool = False, tuned: bool = False,
-                     enc_path: str = "") -> tuple[bytes, dict] | None:
+                     enc_path: str = "", over_limit: bool = False) -> tuple[bytes, dict] | None:
         """Подписка. as_json — готовые конфиги Xray для Happ и v2rayNG: в приложении видно только
-        название страны, а адрес и пароль спрятаны внутри конфига; российские сайты идут напрямую."""
+        название страны, а адрес и пароль спрятаны внутри конфига; российские сайты идут напрямую.
+        over_limit — устройство сверх оплаченных: вместо стран заглушка."""
         exp = self.state["users"].get(str(user_id))
         if not exp or exp <= time.time():
             return None
-        if as_json:
+        if over_limit:
+            body = self._limit_body(as_json)
+        elif as_json:
             body = json.dumps(client_config.configs(self.json_entries(user_id), tuned=tuned),
                               ensure_ascii=False).encode()
         else:
@@ -1454,7 +1512,8 @@ class XrayProvider(VpnProvider):
         n = int(self.state["devices"].get(str(user_id)) or 1)
         word = "устройство" if n % 10 == 1 and n % 100 != 11 else (
             "устройства" if n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14) else "устройств")
-        title = base64.b64encode(f"{self.brand} · {n} {word}".encode()).decode()
+        title = base64.b64encode((f"{self.brand} · превышен лимит устройств" if over_limit
+                                  else f"{self.brand} · {n} {word}").encode()).decode()
         up = down = 0
         if self.usage:
             try:
@@ -1574,13 +1633,17 @@ class XrayProvider(VpnProvider):
         try:
             line = await asyncio.wait_for(reader.readline(), left())
             agent = ""
-            for _ in range(50):  # заголовки запроса: нужен только User-Agent
+            dev: dict[str, str] = {}  # номер и модель устройства (Happ и наши приложения их шлют)
+            for _ in range(50):  # заголовки запроса: User-Agent и сведения об устройстве
                 h = await asyncio.wait_for(reader.readline(), left())
                 if h in (b"\r\n", b"\n", b""):
                     break
                 k, _, v = h.decode(errors="replace").partition(":")
-                if k.strip().lower() == "user-agent":
+                k = k.strip().lower()
+                if k == "user-agent":
                     agent = v.strip()
+                elif k in ("x-hwid", "x-device-model", "x-device-os"):
+                    dev[k] = v.strip()
             parts = line.decode(errors="replace").split()
             path, _, query = (parts[1] if len(parts) >= 2 else "").partition("?")
             fmt = parse_qs(query).get("format", [""])[0]
@@ -1608,7 +1671,9 @@ class XrayProvider(VpnProvider):
                 headers = {"Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store"}
             elif parts and parts[0] == "GET" and uid is not None:
                 tuned = as_json and client_config.is_aurora(agent)
-                res = self.subscription(uid, as_json=as_json, tuned=tuned,
+                ok = self.device_seen(uid, dev.get("x-hwid", ""), dev.get("x-device-model", ""),
+                                      dev.get("x-device-os", ""))
+                res = self.subscription(uid, as_json=as_json, tuned=tuned, over_limit=not ok,
                                         enc_path=path if tuned and client_config.wants_encrypted(agent) else "")
                 if res:
                     status, (body, headers) = "200 OK", res

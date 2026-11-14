@@ -1229,6 +1229,15 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     # ---- подписки
+    if parts[0] == "devdel" and len(parts) == 3:
+        sub = await own_sub(q, uid, parts[1])
+        if not sub:
+            return
+        gone = hasattr(vpn, "forget_device") and vpn.forget_device(sub["id"], parts[2])
+        await q.answer("Устройство удалено: место освободилось" if gone else "Уже удалено")
+        await show(update, context, devices_view(db.get_sub(sub["id"])), devices_manage_kb(db.get_sub(sub["id"])),
+                   banner="key")
+        return
     if parts[0] in ("dev", "devr", "devrok") and len(parts) == 2:
         sub = await own_sub(q, uid, parts[1])
         if not sub:
@@ -3346,9 +3355,19 @@ def devices_view(sub) -> str:
                      f"а потом отключит подписку на {config.DEVICE_BLOCK_MINUTES} мин.",
             "warn": "Если устройств больше, чем оплачено, бот пришлёт предупреждение.",
             "off": "Сейчас число устройств не ограничивается."}[guard.mode]
+    known = vpn.device_list(sub["id"]) if hasattr(vpn, "device_list") else []
+    lines = ""
+    for i, d in enumerate(known, 1):
+        ago = max(0, int(time.time() - d.get("t", 0)))
+        when = "сейчас" if ago < 3600 else (f"{ago // 3600} ч назад" if ago < 86400 else f"{ago // 86400} дн назад")
+        lines += f"{i}. {esc(d.get('m') or 'Устройство')} {esc(d.get('os') or '')} · {when}\n"
+    listed = (f"\n<b>Устройства с местом в подписке ({len(known)} из {sub['devices']})</b>\n{lines}"
+              "<i>Новое устройство сверх оплаченных получит вместо стран «⛔ Превышен лимит устройств». "
+              "Чтобы освободить место, удалите ненужное кнопкой 🗑. Устройство, которое неделю не "
+              "обновляло подписку, освобождает место само.</i>\n" if known else "")
     return (f"<b>📱 Устройства «{esc(sub['name'])}»</b>\n\n"
             f"◆ Оплачено: <b>{sub['devices']}</b>\n"
-            f"◆ Подключено сейчас: {online}\n{paused}\n"
+            f"◆ Подключено сейчас: {online}\n{paused}{listed}\n"
             "Устройство — это телефон, компьютер или телевизор, на котором включён VPN с этой подпиской. "
             f"{rule}\n\n"
             "<b>Что можно сделать</b>\n"
@@ -3358,7 +3377,10 @@ def devices_view(sub) -> str:
 
 
 def devices_manage_kb(sub) -> InlineKeyboardMarkup:
-    rows = [[B("🔄 Обновить", f"dev:{sub['id']}"), B("🔄 Сбросить все", f"devr:{sub['id']}")]]
+    known = vpn.device_list(sub["id"]) if hasattr(vpn, "device_list") else []
+    rows = [[B(f"🗑 {i}. {(d.get('m') or 'Устройство')[:20]}", f"devdel:{sub['id']}:{d['id']}")]
+            for i, d in enumerate(known, 1)]
+    rows.append([B("🔄 Обновить", f"dev:{sub['id']}"), B("🔄 Сбросить все", f"devr:{sub['id']}")])
     if can_upgrade(sub):
         rows.append([B("➕ Добавить устройства", f"up:{sub['id']}")])
     rows.append([B("‹ К подписке", f"sub:{sub['id']}")])

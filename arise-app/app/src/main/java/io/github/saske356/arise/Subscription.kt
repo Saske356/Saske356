@@ -22,6 +22,10 @@ object Subscription {
     // «(enc1)» — приложение умеет расшифровывать подписку.
     private val UA = "AriseApp/${BuildConfig.VERSION_NAME} (enc1) AuroraVPN/${BuildConfig.VERSION_NAME}"
 
+    /** Номер устройства для лимита устройств (заголовок x-hwid, как у Happ). Ставит AriseApp. */
+    @Volatile
+    var hwid = ""
+
     data class Info(val configs: List<String>, val expire: Long, val title: String, val botUrl: String)
 
     fun fetch(url: String, socksPort: Int? = null): Info {
@@ -35,6 +39,11 @@ object Subscription {
         conn.connectTimeout = 15_000
         conn.readTimeout = 20_000
         conn.setRequestProperty("User-Agent", UA)
+        if (hwid.isNotEmpty()) {
+            conn.setRequestProperty("x-hwid", hwid)
+            conn.setRequestProperty("x-device-model", android.os.Build.MODEL ?: "")
+            conn.setRequestProperty("x-device-os", "Android")
+        }
         try {
             val code = conn.responseCode
             if (code == 403) throw IOException("Подписка закончилась — продлите её в боте")
