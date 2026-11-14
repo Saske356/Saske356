@@ -259,6 +259,10 @@ def main(root: str) -> None:
 
     for p in glob.glob(os.path.join(src, "res", "values*", "strings.xml")):
         edit(p, [("v2rayNG", APP_NAME)], count_ok=lambda n: True)
+    # Раздел подписок в русском переводе назывался «Группы» — гости не находили, где удалить подписку.
+    edit(os.path.join(src, "res", "values-ru", "strings.xml"), [
+        ('<string name="title_sub_setting">Группы</string>', '<string name="title_sub_setting">Подписки</string>'),
+    ], count_ok=lambda n: n == 1)
     edit(os.path.join(src, "res", "values", "strings.xml"), [(f">{APP_NAME}<", f">{APP_NAME}<")])
 
     edit(os.path.join(src, "AndroidManifest.xml"), [
