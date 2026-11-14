@@ -43,9 +43,10 @@ object Core {
     }
 
     /** Конфиг для работы VPN: вход tun (трафик телефона) и локальный SOCKS для обновления подписки. */
-    fun runConfig(server: String, mode: Mode = Mode.BALANCE): String {
+    fun runConfig(server: String, mode: Mode = Mode.BALANCE, dns: Dns = Dns.CLOUDFLARE): String {
         val o = JSONObject(server)
         mode.apply(o)
+        dnsInCore(o, dns)
         // Счётчики трафика: из них график скорости и «за сеанс»
         o.put("stats", JSONObject())
         val policy = o.optJSONObject("policy") ?: JSONObject().also { o.put("policy", it) }
@@ -78,6 +79,35 @@ object Core {
         for (i in 0 until rules.length()) merged.put(rules.get(i))
         routing.put("rules", merged)
         return o.toString()
+    }
+
+    /**
+     * DNS телефона — в ядро: на запросы адресов отвечает DNS ядра и только адресами IPv4.
+     * Иначе телефон получал IPv6-адреса, и российские сайты (они идут напрямую, мимо VPN) не
+     * открывались в сетях без IPv6: Яндекс висел, а Google через VPN работал. Российские имена
+     * спрашиваем у Яндекса (обычный DNS напрямую), остальные — у DNS, выбранного в инструментах.
+     */
+    private fun dnsInCore(o: JSONObject, choice: Dns) {
+        val old = o.optJSONObject("dns") ?: JSONObject()
+        val servers = JSONArray()
+        val oldServers = old.optJSONArray("servers") ?: JSONArray()
+        for (i in 0 until oldServers.length()) {
+            val s = oldServers.optJSONObject(i) ?: continue
+            if (!s.has("domains")) continue
+            servers.put(JSONObject(s.toString()).put("address", "77.88.8.8"))
+        }
+        servers.put(choice.ip).put(choice.ip2)
+        o.put("dns", JSONObject().put("servers", servers).put("queryStrategy", "UseIPv4"))
+        val outs = o.optJSONArray("outbounds") ?: JSONArray().also { o.put("outbounds", it) }
+        outs.put(JSONObject().put("tag", "dns-out").put("protocol", "dns"))
+        val routing = o.optJSONObject("routing") ?: JSONObject().also { o.put("routing", it) }
+        val rules = routing.optJSONArray("rules") ?: JSONArray()
+        val merged = JSONArray().put(
+            JSONObject().put("type", "field").put("inboundTag", JSONArray(listOf("tun")))
+                .put("port", "53").put("outboundTag", "dns-out")
+        )
+        for (i in 0 until rules.length()) merged.put(rules.get(i))
+        routing.put("rules", merged)
     }
 
     /** Замер задержки страны без включённого VPN: ядро поднимается на секунду только для замера. */

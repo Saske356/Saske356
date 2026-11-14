@@ -119,7 +119,7 @@ class AriseVpnService : VpnService() {
             Core.init(applicationContext)
             val fd = tun ?: buildTun().also { tun = it }
             val c = Libv2ray.newCoreController(callback)
-            c.startLoop(Core.runConfig(server.json, Store.mode), fd.fd)
+            c.startLoop(Core.runConfig(server.json, Store.mode, Store.dns), fd.fd)
             if (!c.getIsRunning()) throw IllegalStateException("ядро не запустилось")
             controller = c
             running = c

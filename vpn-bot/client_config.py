@@ -48,7 +48,10 @@ TG_IPS = ["91.108.56.0/22", "91.108.4.0/22", "91.108.8.0/22", "91.108.16.0/22", 
           "2001:b28:f23d::/48", "2001:b28:f23f::/48", "2001:67c:4e8::/48", "2001:b28:f23c::/48", "2a0a:f280::/32"]
 TG_DOMAINS = ["domain:telegram.org", "domain:t.me", "domain:telegram.me", "domain:telegra.ph",
               "domain:telesco.pe", "domain:tdesktop.com", "domain:cdn-telegram.org", "domain:telegram-cdn.org"]
-RU_DNS = "https://77.88.8.8/dns-query"
+# DNS Яндекса для российских имён — обычный (UDP 53), напрямую (адрес в правилах «direct»).
+# Был DoH по адресу https://77.88.8.8: сертификат Яндекса выдан на имя, а не на этот адрес,
+# и российские имена могли не находиться — Яндекс не открывался, а Google через VPN работал.
+RU_DNS = "77.88.8.8"
 DNS = ["https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"]
 
 
