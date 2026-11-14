@@ -47,15 +47,20 @@ object Core {
         val o = JSONObject(server)
         mode.apply(o)
         dnsInCore(o, dns)
+        directIPv4(o)
         // Счётчики трафика: из них график скорости и «за сеанс»
         o.put("stats", JSONObject())
         val policy = o.optJSONObject("policy") ?: JSONObject().also { o.put("policy", it) }
         val system = policy.optJSONObject("system") ?: JSONObject().also { policy.put("system", it) }
         system.put("statsOutboundUplink", true).put("statsOutboundDownlink", true)
+        // routeOnly = false: дальше идёт имя сайта, а не адрес, который выбрал браузер. Браузеры
+        // (Яндекс, Chrome) сами узнают адреса по защищённому DNS и берут IPv6; российские сайты идут
+        // напрямую, и в сети без IPv6 соединение рвалось (ERR_CONNECTION_CLOSED). С именем сайта
+        // прямое подключение само выбирает IPv4 (direct с UseIPv4 ниже), а сервер VPN — свой адрес.
         val sniffing = JSONObject()
             .put("enabled", true)
             .put("destOverride", JSONArray(listOf("http", "tls", "quic")))
-            .put("routeOnly", true)
+            .put("routeOnly", false)
         val inbounds = JSONArray()
         inbounds.put(
             JSONObject().put("tag", "tun").put("protocol", "tun")
@@ -87,6 +92,17 @@ object Core {
      * открывались в сетях без IPv6: Яндекс висел, а Google через VPN работал. Российские имена
      * спрашиваем у Яндекса (обычный DNS напрямую), остальные — у DNS, выбранного в инструментах.
      */
+    /** Прямые подключения (российские сайты) — только по IPv4: в сетях без IPv6 иначе обрыв. */
+    private fun directIPv4(o: JSONObject) {
+        val outs = o.optJSONArray("outbounds") ?: return
+        for (i in 0 until outs.length()) {
+            val ob = outs.optJSONObject(i) ?: continue
+            if (ob.optString("protocol") != "freedom") continue
+            val st = ob.optJSONObject("settings") ?: JSONObject().also { ob.put("settings", it) }
+            st.put("domainStrategy", "UseIPv4")
+        }
+    }
+
     private fun dnsInCore(o: JSONObject, choice: Dns) {
         val old = o.optJSONObject("dns") ?: JSONObject()
         val servers = JSONArray()
