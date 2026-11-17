@@ -1,0 +1,283 @@
+package io.github.saske356.arise
+
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
+
+// Общие детали нового стиля (образцы — design/gpt/*.png в корне репозитория).
+
+/** Стеклянная карточка: тёмно-синее стекло, тонкая светлая рамка. */
+internal fun Modifier.glass(radius: Dp = 18.dp, glow: Boolean = false): Modifier =
+    this.clip(RoundedCornerShape(radius))
+        .background(Brush.verticalGradient(listOf(Color(0x33223A6E), Color(0x1A0E1A36))))
+        .border(1.dp, if (glow) Blue.copy(alpha = 0.75f) else Color(0x3A5B8CFF), RoundedCornerShape(radius))
+
+// ---------------------------------------------------------------- знак Arise
+
+/** Вершины знака «A со стрелкой вверх» (как в design/make_logo.py), в долях квадрата. */
+private val MARK = listOf(
+    628f to 265f, 1038f to 937f, 713f to 815f, 683f to 704f, 776f to 741f, 628f to 515f,
+    480f to 741f, 573f to 704f, 543f to 815f, 218f to 937f,
+)
+
+private fun markPath(size: Size): Path {
+    val w = size.minDimension
+    val k = w / (1038f - 218f)
+    val h = (937f - 265f) * k
+    val ox = (size.width - w) / 2f
+    val oy = (size.height - h) / 2f
+    return Path().apply {
+        MARK.forEachIndexed { i, (x, y) ->
+            val px = ox + (x - 218f) * k
+            val py = oy + (y - 265f) * k
+            if (i == 0) moveTo(px, py) else lineTo(px, py)
+        }
+        close()
+    }
+}
+
+/** Знак Arise, нарисованный кодом: чёткий в любом размере, со свечением. */
+@Composable
+internal fun AriseMark(size: Dp, glow: Float = 1f) {
+    Canvas(Modifier.size(size)) {
+        val path = markPath(this.size)
+        if (glow > 0f) {
+            for (i in 1..4) {
+                drawPath(path, Color(0xFF2F6BFF).copy(alpha = 0.10f * glow),
+                    style = Stroke(width = this.size.minDimension * 0.05f * i, join = StrokeJoin.Round))
+            }
+        }
+        drawPath(path, Brush.verticalGradient(listOf(Color(0xFFE8F4FF), Color(0xFF2563FF))))
+    }
+}
+
+// ---------------------------------------------------------------- глобус
+
+private data class Geo(val lat: Float, val lon: Float)
+
+/** «Огни городов»: скопления точек вокруг настоящих регионов, чтобы глобус читался как Земля. */
+private val CITIES: List<Geo> by lazy {
+    val centers = listOf(
+        50f to 10f, 45f to 25f, 55f to 37f, 40f to -75f, 34f to -100f, 47f to -122f, 35f to 135f, 37f to 127f,
+        30f to 115f, 22f to 78f, 1f to 104f, -23f to -46f, 6f to 3f, 30f to 31f, 25f to 55f, -33f to 151f,
+        19f to -99f, 52f to 0f, 60f to 25f, 41f to 69f,
+    )
+    val rnd = java.util.Random(7)
+    centers.flatMap { (la, lo) ->
+        List(22) { Geo(la + rnd.nextGaussian().toFloat() * 4.5f, lo + rnd.nextGaussian().toFloat() * 7f) }
+    }
+}
+
+private val ARCS = listOf(0 to 3, 0 to 6, 3 to 11, 0 to 9, 6 to 15, 2 to 14, 3 to 16, 9 to 10)
+private val ARC_ENDS = listOf(
+    50f to 10f, 45f to 25f, 55f to 37f, 40f to -75f, 34f to -100f, 47f to -122f, 35f to 135f, 37f to 127f,
+    30f to 115f, 22f to 78f, 1f to 104f, -23f to -46f, 6f to 3f, 30f to 31f, 25f to 55f, -33f to 151f, 19f to -99f,
+).map { Geo(it.first, it.second) }
+
+/** Точка на кратчайшем пути между двумя городами (доля k), широта и долгота. */
+private fun slerp(a: Geo, b: Geo, k: Float): Pair<Float, Float> {
+    fun vec(g: Geo): FloatArray {
+        val la = g.lat * PI.toFloat() / 180f
+        val lo = g.lon * PI.toFloat() / 180f
+        return floatArrayOf(cos(la) * cos(lo), cos(la) * sin(lo), sin(la))
+    }
+    val p = vec(a)
+    val q = vec(b)
+    val dot = (p[0] * q[0] + p[1] * q[1] + p[2] * q[2]).coerceIn(-1f, 1f)
+    val om = kotlin.math.acos(dot)
+    val v = if (om < 1e-4f) p else {
+        val s1 = sin((1 - k) * om) / sin(om)
+        val s2 = sin(k * om) / sin(om)
+        floatArrayOf(p[0] * s1 + q[0] * s2, p[1] * s1 + q[1] * s2, p[2] * s1 + q[2] * s2)
+    }
+    val lat = kotlin.math.asin(v[2].coerceIn(-1f, 1f)) * 180f / PI.toFloat()
+    val lon = kotlin.math.atan2(v[1], v[0]) * 180f / PI.toFloat()
+    return lat to lon
+}
+
+/** Точка на сфере → экран. z > 0 — передняя сторона. Наклон оси — чтобы видно было северное полушарие. */
+private fun project(lat: Float, lon: Float, rot: Float, r: Float, c: Offset, alt: Float = 1f): Triple<Float, Float, Float> {
+    val la = lat * PI.toFloat() / 180f
+    val lo = (lon + rot) * PI.toFloat() / 180f
+    val x = cos(la) * sin(lo)
+    val y = sin(la)
+    val z = cos(la) * cos(lo)
+    val tilt = 0.22f
+    val y2 = y * cos(tilt) - z * sin(tilt)
+    val z2 = y * sin(tilt) + z * cos(tilt)
+    return Triple(c.x + x * r * alt, c.y - y2 * r * alt, z2)
+}
+
+/**
+ * Светящийся глобус кодом: сфера со свечением по краю, сетка, огни городов и дуги связей.
+ * Медленно вращается; при выключенном VPN — тусклее.
+ */
+@Composable
+internal fun Globe(modifier: Modifier, on: Boolean) {
+    val t = rememberInfiniteTransition(label = "globe")
+    val spin by t.animateFloat(0f, 360f, infiniteRepeatable(tween(120_000, easing = LinearEasing)), label = "spin")
+    val pulse by t.animateFloat(0f, 1f, infiniteRepeatable(tween(3_000, easing = LinearEasing)), label = "arc")
+    val power by animateFloatAsState(if (on) 1f else 0.55f, tween(900), label = "power")
+    val cities = remember { CITIES }
+    Canvas(modifier) {
+        val r = size.minDimension / 2f
+        val c = center
+        val rot = -spin + 20f
+        // мягкое сияние вокруг
+        drawCircle(
+            Brush.radialGradient(listOf(Color(0xFF2F6BFF).copy(alpha = 0.32f * power), Color.Transparent), c, r * 1.35f),
+            radius = r * 1.35f, center = c
+        )
+        // сама сфера: тёмная в центре, светлее к краю
+        drawCircle(
+            Brush.radialGradient(
+                listOf(Color(0xFF050B1E), Color(0xFF0A1A44), Color(0xFF1C4FD8).copy(alpha = 0.85f * power)),
+                c, r
+            ),
+            radius = r, center = c
+        )
+        // сетка
+        val grid = Color(0xFF6FA4FF).copy(alpha = 0.10f * power)
+        for (lon in 0 until 180 step 20) {
+            var prev: Pair<Float, Float>? = null
+            for (lat in -90..90 step 6) {
+                val (x, y, z) = project(lat.toFloat(), lon.toFloat(), rot, r, c)
+                val p = if (z > 0f) x to y else null
+                if (p != null && prev != null) drawLine(grid, Offset(prev.first, prev.second), Offset(p.first, p.second), 1.dp.toPx())
+                prev = p
+            }
+            prev = null
+            for (lat in -90..90 step 6) {
+                val (x, y, z) = project(lat.toFloat(), lon + 180f, rot, r, c)
+                val p = if (z > 0f) x to y else null
+                if (p != null && prev != null) drawLine(grid, Offset(prev.first, prev.second), Offset(p.first, p.second), 1.dp.toPx())
+                prev = p
+            }
+        }
+        for (lat in -60..75 step 15) {
+            var prev: Pair<Float, Float>? = null
+            for (lon in 0..360 step 6) {
+                val (x, y, z) = project(lat.toFloat(), lon.toFloat(), rot, r, c)
+                val p = if (z > 0f) x to y else null
+                if (p != null && prev != null) drawLine(grid, Offset(prev.first, prev.second), Offset(p.first, p.second), 1.dp.toPx())
+                prev = p
+            }
+        }
+        // огни городов
+        for (g in cities) {
+            val (x, y, z) = project(g.lat, g.lon, rot, r, c)
+            if (z <= 0.05f) continue
+            drawCircle(Color(0xFFBFD8FF).copy(alpha = (0.25f + 0.6f * z) * power), radius = 1.1.dp.toPx(), center = Offset(x, y))
+        }
+        // дуги связей: по кратчайшему пути по шару, приподнятые над поверхностью; по ним бежит огонёк
+        for ((i, pair) in ARCS.withIndex()) {
+            val a = ARC_ENDS[pair.first]
+            val b = ARC_ENDS[pair.second]
+            var prev: Offset? = null
+            val steps = 28
+            for (st in 0..steps) {
+                val k = st / steps.toFloat()
+                val (lat, lon) = slerp(a, b, k)
+                val (x, y, z) = project(lat, lon, rot, r, c, 1f + 0.16f * sin(k * PI.toFloat()))
+                val p = if (z > 0f) Offset(x, y) else null
+                if (p != null && prev != null) {
+                    drawLine(Color(0xFF8CB8FF).copy(alpha = 0.35f * power), prev, p, 1.2.dp.toPx(), StrokeCap.Round)
+                }
+                prev = p
+            }
+            val k = (pulse + i * 0.13f) % 1f
+            val (lat, lon) = slerp(a, b, k)
+            val (x, y, z) = project(lat, lon, rot, r, c, 1f + 0.16f * sin(k * PI.toFloat()))
+            if (z > 0f) drawCircle(Color(0xFFE8F4FF).copy(alpha = 0.9f * power), 2.dp.toPx(), Offset(x, y))
+        }
+        // светящийся край
+        for (i in 0..5) {
+            drawCircle(Color(0xFF4A8BFF).copy(alpha = (0.22f - i * 0.035f) * power), radius = r + i * 2.dp.toPx(),
+                center = c, style = Stroke(2.dp.toPx()))
+        }
+    }
+}
+
+// ---------------------------------------------------------------- тонкие значки
+
+internal enum class Ico { BOLT, DOWN, UP, GEAR, CHEVRON, CHECK, SEARCH, GLOBE, CLOSE, BACK, CLOCK }
+
+/** Простые линейные значки (нарисованы кодом, в одном стиле с картинками-образцами). */
+@Composable
+internal fun LineIcon(ico: Ico, size: Dp, color: Color = Blue) {
+    Canvas(Modifier.size(size)) { drawIco(ico, color) }
+}
+
+private fun DrawScope.drawIco(ico: Ico, color: Color) {
+    val s = size.minDimension
+    val w = s * 0.09f
+    val st = Stroke(width = w, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    fun p(x: Float, y: Float) = Offset(x * s, y * s)
+    fun line(vararg pts: Offset) {
+        val path = Path()
+        pts.forEachIndexed { i, o -> if (i == 0) path.moveTo(o.x, o.y) else path.lineTo(o.x, o.y) }
+        drawPath(path, color, style = st)
+    }
+    when (ico) {
+        Ico.BOLT -> drawPath(Path().apply {
+            moveTo(0.58f * s, 0.06f * s); lineTo(0.22f * s, 0.56f * s); lineTo(0.48f * s, 0.56f * s)
+            lineTo(0.40f * s, 0.94f * s); lineTo(0.78f * s, 0.42f * s); lineTo(0.52f * s, 0.42f * s); close()
+        }, Brush.verticalGradient(listOf(Color(0xFFB5D3FF), color)))
+        Ico.DOWN -> { line(p(0.5f, 0.12f), p(0.5f, 0.66f)); line(p(0.27f, 0.45f), p(0.5f, 0.68f), p(0.73f, 0.45f)); line(p(0.2f, 0.88f), p(0.8f, 0.88f)) }
+        Ico.UP -> { line(p(0.5f, 0.88f), p(0.5f, 0.24f)); line(p(0.27f, 0.45f), p(0.5f, 0.22f), p(0.73f, 0.45f)); line(p(0.2f, 0.1f), p(0.8f, 0.1f)) }
+        Ico.CHEVRON -> line(p(0.38f, 0.2f), p(0.66f, 0.5f), p(0.38f, 0.8f))
+        Ico.BACK -> line(p(0.62f, 0.2f), p(0.34f, 0.5f), p(0.62f, 0.8f))
+        Ico.CHECK -> line(p(0.22f, 0.52f), p(0.43f, 0.72f), p(0.8f, 0.3f))
+        Ico.CLOSE -> { line(p(0.25f, 0.25f), p(0.75f, 0.75f)); line(p(0.75f, 0.25f), p(0.25f, 0.75f)) }
+        Ico.SEARCH -> {
+            drawCircle(color, s * 0.27f, p(0.43f, 0.43f), style = st)
+            line(p(0.63f, 0.63f), p(0.86f, 0.86f))
+        }
+        Ico.GLOBE -> {
+            drawCircle(color, s * 0.4f, center, style = st)
+            drawOval(color, Offset(s * 0.32f, s * 0.1f), Size(s * 0.36f, s * 0.8f), style = st)
+            line(p(0.12f, 0.5f), p(0.88f, 0.5f))
+        }
+        Ico.CLOCK -> {
+            drawCircle(color, s * 0.38f, center, style = st)
+            line(p(0.5f, 0.28f), p(0.5f, 0.5f), p(0.66f, 0.6f))
+        }
+        Ico.GEAR -> {
+            val r1 = s * 0.27f
+            for (i in 0 until 8) {
+                val a = i * PI.toFloat() / 4f
+                drawLine(color, Offset(center.x + cos(a) * r1, center.y + sin(a) * r1),
+                    Offset(center.x + cos(a) * s * 0.42f, center.y + sin(a) * s * 0.42f), w * 1.6f, StrokeCap.Round)
+            }
+            drawCircle(color, r1, center, style = st)
+            drawCircle(color, s * 0.1f, center, style = st)
+        }
+    }
+}
