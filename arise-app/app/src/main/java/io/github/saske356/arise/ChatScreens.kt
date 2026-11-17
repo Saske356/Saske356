@@ -40,6 +40,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.OutlinedTextField
@@ -193,10 +194,23 @@ private fun PinScreen(back: () -> Unit) {
         ) { LineIcon(Ico.LOCK, 54.dp, Blue) }
         Text(title, color = TextMain, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 24.dp))
         Text(lead, color = TextSoft, fontSize = 13.5.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp, start = 16.dp, end = 16.dp))
-        Row(Modifier.padding(top = 28.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        // неверный PIN — ряд точек трясётся
+        val shake = remember { androidx.compose.animation.core.Animatable(0f) }
+        LaunchedEffect(msg) {
+            if (msg.isNotEmpty()) for (x in listOf(16f, -13f, 10f, -7f, 4f, 0f)) shake.animateTo(x, androidx.compose.animation.core.tween(45))
+        }
+        Row(
+            Modifier.padding(top = 28.dp).graphicsLayer { translationX = shake.value * density },
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
             repeat(PIN_LEN) { i ->
+                // точка «выпрыгивает», когда цифра введена
+                val pop by androidx.compose.animation.core.animateFloatAsState(
+                    if (i < pin.length) 1f else 0.82f,
+                    androidx.compose.animation.core.spring(dampingRatio = 0.35f, stiffness = 500f), label = "dot"
+                )
                 Box(
-                    Modifier.size(18.dp).clip(CircleShape)
+                    Modifier.size(18.dp).graphicsLayer { scaleX = pop; scaleY = pop }.clip(CircleShape)
                         .background(if (i < pin.length) Brush.radialGradient(listOf(BlueLight, Color(0xFF3D7BFF)))
                         else Brush.radialGradient(listOf(Color(0x220E1A36), Color(0x220E1A36))))
                         .border(1.5.dp, if (i < pin.length) BlueLight else Blue.copy(alpha = 0.45f), CircleShape)
@@ -212,17 +226,16 @@ private fun PinScreen(back: () -> Unit) {
                 for (k in row) {
                     val isDigit = k.length == 1 && k[0].isDigit()
                     Box(
-                        Modifier.size(74.dp).clip(CircleShape)
-                            .background(if (k.isNotEmpty()) Brush.verticalGradient(listOf(Color(0x33223A6E), Color(0x1A0E1A36)))
-                            else Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent)))
-                            .border(1.dp, if (k.isNotEmpty()) Blue.copy(alpha = 0.35f) else Color.Transparent, CircleShape)
-                            .clickable(enabled = k.isNotEmpty() && !busy) {
+                        Modifier.size(74.dp).pressable(enabled = k.isNotEmpty() && !busy) {
                                 if (k == "⌫") pin = pin.dropLast(1)
                                 else if (pin.length < PIN_LEN) {
                                     pin += k
                                     if (pin.length == PIN_LEN) done(pin)
                                 }
-                            },
+                            }.clip(CircleShape)
+                            .background(if (k.isNotEmpty()) Brush.verticalGradient(listOf(Color(0x33223A6E), Color(0x1A0E1A36)))
+                            else Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent)))
+                            .border(1.dp, if (k.isNotEmpty()) Blue.copy(alpha = 0.35f) else Color.Transparent, CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -357,8 +370,8 @@ private fun ChatList(ui: ChatUi, back: () -> Unit, open: (String) -> Unit, add: 
                     val name = c?.name ?: Chat.pretty(code)
                     val last = ui.msgs[code]?.lastOrNull()
                     Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp).glass(22.dp)
-                            .clickable { open(code) }.padding(horizontal = 12.dp, vertical = 12.dp),
+                        Modifier.animateItem().fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp).pressable { open(code) }
+                            .glass(22.dp).padding(horizontal = 12.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Avatar(name, 52)
@@ -476,7 +489,7 @@ private fun Talk(ui: ChatUi, code: String, back: () -> Unit, info: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(msgs, key = { it.id }) { m ->
-                Box(Modifier.fillMaxWidth(), contentAlignment = if (m.out) Alignment.CenterEnd else Alignment.CenterStart) {
+                Box(Modifier.animateItem().fillMaxWidth(), contentAlignment = if (m.out) Alignment.CenterEnd else Alignment.CenterStart) {
                     val shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = if (m.out) 20.dp else 6.dp,
                         bottomEnd = if (m.out) 6.dp else 20.dp)
                     Column(

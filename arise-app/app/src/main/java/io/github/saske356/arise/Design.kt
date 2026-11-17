@@ -32,6 +32,10 @@ import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.ui.composed
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.PI
@@ -47,6 +51,22 @@ internal val Inter = androidx.compose.ui.text.font.FontFamily(
 )
 
 // Общие детали нового стиля (образцы — design/gpt/*.png в корне репозитория).
+
+/**
+ * Нажатие с откликом: элемент чуть «проседает» под пальцем и пружинит обратно (как в макете).
+ * Ставить ДО фона/рамки в цепочке модификаторов — тогда уменьшается вся карточка.
+ */
+internal fun Modifier.pressable(enabled: Boolean = true, onClick: () -> Unit): Modifier = composed {
+    val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val pressed by src.collectIsPressedAsState()
+    val sc by animateFloatAsState(
+        if (pressed) 0.965f else 1f,
+        androidx.compose.animation.core.spring(dampingRatio = 0.55f, stiffness = 700f), label = "press"
+    )
+    this.graphicsLayer { scaleX = sc; scaleY = sc }
+        .clickable(interactionSource = src, indication = androidx.compose.foundation.LocalIndication.current,
+            enabled = enabled, onClick = onClick)
+}
 
 /** Стеклянная карточка: тёмно-синее стекло, тонкая светлая рамка. */
 internal fun Modifier.glass(radius: Dp = 18.dp, glow: Boolean = false): Modifier =

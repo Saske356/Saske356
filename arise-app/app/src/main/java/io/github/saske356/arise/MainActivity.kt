@@ -20,6 +20,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -246,13 +251,25 @@ class MainActivity : ComponentActivity() {
 
         Box(Modifier.fillMaxSize()) {
             Backdrop(vpn.status == Status.RUNNING)
+            // экраны сменяются плавно: вперёд — сдвиг влево, назад — вправо
+            val key = if (data.servers.isEmpty()) "WELCOME" else screen.name
+            AnimatedContent(
+                targetState = key,
+                transitionSpec = {
+                    fun depth(k: String) = when (k) { "HOME", "WELCOME" -> 0; "APPS", "DNS" -> 2; else -> 1 }
+                    val dir = if (depth(targetState) >= depth(initialState)) 1 else -1
+                    (slideInHorizontally(tween(320, easing = FastOutSlowInEasing)) { it / 5 * dir } + fadeIn(tween(280))) togetherWith
+                        (slideOutHorizontally(tween(320, easing = FastOutSlowInEasing)) { -it / 5 * dir } + fadeOut(tween(200)))
+                },
+                label = "screens"
+            ) { k ->
             when {
-                data.servers.isEmpty() -> Welcome(data) { open(it) }
-                screen == Screen.MODES -> ModesScreen(data, back = { screen = Screen.HOME }) { m ->
+                k == "WELCOME" -> Welcome(data) { open(it) }
+                k == "MODES" -> ModesScreen(data, back = { screen = Screen.HOME }) { m ->
                     Repo.setMode(m)
                     apply()
                 }
-                screen == Screen.TOOLS -> ToolsScreen(
+                k == "TOOLS" -> ToolsScreen(
                     data, back = { screen = Screen.HOME },
                     onApps = { screen = Screen.APPS }, onLeak = { leakProtection() }, onTile = { addTile() },
                     onDns = { screen = Screen.DNS },
@@ -262,12 +279,12 @@ class MainActivity : ComponentActivity() {
                         screen = Screen.HOME
                     }
                 )
-                screen == Screen.DNS -> DnsScreen(data, back = { screen = Screen.TOOLS }) { d ->
+                k == "DNS" -> DnsScreen(data, back = { screen = Screen.TOOLS }) { d ->
                     Repo.setDns(d)
                     apply()
                 }
-                screen == Screen.CHAT -> ChatRoot(back = { screen = Screen.HOME })
-                screen == Screen.APPS -> AppsScreen(data, back = { screen = Screen.TOOLS }, onChange = apply)
+                k == "CHAT" -> ChatRoot(back = { screen = Screen.HOME })
+                k == "APPS" -> AppsScreen(data, back = { screen = Screen.TOOLS }, onChange = apply)
                 else -> HomeScreen(
                     vpn, data, onToggle = toggle, onOpen = { open(it) },
                     openSheet = { sheet = true }, openModes = { screen = Screen.MODES },
@@ -275,6 +292,7 @@ class MainActivity : ComponentActivity() {
                     openTools = { screen = Screen.TOOLS }, onRuApps = { Repo.setRuApps(!data.ruApps); apply() },
                     openChat = { screen = Screen.CHAT }
                 )
+            }
             }
             CountrySheet(sheet && data.servers.isNotEmpty(), vpn, data, close = { sheet = false }) { name ->
                 Repo.select(name)
@@ -479,7 +497,7 @@ private fun CountrySheet(open: Boolean, vpn: VpnUi, data: Data, close: () -> Uni
                             )
                         }
                     }
-                    items(rest) { s -> CountryRow(s, vpn, data, onPick) }
+                    items(rest, key = { it.name }) { s -> Box(Modifier.animateItem()) { CountryRow(s, vpn, data, onPick) } }
                     item { Spacer(Modifier.height(20.dp)) }
                 }
             }
@@ -500,7 +518,7 @@ private fun RecommendTile(s: Server, data: Data, modifier: Modifier, onPick: (St
     val selected = s.name == data.selected
     val note = if (s.name.startsWith("🚀")) "Выбирает самый быстрый сам" else "Напрямую, ровный пинг"
     Row(
-        modifier.glass(20.dp, glow = selected).clickable { onPick(s.name) }.padding(start = 10.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+        modifier.pressable { onPick(s.name) }.glass(20.dp, glow = selected).padding(start = 10.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
@@ -527,8 +545,8 @@ private fun CountryRow(s: Server, vpn: VpnUi, data: Data, onPick: (String) -> Un
         Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
+            .pressable { onPick(s.name) }
             .glass(20.dp, glow = selected)
-            .clickable { onPick(s.name) }
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -602,8 +620,8 @@ private fun ModesScreen(data: Data, back: () -> Unit, onPick: (Mode) -> Unit) {
                 Modifier
                     .fillMaxWidth()
                     .padding(bottom = 12.dp)
+                    .pressable { onPick(m) }
                     .glass(24.dp, glow = sel)
-                    .clickable { onPick(m) }
                     .padding(14.dp),
                 verticalAlignment = Alignment.Top
             ) {
@@ -871,8 +889,8 @@ internal fun Tool(icon: String, title: String, sub: String, right: String, onCli
         Modifier
             .fillMaxWidth()
             .padding(bottom = 10.dp)
+            .pressable(onClick = onClick)
             .glass(22.dp)
-            .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1069,6 +1087,7 @@ internal fun Big(text: String, gold: Boolean, onClick: () -> Unit) {
     // gold — главная кнопка (имя осталось с прошлого стиля): синяя со свечением; иначе — стеклянная
     val shape = RoundedCornerShape(50)
     val m = Modifier.fillMaxWidth()
+        .pressable(onClick = onClick)
         .then(if (gold) Modifier.shadow(14.dp, shape, ambientColor = BlueMid, spotColor = BlueMid) else Modifier)
         .clip(shape)
     Text(
@@ -1076,7 +1095,6 @@ internal fun Big(text: String, gold: Boolean, onClick: () -> Unit) {
         modifier = (if (gold) m.background(Brush.verticalGradient(listOf(Color(0xFF3D7BFF), Color(0xFF1F4FD6))))
             .border(1.dp, Color(0xAA9CC2FF), shape)
         else m.background(Color(0x1A223A6E)).border(1.dp, Blue.copy(alpha = 0.45f), shape))
-            .clickable(onClick = onClick)
             .padding(vertical = 16.dp)
     )
 }

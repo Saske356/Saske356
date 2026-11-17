@@ -58,6 +58,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -166,6 +169,20 @@ private fun HomeHero(running: Boolean, connecting: Boolean, onToggle: () -> Unit
         label = "pulse"
     )
     val glow by animateFloatAsState(if (running) 1f else if (connecting) 0.7f else 0.35f, tween(700), label = "glow")
+    // пока подключаемся — по кольцу бежит светящаяся дуга
+    val spin by t.animateFloat(0f, 360f, infiniteRepeatable(tween(1100, easing = LinearEasing)), label = "spin")
+    // подключились — вспышка расходится от кнопки
+    val flash = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(running) {
+        if (running) {
+            flash.snapTo(1f)
+            flash.animateTo(0f, tween(900))
+        }
+    }
+    val press = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val pressed by press.collectIsPressedAsState()
+    val btnScale by animateFloatAsState(if (pressed) 0.93f else 1f,
+        androidx.compose.animation.core.spring(dampingRatio = 0.5f, stiffness = 600f), label = "btn")
     BoxWithConstraints(
         Modifier.fillMaxWidth().height(330.dp)
             .semantics { contentDescription = if (running) "Отключить VPN" else "Подключить VPN" },
@@ -192,15 +209,28 @@ private fun HomeHero(running: Boolean, connecting: Boolean, onToggle: () -> Unit
                     style = Stroke(3.dp.toPx()))
             }
             drawCircle(Color(0xFFCFE0FF).copy(alpha = 0.35f + 0.65f * glow), radius = r * 0.66f, style = Stroke(2.5.dp.toPx()))
+            if (connecting) {
+                val d = r * 0.66f
+                drawArc(
+                    Brush.sweepGradient(listOf(Color.Transparent, Color(0xFFCFE0FF), Color.Transparent)),
+                    spin, 110f, false, Offset(center.x - d, center.y - d), androidx.compose.ui.geometry.Size(d * 2, d * 2),
+                    style = Stroke(5.dp.toPx(), cap = StrokeCap.Round)
+                )
+            }
+            if (flash.value > 0f) {
+                drawCircle(Color(0xFFCFE0FF).copy(alpha = 0.6f * flash.value), radius = r * (0.66f + 0.5f * (1f - flash.value)),
+                    style = Stroke(4.dp.toPx()))
+            }
         }
         Box(
             Modifier
                 .size(150.dp)
+                .graphicsLayer { scaleX = btnScale; scaleY = btnScale }
                 .shadow(if (running) 28.dp else 12.dp, CircleShape, ambientColor = BlueMid, spotColor = BlueMid)
                 .clip(CircleShape)
                 .background(Brush.radialGradient(listOf(Color(0xFF14254A), Color(0xFF070D1E))))
                 .border(1.dp, Color(0x557AAEFF), CircleShape)
-                .clickable {
+                .clickable(interactionSource = press, indication = null) {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onToggle()
                 },
@@ -224,14 +254,18 @@ private fun HomeStatus(vpn: VpnUi) {
     }
     val title by animateColorAsState(if (running) TextMain else TextSoft, tween(600), label = "title")
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            when {
+        androidx.compose.animation.AnimatedContent(
+            targetState = when {
                 running -> "Защищено"
                 connecting -> "Подключаемся…"
                 else -> "Не защищено"
             },
-            color = title, fontSize = 30.sp, fontWeight = FontWeight.Bold
-        )
+            transitionSpec = {
+                (androidx.compose.animation.fadeIn(tween(350)) + androidx.compose.animation.slideInVertically(tween(350)) { it / 3 }) togetherWith
+                    (androidx.compose.animation.fadeOut(tween(200)) + androidx.compose.animation.slideOutVertically(tween(250)) { -it / 3 })
+            },
+            label = "status"
+        ) { text -> Text(text, color = title, fontSize = 30.sp, fontWeight = FontWeight.Bold) }
         val started = Store.startedAt
         if (running && started > 0L) {
             Text(duration(now - started), color = Blue, fontSize = 30.sp, fontWeight = FontWeight.SemiBold,
@@ -251,9 +285,9 @@ private fun HomeCountry(vpn: VpnUi, data: Data, openSheet: () -> Unit) {
     val busy = data.selected in data.measuring
     Row(
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 18.dp)
+            .pressable(onClick = openSheet)
             .shadow(16.dp, RoundedCornerShape(22.dp), ambientColor = BlueMid, spotColor = BlueMid)
             .glass(22.dp, glow = running)
-            .clickable(onClick = openSheet)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -282,7 +316,8 @@ private fun HomeTiles(vpn: VpnUi, data: Data) {
     val running = vpn.status == Status.RUNNING
     val ping = if (running && vpn.ping != 0L) vpn.ping else data.pings[data.selected] ?: 0L
     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        HomeTile(Ico.BOLT, "Пинг", if (ping > 0) "$ping мс" else "—", Modifier.weight(1f))
+        val shownPing by androidx.compose.animation.core.animateIntAsState(ping.coerceAtLeast(0L).toInt(), tween(600), label = "ping")
+        HomeTile(Ico.BOLT, "Пинг", if (ping > 0) "$shownPing мс" else "—", Modifier.weight(1f))
         HomeTile(Ico.DOWN, "Загрузка", if (running) mbit(vpn.downBps) + " Мбит/с" else "—", Modifier.weight(1f))
         HomeTile(Ico.UP, "Отдача", if (running) mbit(vpn.upBps) + " Мбит/с" else "—", Modifier.weight(1f))
     }
@@ -349,12 +384,11 @@ private fun HomeModes(mode: Mode, onMode: (Mode) -> Unit, openModes: () -> Unit)
     ) {
         for (m in shown) {
             val sel = m == mode
+            val on by animateFloatAsState(if (sel) 1f else 0f, tween(350), label = "mode")
             Row(
-                Modifier.weight(1f).clip(RoundedCornerShape(22.dp))
-                    .background(if (sel) Brush.verticalGradient(listOf(Color(0xFF3D7BFF), Color(0xFF1F4FD6)))
-                    else Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent)))
-                    .border(1.dp, if (sel) Color(0xAA9CC2FF) else Color.Transparent, RoundedCornerShape(22.dp))
-                    .clickable { if (!sel) onMode(m) }
+                Modifier.weight(1f).pressable { if (!sel) onMode(m) }.clip(RoundedCornerShape(22.dp))
+                    .background(Brush.verticalGradient(listOf(Color(0xFF3D7BFF).copy(alpha = on), Color(0xFF1F4FD6).copy(alpha = on))))
+                    .border(1.dp, Color(0xAA9CC2FF).copy(alpha = 0.67f * on), RoundedCornerShape(22.dp))
                     .padding(vertical = 10.dp),
                 horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
             ) {
