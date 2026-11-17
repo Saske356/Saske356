@@ -307,34 +307,35 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 internal fun Backdrop(on: Boolean) {
-    val glow by animateFloatAsState(if (on) 0.45f else 0.18f, tween(900), label = "glow")
+    // Почти чёрный с синевой, как на картинках ChatGPT: синий — только отсвет за Землёй и в нижних углах
+    val glow by animateFloatAsState(if (on) 0.14f else 0.07f, tween(900), label = "glow")
     val t = rememberInfiniteTransition(label = "sparks")
     val time by t.animateFloat(0f, 1f, infiniteRepeatable(tween(14_000, easing = LinearEasing)), label = "time")
     Canvas(Modifier.fillMaxSize()) {
-        drawRect(Brush.verticalGradient(listOf(Ink, Ink, Night, Deep)))
+        drawRect(Brush.verticalGradient(listOf(Color(0xFF02040B), Color(0xFF030817), Color(0xFF040A1C), Color(0xFF02050F))))
         drawRect(
             Brush.radialGradient(
-                listOf(Color(0xFF4A8BFF).copy(alpha = glow), Color.Transparent),
-                center = Offset(size.width / 2, size.height * 0.36f), radius = size.width * 0.8f
+                listOf(Color(0xFF2F6BFF).copy(alpha = glow), Color.Transparent),
+                center = Offset(size.width / 2, size.height * 0.30f), radius = size.width * 0.75f
             )
         )
-        // Звёзды: неподвижные, тихо мерцают (как на образцах)
+        // Звёзды: неподвижные, тихо мерцают
         for (i in 0 until 70) {
             val seed = ((i * 7919 + 13) % 1000) / 1000f
             val x = ((i * 0.6180339f + seed * 0.37f) % 1f) * size.width
             val y = ((i * 0.4142136f + seed * 0.21f) % 1f) * size.height
             val tw = 0.5f + 0.5f * kotlin.math.sin((time * 6.2832f * (1f + seed * 2f)) + seed * 10f)
-            drawCircle(Color(0xFFBFD8FF).copy(alpha = (0.10f + 0.35f * seed) * (0.4f + 0.6f * tw)),
+            drawCircle(Color(0xFFBFD8FF).copy(alpha = (0.08f + 0.30f * seed) * (0.4f + 0.6f * tw)),
                 radius = 0.6.dp.toPx() + seed * 1.1.dp.toPx(), center = Offset(x, y))
         }
-        // Светящаяся дуга внизу экрана
-        val arcW = size.width * 1.6f
-        val top = size.height - size.width * 0.18f
-        for (k in 0..5) {
-            drawArc(
-                Color(0xFF3D7BFF).copy(alpha = (0.32f - k * 0.05f) * (0.6f + glow)), 200f, 140f, false,
-                Offset((size.width - arcW) / 2f, top - k * 3.dp.toPx()), androidx.compose.ui.geometry.Size(arcW, size.width * 0.9f),
-                style = Stroke((2 + k * 3).dp.toPx())
+        // отсвет в нижних углах
+        for (cx in listOf(-0.15f, 1.15f)) {
+            drawCircle(
+                Brush.radialGradient(
+                    listOf(Color(0xFF2F6BFF).copy(alpha = 0.30f), Color(0xFF2F6BFF).copy(alpha = 0.08f), Color.Transparent),
+                    center = Offset(size.width * cx, size.height * 1.02f), radius = size.width * 0.55f
+                ),
+                radius = size.width * 0.55f, center = Offset(size.width * cx, size.height * 1.02f)
             )
         }
     }
