@@ -89,6 +89,7 @@ class AutoProxy:
             tmp = self.cache_path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(data, f)
+            os.chmod(tmp, 0o600)  # иначе файл каждый раз пересоздаётся с правами 644 (видно в /security)
             os.replace(tmp, self.cache_path)
         except OSError as e:
             log.warning("авто-страны: кэш прокси не сохранён: %s", e)
