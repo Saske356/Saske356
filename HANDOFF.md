@@ -17,7 +17,7 @@
   - `game/index.html` — вся игра в одном файле (canvas 2D + Web Audio), ~единый файл.
   - `game/android/` — Android-обёртка (Gradle-проект, WebView во весь экран,
     реклама Яндекса, запрос максимальной частоты экрана).
-  - `game/dist/SvetBezdny.apk` — собранный подписанный APK (сейчас версия 1.7).
+  - `game/dist/SvetBezdny.apk` — собранный подписанный APK (сейчас версия 1.8).
   - `game/store/` — материалы для RuStore: `RUSTORE.md` (тексты карточки),
     `screenshots/` (1080×1920), `icon-512.png`, `video/trailer.mp4`.
   - `game/ADS.md`, `game/INSTALL.md`, `game/README.md` — инструкции.
@@ -56,10 +56,10 @@
 
 ---
 
-### Версия 1.8 (в работе)
+### Версия 1.8 (собрана, APK в game/dist)
 - Межстраничная реклама между забегами (`InterstitialAds.java`, `window.AndroidInter`):
   не новичкам (от 3 забегов), не чаще раза в 2,5 мин, не сразу после рекламы за награду.
-  ID блока — `yandexInterstitialId` в `gradle.properties` (нужен боевой из Яндекс Партнёров).
+  ID блока — `yandexInterstitialId` в `gradle.properties` = R-M-20345698-2 (боевой).
 - Кнопка в меню «▶ +30 жемчуга за рекламу» — до 5 раз в день.
 
 ## КЛЮЧ ПОДПИСИ — ВАЖНО
