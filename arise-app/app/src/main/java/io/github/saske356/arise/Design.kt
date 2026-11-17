@@ -25,11 +25,26 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.res.imageResource
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
+
+/** Шрифт Inter (SIL OFL, файлы урезаны до латиницы и кириллицы — arise-app/design/Inter-LICENSE.txt). */
+internal val Inter = androidx.compose.ui.text.font.FontFamily(
+    androidx.compose.ui.text.font.Font(R.font.inter_regular, androidx.compose.ui.text.font.FontWeight.Normal),
+    androidx.compose.ui.text.font.Font(R.font.inter_medium, androidx.compose.ui.text.font.FontWeight.Medium),
+    androidx.compose.ui.text.font.Font(R.font.inter_semibold, androidx.compose.ui.text.font.FontWeight.SemiBold),
+    androidx.compose.ui.text.font.Font(R.font.inter_bold, androidx.compose.ui.text.font.FontWeight.Bold),
+)
 
 // Общие детали нового стиля (образцы — design/gpt/*.png в корне репозитория).
 
@@ -123,81 +138,53 @@ private fun slerp(a: Geo, b: Geo, k: Float): Pair<Float, Float> {
 }
 
 /** Точка на сфере → экран. z > 0 — передняя сторона. Наклон оси — чтобы видно было северное полушарие. */
-private fun project(lat: Float, lon: Float, rot: Float, r: Float, c: Offset, alt: Float = 1f): Triple<Float, Float, Float> {
+private fun project(lat: Float, lon: Float, rot: Float, r: Float, c: Offset, alt: Float = 1f, tilt: Float = 0.22f): Triple<Float, Float, Float> {
     val la = lat * PI.toFloat() / 180f
     val lo = (lon + rot) * PI.toFloat() / 180f
     val x = cos(la) * sin(lo)
     val y = sin(la)
     val z = cos(la) * cos(lo)
-    val tilt = 0.22f
     val y2 = y * cos(tilt) - z * sin(tilt)
     val z2 = y * sin(tilt) + z * cos(tilt)
     return Triple(c.x + x * r * alt, c.y - y2 * r * alt, z2)
 }
 
+/** Пары городов для дуг поверх снимка: только то, что видно на обращённой к нам стороне. */
+private val PHOTO_ARCS = listOf(0 to 2, 0 to 13, 13 to 14, 14 to 9, 0 to 12, 1 to 14, 2 to 9)
+
+// Снимок (res/drawable-nodpi/globe_night.webp, рисует arise-app/design/render_globe.py):
+// сфера радиусом 500 на холсте 1100, в центре долгота 18°, широта 22°.
+private const val PHOTO_R = 500f / 1100f
+private const val PHOTO_LON = 18f
+private const val PHOTO_TILT = 0.384f
+
 /**
- * Светящийся глобус кодом: сфера со свечением по краю, сетка, огни городов и дуги связей.
- * Медленно вращается; при выключенном VPN — тусклее.
+ * Глобус как на образце: снимок ночной Земли (NASA, свободный для использования), поверх —
+ * живые дуги связей с бегущими огоньками и свечение края. При выключенном VPN — тусклее.
  */
 @Composable
 internal fun Globe(modifier: Modifier, on: Boolean) {
     val t = rememberInfiniteTransition(label = "globe")
-    val spin by t.animateFloat(0f, 360f, infiniteRepeatable(tween(120_000, easing = LinearEasing)), label = "spin")
-    val pulse by t.animateFloat(0f, 1f, infiniteRepeatable(tween(3_000, easing = LinearEasing)), label = "arc")
-    val power by animateFloatAsState(if (on) 1f else 0.55f, tween(900), label = "power")
-    val cities = remember { CITIES }
+    val pulse by t.animateFloat(0f, 1f, infiniteRepeatable(tween(3_200, easing = LinearEasing)), label = "arc")
+    val breathe by t.animateFloat(0f, 1f, infiniteRepeatable(tween(4_000, easing = LinearEasing), RepeatMode.Reverse), label = "breathe")
+    val power by animateFloatAsState(if (on) 1f else 0.6f, tween(900), label = "power")
+    val photo = ImageBitmap.imageResource(R.drawable.globe_night)
     Canvas(modifier) {
         val r = size.minDimension / 2f
         val c = center
-        val rot = -spin + 20f
-        // мягкое сияние вокруг
+        val rot = -PHOTO_LON
+        // мягкое сияние вокруг, «дышит»
         drawCircle(
-            Brush.radialGradient(listOf(Color(0xFF2F6BFF).copy(alpha = 0.32f * power), Color.Transparent), c, r * 1.35f),
-            radius = r * 1.35f, center = c
+            Brush.radialGradient(listOf(Color(0xFF2F6BFF).copy(alpha = (0.26f + 0.10f * breathe) * power), Color.Transparent), c, r * 1.4f),
+            radius = r * 1.4f, center = c
         )
-        // сама сфера: тёмная в центре, светлее к краю
-        drawCircle(
-            Brush.radialGradient(
-                listOf(Color(0xFF050B1E), Color(0xFF0A1A44), Color(0xFF1C4FD8).copy(alpha = 0.85f * power)),
-                c, r
-            ),
-            radius = r, center = c
+        val d = (r / PHOTO_R).toInt()
+        drawImage(
+            photo, dstOffset = IntOffset((c.x - d / 2f).toInt(), (c.y - d / 2f).toInt()), dstSize = IntSize(d, d),
+            alpha = 0.55f + 0.45f * power
         )
-        // сетка
-        val grid = Color(0xFF6FA4FF).copy(alpha = 0.10f * power)
-        for (lon in 0 until 180 step 20) {
-            var prev: Pair<Float, Float>? = null
-            for (lat in -90..90 step 6) {
-                val (x, y, z) = project(lat.toFloat(), lon.toFloat(), rot, r, c)
-                val p = if (z > 0f) x to y else null
-                if (p != null && prev != null) drawLine(grid, Offset(prev.first, prev.second), Offset(p.first, p.second), 1.dp.toPx())
-                prev = p
-            }
-            prev = null
-            for (lat in -90..90 step 6) {
-                val (x, y, z) = project(lat.toFloat(), lon + 180f, rot, r, c)
-                val p = if (z > 0f) x to y else null
-                if (p != null && prev != null) drawLine(grid, Offset(prev.first, prev.second), Offset(p.first, p.second), 1.dp.toPx())
-                prev = p
-            }
-        }
-        for (lat in -60..75 step 15) {
-            var prev: Pair<Float, Float>? = null
-            for (lon in 0..360 step 6) {
-                val (x, y, z) = project(lat.toFloat(), lon.toFloat(), rot, r, c)
-                val p = if (z > 0f) x to y else null
-                if (p != null && prev != null) drawLine(grid, Offset(prev.first, prev.second), Offset(p.first, p.second), 1.dp.toPx())
-                prev = p
-            }
-        }
-        // огни городов
-        for (g in cities) {
-            val (x, y, z) = project(g.lat, g.lon, rot, r, c)
-            if (z <= 0.05f) continue
-            drawCircle(Color(0xFFBFD8FF).copy(alpha = (0.25f + 0.6f * z) * power), radius = 1.1.dp.toPx(), center = Offset(x, y))
-        }
-        // дуги связей: по кратчайшему пути по шару, приподнятые над поверхностью; по ним бежит огонёк
-        for ((i, pair) in ARCS.withIndex()) {
+        // дуги связей между городами на снимке
+        for ((i, pair) in PHOTO_ARCS.withIndex()) {
             val a = ARC_ENDS[pair.first]
             val b = ARC_ENDS[pair.second]
             var prev: Offset? = null
@@ -205,29 +192,64 @@ internal fun Globe(modifier: Modifier, on: Boolean) {
             for (st in 0..steps) {
                 val k = st / steps.toFloat()
                 val (lat, lon) = slerp(a, b, k)
-                val (x, y, z) = project(lat, lon, rot, r, c, 1f + 0.16f * sin(k * PI.toFloat()))
+                val (x, y, z) = project(lat, lon, rot, r, c, 1f + 0.18f * sin(k * PI.toFloat()), PHOTO_TILT)
                 val p = if (z > 0f) Offset(x, y) else null
                 if (p != null && prev != null) {
-                    drawLine(Color(0xFF8CB8FF).copy(alpha = 0.35f * power), prev, p, 1.2.dp.toPx(), StrokeCap.Round)
+                    drawLine(Color(0xFF8CB8FF).copy(alpha = 0.55f * power), prev, p, 1.4.dp.toPx(), StrokeCap.Round)
                 }
                 prev = p
             }
-            val k = (pulse + i * 0.13f) % 1f
+            for (end in listOf(a, b)) {
+                val (x, y, z) = project(end.lat, end.lon, rot, r, c, 1f, PHOTO_TILT)
+                if (z > 0f) {
+                    drawCircle(Color(0xFF8CB8FF).copy(alpha = 0.35f * power), 5.dp.toPx(), Offset(x, y))
+                    drawCircle(Color.White.copy(alpha = 0.95f * power), 2.dp.toPx(), Offset(x, y))
+                }
+            }
+            val k = (pulse + i * 0.17f) % 1f
             val (lat, lon) = slerp(a, b, k)
-            val (x, y, z) = project(lat, lon, rot, r, c, 1f + 0.16f * sin(k * PI.toFloat()))
-            if (z > 0f) drawCircle(Color(0xFFE8F4FF).copy(alpha = 0.9f * power), 2.dp.toPx(), Offset(x, y))
-        }
-        // светящийся край
-        for (i in 0..5) {
-            drawCircle(Color(0xFF4A8BFF).copy(alpha = (0.22f - i * 0.035f) * power), radius = r + i * 2.dp.toPx(),
-                center = c, style = Stroke(2.dp.toPx()))
+            val (x, y, z) = project(lat, lon, rot, r, c, 1f + 0.18f * sin(k * PI.toFloat()), PHOTO_TILT)
+            if (z > 0f) {
+                drawCircle(Color(0xFF8CB8FF).copy(alpha = 0.4f * power), 5.dp.toPx(), Offset(x, y))
+                drawCircle(Color.White.copy(alpha = power), 2.2.dp.toPx(), Offset(x, y))
+            }
         }
     }
 }
 
 // ---------------------------------------------------------------- тонкие значки
 
-internal enum class Ico { BOLT, DOWN, UP, GEAR, CHEVRON, CHECK, SEARCH, GLOBE, CLOSE, BACK, CLOCK }
+internal enum class Ico {
+    BOLT, DOWN, UP, GEAR, CHEVRON, CHECK, SEARCH, GLOBE, CLOSE, BACK, CLOCK,
+    ROCKET, GAMEPAD, CROWN, SHIELD, LOCK, APPS, POWER, BELL, REFRESH, SWAP, CLIP, SEND, HAT, BATTERY, INFO,
+}
+
+/** Эмодзи из старого кода → свой значок (если есть). */
+internal fun icoFor(emoji: String): Ico? = when (emoji) {
+    "🚀" -> Ico.ROCKET
+    "🎮" -> Ico.GAMEPAD
+    "👑" -> Ico.CROWN
+    "🛡" -> Ico.SHIELD
+    "🔒" -> Ico.LOCK
+    "📱" -> Ico.APPS
+    "🌐" -> Ico.GLOBE
+    "🔔" -> Ico.BELL
+    "⬆️" -> Ico.REFRESH
+    "↩" -> Ico.SWAP
+    "⚡" -> Ico.BOLT
+    "⏻" -> Ico.POWER
+    "🥷" -> Ico.HAT
+    "🔋" -> Ico.BATTERY
+    else -> null
+}
+
+/** Значок по эмодзи: свой, если нарисован, иначе само эмодзи. */
+@Composable
+internal fun EmojiIcon(emoji: String, size: Dp, color: Color = Blue) {
+    val ico = icoFor(emoji)
+    if (ico != null) LineIcon(ico, size, color)
+    else androidx.compose.material3.Text(emoji, fontSize = (size.value * 0.8f).sp)
+}
 
 /** Простые линейные значки (нарисованы кодом, в одном стиле с картинками-образцами). */
 @Composable
@@ -268,6 +290,125 @@ private fun DrawScope.drawIco(ico: Ico, color: Color) {
         Ico.CLOCK -> {
             drawCircle(color, s * 0.38f, center, style = st)
             line(listOf(p(0.5f, 0.28f), p(0.5f, 0.5f), p(0.66f, 0.6f)))
+        }
+        Ico.ROCKET -> withTransform({ rotate(45f, center) }) {
+            val fill = Brush.verticalGradient(listOf(Color(0xFFE8F4FF), color), 0f, s)
+            drawPath(Path().apply {
+                moveTo(0.5f * s, 0.04f * s)
+                cubicTo(0.70f * s, 0.20f * s, 0.69f * s, 0.50f * s, 0.62f * s, 0.70f * s)
+                lineTo(0.38f * s, 0.70f * s)
+                cubicTo(0.31f * s, 0.50f * s, 0.30f * s, 0.20f * s, 0.5f * s, 0.04f * s); close()
+            }, fill)
+            drawPath(Path().apply {
+                moveTo(0.37f * s, 0.46f * s); lineTo(0.20f * s, 0.66f * s); lineTo(0.22f * s, 0.80f * s); lineTo(0.39f * s, 0.68f * s); close()
+                moveTo(0.63f * s, 0.46f * s); lineTo(0.80f * s, 0.66f * s); lineTo(0.78f * s, 0.80f * s); lineTo(0.61f * s, 0.68f * s); close()
+            }, color)
+            drawCircle(Color(0xFF0B1630), 0.075f * s, p(0.5f, 0.34f))
+            drawPath(Path().apply {
+                moveTo(0.41f * s, 0.74f * s); lineTo(0.5f * s, 0.97f * s); lineTo(0.59f * s, 0.74f * s); close()
+            }, Brush.verticalGradient(listOf(Color(0xFFCFE0FF), Color(0x002F6BFF)), 0.74f * s, 0.97f * s))
+        }
+        Ico.GAMEPAD -> {
+            val fill = Brush.verticalGradient(listOf(Color(0xFFE8F4FF), color), 0.25f * s, 0.85f * s)
+            drawRoundRect(fill, Offset(0.06f * s, 0.28f * s), Size(0.88f * s, 0.40f * s), androidx.compose.ui.geometry.CornerRadius(0.2f * s))
+            drawCircle(fill, 0.16f * s, p(0.25f, 0.66f))
+            drawCircle(fill, 0.16f * s, p(0.75f, 0.66f))
+            val dark = Color(0xFF0B1630)
+            drawRect(dark, Offset(0.21f * s, 0.43f * s), Size(0.16f * s, 0.05f * s))
+            drawRect(dark, Offset(0.265f * s, 0.375f * s), Size(0.05f * s, 0.16f * s))
+            drawCircle(dark, 0.04f * s, p(0.68f, 0.42f))
+            drawCircle(dark, 0.04f * s, p(0.76f, 0.50f))
+        }
+        Ico.CROWN -> {
+            val gold = Brush.verticalGradient(listOf(Color(0xFFFFE9A8), Color(0xFFE2A631)), 0.2f * s, 0.88f * s)
+            drawPath(Path().apply {
+                moveTo(0.10f * s, 0.32f * s); lineTo(0.30f * s, 0.55f * s); lineTo(0.5f * s, 0.22f * s); lineTo(0.70f * s, 0.55f * s)
+                lineTo(0.90f * s, 0.32f * s); lineTo(0.80f * s, 0.74f * s); lineTo(0.20f * s, 0.74f * s); close()
+            }, gold)
+            drawRoundRect(gold, Offset(0.20f * s, 0.78f * s), Size(0.60f * s, 0.09f * s), androidx.compose.ui.geometry.CornerRadius(0.03f * s))
+            for ((x, y) in listOf(0.10f to 0.30f, 0.5f to 0.19f, 0.90f to 0.30f)) drawCircle(Color(0xFFFFE9A8), 0.055f * s, p(x, y))
+        }
+        Ico.SHIELD -> {
+            val shield = Path().apply {
+                moveTo(0.5f * s, 0.06f * s); lineTo(0.86f * s, 0.19f * s)
+                cubicTo(0.86f * s, 0.56f * s, 0.72f * s, 0.80f * s, 0.5f * s, 0.95f * s)
+                cubicTo(0.28f * s, 0.80f * s, 0.14f * s, 0.56f * s, 0.14f * s, 0.19f * s); close()
+            }
+            drawPath(shield, Brush.verticalGradient(listOf(color.copy(alpha = 0.30f), color.copy(alpha = 0.08f)), 0f, s))
+            drawPath(shield, color, style = st)
+            drawRoundRect(color, Offset(0.38f * s, 0.47f * s), Size(0.24f * s, 0.20f * s), androidx.compose.ui.geometry.CornerRadius(0.04f * s))
+            drawArc(color, 180f, 180f, false, Offset(0.42f * s, 0.34f * s), Size(0.16f * s, 0.2f * s), style = Stroke(w * 0.8f))
+        }
+        Ico.LOCK -> {
+            drawArc(color, 180f, 180f, false, Offset(0.30f * s, 0.12f * s), Size(0.40f * s, 0.42f * s), style = Stroke(w * 1.3f))
+            drawLine(color, p(0.30f, 0.33f), p(0.30f, 0.47f), w * 1.3f)
+            drawLine(color, p(0.70f, 0.33f), p(0.70f, 0.47f), w * 1.3f)
+            drawRoundRect(Brush.verticalGradient(listOf(Color(0xFFE8F4FF), color), 0.42f * s, 0.92f * s),
+                Offset(0.18f * s, 0.44f * s), Size(0.64f * s, 0.48f * s), androidx.compose.ui.geometry.CornerRadius(0.09f * s))
+            drawCircle(Color(0xFF0B1630), 0.065f * s, p(0.5f, 0.64f))
+            drawRect(Color(0xFF0B1630), Offset(0.475f * s, 0.64f * s), Size(0.05f * s, 0.13f * s))
+        }
+        Ico.APPS -> for ((x, y) in listOf(0.14f to 0.14f, 0.56f to 0.14f, 0.14f to 0.56f, 0.56f to 0.56f)) {
+            drawRoundRect(color, Offset(x * s, y * s), Size(0.30f * s, 0.30f * s), androidx.compose.ui.geometry.CornerRadius(0.07f * s), style = st)
+        }
+        Ico.POWER -> {
+            drawArc(color, -55f, 290f, false, Offset(0.17f * s, 0.19f * s), Size(0.66f * s, 0.66f * s), style = st)
+            line(listOf(p(0.5f, 0.10f), p(0.5f, 0.46f)))
+        }
+        Ico.BELL -> {
+            drawPath(Path().apply {
+                moveTo(0.5f * s, 0.10f * s)
+                cubicTo(0.73f * s, 0.10f * s, 0.78f * s, 0.30f * s, 0.78f * s, 0.50f * s)
+                lineTo(0.87f * s, 0.72f * s); lineTo(0.13f * s, 0.72f * s); lineTo(0.22f * s, 0.50f * s)
+                cubicTo(0.22f * s, 0.30f * s, 0.27f * s, 0.10f * s, 0.5f * s, 0.10f * s); close()
+            }, Brush.verticalGradient(listOf(Color(0xFFE8F4FF), color), 0.1f * s, 0.75f * s))
+            drawCircle(color, 0.08f * s, p(0.5f, 0.83f))
+        }
+        Ico.REFRESH -> {
+            drawArc(color, 200f, 130f, false, Offset(0.16f * s, 0.16f * s), Size(0.68f * s, 0.68f * s), style = st)
+            drawArc(color, 20f, 130f, false, Offset(0.16f * s, 0.16f * s), Size(0.68f * s, 0.68f * s), style = st)
+            line(listOf(p(0.66f, 0.10f), p(0.79f, 0.24f), p(0.62f, 0.30f)))
+            line(listOf(p(0.34f, 0.90f), p(0.21f, 0.76f), p(0.38f, 0.70f)))
+        }
+        Ico.SWAP -> {
+            line(listOf(p(0.18f, 0.34f), p(0.82f, 0.34f))); line(listOf(p(0.66f, 0.18f), p(0.82f, 0.34f), p(0.66f, 0.50f)))
+            line(listOf(p(0.82f, 0.68f), p(0.18f, 0.68f))); line(listOf(p(0.34f, 0.52f), p(0.18f, 0.68f), p(0.34f, 0.84f)))
+        }
+        Ico.CLIP -> drawPath(Path().apply {
+            moveTo(0.70f * s, 0.30f * s); lineTo(0.38f * s, 0.62f * s)
+            cubicTo(0.30f * s, 0.70f * s, 0.40f * s, 0.80f * s, 0.48f * s, 0.72f * s)
+            lineTo(0.80f * s, 0.40f * s)
+            cubicTo(0.94f * s, 0.26f * s, 0.74f * s, 0.06f * s, 0.60f * s, 0.20f * s)
+            lineTo(0.24f * s, 0.56f * s)
+            cubicTo(0.04f * s, 0.76f * s, 0.30f * s, 1.0f * s, 0.50f * s, 0.80f * s)
+            lineTo(0.76f * s, 0.54f * s)
+        }, color, style = st)
+        Ico.SEND -> {
+            drawPath(Path().apply {
+                moveTo(0.08f * s, 0.46f * s); lineTo(0.92f * s, 0.10f * s); lineTo(0.62f * s, 0.92f * s); lineTo(0.47f * s, 0.57f * s); close()
+            }, Brush.verticalGradient(listOf(Color.White, color), 0.1f * s, 0.9f * s))
+            drawLine(Color(0x660B1630), p(0.47f, 0.57f), p(0.92f, 0.10f), w * 0.6f)
+        }
+        Ico.HAT -> {
+            val fill = Brush.verticalGradient(listOf(Color(0xFFE8F4FF), color), 0.1f * s, 0.8f * s)
+            drawPath(Path().apply {
+                moveTo(0.30f * s, 0.42f * s); lineTo(0.36f * s, 0.14f * s); lineTo(0.64f * s, 0.14f * s); lineTo(0.70f * s, 0.42f * s); close()
+            }, fill)
+            drawOval(fill, Offset(0.08f * s, 0.36f * s), Size(0.84f * s, 0.14f * s))
+            drawCircle(fill, 0.13f * s, p(0.34f, 0.68f))
+            drawCircle(fill, 0.13f * s, p(0.66f, 0.68f))
+            drawLine(color, p(0.45f, 0.66f), p(0.55f, 0.66f), w)
+        }
+        Ico.BATTERY -> {
+            drawRoundRect(color, Offset(0.26f * s, 0.16f * s), Size(0.48f * s, 0.76f * s), androidx.compose.ui.geometry.CornerRadius(0.08f * s), style = st)
+            drawRoundRect(color, Offset(0.40f * s, 0.06f * s), Size(0.20f * s, 0.08f * s), androidx.compose.ui.geometry.CornerRadius(0.03f * s))
+            for (i in 0..2) drawRoundRect(Brush.verticalGradient(listOf(Color(0xFFCFE0FF), color)),
+                Offset(0.34f * s, (0.66f - i * 0.19f) * s), Size(0.32f * s, 0.14f * s), androidx.compose.ui.geometry.CornerRadius(0.03f * s))
+        }
+        Ico.INFO -> {
+            drawCircle(color, s * 0.40f, center, style = st)
+            drawCircle(color, s * 0.05f, p(0.5f, 0.31f))
+            line(listOf(p(0.5f, 0.45f), p(0.5f, 0.72f)))
         }
         Ico.GEAR -> {
             val r1 = s * 0.27f

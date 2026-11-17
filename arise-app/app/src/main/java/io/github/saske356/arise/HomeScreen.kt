@@ -133,7 +133,7 @@ private fun HomeSub(data: Data, onOpen: (String) -> Unit) {
             .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text("👑", fontSize = 17.sp)
+        LineIcon(Ico.CROWN, 24.dp)
         Spacer(Modifier.width(10.dp))
         Text(
             when {
@@ -358,7 +358,7 @@ private fun HomeModes(mode: Mode, onMode: (Mode) -> Unit, openModes: () -> Unit)
                     .padding(vertical = 10.dp),
                 horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(m.emoji, fontSize = 15.sp)
+                EmojiIcon(m.emoji, 20.dp, if (sel) Color.White else Blue)
                 Text(" " + m.title, color = if (sel) Color.White else TextSoft, fontSize = 13.5.sp,
                     fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
             }

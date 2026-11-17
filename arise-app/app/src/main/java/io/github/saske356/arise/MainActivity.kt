@@ -138,7 +138,10 @@ class MainActivity : ComponentActivity() {
         Repo.app = applicationContext
         Repo.load()
         takeLink(intent)
-        setContent { Root() }
+        setContent {
+            // шрифт Inter для всего приложения
+            androidx.compose.material3.ProvideTextStyle(androidx.compose.ui.text.TextStyle(fontFamily = Inter)) { Root() }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -297,14 +300,24 @@ internal fun Backdrop(on: Boolean) {
                 center = Offset(size.width / 2, size.height * 0.36f), radius = size.width * 0.8f
             )
         )
-        // Искры медленно поднимаются снизу и гаснут наверху
-        for (i in 0 until 26) {
-            val seed = (i * 7919) % 1000 / 1000f
-            val x = ((i * 0.618f) % 1f) * size.width
-            val p = (time * (0.6f + seed * 0.8f) + seed) % 1f
-            val y = size.height * (1f - p)
-            val a = (1f - p) * (if (on) 0.55f else 0.3f)
-            drawCircle(Blue.copy(alpha = a), radius = 1.2.dp.toPx() + seed * 1.6.dp.toPx(), center = Offset(x, y))
+        // Звёзды: неподвижные, тихо мерцают (как на образцах)
+        for (i in 0 until 70) {
+            val seed = ((i * 7919 + 13) % 1000) / 1000f
+            val x = ((i * 0.6180339f + seed * 0.37f) % 1f) * size.width
+            val y = ((i * 0.4142136f + seed * 0.21f) % 1f) * size.height
+            val tw = 0.5f + 0.5f * kotlin.math.sin((time * 6.2832f * (1f + seed * 2f)) + seed * 10f)
+            drawCircle(Color(0xFFBFD8FF).copy(alpha = (0.10f + 0.35f * seed) * (0.4f + 0.6f * tw)),
+                radius = 0.6.dp.toPx() + seed * 1.1.dp.toPx(), center = Offset(x, y))
+        }
+        // Светящаяся дуга внизу экрана
+        val arcW = size.width * 1.6f
+        val top = size.height - size.width * 0.18f
+        for (k in 0..5) {
+            drawArc(
+                Color(0xFF3D7BFF).copy(alpha = (0.32f - k * 0.05f) * (0.6f + glow)), 200f, 140f, false,
+                Offset((size.width - arcW) / 2f, top - k * 3.dp.toPx()), androidx.compose.ui.geometry.Size(arcW, size.width * 0.9f),
+                style = Stroke((2 + k * 3).dp.toPx())
+            )
         }
     }
 }
@@ -494,7 +507,7 @@ private fun RecommendTile(s: Server, data: Data, modifier: Modifier, onPick: (St
             Modifier.size(42.dp).clip(CircleShape)
                 .background(Brush.radialGradient(listOf(Color(0x552F6BFF), Color(0x110E1A36)))),
             contentAlignment = Alignment.Center
-        ) { Text(icon, fontSize = 21.sp) }
+        ) { EmojiIcon(icon, 26.dp) }
         Column(Modifier.weight(1f).padding(start = 8.dp)) {
             Text(title, color = TextMain, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(note, color = TextSoft, fontSize = 11.5.sp, maxLines = 2, lineHeight = 14.sp)
@@ -599,7 +612,7 @@ private fun ModesScreen(data: Data, back: () -> Unit, onPick: (Mode) -> Unit) {
                         .background(Brush.radialGradient(listOf(Color(0x662F6BFF), Color(0x220E1A36))))
                         .border(1.dp, Color(0x447AAEFF), RoundedCornerShape(18.dp)),
                     contentAlignment = Alignment.Center
-                ) { Text(m.emoji, fontSize = 28.sp) }
+                ) { EmojiIcon(m.emoji, 34.dp) }
                 Column(Modifier.weight(1f).padding(start = 14.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(m.title, color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -630,7 +643,7 @@ private fun ModesScreen(data: Data, back: () -> Unit, onPick: (Mode) -> Unit) {
             Modifier.fillMaxWidth().padding(top = 4.dp).glass(20.dp).padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("ⓘ", color = Blue, fontSize = 20.sp)
+            LineIcon(Ico.INFO, 24.dp, Blue)
             Text("Выбранный режим можно изменить в любое время", color = TextSoft, fontSize = 13.5.sp,
                 modifier = Modifier.padding(start = 12.dp))
         }
@@ -729,10 +742,10 @@ private fun ToolsScreen(
         Tool("📱", "Приложения мимо VPN", "Банки, Госуслуги и свои",
             "${(if (data.ruApps) RuApps.PACKAGES.size else 0) + data.bypass.size} ›", onApps)
         Tool("🌐", "DNS", "${data.dns.ip} · ${data.dns.note}", "${data.dns.title} ›", onDns)
-        Tool("⚡", "Автоподключение", "При включении телефона", if (data.autoConnect) "Вкл" else "Выкл") {
+        Tool("⏻", "Автоподключение", "При включении телефона", if (data.autoConnect) "Вкл" else "Выкл") {
             Repo.setAutoConnect(!data.autoConnect)
         }
-        Tool("🔘", "Кнопка в шторке", "Включать VPN, не открывая приложение", "Добавить", onTile)
+        Tool("⚡", "Кнопка в шторке", "Включать VPN, не открывая приложение", "Добавить", onTile)
         val notifyOn = rememberNotifyEnabled()
         val askNotify = rememberNotifyAsk()
         Tool("🔔", "Уведомления", if (notifyOn) "Разрешены" else "Выключены в настройках телефона",
@@ -748,7 +761,7 @@ private fun ToolsScreen(
             if (upd.checking) "…" else if (upd.version.isNotEmpty()) "Обновить" else "Проверить") {
             if (upd.version.isNotEmpty()) AppUpdate.installHere(ctx) else AppUpdate.check(force = true)
         }
-        Tool("🔄", "Обновить подписку", if (data.loading) "Обновляю…" else "Страны и срок — с сервера", "") { Repo.refresh() }
+        Tool("👑", "Обновить подписку", if (data.loading) "Обновляю…" else "Страны и срок — с сервера", "") { Repo.refresh() }
         Tool("↩", "Сменить подписку", "Удалить эту и добавить другую", "", onForget)
         Text("Arise VPN ${BuildConfig.VERSION_NAME}", color = TextDim, fontSize = 12.sp, modifier = Modifier.fillMaxWidth().padding(top = 10.dp), textAlign = TextAlign.Center)
     }
@@ -868,7 +881,7 @@ internal fun Tool(icon: String, title: String, sub: String, right: String, onCli
                 .background(Brush.radialGradient(listOf(Color(0x552F6BFF), Color(0x1A0E1A36))))
                 .border(1.dp, Color(0x337AAEFF), RoundedCornerShape(14.dp)),
             contentAlignment = Alignment.Center
-        ) { Text(icon, fontSize = 20.sp) }
+        ) { EmojiIcon(icon, 24.dp) }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(title, color = TextMain, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
@@ -1014,7 +1027,7 @@ private fun Welcome(data: Data, onOpen: (String) -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(Modifier.size(34.dp).clip(CircleShape).glass(17.dp), contentAlignment = Alignment.Center) {
-                Text("✈", color = BlueLight, fontSize = 15.sp)
+                LineIcon(Ico.SEND, 18.dp, BlueLight)
             }
             Text("Подписку можно купить в Telegram-боте @$BOT", color = TextSoft, fontSize = 13.sp,
                 modifier = Modifier.padding(start = 10.dp))
@@ -1027,7 +1040,7 @@ private fun Welcome(data: Data, onOpen: (String) -> Unit) {
 private fun Feature(ico: Ico?, text: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(100.dp)) {
         Box(Modifier.size(56.dp).glass(18.dp), contentAlignment = Alignment.Center) {
-            if (ico != null) LineIcon(ico, 26.dp, Blue) else Text("🛡", fontSize = 24.sp)
+            LineIcon(ico ?: Ico.SHIELD, 28.dp, Blue)
         }
         Text(text, color = TextMain, fontSize = 14.sp, textAlign = TextAlign.Center, lineHeight = 18.sp,
             modifier = Modifier.padding(top = 8.dp))

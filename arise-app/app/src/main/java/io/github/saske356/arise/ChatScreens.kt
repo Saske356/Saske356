@@ -190,7 +190,7 @@ private fun PinScreen(back: () -> Unit) {
                 .background(Brush.radialGradient(listOf(Color(0x882F6BFF), Color(0x220E1A36))))
                 .border(1.5.dp, Blue.copy(alpha = 0.6f), CircleShape),
             contentAlignment = Alignment.Center
-        ) { Text("🔒", fontSize = 44.sp) }
+        ) { LineIcon(Ico.LOCK, 54.dp, Blue) }
         Text(title, color = TextMain, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 24.dp))
         Text(lead, color = TextSoft, fontSize = 13.5.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp, start = 16.dp, end = 16.dp))
         Row(Modifier.padding(top = 28.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -305,7 +305,7 @@ private fun ChatList(ui: ChatUi, back: () -> Unit, open: (String) -> Unit, add: 
                 Box(
                     Modifier.size(46.dp).clip(CircleShape).glass(23.dp).clickable(onClick = protect),
                     contentAlignment = Alignment.Center
-                ) { Text("🛡", fontSize = 19.sp) }
+                ) { LineIcon(Ico.SHIELD, 24.dp, BlueLight) }
             }
             Text("🔒 сквозное шифрование: сервер видит только шифр", color = Blue, fontSize = 12.sp,
                 modifier = Modifier.padding(start = 22.dp, top = 8.dp))
@@ -320,7 +320,7 @@ private fun ChatList(ui: ChatUi, back: () -> Unit, open: (String) -> Unit, add: 
                         .background(Brush.radialGradient(listOf(Color(0x662F6BFF), Color(0x220E1A36))))
                         .border(1.dp, Blue.copy(alpha = 0.5f), CircleShape),
                     contentAlignment = Alignment.Center
-                ) { Text("🛡", fontSize = 20.sp) }
+                ) { LineIcon(Ico.SHIELD, 26.dp, BlueLight) }
                 Column(Modifier.weight(1f).padding(start = 12.dp)) {
                     Text("Мой код:", color = TextSoft, fontSize = 13.sp)
                     Text(if (ui.code.isEmpty()) "…" else Chat.pretty(ui.code), color = TextMain, fontSize = 20.sp,
@@ -517,7 +517,7 @@ private fun Talk(ui: ChatUi, code: String, back: () -> Unit, info: () -> Unit) {
                         pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                     },
                 contentAlignment = Alignment.Center
-            ) { Text("📎", fontSize = 19.sp) }
+            ) { LineIcon(Ico.CLIP, 22.dp, BlueLight) }
             OutlinedTextField(
                 value = text, onValueChange = { text = it.take(4000) },
                 placeholder = { Text("Сообщение", color = TextDim) }, shape = RoundedCornerShape(24.dp),
@@ -539,7 +539,7 @@ private fun Talk(ui: ChatUi, code: String, back: () -> Unit, info: () -> Unit) {
                         text = ""
                     },
                 contentAlignment = Alignment.Center
-            ) { Text("➤", color = Color.White, fontSize = 21.sp) }
+            ) { LineIcon(Ico.SEND, 24.dp, Color(0xFFCFE0FF)) }
         }
     }
     full?.let { b ->
@@ -736,7 +736,7 @@ private fun LongTool(icon: String, title: String, sub: String, right: String, on
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(BlueMid.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
-            Text(icon, fontSize = 18.sp)
+            EmojiIcon(icon, 22.dp)
         }
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             Text(title, color = TextMain, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
