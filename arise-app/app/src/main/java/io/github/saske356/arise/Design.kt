@@ -240,7 +240,7 @@ private fun DrawScope.drawIco(ico: Ico, color: Color) {
     val w = s * 0.09f
     val st = Stroke(width = w, cap = StrokeCap.Round, join = StrokeJoin.Round)
     fun p(x: Float, y: Float) = Offset(x * s, y * s)
-    fun line(vararg pts: Offset) {
+    fun line(pts: List<Offset>) {
         val path = Path()
         pts.forEachIndexed { i, o -> if (i == 0) path.moveTo(o.x, o.y) else path.lineTo(o.x, o.y) }
         drawPath(path, color, style = st)
@@ -250,24 +250,24 @@ private fun DrawScope.drawIco(ico: Ico, color: Color) {
             moveTo(0.58f * s, 0.06f * s); lineTo(0.22f * s, 0.56f * s); lineTo(0.48f * s, 0.56f * s)
             lineTo(0.40f * s, 0.94f * s); lineTo(0.78f * s, 0.42f * s); lineTo(0.52f * s, 0.42f * s); close()
         }, Brush.verticalGradient(listOf(Color(0xFFB5D3FF), color)))
-        Ico.DOWN -> { line(p(0.5f, 0.12f), p(0.5f, 0.66f)); line(p(0.27f, 0.45f), p(0.5f, 0.68f), p(0.73f, 0.45f)); line(p(0.2f, 0.88f), p(0.8f, 0.88f)) }
-        Ico.UP -> { line(p(0.5f, 0.88f), p(0.5f, 0.24f)); line(p(0.27f, 0.45f), p(0.5f, 0.22f), p(0.73f, 0.45f)); line(p(0.2f, 0.1f), p(0.8f, 0.1f)) }
-        Ico.CHEVRON -> line(p(0.38f, 0.2f), p(0.66f, 0.5f), p(0.38f, 0.8f))
-        Ico.BACK -> line(p(0.62f, 0.2f), p(0.34f, 0.5f), p(0.62f, 0.8f))
-        Ico.CHECK -> line(p(0.22f, 0.52f), p(0.43f, 0.72f), p(0.8f, 0.3f))
-        Ico.CLOSE -> { line(p(0.25f, 0.25f), p(0.75f, 0.75f)); line(p(0.75f, 0.25f), p(0.25f, 0.75f)) }
+        Ico.DOWN -> { line(listOf(p(0.5f, 0.12f), p(0.5f, 0.66f))); line(listOf(p(0.27f, 0.45f), p(0.5f, 0.68f), p(0.73f, 0.45f))); line(listOf(p(0.2f, 0.88f), p(0.8f, 0.88f))) }
+        Ico.UP -> { line(listOf(p(0.5f, 0.88f), p(0.5f, 0.24f))); line(listOf(p(0.27f, 0.45f), p(0.5f, 0.22f), p(0.73f, 0.45f))); line(listOf(p(0.2f, 0.1f), p(0.8f, 0.1f))) }
+        Ico.CHEVRON -> line(listOf(p(0.38f, 0.2f), p(0.66f, 0.5f), p(0.38f, 0.8f)))
+        Ico.BACK -> line(listOf(p(0.62f, 0.2f), p(0.34f, 0.5f), p(0.62f, 0.8f)))
+        Ico.CHECK -> line(listOf(p(0.22f, 0.52f), p(0.43f, 0.72f), p(0.8f, 0.3f)))
+        Ico.CLOSE -> { line(listOf(p(0.25f, 0.25f), p(0.75f, 0.75f))); line(listOf(p(0.75f, 0.25f), p(0.25f, 0.75f))) }
         Ico.SEARCH -> {
             drawCircle(color, s * 0.27f, p(0.43f, 0.43f), style = st)
-            line(p(0.63f, 0.63f), p(0.86f, 0.86f))
+            line(listOf(p(0.63f, 0.63f), p(0.86f, 0.86f)))
         }
         Ico.GLOBE -> {
             drawCircle(color, s * 0.4f, center, style = st)
             drawOval(color, Offset(s * 0.32f, s * 0.1f), Size(s * 0.36f, s * 0.8f), style = st)
-            line(p(0.12f, 0.5f), p(0.88f, 0.5f))
+            line(listOf(p(0.12f, 0.5f), p(0.88f, 0.5f)))
         }
         Ico.CLOCK -> {
             drawCircle(color, s * 0.38f, center, style = st)
-            line(p(0.5f, 0.28f), p(0.5f, 0.5f), p(0.66f, 0.6f))
+            line(listOf(p(0.5f, 0.28f), p(0.5f, 0.5f), p(0.66f, 0.6f)))
         }
         Ico.GEAR -> {
             val r1 = s * 0.27f
