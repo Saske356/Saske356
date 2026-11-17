@@ -497,6 +497,16 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
             return json.loads(data.partition(b"\r\n\r\n")[2])
         self.assertEqual((await status_profile("1"))["code"], "", "второй профиль — ещё без кода, место то же")
         self.assertEqual((await status_profile("0"))["code"], ans["code"])
+        # «долгий» опрос: письмо приходит сразу, а не при следующем запросе
+        self.v.chat.handle(2, "register", "POST", {}, json.dumps({"key": "a2V5"}).encode(), "other")
+        t0 = time.monotonic()
+        waiting = asyncio.ensure_future(get_dev(path + "/chat/inbox?wait=20", "dev1"))
+        await asyncio.sleep(0.5)
+        self.assertFalse(waiting.done(), "писем нет — сервер ждёт")
+        self.v.chat.handle(2, "send", "POST", {}, json.dumps({"to": ans["code"], "box": "AAAA"}).encode(), "other")
+        got = await asyncio.wait_for(waiting, 5)
+        self.assertEqual(len(got["messages"]), 1)
+        self.assertLess(time.monotonic() - t0, 5, "письмо отдано сразу")
         self.assertEqual((await get_dev(path + "/chat/status", "dev2"))["error"], "device limit",
                          "второе устройство при одном оплаченном — без чата")
         _, _, body = await get(path + "/chat/status", "AriseApp/1")

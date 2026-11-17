@@ -160,6 +160,11 @@ class ChatRelay:
 
     # ---------- запросы ----------
 
+    def has_mail(self, uid: int, device: str) -> bool:
+        """Есть ли письма у кода этого устройства — для «долгого» опроса (дешёвая проверка)."""
+        me = self.code_of(uid, device)
+        return bool(me and self.data["boxes"].get(me))
+
     def handle(self, uid: int, action: str, method: str, query: dict, body: bytes,
                device: str = "") -> tuple[int, dict]:
         """Один запрос приложения с устройства device подписки uid. Возвращает (HTTP-код, JSON)."""

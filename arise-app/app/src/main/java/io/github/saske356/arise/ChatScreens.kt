@@ -548,7 +548,7 @@ private fun ContactInfo(ui: ChatUi, code: String, back: () -> Unit, deleted: () 
         Field(name, "Как подписать") { name = it.take(32) }
         Spacer(Modifier.height(10.dp))
         Big("Сохранить", gold = false) { Chat.rename(code, name.ifBlank { Chat.pretty(code) }) }
-        if (ui.admin) {
+        if (ui.admin && !ui.decoy) {
             Section("Админ")
             val isBanned = code in ui.banned
             Big(if (isBanned) "Разблокировать этот код" else "⛔ Заблокировать этот код в чате", gold = false) {
@@ -584,8 +584,9 @@ private fun ProtectScreen(ui: ChatUi, back: () -> Unit, openAdmin: () -> Unit) {
     val scope = rememberCoroutineScope()
     var dialog by remember { mutableStateOf("") }  // "pin" | "decoy" | "wipe"
     var input by remember { mutableStateOf("") }
+    var oldPin by remember { mutableStateOf("") }  // текущий второй PIN — без него второй чат не пересоздаём
     var msg by remember { mutableStateOf("") }
-    LaunchedEffect(ui.admin) { if (ui.admin) Chat.refreshAdmin() }
+    LaunchedEffect(ui.admin) { if (ui.admin && !ui.decoy) Chat.refreshAdmin() }
     Page("Защита", "", back) {
         Section("Переписка")
         Tool("⏱", "Самоудаление", "Для новых сообщений, у обоих собеседников", ttlText(ui.ttlHours) + " ›") {
@@ -611,13 +612,18 @@ private fun ProtectScreen(ui: ChatUi, back: () -> Unit, openAdmin: () -> Unit) {
             // Пункт «ложный PIN» в настройках сам выдавал, что второй чат может быть.
             LongTool("🔑", "Сменить PIN", "6 цифр", "›",
                 onClick = { dialog = "pin"; input = ""; msg = "" },
-                onLong = { dialog = "decoy"; input = ""; msg = "" })
+                onLong = { dialog = "decoy"; input = ""; oldPin = ""; msg = "" })
             if (dialog == "pin" || dialog == "decoy") {
                 if (dialog == "decoy") Note(
                     "Второй PIN открывает второй, отдельный чат: свой код, свои собеседники. Если заставят " +
                         "разблокировать — введите его. Об этом экране знаете только вы."
                 )
-                Field(input, if (dialog == "pin") "Новый PIN, 6 цифр" else "Второй PIN, 6 цифр") {
+                val changeDecoy = dialog == "decoy" && ui.hasDecoy
+                if (changeDecoy) {
+                    Field(oldPin, "Текущий второй PIN") { oldPin = it.filter { ch -> ch.isDigit() }.take(PIN_LEN) }
+                    Spacer(Modifier.height(8.dp))
+                }
+                Field(input, if (dialog == "pin") "Новый PIN, 6 цифр" else if (changeDecoy) "Новый второй PIN" else "Второй PIN, 6 цифр") {
                     input = it.filter { ch -> ch.isDigit() }.take(PIN_LEN)
                 }
                 if (msg.isNotEmpty()) Text(msg, color = Red, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
@@ -627,13 +633,19 @@ private fun ProtectScreen(ui: ChatUi, back: () -> Unit, openAdmin: () -> Unit) {
                         msg = "Нужно 6 цифр"
                         return@Big
                     }
+                    if (changeDecoy && oldPin.length != PIN_LEN) {
+                        msg = "Введите текущий второй PIN"
+                        return@Big
+                    }
                     val what = dialog
                     val value = input
+                    val old = if (changeDecoy) oldPin else ""
                     scope.launch {
-                        val e = withContext(Dispatchers.IO) { if (what == "pin") Chat.changePin(value) else Chat.setDecoy(value) }
+                        val e = withContext(Dispatchers.IO) { if (what == "pin") Chat.changePin(value) else Chat.setDecoy(value, old) }
                         if (e == null) {
                             dialog = ""
-                            Toast.makeText(ctx, if (what == "pin") "PIN изменён" else "Второй PIN задан", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(ctx, if (what == "pin") "PIN изменён" else if (old.isNotEmpty()) "Второй PIN изменён"
+                                else "Второй PIN задан", Toast.LENGTH_SHORT).show()
                         } else msg = e
                     }
                 }
@@ -651,7 +663,7 @@ private fun ProtectScreen(ui: ChatUi, back: () -> Unit, openAdmin: () -> Unit) {
                 back()
             } else dialog = "wipe"
         }
-        if (ui.admin) {
+        if (ui.admin && !ui.decoy) {
             Section("Админ · только у твоей подписки")
             Tool("👑", "Админ-панель", "Сводка, чат, объявление, блокировки", "›", openAdmin)
         }

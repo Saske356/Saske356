@@ -1,5 +1,6 @@
 package io.github.saske356.arise
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -51,6 +52,7 @@ data class ChatUi(
  * Пока чат открыт настоящим PIN, раз в 4 секунды забираем новые письма.
  */
 object Chat {
+    private const val LONG_POLL = 20  // секунд: столько сервер держит запрос писем, пока их нет
     val flow = MutableStateFlow(ChatUi())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lock = Mutex()
@@ -62,7 +64,8 @@ object Chat {
 
     private fun base(): String = Store.subUrl.trim().substringBefore('?').trimEnd('/') + "/chat/"
 
-    private fun request(path: String, body: JSONObject? = null, main: Boolean = false, slow: Boolean = false): JSONObject {
+    private fun request(path: String, body: JSONObject? = null, main: Boolean = false, slow: Boolean = false,
+                        waitSec: Int = 0): JSONObject {
         var last: Exception? = null
         val viaVpn = VpnState.flow.value.status == Status.RUNNING
         for (tunnel in if (viaVpn) listOf(true, false) else listOf(false)) {
@@ -71,7 +74,7 @@ object Chat {
             else url.openConnection()) as HttpURLConnection
             try {
                 c.connectTimeout = 15_000
-                c.readTimeout = if (slow) 120_000 else 20_000  // фото по мобильному идёт дольше
+                c.readTimeout = if (slow) 120_000 else 20_000 + waitSec * 1000  // фото по мобильному идёт дольше
                 c.setRequestProperty("User-Agent", "AriseApp/${BuildConfig.VERSION_NAME}")
                 c.setRequestProperty("x-hwid", Subscription.hwid)
                 c.setRequestProperty("x-device-model", android.os.Build.MODEL ?: "")
@@ -284,7 +287,7 @@ object Chat {
             }
             flow.update { it.copy(error = "") }
             publish()
-            if (flow.value.admin) refreshAdmin()
+            if (flow.value.admin && vault?.slot != ChatVault.Slot.DECOY) refreshAdmin()
         } catch (e: Exception) {
             flow.update { it.copy(error = "Нет связи с сервером: ${e.message}") }
         }
@@ -294,14 +297,22 @@ object Chat {
         poll?.cancel()
         poll = scope.launch {
             while (isActive) {
+                val t0 = System.currentTimeMillis()
+                var pause = 300L
                 try {
-                    fetch()
+                    // «Долгий» опрос: сервер держит запрос, пока не придёт письмо (до 20 с),
+                    // поэтому сообщения приходят сразу, а не раз в несколько секунд
+                    fetch(LONG_POLL)
+                    // старый сервер без долгого опроса отвечает сразу — тогда не долбим его
+                    if (System.currentTimeMillis() - t0 < 1_000) pause = 3_000
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
-                    // нет связи — попробуем через 4 секунды
+                    pause = 4_000  // нет связи — попробуем через 4 секунды
                 }
                 lock.withLock { if (dropExpired()) vault?.save() }
                 publish()
-                delay(4_000)
+                delay(pause)
             }
         }
     }
@@ -312,15 +323,19 @@ object Chat {
     }
 
     /** Забрать письма: расшифровать, проверить подпись, сохранить, подтвердить серверу. */
-    private suspend fun fetch() {
+    private suspend fun fetch(waitSec: Int = 0) {
+        val v0 = vault ?: return
         val data = d() ?: return
         if (data.optString("code").isEmpty()) return
-        val r = request("inbox")
+        val r = request(if (waitSec > 0) "inbox?wait=$waitSec" else "inbox", waitSec = waitSec)
+        // пока ждали, чат могли запереть или открыть другим PIN — эти письма не для него
+        if (vault !== v0) return
         val arr = r.optJSONArray("messages") ?: return
         if (arr.length() == 0) return
         val done = JSONArray()
         val counts = flow.value.unread.toMutableMap()
         lock.withLock {
+            if (vault !== v0) return
             for (i in 0 until arr.length()) {
                 val m = arr.getJSONObject(i)
                 done.put(m.getString("id"))
@@ -535,7 +550,7 @@ object Chat {
     }
 
     /** Второй PIN: отдельное хранилище со своими ключами — второй живой чат. Не совпадает с основным. */
-    suspend fun setDecoy(pin: String): String? = lock.withLock {
+    suspend fun setDecoy(pin: String, old: String = ""): String? = lock.withLock {
         // Из второго профиля «задать второй PIN» только делает вид: основной профиль не трогаем
         if (vault?.slot == ChatVault.Slot.DECOY) {
             d()?.put("fd", true)
@@ -543,6 +558,12 @@ object Chat {
             return@withLock null
         }
         if (ChatVault.opensReal(pin)) return@withLock "Второй PIN должен отличаться от основного"
+        if (ChatVault.exists(ChatVault.Slot.DECOY)) {
+            // Второй чат уже есть: меняем только PIN, переписку и ключи сохраняем
+            // (раньше здесь создавался новый пустой профиль — чаты пропадали)
+            return@withLock if (ChatVault.rewrap(ChatVault.Slot.DECOY, old, pin)) null
+            else "Текущий второй PIN неверный"
+        }
         val keys = ChatCrypto.newKeys()
         ChatVault.create(ChatVault.Slot.DECOY, pin,
             JSONObject().put("sk", keys.enc).put("ssk", keys.sign).put("pk", keys.public)

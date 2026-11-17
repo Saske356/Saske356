@@ -72,6 +72,7 @@ HY2_NET_WINDOW = 240
 # Устройство по номеру (HWID: его шлёт Happ, наши приложения, заголовок x-hwid), которое не обновляло
 # подписку столько времени, освобождает место — например, старый телефон.
 HWID_TTL = 7 * 86400
+CHAT_WAIT_MAX = 25.0  # «долгий» опрос чата: сервер держит запрос до 25 с, пока не придёт письмо
 LIMIT_NAME = "⛔ Превышен лимит устройств"
 
 
@@ -1740,7 +1741,21 @@ class XrayProvider(VpnProvider):
                     # второй профиль чата (второй PIN) — свой код на том же месте в подписке
                     prof = dev.get("x-chat-profile", "")
                     who = hwid + ("#" + prof if prof.isdigit() and prof != "0" and len(prof) == 1 else "")
-                    code, answer = self.chat.handle(uid, chat, parts[0], parse_qs(query), body_in, who)
+                    q = parse_qs(query)
+                    code, answer = self.chat.handle(uid, chat, parts[0], q, body_in, who)
+                    if chat == "inbox" and code == 200 and not answer.get("messages"):
+                        # «Долгий» опрос: письмо отдаём сразу, как придёт, а не при следующем запросе
+                        try:
+                            wait = min(CHAT_WAIT_MAX, max(0.0, float((q.get("wait") or ["0"])[0])))
+                        except ValueError:
+                            wait = 0.0
+                        deadline += wait
+                        until = loop.time() + wait
+                        while loop.time() < until:
+                            await asyncio.sleep(0.3)
+                            if self.chat.has_mail(uid, who):
+                                code, answer = self.chat.handle(uid, chat, parts[0], q, body_in, who)
+                                break
                     if chat == "status" and code == 200:
                         # Постоянный номер подписки для чата: не меняется при смене ссылки
                         # («Сбросить все»), по нему приложение находит своё хранилище переписки

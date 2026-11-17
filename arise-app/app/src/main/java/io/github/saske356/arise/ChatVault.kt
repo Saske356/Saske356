@@ -277,6 +277,13 @@ object ChatVault {
     fun opensReal(pin: String) = tryOpen(Slot.REAL, pin) != null
     fun opensDecoy(pin: String) = tryOpen(Slot.DECOY, pin) != null
 
+    /** Сменить PIN хранилища, зная старый: ключ и переписка те же. */
+    fun rewrap(slot: Slot, oldPin: String, newPin: String): Boolean {
+        val v = tryOpen(slot, oldPin) ?: return false
+        v.changePin(newPin)
+        return true
+    }
+
     /** Стереть всё (этой подписки): оба хранилища и ключ Keystore — восстановить будет невозможно. */
     fun wipe() {
         for (s in Slot.entries) {
