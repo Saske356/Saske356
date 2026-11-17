@@ -15,6 +15,16 @@ BOX = base64.b64encode(b"\x00ciphertext").decode()
 
 
 class ChatRelayTest(unittest.TestCase):
+    def test_at_most_two_chat_accounts_per_subscription(self):
+        self.assertEqual(self.call(5, "register", "POST", {"key": KEY_A}, dev="phone")[0], 200)
+        self.assertEqual(self.call(5, "register", "POST", {"key": KEY_A}, dev="phone#1")[0], 200)
+        self.assertEqual(self.call(5, "register", "POST", {"key": KEY_B}, dev="tablet")[1]["error"], "chat limit",
+                         "третий аккаунт на подписку — нельзя")
+        self.assertEqual(self.call(5, "register", "POST", {"key": KEY_B}, dev="phone")[0], 200, "новый ключ своего — можно")
+        self.assertEqual(self.call(6, "register", "POST", {"key": KEY_B}, dev="tablet")[0], 200, "у другой подписки свой лимит")
+        self.c.drop(5, "phone")
+        self.assertEqual(self.call(5, "register", "POST", {"key": KEY_B}, dev="tablet")[0], 200, "освободили — можно")
+
     def test_each_device_of_a_subscription_has_its_own_code(self):
         a = self.call(1, "register", "POST", {"key": KEY_A}, dev="mom")[1]["code"]
         b = self.call(1, "register", "POST", {"key": KEY_B}, dev="son")[1]["code"]
@@ -22,12 +32,15 @@ class ChatRelayTest(unittest.TestCase):
         self.call(1, "send", "POST", {"to": b, "box": BOX}, dev="mom")
         self.assertEqual(self.call(1, "inbox", dev="mom")[1]["messages"], [], "мама не видит почту сына")
         self.assertEqual(len(self.call(1, "inbox", dev="son")[1]["messages"]), 1)
-        second = self.call(1, "register", "POST", {"key": KEY_A}, dev="son#1")[1]["code"]
-        self.assertNotIn(second, (a, b), "второй профиль на том же телефоне — свой код")
-        self.assertEqual(self.c.drop(1, "son"), 2, "устройство удалили в боте — пропали оба его профиля")
+        self.assertEqual(self.c.drop(1, "son"), 1, "устройство удалили в боте — его код пропал")
         self.assertEqual(self.call(1, "key", code=b)[0], 404)
-        self.assertEqual(self.c.drop(1), 1, "«Сбросить все» — пропали все коды подписки")
+        self.assertEqual(self.c.drop(1), 1, "все коды подписки")
         self.assertEqual(self.call(1, "status", dev="mom")[1]["code"], "")
+        # второй профиль (второй PIN) на одном телефоне — свой код и уходит вместе с телефоном
+        first = self.call(7, "register", "POST", {"key": KEY_A}, dev="son")[1]["code"]
+        second = self.call(7, "register", "POST", {"key": KEY_A}, dev="son#1")[1]["code"]
+        self.assertNotEqual(first, second)
+        self.assertEqual(self.c.drop(7, "son"), 2, "удалили телефон — пропали оба его профиля")
 
     def setUp(self):
         self.d = tempfile.mkdtemp()

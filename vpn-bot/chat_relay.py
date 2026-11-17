@@ -30,6 +30,7 @@ MAX_FROM_ONE = 200            # из них — недоставленных о�
 MAX_AGE = 7 * 86400           # сколько письмо ждёт получателя
 SEND_PER_MIN = 60             # сообщений в минуту от одного отправителя
 MAX_KEY = 4096                # открытый ключ (набор ключей Tink в JSON/base64)
+MAX_PER_SUB = 2               # аккаунтов чата на подписку: основной и второй
 
 
 def norm_code(code: str) -> str:
@@ -191,6 +192,11 @@ class ChatRelay:
         except ValueError:
             return 400, {"error": "bad key"}
         me = self.ident(uid, device)
+        if me not in self.data["users"]:
+            # Не больше MAX_PER_SUB аккаунтов чата на подписку, на скольких бы устройствах она ни стояла
+            mine = sum(1 for k in self.data["users"] if k.startswith(f"{uid}:"))
+            if mine >= MAX_PER_SUB:
+                return 403, {"error": "chat limit"}
         u = self.data["users"].setdefault(me, {})
         code = u.get("code")
         if not code:
