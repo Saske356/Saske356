@@ -65,7 +65,7 @@ object Chat {
     private fun base(): String = Store.subUrl.trim().substringBefore('?').trimEnd('/') + "/chat/"
 
     private fun request(path: String, body: JSONObject? = null, main: Boolean = false, slow: Boolean = false,
-                        waitSec: Int = 0): JSONObject {
+                        waitSec: Int = 0, profile: String = ""): JSONObject {
         var last: Exception? = null
         val viaVpn = VpnState.flow.value.status == Status.RUNNING
         for (tunnel in if (viaVpn) listOf(true, false) else listOf(false)) {
@@ -80,7 +80,8 @@ object Chat {
                 c.setRequestProperty("x-device-model", android.os.Build.MODEL ?: "")
                 c.setRequestProperty("x-device-os", "Android")
                 // второй профиль (второй PIN) — отдельный код чата на том же месте в подписке
-                if (!main && vault?.slot == ChatVault.Slot.DECOY) c.setRequestProperty("x-chat-profile", "1")
+                if (profile.isNotEmpty()) c.setRequestProperty("x-chat-profile", profile)
+                else if (!main && vault?.slot == ChatVault.Slot.DECOY) c.setRequestProperty("x-chat-profile", "1")
                 if (body != null) {
                     val raw = body.toString().toByteArray()
                     c.requestMethod = "POST"
@@ -133,8 +134,13 @@ object Chat {
     }
 
     /** Для уведомлений: сколько писем ждёт основной профиль и когда пришло последнее (секунды). */
-    fun peekMain(): Pair<Int, Long>? = try {
-        val r = request("peek", main = true)
+    fun peekMain(): Pair<Int, Long>? = peek(false)
+
+    /** То же для второго профиля (второй PIN). */
+    fun peekSecond(): Pair<Int, Long>? = peek(true)
+
+    private fun peek(second: Boolean): Pair<Int, Long>? = try {
+        val r = request("peek", main = !second, profile = if (second) "1" else "")
         if (r.has("error")) null else r.optInt("n") to r.optLong("last")
     } catch (e: Exception) {
         null

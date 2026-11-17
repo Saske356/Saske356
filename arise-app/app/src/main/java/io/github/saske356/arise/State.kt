@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeoutOrNull
 
 enum class Status { STOPPED, CONNECTING, RUNNING }
 
@@ -110,22 +111,45 @@ object Repo {
         }
     }
 
-    /** Настоящая задержка до каждой страны (по 3 одновременно). */
+    @Volatile
+    private var pingStarted = 0L
+
+    /**
+     * Настоящая задержка до каждой страны (по 4 одновременно), и при выключенном VPN.
+     * Каждая страна показывается сразу, как замерена (раньше — только когда замерены все,
+     * и одна долго молчащая страна прятала пинг у всех), выбранная — первой. На страну — не
+     * больше 15 с: замер, который завис в ядре, просто перестаём ждать.
+     */
     fun pingAll() = scope.launch {
-        if (flow.value.pinging) return@launch
+        val now = System.currentTimeMillis()
+        if (flow.value.pinging && now - pingStarted < 120_000L) return@launch
+        pingStarted = now
         flow.update { it.copy(pinging = true) }
         try {
             Core.init(app)
-            val sem = Semaphore(3)
-            val results = Store.servers().map { s ->
-                async { sem.withPermit { s.name to Core.measure(s.json) } }
-            }.awaitAll().toMap()
-            Store.pings = results
-            flow.update { it.copy(pings = results) }
+            val sem = Semaphore(4)
+            val sel = flow.value.selected
+            val list = Store.servers().sortedBy { if (it.name == sel) 0 else 1 }
+            list.map { s ->
+                async {
+                    sem.withPermit {
+                        val job = measureScope.async { Core.measure(s.json) }
+                        val ms = withTimeoutOrNull(15_000L) { job.await() } ?: -1L
+                        synchronized(this@Repo) {
+                            val all = flow.value.pings + (s.name to ms)
+                            Store.pings = all
+                            flow.update { it.copy(pings = all) }
+                        }
+                    }
+                }
+            }.awaitAll()
         } finally {
             flow.update { it.copy(pinging = false) }
         }
     }
+
+    // отдельно: зависший замер не держит общий поток
+    private val measureScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun select(name: String) {
         Store.selected = name

@@ -273,12 +273,24 @@ class AriseVpnService : VpnService() {
             delay(20_000)
             while (isActive) {
                 val mode = ChatVault.notifyMode()
-                if (mode != "off" && ChatVault.exists() && !Chat.flow.value.unlocked) {
-                    val p = Chat.peekMain()
-                    if (p != null && p.first > 0 && p.second > ChatVault.lastNotified) {
-                        ChatVault.lastNotified = p.second
-                        notifyChat(mode)
+                if (ChatVault.exists() && !Chat.flow.value.unlocked) {
+                    var show = ""
+                    if (mode != "off") {
+                        val p = Chat.peekMain()
+                        if (p != null && p.first > 0 && p.second > ChatVault.lastNotified) {
+                            ChatVault.lastNotified = p.second
+                            show = mode
+                        }
                     }
+                    // второй чат — только если включили изнутри него, и только «есть обновление»
+                    if (ChatVault.secondNotify && ChatVault.exists(ChatVault.Slot.DECOY)) {
+                        val p = Chat.peekSecond()
+                        if (p != null && p.first > 0 && p.second > ChatVault.lastNotified2) {
+                            ChatVault.lastNotified2 = p.second
+                            if (show.isEmpty()) show = "neutral"
+                        }
+                    }
+                    if (show.isNotEmpty()) notifyChat(show)
                 }
                 delay(60_000)
             }

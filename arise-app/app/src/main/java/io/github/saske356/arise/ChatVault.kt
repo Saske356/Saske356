@@ -114,6 +114,15 @@ object ChatVault {
         get() = prefs.getLong("notified_" + name(), 0L)
         set(v) = prefs.edit().putLong("notified_" + name(), v).apply()
 
+    // Второй профиль: только нейтральное «есть обновление» и только если включили изнутри него.
+    // Ключ с безликим именем: по настройкам не понять, что второй чат вообще есть.
+    var secondNotify: Boolean
+        get() = prefs.getBoolean("sx_" + name(), false)
+        set(v) = prefs.edit().putBoolean("sx_" + name(), v).apply()
+    var lastNotified2: Long
+        get() = prefs.getLong("sxt_" + name(), 0L)
+        set(v) = prefs.edit().putLong("sxt_" + name(), v).apply()
+
     private val dir: File get() = File(root, name()).also { it.mkdirs() }
     private val alias: String get() = ALIAS + "_" + name()
     private val failsKey: String get() = "fails_" + name()

@@ -595,6 +595,17 @@ private fun ProtectScreen(ui: ChatUi, back: () -> Unit, openAdmin: () -> Unit) {
         }
         ToggleRow("🚫", "Запрет скриншотов и превью в «недавних»", ui.noScreens) { Chat.setNoScreens(!ui.noScreens) }
         ToggleRow("⏲", "Закрывать чат, если свернули приложение", ui.lockOnLeave) { Chat.setLockOnLeave(!ui.lockOnLeave) }
+        if (ui.decoy) {
+            // Во втором профиле — своя настройка (основную отсюда не трогаем): только тихие уведомления
+            var on by remember { mutableStateOf(ChatVault.secondNotify) }
+            Tool("🔔", "Уведомления о письмах",
+                (if (on) "«Arise VPN: есть обновление» — чат не выдаёт себя" else "Выключены") +
+                    " · приходят, пока включён VPN",
+                if (on) "Тихие ›" else "Выкл ›") {
+                on = !on
+                ChatVault.secondNotify = on
+            }
+        } else {
         var notify by remember { mutableStateOf(ChatVault.notifyMode()) }
         Tool("🔔", "Уведомления о письмах",
             when (notify) {
@@ -605,6 +616,7 @@ private fun ProtectScreen(ui: ChatUi, back: () -> Unit, openAdmin: () -> Unit) {
             when (notify) { "plain" -> "Явные ›"; "off" -> "Выкл ›"; else -> "Тихие ›" }) {
             notify = when (notify) { "neutral" -> "plain"; "plain" -> "off"; else -> "neutral" }
             ChatVault.setNotifyMode(notify)
+        }
         }
         run {
             Section("Вход")
