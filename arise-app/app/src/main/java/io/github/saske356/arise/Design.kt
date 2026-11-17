@@ -252,7 +252,40 @@ internal fun EmojiIcon(emoji: String, size: Dp, color: Color = Blue) {
 /** Простые линейные значки (нарисованы кодом, в одном стиле с картинками-образцами). */
 @Composable
 internal fun LineIcon(ico: Ico, size: Dp, color: Color = Blue) {
-    Canvas(Modifier.size(size)) { drawIco(ico, color) }
+    // Крупные значки — картинки ChatGPT (design/icons/gpt); мелкие свои: у его значков толстое
+    // свечение, и меньше 28 dp они расплываются в пятно.
+    val gpt = if (size >= 28.dp) gptIcon(ico) else null
+    if (gpt != null) {
+        androidx.compose.foundation.Image(
+            androidx.compose.ui.res.painterResource(gpt), contentDescription = null, modifier = Modifier.size(size)
+        )
+    } else Canvas(Modifier.size(size)) { drawIco(ico, color) }
+}
+
+private fun gptIcon(ico: Ico): Int? = when (ico) {
+    Ico.BOLT -> R.drawable.ic_gpt_bolt
+    Ico.ROCKET -> R.drawable.ic_gpt_rocket
+    Ico.GAMEPAD -> R.drawable.ic_gpt_gamepad
+    Ico.CROWN -> R.drawable.ic_gpt_crown
+    Ico.SHIELD -> R.drawable.ic_gpt_shield
+    Ico.LOCK -> R.drawable.ic_gpt_lock
+    Ico.APPS -> R.drawable.ic_gpt_apps
+    Ico.POWER -> R.drawable.ic_gpt_power
+    Ico.BELL -> R.drawable.ic_gpt_bell
+    Ico.REFRESH -> R.drawable.ic_gpt_refresh
+    Ico.SWAP -> R.drawable.ic_gpt_swap
+    Ico.CLIP -> R.drawable.ic_gpt_clip
+    Ico.SEND -> R.drawable.ic_gpt_send
+    Ico.HAT -> R.drawable.ic_gpt_hat
+    Ico.BATTERY -> R.drawable.ic_gpt_battery
+    Ico.INFO -> R.drawable.ic_gpt_info
+    Ico.DOWN -> R.drawable.ic_gpt_down
+    Ico.UP -> R.drawable.ic_gpt_up
+    Ico.CLOCK -> R.drawable.ic_gpt_clock
+    Ico.GEAR -> R.drawable.ic_gpt_gear
+    Ico.SEARCH -> R.drawable.ic_gpt_search
+    Ico.GLOBE -> R.drawable.ic_gpt_globe
+    else -> null
 }
 
 private fun DrawScope.drawIco(ico: Ico, color: Color) {

@@ -336,7 +336,7 @@ private fun HomeTiles(vpn: VpnUi, data: Data) {
 @Composable
 private fun HomeTile(ico: Ico, k: String, v: String, modifier: Modifier) {
     Column(modifier.glass(18.dp).padding(vertical = 12.dp, horizontal = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        LineIcon(ico, 24.dp, Blue)
+        LineIcon(ico, 30.dp, Blue)
         Text(k, color = TextSoft, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
         Text(v, color = TextMain, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }

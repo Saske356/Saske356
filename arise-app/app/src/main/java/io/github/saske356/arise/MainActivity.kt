@@ -529,7 +529,7 @@ private fun RecommendTile(s: Server, data: Data, modifier: Modifier, onPick: (St
             Modifier.size(42.dp).clip(CircleShape)
                 .background(Brush.radialGradient(listOf(Color(0x552F6BFF), Color(0x110E1A36)))),
             contentAlignment = Alignment.Center
-        ) { EmojiIcon(icon, 26.dp) }
+        ) { EmojiIcon(icon, 32.dp) }
         Column(Modifier.weight(1f).padding(start = 8.dp)) {
             Text(title, color = TextMain, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(note, color = TextSoft, fontSize = 11.5.sp, maxLines = 2, lineHeight = 14.sp)
@@ -634,7 +634,7 @@ private fun ModesScreen(data: Data, back: () -> Unit, onPick: (Mode) -> Unit) {
                         .background(Brush.radialGradient(listOf(Color(0x662F6BFF), Color(0x220E1A36))))
                         .border(1.dp, Color(0x447AAEFF), RoundedCornerShape(18.dp)),
                     contentAlignment = Alignment.Center
-                ) { EmojiIcon(m.emoji, 34.dp) }
+                ) { EmojiIcon(m.emoji, 44.dp) }
                 Column(Modifier.weight(1f).padding(start = 14.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(m.title, color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -903,7 +903,7 @@ internal fun Tool(icon: String, title: String, sub: String, right: String, onCli
                 .background(Brush.radialGradient(listOf(Color(0x552F6BFF), Color(0x1A0E1A36))))
                 .border(1.dp, Color(0x337AAEFF), RoundedCornerShape(14.dp)),
             contentAlignment = Alignment.Center
-        ) { EmojiIcon(icon, 24.dp) }
+        ) { EmojiIcon(icon, 34.dp) }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(title, color = TextMain, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
@@ -1062,7 +1062,7 @@ private fun Welcome(data: Data, onOpen: (String) -> Unit) {
 private fun Feature(ico: Ico?, text: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(100.dp)) {
         Box(Modifier.size(56.dp).glass(18.dp), contentAlignment = Alignment.Center) {
-            LineIcon(ico ?: Ico.SHIELD, 28.dp, Blue)
+            LineIcon(ico ?: Ico.SHIELD, 40.dp, Blue)
         }
         Text(text, color = TextMain, fontSize = 14.sp, textAlign = TextAlign.Center, lineHeight = 18.sp,
             modifier = Modifier.padding(top = 8.dp))
