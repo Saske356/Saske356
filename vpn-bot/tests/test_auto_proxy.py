@@ -340,9 +340,17 @@ class SourceTests(unittest.TestCase):
                  "ip_data": {"countryCode": "NL"}}]},
             "geonode": {"data": [{"ip": "198.51.100.1", "port": "1080", "protocols": ["socks5"], "country": "NL",
                                   "upTime": 50}]},
+            "vakhov": [
+                {"ip": "198.51.100.40", "port": "1080", "country_code": "NL", "socks5": "1", "http": "0", "ssl": "0",
+                 "checks_up": "900", "checks_down": "100", "delay": 300, "lastseen": 60},
+                {"ip": "198.51.100.41", "port": "8080", "country_code": "NL", "socks5": "0", "http": "1", "ssl": "0",
+                 "checks_up": "900", "checks_down": "100", "delay": 300, "lastseen": 60},
+                {"ip": "198.51.100.42", "port": "1080", "country_code": "NL", "socks5": "1", "http": "0", "ssl": "0",
+                 "checks_up": "10", "checks_down": "90", "delay": 300, "lastseen": 60}],
         }
         text = {"hideip": "198.51.100.20:1080:Netherlands\n198.51.100.21:1080:Atlantis\nmusor\n",
-                "plain": "198.51.100.30:1080\n198.51.100.1:1080\n"}
+                "plain": "198.51.100.30:1080\n198.51.100.1:1080\n",
+                "scheme": "socks5://198.51.100.50:1080\nsocks4://198.51.100.51:1080\nhttp://198.51.100.52:3128\n"}
         real, real_text = pp._fetch_json, pp._fetch_text
         pp._fetch_json = lambda url, timeout=25.0: data[next(n for n, u in pp.SOURCES if u == url)]
         pp._fetch_text = lambda url, timeout=25.0: text[next(n for n, u in pp.SOURCES if u == url)]
@@ -358,6 +366,12 @@ class SourceTests(unittest.TestCase):
         self.assertIn("socks5://198.51.100.30:1080", pool[pp.UNKNOWN], "без страны — в общий котёл")
         self.assertIn("socks5://198.51.100.21:1080", pool[pp.UNKNOWN], "незнакомая страна — тоже")
         self.assertNotIn("socks5://198.51.100.1:1080", pool[pp.UNKNOWN], "уже известный со страной — не дублируется")
+        self.assertIn("socks5://198.51.100.40:1080", pool["nl"], "vakhov: стабильный — берём")
+        self.assertNotIn("http://198.51.100.41:8080", pool["nl"], "HTTP без туннелей — нет")
+        self.assertNotIn("socks5://198.51.100.42:1080", pool["nl"], "отвечал в 10% проверок — нет")
+        self.assertIn("socks5://198.51.100.50:1080", pool[pp.UNKNOWN])
+        self.assertIn("http://198.51.100.52:3128", pool[pp.UNKNOWN])
+        self.assertNotIn("socks4://198.51.100.51:1080", pool[pp.UNKNOWN], "socks4 не годится")
 
 
 class RelayTests(Base):

@@ -41,9 +41,15 @@ SOURCES = [
     # страну бот узнаёт сам при проверке (по реальному выходу), так что ошибки списков не мешают.
     ("hideip", "https://raw.githubusercontent.com/zloi-user/hideip.me/main/socks5.txt"),
     ("hideip", "https://raw.githubusercontent.com/zloi-user/hideip.me/main/http.txt"),
+    # Список с историей: сколько раз прокси отвечал и не отвечал за долгое время, задержка, страна.
+    # По доле удачных проверок стабильные прокси идут первыми — меньше «то есть страна, то нет».
+    ("vakhov", "https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/proxylist.json"),
     ("plain", "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt"),
-    ("plain", "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt"),
-    ("plain", "https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/proxies/socks5.txt"),
+    # Свежие проверенные списки «протокол://адрес:порт» (страну бот узнаёт сам при проверке).
+    # Вместо огромных TheSpeedX/ErcinDedeoglu: там в основном мёртвые адреса, и на их перебор
+    # уходила вся очередь проверок.
+    ("scheme", "https://raw.githubusercontent.com/iplocate/free-proxy-list/main/all-proxies.txt"),
+    ("scheme", "https://raw.githubusercontent.com/dpangestuw/Free-Proxy/main/socks5_proxies.txt"),
 ]
 UNKNOWN = "??"          # котёл прокси без страны
 MAX_UNKNOWN = 600       # сколько из него держать (случайная выборка)
@@ -176,8 +182,37 @@ def _parse_lines(text: str, pool, proto: str, with_country: bool) -> None:
             _add(pool, cc, proto, parts[0], parts[1])
 
 
+def _parse_vakhov(data, pool) -> None:
+    for p in data if isinstance(data, list) else []:
+        try:
+            up, down = int(p.get("checks_up") or 0), int(p.get("checks_down") or 0)
+            delay, seen = int(p.get("delay") or 9999), int(p.get("lastseen") or 99999)
+        except (TypeError, ValueError):
+            continue
+        if seen > 3600 or up + down < 10 or delay > MAX_MS:
+            continue  # давно не видели, мало истории или слишком медленный
+        uptime = 100.0 * up / (up + down)
+        if uptime < 50:
+            continue
+        protos = []
+        if str(p.get("socks5")) == "1":
+            protos.append("socks5")
+        if str(p.get("http")) == "1" and str(p.get("ssl")) == "1":
+            protos.append("http")  # только HTTP-прокси с туннелями (CONNECT), иначе VPN не пройдёт
+        for proto in protos:
+            _add(pool, p.get("country_code"), proto, p.get("ip"), p.get("port"), uptime)
+
+
+def _parse_scheme(text: str, pool) -> None:
+    """Строки «socks5://адрес:порт» без страны — в общий котёл."""
+    for line in text.splitlines():
+        m = re.fullmatch(r"(socks5|http)://([0-9.]+):(\d{1,5})", line.strip().lower())
+        if m:
+            pool.setdefault(UNKNOWN, {})[f"{m.group(1)}://{m.group(2)}:{int(m.group(3))}"] = 0.6
+
+
 PARSERS = {"proxifly": _parse_proxifly, "proxyscrape": _parse_proxyscrape, "geonode": _parse_geonode,
-           "monosans": _parse_monosans}
+           "monosans": _parse_monosans, "vakhov": _parse_vakhov}
 
 
 def _fetch_text(url: str, timeout: float = 25.0) -> str:
@@ -194,7 +229,9 @@ def _collect() -> dict[str, list[str]]:
     pool: dict[str, dict] = {}
     for name, url in SOURCES:
         try:
-            if name in ("hideip", "plain"):
+            if name == "scheme":
+                _parse_scheme(_fetch_text(url), pool)
+            elif name in ("hideip", "plain"):
                 proto = "http" if url.endswith("/http.txt") else "socks5"
                 _parse_lines(_fetch_text(url), pool, proto, with_country=name == "hideip")
             else:
