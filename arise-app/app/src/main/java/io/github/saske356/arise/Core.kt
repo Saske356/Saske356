@@ -127,12 +127,21 @@ object Core {
     }
 
     /** Замер задержки страны без включённого VPN: ядро поднимается на секунду только для замера. */
-    fun measure(server: String): Long = try {
+    /** Текст последней ошибки замера без VPN — показываем в списке стран, чтобы видеть причину. */
+    @Volatile
+    var lastMeasureError: String = ""
+
+    fun measure(server: String, mode: Mode = Mode.BALANCE): Long = try {
         val o = JSONObject(server)
         o.put("inbounds", JSONArray())
+        mode.apply(o)          // те же настройки подключения, что и при включённом VPN
         resolveAddresses(o)
-        Libv2ray.measureOutboundDelay(o.toString(), PING_URL)
-    } catch (e: Exception) {
+        val ms = Libv2ray.measureOutboundDelay(o.toString(), PING_URL)
+        if (ms <= 0) lastMeasureError = "ядро вернуло $ms"
+        ms
+    } catch (e: Throwable) {
+        lastMeasureError = (e.message ?: e.javaClass.simpleName).take(300)
+        Log.w(TAG, "замер без VPN", e)
         -1L
     }
 

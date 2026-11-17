@@ -720,6 +720,11 @@ private fun CountrySheet(open: Boolean, vpn: VpnUi, data: Data, close: () -> Uni
                 }
                 Text("Выберите страну", color = TextMain, fontSize = 21.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp))
                 Field(query, "🔍  Поиск страны", Modifier.padding(top = 12.dp, bottom = 4.dp)) { query = it }
+                // Все страны без связи при выключенном VPN — показываем причину (для разбора)
+                if (vpn.status != Status.RUNNING && data.pingError.isNotEmpty() &&
+                    data.pings.isNotEmpty() && data.pings.values.none { it > 0 }
+                ) Text("Замер без VPN: ${data.pingError}", color = TextDim, fontSize = 11.5.sp,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp))
                 val list = data.servers.filter { query.isBlank() || it.name.contains(query.trim(), ignoreCase = true) }
                 val special = list.filter { it.name.startsWith("🚀") || it.name.startsWith("🎮") }
                 val rest = list - special.toSet()

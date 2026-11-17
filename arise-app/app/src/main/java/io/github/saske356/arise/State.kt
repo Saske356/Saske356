@@ -53,6 +53,7 @@ data class Data(
     val subUrl: String = "",
     val servers: List<Server> = emptyList(),
     val pings: Map<String, Long> = emptyMap(),
+    val pingError: String = "",   // почему не удался замер без VPN (последняя ошибка)
     val selected: String = "",
     val expire: Long = 0L,
     val title: String = "",
@@ -133,12 +134,13 @@ object Repo {
             list.map { s ->
                 async {
                     sem.withPermit {
-                        val job = measureScope.async { Core.measure(s.json) }
-                        val ms = withTimeoutOrNull(15_000L) { job.await() } ?: -1L
+                        val job = measureScope.async { Core.measure(s.json, Store.mode) }
+                        val ms = withTimeoutOrNull(15_000L) { job.await() }
+                            ?: (-1L).also { Core.lastMeasureError = "нет ответа за 15 секунд" }
                         synchronized(this@Repo) {
                             val all = flow.value.pings + (s.name to ms)
                             Store.pings = all
-                            flow.update { it.copy(pings = all) }
+                            flow.update { it.copy(pings = all, pingError = if (ms > 0) "" else Core.lastMeasureError) }
                         }
                     }
                 }
