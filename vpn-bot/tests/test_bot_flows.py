@@ -560,7 +560,17 @@ async def main():
         plain = subprocess.run(["openssl", "enc", "-d", "-aes-256-cbc", "-pbkdf2", "-iter", "200000",
                                 "-pass", "pass:s3cret pass"], input=enc, capture_output=True, check=True).stdout
         names = tarfile.open(fileobj=_io.BytesIO(plain)).getnames()
-        assert names == ["bot.db"], names
+        assert names == ["bot.db", "payments.json"], "ключи оплаты — только в зашифрованной копии"
+        files_plain = [n for n, _ in bot.make_backup()]
+        assert "payments.json" not in files_plain, files_plain
+        # копия, которую не расшифровать, не считается сохранённой
+        real_verify = bot.verify_backup
+        async def broken(blob, names): raise RuntimeError("копия не расшифровывается")
+        bot.verify_backup = broken
+        try:
+            assert any("не сохранилась" in p or "не расшифровывается" in p for p in await bot.store_backup_safe())
+        finally:
+            bot.verify_backup = real_verify
         check_caption(call.kwargs["caption"])
         config.BACKUP_KEEP = 2
         for _ in range(3):

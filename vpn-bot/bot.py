@@ -1955,8 +1955,9 @@ async def server_text() -> str:
     return "<b>Сервер</b>\n\n<blockquote>" + "\n".join(lines) + "</blockquote>"
 
 
-def make_backup() -> list[tuple[str, bytes]]:
-    """Согласованная копия базы и настроек VPN (секрет, страны, мосты)."""
+def make_backup(secret: bool = False) -> list[tuple[str, bytes]]:
+    """Согласованная копия базы и настроек VPN (секрет, страны, мосты), кодов чата (только открытые ключи,
+    переписки там нет) и — если копия шифруется (secret) — ключей оплаты."""
     files = []
     tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
     tmp.close()
@@ -1969,9 +1970,16 @@ def make_backup() -> list[tuple[str, bytes]]:
     finally:
         os.unlink(tmp.name)
     state = getattr(vpn, "state_path", None)
-    if state and os.path.exists(state):
-        with open(state, "rb") as f:
-            files.append(("vpn.json", f.read()))
+    extra = []
+    if state:
+        extra += [("vpn.json", state), ("chat.json", os.path.join(os.path.dirname(state), "chat.json"))]
+    if secret:
+        # ключи оплаты — только в зашифрованную копию
+        extra.append(("payments.json", pay_cfg.path))
+    for name, path in extra:
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                files.append((name, f.read()))
     return files
 
 
@@ -2006,7 +2014,22 @@ async def pack_backup(files: list[tuple[str, bytes]], stamp: str) -> tuple[str, 
         if code != 0:
             raise RuntimeError("openssl не зашифровал копию: " + out.decode(errors="replace")[-300:])
         name, blob = name + ".enc", out
+        await verify_backup(blob, [n for n, _ in files])
     return name, blob
+
+
+async def verify_backup(blob: bytes, names: list[str]) -> None:
+    """Проверка, что зашифрованную копию правда можно открыть: расшифровать и прочитать список файлов."""
+    import tarfile
+    code, plain = await _run("openssl", "enc", "-d", "-aes-256-cbc", "-pbkdf2", "-iter", "200000",
+                             "-pass", "env:AURORA_BACKUP_PASSWORD", data=blob,
+                             env={"AURORA_BACKUP_PASSWORD": config.BACKUP_PASSWORD})
+    if code != 0:
+        raise RuntimeError("копия не расшифровывается — проверьте openssl на сервере")
+    with tarfile.open(fileobj=io.BytesIO(plain), mode="r:gz") as tar:
+        got = tar.getnames()
+    if got != names:
+        raise RuntimeError(f"в копии не те файлы: {got}")
 
 
 DECRYPT_HINT = ("openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in ФАЙЛ.tar.gz.enc | tar xz")
@@ -2014,7 +2037,7 @@ DECRYPT_HINT = ("openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in ФАЙЛ.t
 
 async def send_backup(bot, chat_id: int) -> int:
     stamp = datetime.datetime.now().strftime("%Y-%m-%d")
-    files = make_backup()
+    files = make_backup(secret=bool(config.BACKUP_PASSWORD))
     if config.BACKUP_PASSWORD:
         name, blob = await pack_backup(files, stamp)
         await bot.send_document(
@@ -2034,7 +2057,7 @@ async def store_backup() -> list[str]:
     """Копия на диске сервера и, если задан BACKUP_RCLONE, в облаке. Возвращает список проблем."""
     problems = []
     stamp = datetime.datetime.now().strftime("%Y-%m-%d")
-    name, blob = await pack_backup(make_backup(), stamp)
+    name, blob = await pack_backup(make_backup(secret=bool(config.BACKUP_PASSWORD)), stamp)
     os.makedirs(config.BACKUP_DIR, mode=0o700, exist_ok=True)
     path = os.path.join(config.BACKUP_DIR, name)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -2059,14 +2082,18 @@ async def store_backup() -> list[str]:
     return problems
 
 
+async def store_backup_safe() -> list[str]:
+    try:
+        return await store_backup()
+    except Exception as e:
+        log.exception("резервная копия на диск")
+        return [f"копия на сервере не сохранилась: {e}"]
+
+
 async def backup_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     if db.stats()["users"] == 0:
         return
-    try:
-        problems = await store_backup()
-    except Exception as e:
-        log.exception("резервная копия на диск")
-        problems = [f"копия на сервере не сохранилась: {e}"]
+    problems = await store_backup_safe()
     for admin_id in config.ADMIN_IDS:
         try:
             await send_backup(context.bot, admin_id)
