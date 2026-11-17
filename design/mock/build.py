@@ -27,13 +27,25 @@ html = (html.replace("<!--SHEET-->", screens.sheet()).replace("<!--VIEWS-->", sc
 _n = [0]
 
 
+GPT = os.path.join(os.path.dirname(HERE), "icons", "gpt")
+_used = set()
+
+
 def _ico(m):
+    """Значок ChatGPT (design/icons/gpt/*.webp), если он есть, иначе свой глянцевый SVG."""
     _n[0] += 1
     name, px = m.group(1), m.group(2)
+    # мелкие значки ChatGPT из-за толстого свечения расплываются в пятно — до 28 px свои
+    if int(px) >= 28 and os.path.exists(os.path.join(GPT, name + ".webp")):
+        _used.add(name)
+        return f'<span class="ico gi-{name}" style="width:{px}px;height:{px}px"></span>'
     return f'<span class="ico" style="width:{px}px;height:{px}px">{icons.svg(name, "_" + str(_n[0]))}</span>'
 
 
 html = re.sub(r"\{\{ico:(\w+):(\d+)\}\}", _ico, html)
+gpt_css = "".join(f".gi-{n}{{background:url(data:image/webp;base64,{b64(os.path.join(GPT, n + '.webp'))}) center/contain no-repeat}}"
+                  for n in sorted(_used))
+html = html.replace("/*FONTS*/", "/*FONTS*/" + gpt_css)
 html = (html.replace("/*FONTS*/", fonts)
         .replace("PHOTO_DATA", "data:image/jpeg;base64," + b64(os.path.join(HERE, "chat_photo.jpg")))
         .replace("GLOBE_DATA", "data:image/webp;base64," + b64(os.path.join(HERE, os.environ.get("GLOBE", "globe_gpt.webp"))))

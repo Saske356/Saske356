@@ -40,7 +40,7 @@ def sheet():
 
 
 def tool(icon, t, sub, right, top, h=50):
-    return (f'<div class="card tool press" style="top:{top}px;height:{h}px"><div class="sq">{ico(icon, 30)}</div>'
+    return (f'<div class="card tool press" style="top:{top}px;height:{h}px"><div class="sq">{ico(icon, 36)}</div>'
             f'<div class="tt"><b>{t}</b><small>{sub}</small></div>{right}</div>')
 
 
