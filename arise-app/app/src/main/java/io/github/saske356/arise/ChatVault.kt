@@ -106,6 +106,14 @@ object ChatVault {
 
     fun hasOrphans(): Boolean = !exists() && orphans().isNotEmpty()
 
+    // Уведомления о новых письмах (вне хранилища: их проверяет VPN-служба, пока чат закрыт).
+    // neutral — «Arise VPN: есть обновление» (чат не выдаёт себя), plain — «Новое сообщение», off — нет.
+    fun notifyMode(): String = prefs.getString("notify_" + name(), "neutral") ?: "neutral"
+    fun setNotifyMode(mode: String) = prefs.edit().putString("notify_" + name(), mode).apply()
+    var lastNotified: Long
+        get() = prefs.getLong("notified_" + name(), 0L)
+        set(v) = prefs.edit().putLong("notified_" + name(), v).apply()
+
     private val dir: File get() = File(root, name()).also { it.mkdirs() }
     private val alias: String get() = ALIAS + "_" + name()
     private val failsKey: String get() = "fails_" + name()

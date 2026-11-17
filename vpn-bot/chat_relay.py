@@ -167,6 +167,10 @@ class ChatRelay:
             msgs = self.data["boxes"].get(me, [])[:200]
             return 200, {"messages": [{"id": m["id"], "from": m["from"], "box": m["box"], "t": int(m["t"])}
                                       for m in msgs]}
+        if action == "peek":
+            # Для уведомлений: только сколько писем ждёт и когда пришло последнее, без содержимого
+            box = [m for m in self.data["boxes"].get(me, []) if time.time() - m["t"] < MAX_AGE]
+            return 200, {"n": len(box), "last": int(max((m["t"] for m in box), default=0))}
         if action == "ack" and method == "POST":
             ids = {str(i) for i in req.get("ids") or []}
             box = self.data["boxes"].get(me, [])

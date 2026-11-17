@@ -62,7 +62,7 @@ object Chat {
 
     private fun base(): String = Store.subUrl.trim().substringBefore('?').trimEnd('/') + "/chat/"
 
-    private fun request(path: String, body: JSONObject? = null): JSONObject {
+    private fun request(path: String, body: JSONObject? = null, main: Boolean = false): JSONObject {
         var last: Exception? = null
         val viaVpn = VpnState.flow.value.status == Status.RUNNING
         for (tunnel in if (viaVpn) listOf(true, false) else listOf(false)) {
@@ -77,7 +77,7 @@ object Chat {
                 c.setRequestProperty("x-device-model", android.os.Build.MODEL ?: "")
                 c.setRequestProperty("x-device-os", "Android")
                 // второй профиль (второй PIN) — отдельный код чата на том же месте в подписке
-                if (vault?.slot == ChatVault.Slot.DECOY) c.setRequestProperty("x-chat-profile", "1")
+                if (!main && vault?.slot == ChatVault.Slot.DECOY) c.setRequestProperty("x-chat-profile", "1")
                 if (body != null) {
                     val raw = body.toString().toByteArray()
                     c.requestMethod = "POST"
@@ -127,6 +127,14 @@ object Chat {
             null
         }
         ChatVault.bind(sp)
+    }
+
+    /** Для уведомлений: сколько писем ждёт основной профиль и когда пришло последнее (секунды). */
+    fun peekMain(): Pair<Int, Long>? = try {
+        val r = request("peek", main = true)
+        if (r.has("error")) null else r.optInt("n") to r.optLong("last")
+    } catch (e: Exception) {
+        null
     }
 
     /** Первый вход: создать хранилище под PIN и новые ключи устройства. */

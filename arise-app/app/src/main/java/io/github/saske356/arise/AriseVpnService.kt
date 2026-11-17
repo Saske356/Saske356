@@ -28,6 +28,8 @@ import libv2ray.Libv2ray
 class AriseVpnService : VpnService() {
     companion object {
         const val CHANNEL = "vpn"
+        const val CHAT_CHANNEL = "chat"
+        private const val CHAT_NOTIFY_ID = 2
         private const val ACTION_START = "io.github.saske356.arise.START"
         private const val ACTION_STOP = "io.github.saske356.arise.STOP"
         private const val NOTIFY_ID = 1
@@ -62,6 +64,7 @@ class AriseVpnService : VpnService() {
     private var controller: CoreController? = null
     private var pingJob: Job? = null
     private var trafficJob: Job? = null
+    private var chatJob: Job? = null
 
     private val callback = object : CoreCallbackHandler {
         override fun onEmitStatus(p0: Long, p1: String?): Long = 0L
@@ -129,6 +132,7 @@ class AriseVpnService : VpnService() {
             goForeground(server.name)
             startPingLoop()
             startTrafficLoop()
+            startChatWatch()
         } catch (e: Exception) {
             Log.e(TAG, "запуск VPN", e)
             VpnState.update { it.copy(status = Status.STOPPED, error = "Не удалось подключиться: ${e.message}") }
@@ -149,6 +153,8 @@ class AriseVpnService : VpnService() {
     private fun stopCore() {
         pingJob?.cancel()
         pingJob = null
+        chatJob?.cancel()
+        chatJob = null
         trafficJob?.cancel()
         trafficJob = null
         running = null
@@ -256,6 +262,46 @@ class AriseVpnService : VpnService() {
     private fun isBridge(name: String) = name.contains("🇷🇺") || name.contains("Обход", ignoreCase = true)
 
     /** Скорость и трафик за сеанс из счётчиков ядра: «тег,направление,байты;…», значения с прошлого запроса. */
+    /**
+     * Пока работает VPN, раз в минуту спрашиваем сервер, нет ли писем в чате (только число, без
+     * содержимого — расшифровать без PIN нельзя). Есть новые — уведомление без текста и имени.
+     * Только основной профиль: уведомления второго выдали бы, что он есть.
+     */
+    private fun startChatWatch() {
+        chatJob?.cancel()
+        chatJob = scope.launch {
+            delay(20_000)
+            while (isActive) {
+                val mode = ChatVault.notifyMode()
+                if (mode != "off" && ChatVault.exists() && !Chat.flow.value.unlocked) {
+                    val p = Chat.peekMain()
+                    if (p != null && p.first > 0 && p.second > ChatVault.lastNotified) {
+                        ChatVault.lastNotified = p.second
+                        notifyChat(mode)
+                    }
+                }
+                delay(60_000)
+            }
+        }
+    }
+
+    private fun notifyChat(mode: String) {
+        val pi = PendingIntent.getActivity(this, 1, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        val b = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, CHAT_CHANNEL)
+        else @Suppress("DEPRECATION") Notification.Builder(this)
+        val n = b.setContentTitle("Arise VPN")
+            .setContentText(if (mode == "plain") "Новое сообщение" else "Есть обновление")
+            .setSmallIcon(R.drawable.ic_shield)
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .build()
+        try {
+            getSystemService(android.app.NotificationManager::class.java).notify(CHAT_NOTIFY_ID, n)
+        } catch (e: SecurityException) {
+            // уведомления запрещены в настройках
+        }
+    }
+
     private fun startTrafficLoop() {
         trafficJob?.cancel()
         trafficJob = scope.launch {

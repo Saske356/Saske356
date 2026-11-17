@@ -549,6 +549,17 @@ private fun ProtectScreen(ui: ChatUi, back: () -> Unit, openAdmin: () -> Unit) {
         }
         ToggleRow("🚫", "Запрет скриншотов и превью в «недавних»", ui.noScreens) { Chat.setNoScreens(!ui.noScreens) }
         ToggleRow("⏲", "Закрывать чат, если свернули приложение", ui.lockOnLeave) { Chat.setLockOnLeave(!ui.lockOnLeave) }
+        var notify by remember { mutableStateOf(ChatVault.notifyMode()) }
+        Tool("🔔", "Уведомления о письмах",
+            when (notify) {
+                "plain" -> "«Новое сообщение» — без текста и имени"
+                "off" -> "Выключены"
+                else -> "«Arise VPN: есть обновление» — чат не выдаёт себя"
+            } + " · приходят, пока включён VPN",
+            when (notify) { "plain" -> "Явные ›"; "off" -> "Выкл ›"; else -> "Тихие ›" }) {
+            notify = when (notify) { "neutral" -> "plain"; "plain" -> "off"; else -> "neutral" }
+            ChatVault.setNotifyMode(notify)
+        }
         run {
             Section("Вход")
             // Второй PIN нигде не показан: его задают долгим нажатием на «Сменить PIN».

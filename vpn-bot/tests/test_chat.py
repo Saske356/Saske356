@@ -59,6 +59,9 @@ class ChatRelayTest(unittest.TestCase):
         self.assertEqual(self.call(1, "key", code=code_b.lower())[1]["key"], KEY_B, "поиск без учёта регистра")
         self.assertEqual(self.call(1, "key", code="ZZZZZZZZZ")[0], 404)
         self.assertEqual(self.call(1, "send", "POST", {"to": code_b, "box": BOX}), (200, {"ok": True}))
+        peek = self.call(2, "peek")[1]
+        self.assertEqual(peek["n"], 1)
+        self.assertNotIn("box", json.dumps(peek), "в уведомлении — только цифры")
         msgs = self.call(2, "inbox")[1]["messages"]
         self.assertEqual([(m["from"], m["box"]) for m in msgs], [(code_a, BOX)], "отправителя ставит сервер")
         self.assertEqual(self.call(2, "inbox")[1]["messages"], msgs, "без подтверждения письмо остаётся")

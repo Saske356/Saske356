@@ -22,6 +22,9 @@ class AriseApp : Application() {
         if (Build.VERSION.SDK_INT >= 26) {
             val channel = NotificationChannel(AriseVpnService.CHANNEL, "VPN", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+            // Новые письма в чате: без текста и имени (см. ChatVault.notifyMode)
+            val chat = NotificationChannel(AriseVpnService.CHAT_CHANNEL, "Обновления", NotificationManager.IMPORTANCE_DEFAULT)
+            getSystemService(NotificationManager::class.java).createNotificationChannel(chat)
         }
     }
 }
