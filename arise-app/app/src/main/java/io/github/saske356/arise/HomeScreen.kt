@@ -296,8 +296,8 @@ private fun HomeCountry(vpn: VpnUi, data: Data, openSheet: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 18.dp)
             .pressable(onClick = openSheet)
-            .shadow(16.dp, RoundedCornerShape(22.dp), ambientColor = BlueMid, spotColor = BlueMid)
-            .glass(22.dp, glow = running)
+            // без тени: карточка полупрозрачная, и тень просвечивала тёмной полосой
+            .glass(22.dp, glow = true)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

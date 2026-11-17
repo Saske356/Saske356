@@ -385,7 +385,10 @@ internal fun FlagCircle(flag: String, size: Dp) {
             .background(Glass)
             .border(1.dp, GlassLine, CircleShape),
         contentAlignment = Alignment.Center
-    ) { Text(flag, fontSize = (size.value * 0.55f).sp) }
+    ) {
+        // «🚀 Лучший сервер», «🎮 Игры» — свои значки, флаги стран — как есть
+        if (icoFor(flag) != null) EmojiIcon(flag, size * 0.56f) else Text(flag, fontSize = (size.value * 0.55f).sp)
+    }
 }
 
 @Composable
