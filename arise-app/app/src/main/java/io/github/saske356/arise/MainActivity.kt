@@ -119,16 +119,16 @@ import java.util.Locale
 internal val Ink = Color(0xFF04070F)
 internal val Night = Color(0xFF071433)
 internal val Deep = Color(0xFF0B2A6B)
-internal val Glass = Color(0x0BFFFFFF)
-internal val GlassLine = Color(0x14FFFFFF)
+internal val Glass = Color(0x99081026)
+internal val GlassLine = Color(0x598CB9FF)
 internal val Sheet = Color(0xFF0D1526)
 internal val Blue = Color(0xFF8CB8FF)
 internal val BlueMid = Color(0xFF6FA4FF)
 internal val BlueLight = Color(0xFFCFE0FF)
 internal val BlueDeep = Color(0xFF2F5FC8)
-internal val TextMain = Color(0xFFEAF1FF)
-internal val TextSoft = Color(0xFF9FB0D3)
-internal val TextDim = Color(0xFF7F8DAB)
+internal val TextMain = Color(0xFFFFFFFF)
+internal val TextSoft = Color(0xFFC9D8F5)
+internal val TextDim = Color(0xFF93A6CC)
 internal val Green = Color(0xFF6FD08C)
 internal val Amber = Color(0xFFE8C46A)
 internal val Red = Color(0xFFE57373)
@@ -364,16 +364,10 @@ internal fun PowerIcon(color: Color, size: Dp) {
 
 @Composable
 internal fun ToggleRow(icon: String, text: String, on: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Row(modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(vertical = 6.dp),
+    Row(modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        Text("$icon  $text", color = TextSoft, fontSize = 14.sp, modifier = Modifier.weight(1f))
-        Switch(
-            checked = on, onCheckedChange = { onClick() },
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = TextMain, checkedTrackColor = BlueDeep,
-                uncheckedThumbColor = TextDim, uncheckedTrackColor = Color(0xFF1A2233), uncheckedBorderColor = GlassLine
-            )
-        )
+        Text("$icon  $text", color = TextSoft, fontSize = 14.sp, modifier = Modifier.weight(1f).padding(end = 10.dp))
+        MiniSwitch(on)
     }
 }
 
@@ -415,273 +409,6 @@ internal fun Bars(ping: Long) {
     }
 }
 
-// ---------------------------------------------------------------- выбор страны
-
-@Composable
-private fun CountrySheet(open: Boolean, vpn: VpnUi, data: Data, close: () -> Unit, onPick: (String) -> Unit) {
-    AnimatedVisibility(open, enter = fadeIn(), exit = fadeOut()) {
-        Box(Modifier.fillMaxSize().background(Color(0xA6000000)).clickable(onClick = close))
-    }
-    // Открыли список — свежий замер, если последний был больше минуты назад
-    LaunchedEffect(open) { if (open) Repo.pingIfStale(60_000L) }
-    AnimatedVisibility(open, enter = slideInVertically { it }, exit = slideOutVertically { it }) {
-        var query by remember { mutableStateOf("") }
-        var byPing by remember { mutableStateOf(false) }
-        Box(Modifier.fillMaxSize()) {
-            Column(
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.86f)
-                    .clip(RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp))
-                    .background(Brush.verticalGradient(listOf(Color(0xFF0E1A36), Color(0xFF060B18))))
-                    .border(1.dp, Blue.copy(alpha = 0.45f), RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp))
-                    // касания по самому окну не должны закрывать его (под ним — затемнение, которое закрывает)
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { }
-                    .navigationBarsPadding()
-                    .padding(horizontal = 16.dp)
-            ) {
-                Box(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 12.dp), contentAlignment = Alignment.Center) {
-                    Box(Modifier.width(44.dp).height(5.dp).clip(RoundedCornerShape(3.dp)).background(Blue.copy(alpha = 0.7f)))
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(40.dp).clip(CircleShape).glass(20.dp), contentAlignment = Alignment.Center) {
-                        LineIcon(Ico.GLOBE, 22.dp, BlueLight)
-                    }
-                    Text("Выберите страну", color = TextMain, fontSize = 22.sp, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f).padding(start = 12.dp))
-                    Box(Modifier.size(40.dp).clip(CircleShape).glass(20.dp).clickable(onClick = close), contentAlignment = Alignment.Center) {
-                        LineIcon(Ico.CLOSE, 16.dp, TextMain)
-                    }
-                }
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 14.dp).glass(22.dp).padding(start = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    LineIcon(Ico.SEARCH, 20.dp, Blue)
-                    OutlinedTextField(
-                        value = query, onValueChange = { query = it.take(40) }, singleLine = true,
-                        placeholder = { Text("Поиск страны", color = TextDim) },
-                        modifier = Modifier.weight(1f),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = TextMain, unfocusedTextColor = TextMain, cursorColor = Blue,
-                            focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent,
-                        )
-                    )
-                }
-                // Все страны без связи при выключенном VPN — показываем причину (для разбора)
-                if (vpn.status != Status.RUNNING && data.pingError.isNotEmpty() &&
-                    data.pings.isNotEmpty() && data.pings.values.none { it > 0 } && data.measuring.isEmpty()
-                ) Text("Замер без VPN: ${data.pingError}", color = TextDim, fontSize = 11.5.sp,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp))
-                val list = data.servers.filter { query.isBlank() || it.name.contains(query.trim(), ignoreCase = true) }
-                val special = list.filter { it.name.startsWith("🚀") || it.name.startsWith("🎮") }
-                var rest = list - special.toSet()
-                if (byPing) {
-                    // по пингу: быстрые сверху, без замера и без связи — в конце
-                    rest = rest.sortedBy { val p = data.pings[it.name] ?: 0L; if (p > 0) p else Long.MAX_VALUE }
-                }
-                LazyColumn(Modifier.fillMaxSize()) {
-                    if (special.isNotEmpty()) {
-                        item { Group("Рекомендуем") }
-                        item {
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                for (s in special) RecommendTile(s, data, Modifier.weight(1f), onPick)
-                            }
-                        }
-                    }
-                    item {
-                        Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("ВСЕ СТРАНЫ", color = BlueLight, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                                letterSpacing = 1.sp, modifier = Modifier.weight(1f).padding(start = 4.dp))
-                            Text(
-                                if (byPing) "⇅ По пингу" else "⇅ По списку", color = TextSoft, fontSize = 12.5.sp,
-                                modifier = Modifier.clip(RoundedCornerShape(50)).glass(20.dp)
-                                    .clickable { byPing = !byPing }.padding(horizontal = 12.dp, vertical = 7.dp)
-                            )
-                        }
-                    }
-                    items(rest, key = { it.name }) { s -> Box(Modifier.animateItem()) { CountryRow(s, vpn, data, onPick) } }
-                    item { Spacer(Modifier.height(20.dp)) }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun Group(text: String) {
-    Text(text.uppercase(), color = BlueLight, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp,
-        modifier = Modifier.padding(start = 4.dp, top = 16.dp, bottom = 8.dp))
-}
-
-/** «Лучший сервер» / «Игры» — две плитки в ряд. */
-@Composable
-private fun RecommendTile(s: Server, data: Data, modifier: Modifier, onPick: (String) -> Unit) {
-    val (icon, title) = splitFlag(s.name)
-    val selected = s.name == data.selected
-    val note = if (s.name.startsWith("🚀")) "Выбирает самый быстрый сам" else "Напрямую, ровный пинг"
-    Row(
-        modifier.pressable { onPick(s.name) }.glass(20.dp, glow = selected).padding(start = 10.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            Modifier.size(42.dp).clip(CircleShape)
-                .background(Brush.radialGradient(listOf(Color(0x552F6BFF), Color(0x110E1A36)))),
-            contentAlignment = Alignment.Center
-        ) { EmojiIcon(icon, 32.dp) }
-        Column(Modifier.weight(1f).padding(start = 8.dp)) {
-            Text(title, color = TextMain, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(note, color = TextSoft, fontSize = 11.5.sp, maxLines = 2, lineHeight = 14.sp)
-        }
-        if (selected) LineIcon(Ico.CHECK, 16.dp, Blue) else LineIcon(Ico.CHEVRON, 14.dp, Blue)
-    }
-}
-
-@Composable
-private fun CountryRow(s: Server, vpn: VpnUi, data: Data, onPick: (String) -> Unit) {
-    val (flag, title) = splitFlag(s.name)
-    val selected = s.name == data.selected
-    val ping = if (vpn.status == Status.RUNNING && vpn.server == s.name && vpn.ping != 0L) vpn.ping else data.pings[s.name] ?: 0L
-    val busy = s.name in data.measuring
-    val note = if (s.name.contains("🇷🇺") || s.name.contains("Обход", true)) "Для белых списков" else ""
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .pressable { onPick(s.name) }
-            .glass(20.dp, glow = selected)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        FlagCircle(flag, 40.dp)
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, color = TextMain, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (note.isNotEmpty()) Text(note, color = TextDim, fontSize = 12.sp)
-        }
-        PingLabel(ping, busy = busy)
-        Spacer(Modifier.width(8.dp))
-        Bars(if (busy && ping < 0) 0L else ping)
-        Spacer(Modifier.width(10.dp))
-        if (selected) {
-            Box(Modifier.size(26.dp).clip(CircleShape).background(BlueDeep).border(1.dp, Blue, CircleShape), contentAlignment = Alignment.Center) {
-                LineIcon(Ico.CHECK, 16.dp, Color.White)
-            }
-        } else LineIcon(Ico.CHEVRON, 16.dp, Blue)
-    }
-}
-
-@Composable
-private fun PingLabel(ping: Long, busy: Boolean = false) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(pingColor(if (busy && ping < 0) 0L else ping)))
-        Text(
-            when {
-                ping > 0 -> " $ping мс"
-                busy -> " …"           // меряется прямо сейчас: старое «нет связи» не показываем
-                ping < 0 -> " нет связи"
-                else -> " —"
-            },
-            color = if (ping < 0 && !busy) Red else TextMain, fontSize = 14.sp
-        )
-    }
-}
-
-// ---------------------------------------------------------------- режимы
-
-@Composable
-internal fun Page(title: String, lead: String, back: () -> Unit, content: @Composable () -> Unit) {
-    Column(
-        Modifier
-            .fillMaxSize()
-            .systemBarsPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 18.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 14.dp)) {
-            Box(
-                Modifier.size(46.dp).clip(CircleShape).glass(23.dp).clickable(onClick = back),
-                contentAlignment = Alignment.Center
-            ) { LineIcon(Ico.BACK, 20.dp, BlueLight) }
-            Text(title, color = TextMain, fontSize = 26.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-                overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 16.dp))
-        }
-        if (lead.isNotEmpty()) Text(lead, color = TextSoft, fontSize = 14.sp, lineHeight = 19.sp,
-            modifier = Modifier.padding(start = 4.dp, top = 16.dp, bottom = 16.dp))
-        else Spacer(Modifier.height(18.dp))
-        content()
-        Spacer(Modifier.height(28.dp))
-    }
-}
-
-@Composable
-private fun ModesScreen(data: Data, back: () -> Unit, onPick: (Mode) -> Unit) {
-    Page("Режим соединения", "Каждый режим по-настоящему меняет настройки VPN. Чем-то всегда жертвуем — честно пишем, чем.", back) {
-        for (m in Mode.entries) {
-            val sel = m == data.mode
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp)
-                    .pressable { onPick(m) }
-                    .glass(24.dp, glow = sel)
-                    .padding(14.dp),
-                verticalAlignment = Alignment.Top
-            ) {
-                Box(
-                    Modifier.size(58.dp).clip(RoundedCornerShape(18.dp))
-                        .background(Brush.radialGradient(listOf(Color(0x662F6BFF), Color(0x220E1A36))))
-                        .border(1.dp, Color(0x447AAEFF), RoundedCornerShape(18.dp)),
-                    contentAlignment = Alignment.Center
-                ) { EmojiIcon(m.emoji, 44.dp) }
-                Column(Modifier.weight(1f).padding(start = 14.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(m.title, color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        if (m == Mode.BALANCE) Text(
-                            "⭐ Рекомендуем", color = BlueLight, fontSize = 11.5.sp,
-                            modifier = Modifier.padding(start = 8.dp).clip(RoundedCornerShape(50))
-                                .background(BlueMid.copy(alpha = 0.18f)).border(1.dp, Blue.copy(alpha = 0.4f), RoundedCornerShape(50))
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
-                        )
-                        Spacer(Modifier.weight(1f))
-                        if (sel) Box(
-                            Modifier.size(28.dp).clip(CircleShape).background(BlueDeep).border(1.dp, Blue, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) { LineIcon(Ico.CHECK, 16.dp, Color.White) }
-                        else LineIcon(Ico.CHEVRON, 16.dp, Blue)
-                    }
-                    Text(m.desc, color = TextSoft, fontSize = 13.5.sp, lineHeight = 18.sp, modifier = Modifier.padding(top = 4.dp))
-                    if (m.plus.isNotEmpty() || m.minus.isNotEmpty()) {
-                        Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (m.plus.isNotEmpty()) Chip("＋ ${m.plus}", Green)
-                            if (m.minus.isNotEmpty()) Chip("− ${m.minus}", Color(0xFFF0A050))
-                        }
-                    }
-                }
-            }
-        }
-        Row(
-            Modifier.fillMaxWidth().padding(top = 4.dp).glass(20.dp).padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            LineIcon(Ico.INFO, 24.dp, Blue)
-            Text("Выбранный режим можно изменить в любое время", color = TextSoft, fontSize = 13.5.sp,
-                modifier = Modifier.padding(start = 12.dp))
-        }
-    }
-}
-
-/** Метка «плюс/минус» у режима. */
-@Composable
-private fun Chip(text: String, color: Color) {
-    Text(
-        text, color = color, fontSize = 12.sp, maxLines = 1,
-        modifier = Modifier.clip(RoundedCornerShape(50)).background(color.copy(alpha = 0.10f))
-            .border(1.dp, color.copy(alpha = 0.35f), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 5.dp)
-    )
-}
-
 // ---------------------------------------------------------------- DNS
 
 @Composable
@@ -693,12 +420,7 @@ private fun DnsScreen(data: Data, back: () -> Unit, onPick: (Dns) -> Unit) {
                 Modifier
                     .fillMaxWidth()
                     .padding(bottom = 8.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(
-                        if (sel) Brush.linearGradient(listOf(BlueMid.copy(alpha = 0.25f), Color(0x40203264)))
-                        else Brush.linearGradient(listOf(Glass, Glass))
-                    )
-                    .border(1.dp, if (sel) Blue.copy(alpha = 0.55f) else GlassLine, RoundedCornerShape(16.dp))
+                    .glass(18.dp, glow = sel)
                     .clickable { onPick(d) }
                     .padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -711,109 +433,12 @@ private fun DnsScreen(data: Data, back: () -> Unit, onPick: (Dns) -> Unit) {
                     Text(d.note, color = TextSoft, fontSize = 12.5.sp)
                     Text("${d.ip} · ${d.ip2}", color = TextDim, fontSize = 11.5.sp)
                 }
-                if (sel) Text("✓", color = Blue, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                if (sel) Box(
+                    Modifier.size(26.dp).clip(CircleShape).background(Color(0xFF2F6BFF)).border(1.dp, Color(0xFF9CC2FF), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) { LineIcon(Ico.CHECK, 15.dp, Color.White) }
             }
         }
-    }
-}
-
-// ---------------------------------------------------------------- инструменты
-
-@Composable
-private fun ToolsScreen(
-    data: Data, back: () -> Unit, onApps: () -> Unit, onLeak: () -> Unit, onTile: () -> Unit,
-    onDns: () -> Unit, onForget: () -> Unit,
-) {
-    val ctx = LocalContext.current
-    val speed by SpeedState.flow.collectAsState()
-    Page("Инструменты", "", back) {
-        Column(
-            Modifier.fillMaxWidth().glass(26.dp, glow = true).padding(16.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Gauge(if (speed.running) 0.75f else if (speed.downMbps > 0) 0.6f else 0.3f, Modifier.size(84.dp))
-                Column(Modifier.weight(1f).padding(start = 14.dp)) {
-                    Text("Тест скорости", color = TextMain, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    Text(if (speed.running) speed.stage.ifBlank { "Проверяю…" } else "Проверьте ваше соединение",
-                        color = TextSoft, fontSize = 13.sp)
-                    Text(
-                        if (speed.running) "Идёт проверка…" else "▶  Начать", color = Color.White, fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(50))
-                            .background(Brush.verticalGradient(listOf(Color(0xFF3D7BFF), Color(0xFF1F4FD6))))
-                            .border(1.dp, Color(0x997AAEFF), RoundedCornerShape(50))
-                            .clickable(enabled = !speed.running) { Repo.speedTest() }
-                            .padding(vertical = 11.dp)
-                    )
-                }
-            }
-            Row(
-                Modifier.fillMaxWidth().padding(top = 14.dp).glass(18.dp).padding(vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically
-            ) {
-                SpeedMetric(Ico.DOWN, "Загрузка", if (speed.downMbps > 0) "%.1f Мбит/с".format(speed.downMbps) else "—")
-                SpeedMetric(Ico.UP, "Отдача", if (speed.upMbps > 0) "%.1f Мбит/с".format(speed.upMbps) else "—")
-                SpeedMetric(Ico.CLOCK, "Пинг", if (speed.ping > 0) "${speed.ping} мс" else "—",
-                    if (speed.ping > 0) "джиттер ${speed.jitter} мс" else "")
-            }
-            if (speed.error.isNotEmpty()) Text(speed.error, color = Red, fontSize = 12.5.sp, textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-        }
-        Spacer(Modifier.height(14.dp))
-        Tool("🛡", "Защита от утечек", "Без VPN интернет блокируется", "Настроить", onLeak)
-        Tool("📱", "Приложения мимо VPN", "Банки, Госуслуги и свои",
-            "${(if (data.ruApps) RuApps.PACKAGES.size else 0) + data.bypass.size} ›", onApps)
-        Tool("🌐", "DNS", "${data.dns.ip} · ${data.dns.note}", "${data.dns.title} ›", onDns)
-        Tool("⏻", "Автоподключение", "При включении телефона", if (data.autoConnect) "Вкл" else "Выкл") {
-            Repo.setAutoConnect(!data.autoConnect)
-        }
-        Tool("⚡", "Кнопка в шторке", "Включать VPN, не открывая приложение", "Добавить", onTile)
-        val notifyOn = rememberNotifyEnabled()
-        val askNotify = rememberNotifyAsk()
-        Tool("🔔", "Уведомления", if (notifyOn) "Разрешены" else "Выключены в настройках телефона",
-            if (notifyOn) "Настроить" else "Включить") { if (notifyOn) Notify.openSettings(ctx) else askNotify() }
-        val upd by AppUpdate.flow.collectAsState()
-        Tool("⬆️", "Обновление приложения",
-            when {
-                upd.progress >= 0f -> "Скачиваю… ${(upd.progress * 100).toInt()}%"
-                upd.version.isNotEmpty() -> "Доступна версия ${upd.version}"
-                upd.note.isNotEmpty() -> upd.note
-                else -> "Сейчас ${BuildConfig.VERSION_NAME}"
-            },
-            if (upd.checking) "…" else if (upd.version.isNotEmpty()) "Обновить" else "Проверить") {
-            if (upd.version.isNotEmpty()) AppUpdate.installHere(ctx) else AppUpdate.check(force = true)
-        }
-        Tool("👑", "Обновить подписку", if (data.loading) "Обновляю…" else "Страны и срок — с сервера", "") { Repo.refresh() }
-        Tool("↩", "Сменить подписку", "Удалить эту и добавить другую", "", onForget)
-        Text("Arise VPN ${BuildConfig.VERSION_NAME}", color = TextDim, fontSize = 12.sp, modifier = Modifier.fillMaxWidth().padding(top = 10.dp), textAlign = TextAlign.Center)
-    }
-}
-
-/** Циферблат теста скорости. */
-@Composable
-private fun Gauge(level: Float, modifier: Modifier) {
-    Canvas(modifier) {
-        val w = size.minDimension * 0.09f
-        val inset = w
-        val arc = androidx.compose.ui.geometry.Size(size.width - inset * 2, size.height - inset * 2)
-        drawArc(Color(0x332F6BFF), 140f, 260f, false, Offset(inset, inset), arc, style = Stroke(w, cap = StrokeCap.Round))
-        drawArc(Brush.sweepGradient(listOf(Color(0xFF2F6BFF), Color(0xFF8CB8FF), Color(0xFF2F6BFF))), 140f, 260f * level, false,
-            Offset(inset, inset), arc, style = Stroke(w, cap = StrokeCap.Round))
-        val a = Math.toRadians((140.0 + 260.0 * level))
-        val r = size.minDimension * 0.30f
-        drawLine(Color(0xFF8CB8FF), center, Offset(center.x + (kotlin.math.cos(a) * r).toFloat(), center.y + (kotlin.math.sin(a) * r).toFloat()),
-            w * 0.8f, StrokeCap.Round)
-        drawCircle(Color(0xFF8CB8FF), w * 0.9f, center)
-    }
-}
-
-@Composable
-private fun SpeedMetric(ico: Ico, k: String, v: String, sub: String = "") {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        LineIcon(ico, 22.dp, Blue)
-        Text(k, color = TextSoft, fontSize = 12.5.sp, modifier = Modifier.padding(top = 4.dp))
-        Text(v, color = TextMain, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-        if (sub.isNotEmpty()) Text(sub, color = TextDim, fontSize = 10.5.sp)
     }
 }
 
@@ -885,59 +510,6 @@ private fun Metric(k: String, v: String) {
         Text(k, color = TextDim, fontSize = 12.sp)
         Text(v, color = TextMain, fontSize = 16.sp, fontWeight = FontWeight.Bold)
     }
-}
-
-@Composable
-internal fun Tool(icon: String, title: String, sub: String, right: String, onClick: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(bottom = 10.dp)
-            .pressable(onClick = onClick)
-            .glass(22.dp)
-            .padding(horizontal = 12.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            Modifier.size(46.dp).clip(RoundedCornerShape(14.dp))
-                .background(Brush.radialGradient(listOf(Color(0x552F6BFF), Color(0x1A0E1A36))))
-                .border(1.dp, Color(0x337AAEFF), RoundedCornerShape(14.dp)),
-            contentAlignment = Alignment.Center
-        ) { EmojiIcon(icon, 34.dp) }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, color = TextMain, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-            Text(sub, color = TextSoft, fontSize = 12.5.sp, maxLines = 2)
-        }
-        when {
-            right == "Вкл" || right == "Выкл" -> MiniSwitch(right == "Вкл")
-            right.endsWith("›") -> {
-                val v = right.removeSuffix("›").trim()
-                if (v.isNotEmpty()) Text(v, color = TextMain, fontSize = 14.sp, modifier = Modifier.padding(end = 6.dp))
-                LineIcon(Ico.CHEVRON, 16.dp, Blue)
-            }
-            right.isEmpty() -> LineIcon(Ico.CHEVRON, 16.dp, Blue)
-            // действие — кнопка-обводка
-            else -> Text(
-                right, color = TextMain, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
-                modifier = Modifier.clip(RoundedCornerShape(50)).border(1.dp, Blue.copy(alpha = 0.6f), RoundedCornerShape(50))
-                    .background(BlueMid.copy(alpha = 0.10f)).padding(horizontal = 14.dp, vertical = 8.dp)
-            )
-        }
-    }
-}
-
-/** Переключатель в строке (вся строка нажимается). */
-@Composable
-private fun MiniSwitch(on: Boolean) {
-    Box(
-        Modifier.width(50.dp).height(28.dp).clip(RoundedCornerShape(50))
-            .background(if (on) Brush.horizontalGradient(listOf(Color(0xFF1F4FD6), Color(0xFF3D7BFF)))
-            else Brush.horizontalGradient(listOf(Color(0xFF1A2233), Color(0xFF1A2233))))
-            .border(1.dp, if (on) Color(0x997AAEFF) else GlassLine, RoundedCornerShape(50))
-            .padding(3.dp),
-        contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart
-    ) { Box(Modifier.size(22.dp).clip(CircleShape).background(if (on) Color.White else TextDim)) }
 }
 
 // ---------------------------------------------------------------- приложения мимо VPN

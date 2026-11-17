@@ -68,11 +68,15 @@ internal fun Modifier.pressable(enabled: Boolean = true, onClick: () -> Unit): M
             enabled = enabled, onClick = onClick)
 }
 
-/** Стеклянная карточка: тёмно-синее стекло, тонкая светлая рамка. */
+/**
+ * Стеклянная карточка как в макете (.card): карточка темнее фона, рамка яркая — высокий контраст.
+ * glow — выбранная/главная карточка: рамка ярче и синее свечение вокруг.
+ */
 internal fun Modifier.glass(radius: Dp = 18.dp, glow: Boolean = false): Modifier =
-    this.clip(RoundedCornerShape(radius))
-        .background(Brush.verticalGradient(listOf(Color(0x33223A6E), Color(0x1A0E1A36))))
-        .border(1.dp, if (glow) Blue.copy(alpha = 0.75f) else Color(0x3A5B8CFF), RoundedCornerShape(radius))
+    (if (glow) this.neon(radius, spread = 12.dp, alpha = 0.75f) else this)
+        .clip(RoundedCornerShape(radius))
+        .background(Brush.verticalGradient(listOf(Color(0xB8162854), Color(0xC7081026))))
+        .border(if (glow) 1.5.dp else 1.dp, if (glow) Color(0xD996C3FF) else Color(0x8C8CB9FF), RoundedCornerShape(radius))
 
 // ---------------------------------------------------------------- знак Arise
 
