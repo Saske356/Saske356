@@ -39,6 +39,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -184,32 +185,36 @@ private fun PinScreen(back: () -> Unit) {
         Row(Modifier.fillMaxWidth().padding(top = 14.dp)) { BackBtn(back) }
         Spacer(Modifier.height(36.dp))
         Box(
-            Modifier.size(84.dp).clip(RoundedCornerShape(26.dp))
-                .background(Brush.linearGradient(listOf(Blue, BlueDeep))),
+            Modifier.size(104.dp).clip(CircleShape)
+                .background(Brush.radialGradient(listOf(Color(0x882F6BFF), Color(0x220E1A36))))
+                .border(1.5.dp, Blue.copy(alpha = 0.6f), CircleShape),
             contentAlignment = Alignment.Center
-        ) { Text("🔒", fontSize = 38.sp) }
+        ) { Text("🔒", fontSize = 44.sp) }
         Text(title, color = TextMain, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 24.dp))
         Text(lead, color = TextSoft, fontSize = 13.5.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp, start = 16.dp, end = 16.dp))
         Row(Modifier.padding(top = 28.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             repeat(PIN_LEN) { i ->
                 Box(
-                    Modifier.size(14.dp).clip(CircleShape)
-                        .background(if (i < pin.length) Blue else Color.Transparent)
-                        .border(1.5.dp, Blue, CircleShape)
+                    Modifier.size(18.dp).clip(CircleShape)
+                        .background(if (i < pin.length) Brush.radialGradient(listOf(BlueLight, Color(0xFF3D7BFF)))
+                        else Brush.radialGradient(listOf(Color(0x220E1A36), Color(0x220E1A36))))
+                        .border(1.5.dp, if (i < pin.length) BlueLight else Blue.copy(alpha = 0.45f), CircleShape)
                 )
             }
         }
         Text(if (busy) "Проверяю…" else msg, color = if (busy) TextSoft else Red, fontSize = 13.sp,
             textAlign = TextAlign.Center, modifier = Modifier.padding(top = 14.dp).height(36.dp))
         val keys = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫")
+        val letters = mapOf("2" to "ABC", "3" to "DEF", "4" to "GHI", "5" to "JKL", "6" to "MNO", "7" to "PQRS", "8" to "TUV", "9" to "WXYZ")
         for (row in keys.chunked(3)) {
-            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(26.dp)) {
                 for (k in row) {
                     val isDigit = k.length == 1 && k[0].isDigit()
                     Box(
-                        Modifier.size(72.dp).clip(CircleShape)
-                            .background(if (isDigit) Glass else Color.Transparent)
-                            .border(1.dp, if (isDigit) GlassLine else Color.Transparent, CircleShape)
+                        Modifier.size(74.dp).clip(CircleShape)
+                            .background(if (k.isNotEmpty()) Brush.verticalGradient(listOf(Color(0x33223A6E), Color(0x1A0E1A36)))
+                            else Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent)))
+                            .border(1.dp, if (k.isNotEmpty()) Blue.copy(alpha = 0.35f) else Color.Transparent, CircleShape)
                             .clickable(enabled = k.isNotEmpty() && !busy) {
                                 if (k == "⌫") pin = pin.dropLast(1)
                                 else if (pin.length < PIN_LEN) {
@@ -218,7 +223,12 @@ private fun PinScreen(back: () -> Unit) {
                                 }
                             },
                         contentAlignment = Alignment.Center
-                    ) { Text(k, color = if (isDigit) TextMain else TextSoft, fontSize = if (isDigit) 26.sp else 20.sp) }
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(k, color = if (isDigit) TextMain else TextSoft, fontSize = if (isDigit) 28.sp else 22.sp)
+                            letters[k]?.let { Text(it, color = TextSoft, fontSize = 9.5.sp, letterSpacing = 1.sp) }
+                        }
+                    }
                 }
             }
         }
@@ -236,20 +246,19 @@ private fun PinScreen(back: () -> Unit) {
 @Composable
 private fun BackBtn(onClick: () -> Unit) {
     Box(
-        Modifier.size(40.dp).clip(RoundedCornerShape(13.dp)).background(Glass)
-            .border(1.dp, GlassLine, RoundedCornerShape(13.dp)).clickable(onClick = onClick),
+        Modifier.size(44.dp).clip(CircleShape).glass(22.dp).clickable(onClick = onClick),
         contentAlignment = Alignment.Center
-    ) { Text("‹", color = TextSoft, fontSize = 22.sp) }
+    ) { LineIcon(Ico.BACK, 18.dp, BlueLight) }
 }
 
 @Composable
 private fun Avatar(name: String, size: Int = 48) {
     Box(
         Modifier.size(size.dp).clip(CircleShape)
-            .background(Brush.linearGradient(listOf(BlueDeep, Color(0xFF16223A))))
-            .border(1.dp, Blue.copy(alpha = 0.3f), CircleShape),
+            .background(Brush.radialGradient(listOf(Color(0xFF2F6BFF), Color(0xFF0E1A36))))
+            .border(1.5.dp, Blue.copy(alpha = 0.6f), CircleShape),
         contentAlignment = Alignment.Center
-    ) { Text(name.trim().take(1).uppercase().ifEmpty { "?" }, color = TextMain, fontSize = (size * 0.38).sp, fontWeight = FontWeight.Bold) }
+    ) { Text(name.trim().take(1).uppercase().ifEmpty { "?" }, color = BlueLight, fontSize = (size * 0.42).sp, fontWeight = FontWeight.Bold) }
 }
 
 @Composable
@@ -286,34 +295,46 @@ private fun ChatList(ui: ChatUi, back: () -> Unit, open: (String) -> Unit, add: 
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                 BackBtn(back)
-                Text("Чаты", color = TextMain, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp).weight(1f))
+                Text("Чаты", color = TextMain, fontSize = 30.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 14.dp).weight(1f))
                 Box(
-                    Modifier.size(40.dp).clip(RoundedCornerShape(13.dp)).background(Glass)
-                        .border(1.dp, GlassLine, RoundedCornerShape(13.dp)).clickable(onClick = protect),
+                    Modifier.size(46.dp).clip(CircleShape).glass(23.dp).clickable(onClick = add),
                     contentAlignment = Alignment.Center
-                ) { Text("🛡", fontSize = 18.sp) }
+                ) { Text("＋", color = BlueLight, fontSize = 24.sp) }
+                Spacer(Modifier.width(10.dp))
+                Box(
+                    Modifier.size(46.dp).clip(CircleShape).glass(23.dp).clickable(onClick = protect),
+                    contentAlignment = Alignment.Center
+                ) { Text("🛡", fontSize = 19.sp) }
             }
             Text("🔒 сквозное шифрование: сервер видит только шифр", color = Blue, fontSize = 12.sp,
                 modifier = Modifier.padding(start = 22.dp, top = 8.dp))
             // мой код
             Row(
-                Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 14.dp).clip(RoundedCornerShape(18.dp))
-                    .background(Glass).border(1.dp, GlassLine, RoundedCornerShape(18.dp)).padding(horizontal = 16.dp, vertical = 14.dp),
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp).glass(24.dp, glow = true)
+                    .padding(horizontal = 14.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(Modifier.weight(1f)) {
-                    Text("МОЙ КОД", color = TextDim, fontSize = 11.sp, letterSpacing = 1.5.sp)
-                    Text(if (ui.code.isEmpty()) "…" else Chat.pretty(ui.code), color = TextMain, fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, letterSpacing = 3.sp)
+                Box(
+                    Modifier.size(46.dp).clip(CircleShape)
+                        .background(Brush.radialGradient(listOf(Color(0x662F6BFF), Color(0x220E1A36))))
+                        .border(1.dp, Blue.copy(alpha = 0.5f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) { Text("🛡", fontSize = 20.sp) }
+                Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                    Text("Мой код:", color = TextSoft, fontSize = 13.sp)
+                    Text(if (ui.code.isEmpty()) "…" else Chat.pretty(ui.code), color = TextMain, fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp)
                 }
                 if (ui.code.isNotEmpty()) Text(
-                    "Поделиться", color = Blue, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(Blue.copy(alpha = 0.14f))
+                    "Поделиться", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clip(RoundedCornerShape(50))
+                        .background(Brush.verticalGradient(listOf(Color(0xFF3D7BFF), Color(0xFF1F4FD6))))
+                        .border(1.dp, Color(0x997AAEFF), RoundedCornerShape(50))
                         .clickable {
                             val text = "Мой код в чате Arise VPN: ${Chat.pretty(ui.code)}"
                             ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
                                 .putExtra(Intent.EXTRA_TEXT, text), "Поделиться кодом").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                        }.padding(horizontal = 12.dp, vertical = 9.dp)
+                        }.padding(horizontal = 14.dp, vertical = 9.dp)
                 )
             }
             if (ui.notice.isNotEmpty()) Text(
@@ -335,10 +356,11 @@ private fun ChatList(ui: ChatUi, back: () -> Unit, open: (String) -> Unit, add: 
                     val name = c?.name ?: Chat.pretty(code)
                     val last = ui.msgs[code]?.lastOrNull()
                     Row(
-                        Modifier.fillMaxWidth().clickable { open(code) }.padding(horizontal = 20.dp, vertical = 12.dp),
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp).glass(22.dp)
+                            .clickable { open(code) }.padding(horizontal = 12.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Avatar(name)
+                        Avatar(name, 52)
                         Column(Modifier.weight(1f).padding(start = 12.dp)) {
                             Text(name, color = TextMain, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
@@ -350,24 +372,21 @@ private fun ChatList(ui: ChatUi, back: () -> Unit, open: (String) -> Unit, add: 
                                 },
                                 color = if (c?.keyChanged == true) Amber else TextSoft, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
                             )
+                            Text("🔒 зашифровано", color = TextDim, fontSize = 11.5.sp)
                         }
                         Column(horizontalAlignment = Alignment.End) {
                             if (last != null) Text(hhmm(last.t), color = TextDim, fontSize = 12.sp)
                             val n = ui.unread[code] ?: 0
-                            if (n > 0) Text("$n", color = Ink, fontSize = 11.5.sp, fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(top = 4.dp).clip(RoundedCornerShape(10.dp)).background(BlueMid)
-                                    .padding(horizontal = 7.dp, vertical = 2.dp))
+                            if (n > 0) Box(
+                                Modifier.padding(top = 6.dp).size(24.dp).clip(CircleShape).background(Color(0xFF2F6BFF))
+                                    .border(1.dp, BlueLight.copy(alpha = 0.6f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) { Text("$n", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
                         }
                     }
                 }
             }
         }
-        Box(
-            Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(22.dp).size(60.dp)
-                .clip(RoundedCornerShape(20.dp)).background(Brush.linearGradient(listOf(BlueLight, BlueMid)))
-                .clickable(onClick = add),
-            contentAlignment = Alignment.Center
-        ) { Text("＋", color = Ink, fontSize = 30.sp) }
     }
 }
 
@@ -421,7 +440,7 @@ private fun Talk(ui: ChatUi, code: String, back: () -> Unit, info: () -> Unit) {
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             BackBtn(back)
-            Box(Modifier.padding(start = 10.dp).clickable(onClick = info)) { Avatar(name, 40) }
+            Box(Modifier.padding(start = 10.dp).clickable(onClick = info)) { Avatar(name, 44) }
             Column(Modifier.weight(1f).padding(start = 10.dp).clickable(onClick = info)) {
                 Text(name, color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
@@ -439,10 +458,9 @@ private fun Talk(ui: ChatUi, code: String, back: () -> Unit, info: () -> Unit) {
                 )
             }
             Box(
-                Modifier.size(40.dp).clip(RoundedCornerShape(13.dp)).background(Glass)
-                    .border(1.dp, GlassLine, RoundedCornerShape(13.dp)).clickable(onClick = info),
+                Modifier.size(44.dp).clip(CircleShape).glass(22.dp).clickable(onClick = info),
                 contentAlignment = Alignment.Center
-            ) { Text("⋯", color = TextSoft, fontSize = 18.sp) }
+            ) { Text("⋮", color = BlueLight, fontSize = 20.sp, fontWeight = FontWeight.Bold) }
         }
         Text(
             if (ui.ttlHours > 0) "⏱ Сообщения исчезают через ${ttlText(ui.ttlHours)}" else "⏱ Самоудаление выключено",
@@ -458,11 +476,15 @@ private fun Talk(ui: ChatUi, code: String, back: () -> Unit, info: () -> Unit) {
         ) {
             items(msgs, key = { it.id }) { m ->
                 Box(Modifier.fillMaxWidth(), contentAlignment = if (m.out) Alignment.CenterEnd else Alignment.CenterStart) {
+                    val shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = if (m.out) 20.dp else 6.dp,
+                        bottomEnd = if (m.out) 6.dp else 20.dp)
                     Column(
                         Modifier.widthIn(max = 300.dp)
-                            .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = if (m.out) 18.dp else 6.dp, bottomEnd = if (m.out) 6.dp else 18.dp))
-                            .background(if (m.out) Brush.linearGradient(listOf(Color(0xFF4A86F0), BlueDeep)) else Brush.linearGradient(listOf(Color(0x12FFFFFF), Color(0x12FFFFFF))))
-                            .padding(horizontal = 13.dp, vertical = 9.dp)
+                            .clip(shape)
+                            .background(if (m.out) Brush.verticalGradient(listOf(Color(0xFF3D7BFF), Color(0xFF1F4FD6)))
+                            else Brush.verticalGradient(listOf(Color(0x33223A6E), Color(0x260E1A36))))
+                            .border(1.dp, if (m.out) Color(0x997AAEFF) else Color(0x3A5B8CFF), shape)
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
                     ) {
                         if (m.img.isNotEmpty()) {
                             val bmp by produceState<ImageBitmap?>(null, m.img) {
@@ -477,7 +499,9 @@ private fun Talk(ui: ChatUi, code: String, back: () -> Unit, info: () -> Unit) {
                                     .clip(RoundedCornerShape(12.dp)).clickable { full = b }
                             ) else Text("📷 Фото удалено", color = TextMain, fontSize = 14.5.sp)
                         } else Text(m.text, color = TextMain, fontSize = 14.5.sp)
-                        Text(hhmm(m.t) + if (m.exp > 0) " · ⏱" else "", color = TextMain.copy(alpha = 0.6f), fontSize = 10.5.sp,
+                        // одна галочка — «доставлено на сервер» (отметок о прочтении нет — двойную не рисуем)
+                        Text(hhmm(m.t) + (if (m.exp > 0) " · ⏱" else "") + (if (m.out) "  ✓" else ""),
+                            color = TextMain.copy(alpha = 0.65f), fontSize = 10.5.sp,
                             modifier = Modifier.align(Alignment.End).padding(top = 2.dp))
                     }
                 }
@@ -486,8 +510,7 @@ private fun Talk(ui: ChatUi, code: String, back: () -> Unit, info: () -> Unit) {
         if (ui.busy) Text("Отправляю фото…", color = TextSoft, fontSize = 12.sp, modifier = Modifier.padding(start = 18.dp))
         Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.padding(end = 8.dp).size(46.dp).clip(RoundedCornerShape(15.dp)).background(Glass)
-                    .border(1.dp, GlassLine, RoundedCornerShape(15.dp))
+                Modifier.padding(end = 8.dp).size(48.dp).clip(CircleShape).glass(24.dp)
                     .clickable(enabled = c != null && !ui.busy) {
                         Chat.keepOpen = true
                         pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
@@ -496,23 +519,26 @@ private fun Talk(ui: ChatUi, code: String, back: () -> Unit, info: () -> Unit) {
             ) { Text("📎", fontSize = 19.sp) }
             OutlinedTextField(
                 value = text, onValueChange = { text = it.take(4000) },
-                placeholder = { Text("Сообщение", color = TextDim) }, shape = RoundedCornerShape(18.dp),
+                placeholder = { Text("Сообщение", color = TextDim) }, shape = RoundedCornerShape(24.dp),
                 modifier = Modifier.weight(1f), maxLines = 5,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = TextMain, unfocusedTextColor = TextMain,
-                    focusedBorderColor = Blue.copy(alpha = 0.6f), unfocusedBorderColor = GlassLine,
-                    focusedContainerColor = Glass, unfocusedContainerColor = Glass, cursorColor = Blue
+                    focusedBorderColor = Blue.copy(alpha = 0.6f), unfocusedBorderColor = Color(0x3A5B8CFF),
+                    focusedContainerColor = Color(0x1A223A6E), unfocusedContainerColor = Color(0x1A223A6E), cursorColor = Blue
                 )
             )
             Box(
-                Modifier.padding(start = 10.dp).size(50.dp).clip(RoundedCornerShape(16.dp))
-                    .background(Brush.linearGradient(listOf(BlueLight, BlueMid)))
+                Modifier.padding(start = 10.dp).size(52.dp)
+                    .shadow(12.dp, CircleShape, ambientColor = BlueMid, spotColor = BlueMid)
+                    .clip(CircleShape)
+                    .background(Brush.verticalGradient(listOf(Color(0xFF3D7BFF), Color(0xFF1F4FD6))))
+                    .border(1.dp, Color(0xAA9CC2FF), CircleShape)
                     .clickable(enabled = text.isNotBlank() && c != null) {
                         Chat.send(code, text.trim())
                         text = ""
                     },
                 contentAlignment = Alignment.Center
-            ) { Text("➤", color = Ink, fontSize = 20.sp) }
+            ) { Text("➤", color = Color.White, fontSize = 21.sp) }
         }
     }
     full?.let { b ->

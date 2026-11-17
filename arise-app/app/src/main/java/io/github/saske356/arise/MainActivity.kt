@@ -565,17 +565,16 @@ internal fun Page(title: String, lead: String, back: () -> Unit, content: @Compo
             .padding(horizontal = 18.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 14.dp)) {
-            Text(
-                "‹", color = TextMain, fontSize = 28.sp,
-                modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = back).padding(horizontal = 10.dp)
-            )
-            Logo(26.dp)
-            Spacer(Modifier.width(8.dp))
-            Text("Arise", color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Box(
+                Modifier.size(46.dp).clip(CircleShape).glass(23.dp).clickable(onClick = back),
+                contentAlignment = Alignment.Center
+            ) { LineIcon(Ico.BACK, 20.dp, BlueLight) }
+            Text(title, color = TextMain, fontSize = 26.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 16.dp))
         }
-        Text(title, color = TextMain, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 4.dp, top = 14.dp))
-        if (lead.isNotEmpty()) Text(lead, color = TextSoft, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 14.dp))
-        else Spacer(Modifier.height(14.dp))
+        if (lead.isNotEmpty()) Text(lead, color = TextSoft, fontSize = 14.sp, lineHeight = 19.sp,
+            modifier = Modifier.padding(start = 4.dp, top = 16.dp, bottom = 16.dp))
+        else Spacer(Modifier.height(18.dp))
         content()
         Spacer(Modifier.height(28.dp))
     }
@@ -586,36 +585,66 @@ private fun ModesScreen(data: Data, back: () -> Unit, onPick: (Mode) -> Unit) {
     Page("Режим соединения", "Каждый режим по-настоящему меняет настройки VPN. Чем-то всегда жертвуем — честно пишем, чем.", back) {
         for (m in Mode.entries) {
             val sel = m == data.mode
-            Column(
+            Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 10.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(
-                        if (sel) Brush.linearGradient(listOf(BlueMid.copy(alpha = 0.25f), Color(0x40203264)))
-                        else Brush.linearGradient(listOf(Glass, Glass))
-                    )
-                    .border(1.dp, if (sel) Blue.copy(alpha = 0.55f) else GlassLine, RoundedCornerShape(18.dp))
+                    .padding(bottom = 12.dp)
+                    .glass(24.dp, glow = sel)
                     .clickable { onPick(m) }
-                    .padding(16.dp)
+                    .padding(14.dp),
+                verticalAlignment = Alignment.Top
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(m.emoji, fontSize = 20.sp)
-                    Spacer(Modifier.width(10.dp))
-                    Text(m.title, color = TextMain, fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    if (m == Mode.BALANCE) Text("по умолчанию", color = TextSoft, fontSize = 11.sp)
-                    if (sel) Text("  ✓", color = Blue, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                }
-                Text(m.desc, color = TextSoft, fontSize = 12.5.sp, modifier = Modifier.padding(top = 6.dp))
-                if (m.plus.isNotEmpty()) {
-                    Row(Modifier.padding(top = 8.dp)) {
-                        Text("＋ ${m.plus}", color = Green, fontSize = 12.sp, modifier = Modifier.weight(1f))
-                        Text("− ${m.minus}", color = Color(0xFFE8A06A), fontSize = 12.sp, modifier = Modifier.weight(1f))
+                Box(
+                    Modifier.size(58.dp).clip(RoundedCornerShape(18.dp))
+                        .background(Brush.radialGradient(listOf(Color(0x662F6BFF), Color(0x220E1A36))))
+                        .border(1.dp, Color(0x447AAEFF), RoundedCornerShape(18.dp)),
+                    contentAlignment = Alignment.Center
+                ) { Text(m.emoji, fontSize = 28.sp) }
+                Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(m.title, color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        if (m == Mode.BALANCE) Text(
+                            "⭐ Рекомендуем", color = BlueLight, fontSize = 11.5.sp,
+                            modifier = Modifier.padding(start = 8.dp).clip(RoundedCornerShape(50))
+                                .background(BlueMid.copy(alpha = 0.18f)).border(1.dp, Blue.copy(alpha = 0.4f), RoundedCornerShape(50))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                        Spacer(Modifier.weight(1f))
+                        if (sel) Box(
+                            Modifier.size(28.dp).clip(CircleShape).background(BlueDeep).border(1.dp, Blue, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) { LineIcon(Ico.CHECK, 16.dp, Color.White) }
+                        else LineIcon(Ico.CHEVRON, 16.dp, Blue)
+                    }
+                    Text(m.desc, color = TextSoft, fontSize = 13.5.sp, lineHeight = 18.sp, modifier = Modifier.padding(top = 4.dp))
+                    if (m.plus.isNotEmpty() || m.minus.isNotEmpty()) {
+                        Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (m.plus.isNotEmpty()) Chip("＋ ${m.plus}", Green)
+                            if (m.minus.isNotEmpty()) Chip("− ${m.minus}", Color(0xFFF0A050))
+                        }
                     }
                 }
             }
         }
+        Row(
+            Modifier.fillMaxWidth().padding(top = 4.dp).glass(20.dp).padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("ⓘ", color = Blue, fontSize = 20.sp)
+            Text("Выбранный режим можно изменить в любое время", color = TextSoft, fontSize = 13.5.sp,
+                modifier = Modifier.padding(start = 12.dp))
+        }
     }
+}
+
+/** Метка «плюс/минус» у режима. */
+@Composable
+private fun Chip(text: String, color: Color) {
+    Text(
+        text, color = color, fontSize = 12.sp, maxLines = 1,
+        modifier = Modifier.clip(RoundedCornerShape(50)).background(color.copy(alpha = 0.10f))
+            .border(1.dp, color.copy(alpha = 0.35f), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 5.dp)
+    )
 }
 
 // ---------------------------------------------------------------- DNS
@@ -664,27 +693,36 @@ private fun ToolsScreen(
     val speed by SpeedState.flow.collectAsState()
     Page("Инструменты", "", back) {
         Column(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(22.dp))
-                .background(Brush.radialGradient(listOf(BlueMid.copy(alpha = 0.30f), Color(0x990F1626))))
-                .border(1.dp, Blue.copy(alpha = 0.25f), RoundedCornerShape(22.dp))
-                .padding(18.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            Modifier.fillMaxWidth().glass(26.dp, glow = true).padding(16.dp)
         ) {
-            Text("Тест скорости через VPN", color = TextSoft, fontSize = 14.sp)
-            Text(if (speed.downMbps > 0) "%.1f".format(speed.downMbps) else "—", color = TextMain, fontSize = 54.sp, fontWeight = FontWeight.ExtraBold)
-            Text("Мбит/с", color = TextSoft, fontSize = 14.sp)
-            Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.SpaceAround) {
-                Metric("Пинг", if (speed.ping > 0) "${speed.ping} мс" else "—")
-                Metric("Джиттер", if (speed.ping > 0) "${speed.jitter} мс" else "—")
-                Metric("Отдача", if (speed.upMbps > 0) "%.1f".format(speed.upMbps) else "—")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Gauge(if (speed.running) 0.75f else if (speed.downMbps > 0) 0.6f else 0.3f, Modifier.size(84.dp))
+                Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                    Text("Тест скорости", color = TextMain, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text(if (speed.running) speed.stage.ifBlank { "Проверяю…" } else "Проверьте ваше соединение",
+                        color = TextSoft, fontSize = 13.sp)
+                    Text(
+                        if (speed.running) "Идёт проверка…" else "▶  Начать", color = Color.White, fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(50))
+                            .background(Brush.verticalGradient(listOf(Color(0xFF3D7BFF), Color(0xFF1F4FD6))))
+                            .border(1.dp, Color(0x997AAEFF), RoundedCornerShape(50))
+                            .clickable(enabled = !speed.running) { Repo.speedTest() }
+                            .padding(vertical = 11.dp)
+                    )
+                }
             }
-            if (speed.error.isNotEmpty()) Text(speed.error, color = Red, fontSize = 12.5.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
-            Spacer(Modifier.height(12.dp))
-            Big(if (speed.running) speed.stage.ifBlank { "Проверяю…" } else "Проверить скорость", gold = !speed.running) {
-                if (!speed.running) Repo.speedTest()
+            Row(
+                Modifier.fillMaxWidth().padding(top = 14.dp).glass(18.dp).padding(vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically
+            ) {
+                SpeedMetric(Ico.DOWN, "Загрузка", if (speed.downMbps > 0) "%.1f Мбит/с".format(speed.downMbps) else "—")
+                SpeedMetric(Ico.UP, "Отдача", if (speed.upMbps > 0) "%.1f Мбит/с".format(speed.upMbps) else "—")
+                SpeedMetric(Ico.CLOCK, "Пинг", if (speed.ping > 0) "${speed.ping} мс" else "—",
+                    if (speed.ping > 0) "джиттер ${speed.jitter} мс" else "")
             }
+            if (speed.error.isNotEmpty()) Text(speed.error, color = Red, fontSize = 12.5.sp, textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
         }
         Spacer(Modifier.height(14.dp))
         Tool("🛡", "Защита от утечек", "Без VPN интернет блокируется", "Настроить", onLeak)
@@ -713,6 +751,34 @@ private fun ToolsScreen(
         Tool("🔄", "Обновить подписку", if (data.loading) "Обновляю…" else "Страны и срок — с сервера", "") { Repo.refresh() }
         Tool("↩", "Сменить подписку", "Удалить эту и добавить другую", "", onForget)
         Text("Arise VPN ${BuildConfig.VERSION_NAME}", color = TextDim, fontSize = 12.sp, modifier = Modifier.fillMaxWidth().padding(top = 10.dp), textAlign = TextAlign.Center)
+    }
+}
+
+/** Циферблат теста скорости. */
+@Composable
+private fun Gauge(level: Float, modifier: Modifier) {
+    Canvas(modifier) {
+        val w = size.minDimension * 0.09f
+        val inset = w
+        val arc = androidx.compose.ui.geometry.Size(size.width - inset * 2, size.height - inset * 2)
+        drawArc(Color(0x332F6BFF), 140f, 260f, false, Offset(inset, inset), arc, style = Stroke(w, cap = StrokeCap.Round))
+        drawArc(Brush.sweepGradient(listOf(Color(0xFF2F6BFF), Color(0xFF8CB8FF), Color(0xFF2F6BFF))), 140f, 260f * level, false,
+            Offset(inset, inset), arc, style = Stroke(w, cap = StrokeCap.Round))
+        val a = Math.toRadians((140.0 + 260.0 * level))
+        val r = size.minDimension * 0.30f
+        drawLine(Color(0xFF8CB8FF), center, Offset(center.x + (kotlin.math.cos(a) * r).toFloat(), center.y + (kotlin.math.sin(a) * r).toFloat()),
+            w * 0.8f, StrokeCap.Round)
+        drawCircle(Color(0xFF8CB8FF), w * 0.9f, center)
+    }
+}
+
+@Composable
+private fun SpeedMetric(ico: Ico, k: String, v: String, sub: String = "") {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        LineIcon(ico, 22.dp, Blue)
+        Text(k, color = TextSoft, fontSize = 12.5.sp, modifier = Modifier.padding(top = 4.dp))
+        Text(v, color = TextMain, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+        if (sub.isNotEmpty()) Text(sub, color = TextDim, fontSize = 10.5.sp)
     }
 }
 
@@ -791,24 +857,52 @@ internal fun Tool(icon: String, title: String, sub: String, right: String, onCli
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(bottom = 8.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(Glass)
-            .border(1.dp, GlassLine, RoundedCornerShape(16.dp))
+            .padding(bottom = 10.dp)
+            .glass(22.dp)
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(BlueMid.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
-            Text(icon, fontSize = 18.sp)
-        }
-        Spacer(Modifier.width(12.dp))
+        Box(
+            Modifier.size(46.dp).clip(RoundedCornerShape(14.dp))
+                .background(Brush.radialGradient(listOf(Color(0x552F6BFF), Color(0x1A0E1A36))))
+                .border(1.dp, Color(0x337AAEFF), RoundedCornerShape(14.dp)),
+            contentAlignment = Alignment.Center
+        ) { Text(icon, fontSize = 20.sp) }
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, color = TextMain, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            Text(sub, color = TextDim, fontSize = 12.sp, maxLines = 2)
+            Text(title, color = TextMain, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Text(sub, color = TextSoft, fontSize = 12.5.sp, maxLines = 2)
         }
-        if (right.isNotEmpty()) Text(right, color = Blue, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        when {
+            right == "Вкл" || right == "Выкл" -> MiniSwitch(right == "Вкл")
+            right.endsWith("›") -> {
+                val v = right.removeSuffix("›").trim()
+                if (v.isNotEmpty()) Text(v, color = TextMain, fontSize = 14.sp, modifier = Modifier.padding(end = 6.dp))
+                LineIcon(Ico.CHEVRON, 16.dp, Blue)
+            }
+            right.isEmpty() -> LineIcon(Ico.CHEVRON, 16.dp, Blue)
+            // действие — кнопка-обводка
+            else -> Text(
+                right, color = TextMain, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                modifier = Modifier.clip(RoundedCornerShape(50)).border(1.dp, Blue.copy(alpha = 0.6f), RoundedCornerShape(50))
+                    .background(BlueMid.copy(alpha = 0.10f)).padding(horizontal = 14.dp, vertical = 8.dp)
+            )
+        }
     }
+}
+
+/** Переключатель в строке (вся строка нажимается). */
+@Composable
+private fun MiniSwitch(on: Boolean) {
+    Box(
+        Modifier.width(50.dp).height(28.dp).clip(RoundedCornerShape(50))
+            .background(if (on) Brush.horizontalGradient(listOf(Color(0xFF1F4FD6), Color(0xFF3D7BFF)))
+            else Brush.horizontalGradient(listOf(Color(0xFF1A2233), Color(0xFF1A2233))))
+            .border(1.dp, if (on) Color(0x997AAEFF) else GlassLine, RoundedCornerShape(50))
+            .padding(3.dp),
+        contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart
+    ) { Box(Modifier.size(22.dp).clip(CircleShape).background(if (on) Color.White else TextDim)) }
 }
 
 // ---------------------------------------------------------------- приложения мимо VPN
@@ -871,40 +965,72 @@ private fun AppsScreen(data: Data, back: () -> Unit, onChange: () -> Unit) {
 private fun Welcome(data: Data, onOpen: (String) -> Unit) {
     val ctx = LocalContext.current
     var link by remember { mutableStateOf("") }
+    var manual by remember { mutableStateOf(false) }  // поле для ссылки — если в буфере её не оказалось
     Column(
         Modifier
             .fillMaxSize()
             .systemBarsPadding()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp),
+            .padding(horizontal = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(Modifier.height(56.dp))
-        Image(painterResource(R.mipmap.ic_launcher_foreground), contentDescription = null, modifier = Modifier.size(150.dp))
-        Text("Arise VPN", color = TextMain, fontSize = 32.sp, fontWeight = FontWeight.Bold)
-        Text("Быстрый и приватный интернет без границ", color = TextSoft, fontSize = 15.sp, textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 6.dp))
-        Spacer(Modifier.height(34.dp))
-        Big("✦ Попробовать бесплатно", gold = true) { onOpen("https://t.me/$BOT?start=trial") }
-        Spacer(Modifier.height(10.dp))
-        Big("У меня есть подписка — открыть бота", gold = false) { onOpen("https://t.me/$BOT") }
-        Spacer(Modifier.height(26.dp))
-        Text("или вставьте ссылку подписки из бота", color = TextDim, fontSize = 13.sp)
-        Field(link, "Ссылка подписки", Modifier.padding(top = 8.dp)) { link = it }
-        Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Small("📋 Вставить", Modifier.weight(1f)) {
-                val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                link = cm.primaryClip?.getItemAt(0)?.coerceToText(ctx)?.toString()?.trim() ?: ""
-                if (link.startsWith("http")) Repo.refresh(link)
+        Spacer(Modifier.height(28.dp))
+        AriseMark(96.dp)
+        Text("Arise VPN", color = TextMain, fontSize = 38.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 14.dp))
+        Text("Быстрый и приватный интернет без границ", color = Blue, fontSize = 15.5.sp, textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 4.dp))
+        Globe(Modifier.padding(vertical = 22.dp).size(260.dp), on = true)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            Feature(Ico.BOLT, "Высокая\nскорость")
+            Feature(null, "Без логов")
+            Feature(Ico.GLOBE, "Десятки\nстран")
+        }
+        Spacer(Modifier.height(24.dp))
+        Big("Попробовать бесплатно  ›", gold = true) { onOpen("https://t.me/$BOT?start=trial") }
+        Spacer(Modifier.height(12.dp))
+        Big(if (data.loading) "Загружаю…" else "🔗  Вставить ссылку подписки", gold = false) {
+            val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = cm.primaryClip?.getItemAt(0)?.coerceToText(ctx)?.toString()?.trim() ?: ""
+            if (clip.startsWith("http")) {
+                link = clip
+                Repo.refresh(clip)
+            } else {
+                manual = true
+                Toast.makeText(ctx, "Скопируйте ссылку подписки в боте или вставьте её ниже", Toast.LENGTH_LONG).show()
             }
-            Small(if (data.loading) "Загружаю…" else "Добавить", Modifier.weight(1f)) {
+        }
+        if (manual) {
+            Field(link, "Ссылка подписки", Modifier.padding(top = 12.dp)) { link = it }
+            Spacer(Modifier.height(8.dp))
+            Small(if (data.loading) "Загружаю…" else "Добавить", Modifier.fillMaxWidth()) {
                 if (link.startsWith("http")) Repo.refresh(link)
                 else Toast.makeText(ctx, "Вставьте ссылку подписки из бота", Toast.LENGTH_SHORT).show()
             }
         }
         if (data.error.isNotEmpty()) Text(data.error, color = Red, fontSize = 13.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 12.dp))
-        Spacer(Modifier.height(30.dp))
+        Row(
+            Modifier.padding(top = 20.dp).clip(RoundedCornerShape(14.dp)).clickable { onOpen("https://t.me/$BOT") }
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(Modifier.size(34.dp).clip(CircleShape).glass(17.dp), contentAlignment = Alignment.Center) {
+                Text("✈", color = BlueLight, fontSize = 15.sp)
+            }
+            Text("Подписку можно купить в Telegram-боте @$BOT", color = TextSoft, fontSize = 13.sp,
+                modifier = Modifier.padding(start = 10.dp))
+        }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun Feature(ico: Ico?, text: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(100.dp)) {
+        Box(Modifier.size(56.dp).glass(18.dp), contentAlignment = Alignment.Center) {
+            if (ico != null) LineIcon(ico, 26.dp, Blue) else Text("🛡", fontSize = 24.sp)
+        }
+        Text(text, color = TextMain, fontSize = 14.sp, textAlign = TextAlign.Center, lineHeight = 18.sp,
+            modifier = Modifier.padding(top = 8.dp))
     }
 }
 
@@ -927,13 +1053,18 @@ internal fun Field(value: String, label: String, modifier: Modifier = Modifier, 
 
 @Composable
 internal fun Big(text: String, gold: Boolean, onClick: () -> Unit) {
-    val m = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+    // gold — главная кнопка (имя осталось с прошлого стиля): синяя со свечением; иначе — стеклянная
+    val shape = RoundedCornerShape(50)
+    val m = Modifier.fillMaxWidth()
+        .then(if (gold) Modifier.shadow(14.dp, shape, ambientColor = BlueMid, spotColor = BlueMid) else Modifier)
+        .clip(shape)
     Text(
-        text, color = if (gold) Ink else TextMain, fontSize = 16.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
-        modifier = (if (gold) m.background(Brush.horizontalGradient(listOf(BlueLight, BlueMid)))
-        else m.background(Glass).border(1.dp, Blue.copy(alpha = 0.35f), RoundedCornerShape(16.dp)))
+        text, color = if (gold) Color.White else TextMain, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+        modifier = (if (gold) m.background(Brush.verticalGradient(listOf(Color(0xFF3D7BFF), Color(0xFF1F4FD6))))
+            .border(1.dp, Color(0xAA9CC2FF), shape)
+        else m.background(Color(0x1A223A6E)).border(1.dp, Blue.copy(alpha = 0.45f), shape))
             .clickable(onClick = onClick)
-            .padding(vertical = 15.dp)
+            .padding(vertical = 16.dp)
     )
 }
 
