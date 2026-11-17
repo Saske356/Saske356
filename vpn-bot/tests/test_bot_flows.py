@@ -785,6 +785,19 @@ async def main():
     assert new_key and new_key != old_key, (old_key, new_key)
     assert prov.sub_url(some) == new_key
     assert {"subs", "people", "online", "stars_today", "rub"} <= set(bot.admin_stats()), "сводка для админа"
+    # упавшая служба VPN: одно сообщение на случай, без повторов, и «снова работает»
+    real_ensure = getattr(prov, "ensure_services", None)
+    prov.ensure_services = AsyncMock(return_value=[("aurora-hy2@loc-de", "Hysteria · Германия", False)])
+    ctx.bot.send_message.reset_mock()
+    await bot.services_job(ctx); await bot.services_job(ctx)
+    texts = [c.args[1] for c in ctx.bot.send_message.await_args_list]
+    assert sum("не поднимается" in t for t in texts) == len(config.ADMIN_IDS), texts
+    prov.ensure_services = AsyncMock(return_value=[])
+    ctx.bot.send_message.reset_mock()
+    await bot.services_job(ctx)
+    assert any("снова работает" in c.args[1] for c in ctx.bot.send_message.await_args_list)
+    if real_ensure:
+        prov.ensure_services = real_ensure
     bot.guard.__init__("block")
     # JSON-конфиги для Happ включаются и выключаются в /admin
     assert prov.json_sub and any("JSON-конфиги" in b.text for r in bot.admin_kb().inline_keyboard for b in r)

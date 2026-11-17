@@ -290,6 +290,32 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(unquote(self.v.links(1)[0].rsplit("#", 1)[1]).endswith("· Hysteria"),
                         "с Xray приписка нужна, чтобы отличать от TCP")
 
+    async def test_fallen_vpn_services_are_restarted_and_reported(self):
+        self.v.add_location("de", "🇩🇪 Германия", "socks5://u:p@1.2.3.4:1080")
+        await self.v._pending
+        units = [u for u, _ in self.v.service_units()]
+        self.assertIn("aurora-hy2@plain", units)
+        self.assertIn("aurora-hy2@loc-de", units)
+        state = {"aurora-hy2@plain": "dead", "aurora-hy2@loc-de": "stuck"}  # всё остальное работает
+        calls = []
+
+        async def run(*cmd):
+            calls.append(cmd[-2:])
+            unit, act = cmd[-1], cmd[-2] if cmd[-2] != "--quiet" else cmd[-3]
+            if act == "restart" and state.get(unit) == "dead":
+                state[unit] = "ok"
+            return (3 if state.get(unit) in ("dead", "stuck") else 0), ""
+        self.v._run = run
+        real_sleep = asyncio.sleep
+        asyncio.sleep = lambda s: real_sleep(0)
+        try:
+            res = await self.v.ensure_services()
+        finally:
+            asyncio.sleep = real_sleep
+        self.assertEqual(sorted((u, ok) for u, _, ok in res),
+                         [("aurora-hy2@loc-de", False), ("aurora-hy2@plain", True)])
+        self.assertIn(("restart", "aurora-hy2@plain"), calls)
+
     async def test_happ_gets_json_with_country_names_only(self):
         import base64
         self.v.add_location("de", "🇩🇪 Германия", "socks5://u:p@1.2.3.4:1080")

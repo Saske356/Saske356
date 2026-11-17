@@ -1068,6 +1068,40 @@ class XrayProvider(VpnProvider):
             total += sum(int(v) for v in (data or {}).values())
         return total if seen else None
 
+    def service_units(self) -> list[tuple[str, str]]:
+        """Службы VPN, которые должны работать: (служба, понятное название)."""
+        out = []
+        h = self.hy2 or {}
+        if h.get("port"):
+            out.append(("aurora-hy2@plain", f"Hysteria · {self.direct_location()['name']}"))
+        if h.get("obfs_port") and h.get("obfs"):
+            out.append(("aurora-hy2@obfs", "Hysteria с обфускацией"))
+        if self.hy2_locs:
+            names = {l["code"]: l["name"] for l in self.locations}
+            for code in sorted(self.state.get("hy2_ports", {})):
+                out.append((f"aurora-hy2@loc-{code}", f"Hysteria · {names.get(code, code)}"))
+        if self.xray_enabled:
+            out.append(("xray", "Xray"))
+        return out
+
+    async def ensure_services(self) -> list[tuple[str, str, bool]]:
+        """Проверить службы VPN; упавшую перезапустить. Возвращает упавшие:
+        (служба, название, поднялась ли после перезапуска)."""
+        ctl = tuple((self.hy2_locs or {}).get("systemctl") or ("systemctl",))
+        res = []
+        for unit, name in self.service_units():
+            try:
+                code, _ = await self._run(*ctl, "is-active", "--quiet", unit)
+                if code == 0:
+                    continue
+                await self._run(*ctl, "restart", unit)
+                await asyncio.sleep(2)
+                code, _ = await self._run(*ctl, "is-active", "--quiet", unit)
+                res.append((unit, name, code == 0))
+            except OSError:
+                continue  # нет systemctl (не сервер) — проверять нечего
+        return res
+
     async def hy2_running(self) -> bool:
         units = [u for u, key in (("aurora-hy2@plain", "port"), ("aurora-hy2@obfs", "obfs_port"))
                  if (self.hy2 or {}).get(key)]

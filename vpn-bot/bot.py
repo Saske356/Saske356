@@ -2695,6 +2695,31 @@ async def delbridge(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(("Удалено.\n\n" if ok else "Такого моста нет.\n\n") + locations_text())
 
 
+async def services_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Раз в 2 минуты: службы VPN работают? Упавшую сервер перезапускает сам, админам — одно
+    сообщение на случай (повтор того же падения не шлём, пока служба снова не поднимется)."""
+    if not hasattr(vpn, "ensure_services"):
+        return
+    down = context.bot_data.setdefault("svc_down", set())
+    try:
+        fails = await vpn.ensure_services()
+    except Exception:
+        log.exception("проверка служб")
+        return
+    failed_now = {u for u, _, ok in fails if not ok}
+    for unit, name, ok in fails:
+        if ok:
+            await send_admins(context.bot, f"⚠️ <b>{esc(name)}</b> упала — сервер перезапустил её сам, всё работает.")
+        elif unit not in down:
+            await send_admins(context.bot, f"⛔ <b>{esc(name)}</b> не работает и не поднимается после перезапуска. "
+                                           f"Гости через неё сейчас не подключатся.\nЧто с ней: "
+                                           f"<code>journalctl -u {esc(unit)} -n 30</code>")
+    for unit in down - failed_now:
+        if unit not in {u for u, _, _ in fails}:
+            await send_admins(context.bot, f"✅ Служба <code>{esc(unit)}</code> снова работает.")
+    context.bot_data["svc_down"] = failed_now
+
+
 async def proxy_health_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Раз в 10 минут проверяет прокси стран и сообщает админам об изменениях."""
     if not hasattr(vpn, "check_proxies"):
@@ -3772,6 +3797,7 @@ def build_app(token: str) -> Application:
     app.add_error_handler(on_error)
     app.job_queue.run_repeating(lifecycle_job, interval=3600, first=30)
     app.job_queue.run_repeating(proxy_health_job, interval=600, first=60)
+    app.job_queue.run_repeating(services_job, interval=120, first=120)
     if config.BACKUP_DAILY:
         app.job_queue.run_repeating(backup_job, interval=86400, first=3600)
     app.job_queue.run_repeating(auto_proxy_job, interval=300, first=45)
