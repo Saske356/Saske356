@@ -169,73 +169,51 @@ private fun project(lat: Float, lon: Float, rot: Float, r: Float, c: Offset, alt
     return Triple(c.x + x * r * alt, c.y - y2 * r * alt, z2)
 }
 
-/** Пары городов для дуг поверх снимка: только то, что видно на обращённой к нам стороне. */
-private val PHOTO_ARCS = listOf(0 to 2, 0 to 13, 13 to 14, 14 to 9, 0 to 12, 1 to 14, 2 to 9)
-
-// Снимок (res/drawable-nodpi/globe_night.webp, рисует arise-app/design/render_globe.py):
-// сфера радиусом 500 на холсте 1100, в центре долгота 18°, широта 22°.
-private const val PHOTO_R = 500f / 1100f
-private const val PHOTO_LON = 18f
-private const val PHOTO_TILT = 0.384f
+/** Доля радиуса сферы от стороны картинки globe_gpt (сфера r=440 на 1254). */
+internal const val GLOBE_SPHERE = 0.351f
 
 /**
- * Глобус как на образце: снимок ночной Земли (NASA, свободный для использования), поверх —
- * живые дуги связей с бегущими огоньками и свечение края. При выключенном VPN — тусклее.
+ * Глобус с картинки ChatGPT (ночная Земля, золотые огни, орбиты): медленно «дышит», вокруг мерцают
+ * огоньки. При выключенном VPN — тусклее. Низ растворяется в фоне, чтобы не мешать тексту.
  */
 @Composable
-internal fun Globe(modifier: Modifier, on: Boolean) {
+internal fun Globe(modifier: Modifier, on: Boolean, fadeBottom: Boolean = true) {
     val t = rememberInfiniteTransition(label = "globe")
-    val pulse by t.animateFloat(0f, 1f, infiniteRepeatable(tween(3_200, easing = LinearEasing)), label = "arc")
-    val breathe by t.animateFloat(0f, 1f, infiniteRepeatable(tween(4_000, easing = LinearEasing), RepeatMode.Reverse), label = "breathe")
-    val power by animateFloatAsState(if (on) 1f else 0.6f, tween(900), label = "power")
-    val photo = ImageBitmap.imageResource(R.drawable.globe_night)
-    Canvas(modifier) {
-        val r = size.minDimension / 2f
-        val c = center
-        val rot = -PHOTO_LON
-        // мягкое сияние вокруг, «дышит»
-        drawCircle(
-            Brush.radialGradient(listOf(Color(0xFF2F6BFF).copy(alpha = (0.26f + 0.10f * breathe) * power), Color.Transparent), c, r * 1.4f),
-            radius = r * 1.4f, center = c
-        )
-        val d = (r / PHOTO_R).toInt()
+    val breathe by t.animateFloat(0f, 1f, infiniteRepeatable(tween(3_000, easing = LinearEasing), RepeatMode.Reverse), label = "breathe")
+    val tw by t.animateFloat(0f, 1f, infiniteRepeatable(tween(3_000, easing = LinearEasing)), label = "twinkle")
+    val power by animateFloatAsState(if (on) 1f else 0f, tween(700), label = "power")
+    val photo = ImageBitmap.imageResource(R.drawable.globe_gpt)
+    val dim = 0.60f + 0.12f * power + 0.12f * breathe * (0.5f + 0.5f * power)
+    Canvas(
+        modifier.graphicsLayer(compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen)
+    ) {
         drawImage(
-            photo, dstOffset = IntOffset((c.x - d / 2f).toInt(), (c.y - d / 2f).toInt()), dstSize = IntSize(d, d),
-            alpha = 0.55f + 0.45f * power
+            photo, dstSize = IntSize(size.width.toInt(), size.height.toInt()),
+            colorFilter = androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+                androidx.compose.ui.graphics.ColorMatrix().apply { setToScale(dim, dim, dim, 1f) }
+            )
         )
-        // дуги связей между городами на снимке
-        for ((i, pair) in PHOTO_ARCS.withIndex()) {
-            val a = ARC_ENDS[pair.first]
-            val b = ARC_ENDS[pair.second]
-            var prev: Offset? = null
-            val steps = 28
-            for (st in 0..steps) {
-                val k = st / steps.toFloat()
-                val (lat, lon) = slerp(a, b, k)
-                val (x, y, z) = project(lat, lon, rot, r, c, 1f + 0.18f * sin(k * PI.toFloat()), PHOTO_TILT)
-                val p = if (z > 0f) Offset(x, y) else null
-                if (p != null && prev != null) {
-                    drawLine(Color(0xFF8CB8FF).copy(alpha = 0.55f * power), prev, p, 1.4.dp.toPx(), StrokeCap.Round)
-                }
-                prev = p
-            }
-            for (end in listOf(a, b)) {
-                val (x, y, z) = project(end.lat, end.lon, rot, r, c, 1f, PHOTO_TILT)
-                if (z > 0f) {
-                    drawCircle(Color(0xFF8CB8FF).copy(alpha = 0.35f * power), 5.dp.toPx(), Offset(x, y))
-                    drawCircle(Color.White.copy(alpha = 0.95f * power), 2.dp.toPx(), Offset(x, y))
-                }
-            }
-            val k = (pulse + i * 0.17f) % 1f
-            val (lat, lon) = slerp(a, b, k)
-            val (x, y, z) = project(lat, lon, rot, r, c, 1f + 0.18f * sin(k * PI.toFloat()), PHOTO_TILT)
-            if (z > 0f) {
-                drawCircle(Color(0xFF8CB8FF).copy(alpha = 0.4f * power), 5.dp.toPx(), Offset(x, y))
-                drawCircle(Color.White.copy(alpha = power), 2.2.dp.toPx(), Offset(x, y))
-            }
+        // мерцающие огоньки вокруг
+        for ((i, p) in TWINKLES.withIndex()) {
+            val k = ((tw + i * 0.17f) % 1f)
+            val a = (0.5f - kotlin.math.abs(k - 0.5f)) * 2f
+            val c = Offset(p.first * size.width, p.second * size.height)
+            drawCircle(Color(0xFF6FA8FF).copy(alpha = 0.35f * a * (0.5f + 0.5f * power)), size.minDimension * 0.012f, c)
+            drawCircle(Color.White.copy(alpha = (0.4f + 0.6f * a) * (0.5f + 0.5f * power)), size.minDimension * 0.005f, c)
+        }
+        if (fadeBottom) {
+            // низ растворяется: 50% → прозрачно к 80%
+            drawRect(
+                Brush.verticalGradient(
+                    0f to Color.Black, 0.50f to Color.Black, 0.64f to Color.Black.copy(alpha = 0.35f), 0.80f to Color.Transparent
+                ),
+                blendMode = androidx.compose.ui.graphics.BlendMode.DstIn
+            )
         }
     }
 }
+
+private val TWINKLES = listOf(0.74f to 0.07f, 0.09f to 0.41f, 0.91f to 0.55f, 0.47f to 0.91f, 0.15f to 0.60f, 0.79f to 0.74f)
 
 // ---------------------------------------------------------------- тонкие значки
 

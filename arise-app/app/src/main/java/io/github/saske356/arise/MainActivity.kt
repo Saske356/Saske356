@@ -1010,7 +1010,7 @@ private fun Welcome(data: Data, onOpen: (String) -> Unit) {
         Text("Arise VPN", color = TextMain, fontSize = 38.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 14.dp))
         Text("Быстрый и приватный интернет без границ", color = Blue, fontSize = 15.5.sp, textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 4.dp))
-        Globe(Modifier.padding(vertical = 22.dp).size(260.dp), on = true)
+        Globe(Modifier.size(360.dp), on = true, fadeBottom = false)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             Feature(Ico.BOLT, "Высокая\nскорость")
             Feature(null, "Без логов")

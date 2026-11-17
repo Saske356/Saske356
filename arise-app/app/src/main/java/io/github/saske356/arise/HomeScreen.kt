@@ -61,6 +61,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -82,12 +84,12 @@ internal fun HomeScreen(
             .navigationBarsPadding()
             .padding(bottom = 24.dp)
     ) {
-        HomeTop(openTools, openChat)
-        UpdateCard()
-        NotifyCard()
-        HomeSub(data, onOpen)
-        HomeHero(running, connecting, onToggle)
-        HomeStatus(vpn)
+        Box(Modifier.zIndex(1f)) { HomeTop(openTools, openChat) }
+        Box(Modifier.zIndex(1f)) { UpdateCard() }
+        Box(Modifier.zIndex(1f)) { NotifyCard() }
+        Box(Modifier.zIndex(1f)) { HomeSub(data, onOpen) }
+        HomeHero(running, connecting, onToggle)  // Земля — под остальными (zIndex 0)
+        Box(Modifier.zIndex(1f)) { HomeStatus(vpn) }
         if (vpn.note.isNotEmpty()) {
             Text(vpn.note, color = Blue, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 6.dp))
@@ -100,10 +102,10 @@ internal fun HomeScreen(
             Text(err, color = Red, fontSize = 13.sp, textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp))
         }
-        HomeCountry(vpn, data, openSheet)
-        HomeTiles(vpn, data)
-        if (running) HomeGraph(vpn)
-        HomeModes(data.mode, onMode, openModes)
+        Box(Modifier.zIndex(1f)) { HomeCountry(vpn, data, openSheet) }
+        Box(Modifier.zIndex(1f)) { HomeTiles(vpn, data) }
+        if (running) Box(Modifier.zIndex(1f)) { HomeGraph(vpn) }
+        Box(Modifier.zIndex(1f)) { HomeModes(data.mode, onMode, openModes) }
         if (!running) {
             ToggleRow("🏦", "Банки и Госуслуги мимо VPN", data.ruApps, Modifier.padding(horizontal = 22.dp, vertical = 6.dp)) { onRuApps() }
         }
@@ -183,60 +185,68 @@ private fun HomeHero(running: Boolean, connecting: Boolean, onToggle: () -> Unit
     val pressed by press.collectIsPressedAsState()
     val btnScale by animateFloatAsState(if (pressed) 0.93f else 1f,
         androidx.compose.animation.core.spring(dampingRatio = 0.5f, stiffness = 600f), label = "btn")
-    BoxWithConstraints(
-        Modifier.fillMaxWidth().height(330.dp)
+    Spacer(Modifier.height(56.dp))
+    Box(
+        Modifier.fillMaxWidth().height(180.dp)
             .semantics { contentDescription = if (running) "Отключить VPN" else "Подключить VPN" },
         contentAlignment = Alignment.Center
     ) {
-        // глобус крупнее экрана: края уходят за поля, как на образце
-        Globe(Modifier.requiredSize(maxWidth * 1.08f), on = running)
-        Canvas(Modifier.size(250.dp)) {
+        // Земля (картинка ChatGPT): центр сферы на 67 dp ниже кнопки, радиус сферы ≈ 212 dp, как в макете
+        Globe(Modifier.offset(y = 67.dp).requiredSize(604.dp), on = running)
+        Canvas(Modifier.size(300.dp)) {
             val r = size.minDimension / 2f
+            // ореол за кнопкой
             drawCircle(
-                Brush.radialGradient(listOf(Color(0xFF2F6BFF).copy(alpha = 0.45f * glow), Color.Transparent), center, r),
+                Brush.radialGradient(
+                    0f to Color(0xFF5A96FF).copy(alpha = 0.85f * glow), 0.34f to Color(0xFF2F6BFF).copy(alpha = 0.5f * glow),
+                    0.55f to Color(0xFF2F6BFF).copy(alpha = 0.12f * glow), 0.7f to Color.Transparent, center = center, radius = r
+                ),
                 radius = r
             )
+            val ringR = 75.dp.toPx()
             if (running || connecting) {
                 for (i in 0..2) {
                     val k = (pulse + i / 3f) % 1f
-                    drawCircle(Color(0xFF8CB8FF).copy(alpha = (1f - k) * 0.35f), radius = r * 0.62f + r * 0.38f * k,
-                        style = Stroke(1.5.dp.toPx()))
+                    drawCircle(Color(0xFF96C3FF).copy(alpha = (1f - k) * 0.5f), radius = ringR * (1f + 0.75f * k),
+                        style = Stroke(2.dp.toPx()))
                 }
             }
-            // светящееся кольцо вокруг кнопки
-            for (i in 0..4) {
-                drawCircle(Color(0xFF4A8BFF).copy(alpha = (0.5f - i * 0.1f) * glow), radius = r * 0.66f + i * 3.dp.toPx(),
-                    style = Stroke(3.dp.toPx()))
-            }
-            drawCircle(Color(0xFFCFE0FF).copy(alpha = 0.35f + 0.65f * glow), radius = r * 0.66f, style = Stroke(2.5.dp.toPx()))
-            if (connecting) {
-                val d = r * 0.66f
-                drawArc(
-                    Brush.sweepGradient(listOf(Color.Transparent, Color(0xFFCFE0FF), Color.Transparent)),
-                    spin, 110f, false, Offset(center.x - d, center.y - d), androidx.compose.ui.geometry.Size(d * 2, d * 2),
-                    style = Stroke(5.dp.toPx(), cap = StrokeCap.Round)
-                )
-            }
-            if (flash.value > 0f) {
-                drawCircle(Color(0xFFCFE0FF).copy(alpha = 0.6f * flash.value), radius = r * (0.66f + 0.5f * (1f - flash.value)),
-                    style = Stroke(4.dp.toPx()))
-            }
+            drawCircle(Color(0xFF6EA5FF).copy(alpha = 0.35f), radius = ringR + 18.dp.toPx(), style = Stroke(1.dp.toPx()))
+            drawCircle(Color(0xFF6EA5FF).copy(alpha = 0.18f), radius = ringR + 38.dp.toPx(), style = Stroke(1.dp.toPx()))
         }
         Box(
             Modifier
-                .size(150.dp)
+                .size(132.dp)
                 .graphicsLayer { scaleX = btnScale; scaleY = btnScale }
-                .shadow(if (running) 28.dp else 12.dp, CircleShape, ambientColor = BlueMid, spotColor = BlueMid)
                 .clip(CircleShape)
-                .background(Brush.radialGradient(listOf(Color(0xFF14254A), Color(0xFF070D1E))))
-                .border(1.dp, Color(0x557AAEFF), CircleShape)
+                .background(Brush.radialGradient(listOf(Color(0xFF16284F), Color(0xFF0A1430), Color(0xFF060C1F))))
                 .clickable(interactionSource = press, indication = null) {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onToggle()
                 },
             contentAlignment = Alignment.Center
         ) {
-            PowerIcon(if (running) BlueLight else Blue.copy(alpha = 0.85f), 58.dp)
+            PowerIcon(if (running) Color(0xFFDCEBFF) else Blue.copy(alpha = 0.85f), 52.dp)
+        }
+        // неоновое кольцо (картинка ChatGPT) поверх кнопки; тускнеет, когда VPN выключен
+        val ringAlpha by animateFloatAsState(if (running) 1f else if (connecting) 0.8f else 0.45f, tween(500), label = "ring")
+        androidx.compose.foundation.Image(
+            androidx.compose.ui.res.painterResource(R.drawable.ring_gpt), contentDescription = null,
+            modifier = Modifier.size(196.dp).graphicsLayer { scaleX = btnScale; scaleY = btnScale; alpha = ringAlpha }
+        )
+        Canvas(Modifier.size(196.dp)) {
+            val ringR = 75.dp.toPx()
+            if (connecting) {
+                drawArc(
+                    Brush.sweepGradient(listOf(Color.Transparent, Color(0xFFEAF3FF), Color.Transparent)),
+                    spin, 110f, false, Offset(center.x - ringR, center.y - ringR), androidx.compose.ui.geometry.Size(ringR * 2, ringR * 2),
+                    style = Stroke(5.dp.toPx(), cap = StrokeCap.Round)
+                )
+            }
+            if (flash.value > 0f) {
+                drawCircle(Color(0xFFEAF3FF).copy(alpha = 0.7f * flash.value), radius = ringR * (1f + 0.9f * (1f - flash.value)),
+                    style = Stroke(4.dp.toPx()))
+            }
         }
     }
 }
