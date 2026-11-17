@@ -7,9 +7,9 @@
 <style>
 /*FONTS*/
 :root{
-  --bg:#02050f; --text:#eef4ff; --soft:#a9bce0; --dim:#7487ad;
+  --bg:#02050f; --text:#ffffff; --soft:#c9d8f5; --dim:#93a6cc;
   --blue:#4f8dff; --ice:#9cc6ff; --deep:#1f4fd6; --line:rgba(91,140,255,.32);
-  --glass:linear-gradient(180deg,rgba(34,58,110,.30),rgba(14,26,54,.18));
+  --glass:linear-gradient(180deg,rgba(22,40,84,.72),rgba(8,16,38,.78));
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{background:#000;height:100%}
@@ -40,7 +40,7 @@ body{display:flex;justify-content:center;align-items:flex-start;padding:0;font-f
 /* подписка */
 .sub{position:absolute;top:114px;left:17px;right:17px;height:47px;border-radius:24px;display:flex;align-items:center;padding:0 8px 0 18px;z-index:4;
   background:linear-gradient(180deg,rgba(28,44,86,.55),rgba(10,18,40,.55));border:1px solid rgba(110,160,255,.28);backdrop-filter:blur(6px)}
-.sub svg{flex-shrink:0}.sub span{flex:1;font-size:13px;color:var(--soft);margin-left:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pill{flex-shrink:0}
+.sub svg{flex-shrink:0}.sub span{flex:1;font-size:13px;color:#dbe6fb;margin-left:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pill{flex-shrink:0}
 .pill{height:31px;padding:0 17px;border-radius:16px;display:grid;place-items:center;font-size:14px;font-weight:600;color:#fff;
   background:linear-gradient(180deg,#4a86ff,#1d4fd8);border:1px solid rgba(170,205,255,.7);box-shadow:0 0 16px rgba(60,120,255,.6),inset 0 1px 0 rgba(255,255,255,.35)}
 
@@ -86,7 +86,7 @@ body{display:flex;justify-content:center;align-items:flex-start;padding:0;font-f
 .off .timer{font-size:14px;font-weight:400;color:var(--dim);text-shadow:none;margin-top:8px}
 
 /* стеклянные карточки */
-.card{position:absolute;left:17px;right:17px;border-radius:24px;background:var(--glass);border:1px solid rgba(110,160,255,.35);
+.card{position:absolute;left:17px;right:17px;border-radius:24px;background:var(--glass);border:1px solid rgba(140,185,255,.55);
   box-shadow:0 0 22px rgba(30,90,255,.18),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(4px);z-index:3}
 .press{transition:transform .2s cubic-bezier(.3,1.5,.5,1)}.press:active{transform:scale(.965)}
 .country{top:470px;height:57px;display:flex;align-items:center;padding:0 16px 0 18px;cursor:pointer;border-color:rgba(120,170,255,.55);box-shadow:0 0 26px rgba(40,100,255,.3),inset 0 1px 0 rgba(255,255,255,.08)}
@@ -101,7 +101,7 @@ body{display:flex;justify-content:center;align-items:flex-start;padding:0;font-f
 .tiles{position:absolute;top:540px;left:17px;right:17px;height:83px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;z-index:3}
 .tile{position:static;border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
 .tile svg{width:26px;height:26px;margin-bottom:3px;filter:drop-shadow(0 0 6px rgba(80,150,255,.8))}
-.tile small{font-size:13px;color:#d6e3ff}
+.tile small{font-size:13px;color:#e2ebff}
 .tile b{font-size:16.5px;font-weight:600}
 
 .graph{top:642px;height:87px;padding:12px 14px 0 15px}
@@ -151,11 +151,11 @@ body{display:flex;justify-content:center;align-items:flex-start;padding:0;font-f
 .rec .card{position:relative;left:auto;right:auto;height:67px;display:flex;align-items:center;padding:0 10px 0 10px;border-radius:20px;cursor:pointer}
 .rec .ic{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;flex-shrink:0;background:radial-gradient(circle,rgba(60,120,255,.55),rgba(14,26,54,.2));box-shadow:0 0 16px rgba(47,107,255,.5)}
 .rec .ic svg{width:30px;height:30px;display:block}
-.rec .t{flex:1;margin-left:8px;min-width:0}.rec .t b{display:block;font-size:13.5px;font-weight:600;white-space:nowrap}.rec .t small{display:block;font-size:10.5px;color:#9db0d6;line-height:1.25}
+.rec .t{flex:1;margin-left:8px;min-width:0}.rec .t b{display:block;font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rec .t small{display:block;font-size:10.5px;color:#b9c9e8;line-height:1.25}
 .sortp{font-size:12.5px;color:#c7d8ff;padding:6px 12px;border-radius:15px;border:1px solid rgba(110,160,255,.45);background:rgba(14,28,60,.5);cursor:pointer;font-weight:500}
 .rows{display:flex;flex-direction:column;gap:6px}
 .row{position:relative;left:auto;right:auto;height:38px;display:flex;align-items:center;padding:0 10px;border-radius:19px;cursor:pointer;
-  background:linear-gradient(180deg,rgba(26,44,92,.45),rgba(10,20,44,.4));border:1px solid rgba(110,160,255,.3)}
+  background:linear-gradient(180deg,rgba(22,40,84,.75),rgba(8,16,38,.8));border:1px solid rgba(140,185,255,.5)}
 .row.sel{height:43px;border:1.5px solid #8fbaff;box-shadow:0 0 18px rgba(60,130,255,.75),inset 0 0 14px rgba(60,130,255,.3)}
 .row .fl{width:28px;height:28px;border-radius:50%;overflow:hidden;flex-shrink:0;font-size:40px;line-height:28px;display:grid;place-items:center;box-shadow:0 1px 4px rgba(0,0,0,.5)}
 .row .nm{flex:1;margin-left:16px;font-size:14.5px}
@@ -168,20 +168,20 @@ body{display:flex;justify-content:center;align-items:flex-start;padding:0;font-f
 
 /* ---------- инструменты ---------- */
 .speed{top:119px;height:172px;left:15px;right:15px;padding:0;border-color:rgba(130,180,255,.75);box-shadow:0 0 26px rgba(40,100,255,.45),inset 0 0 30px rgba(40,100,255,.12)}
-.speed .gauge{position:absolute;left:13px;top:12px;width:80px;height:80px}
-.speed .st{position:absolute;left:110px;top:16px}
-.speed .st b{display:block;font-size:22px;font-weight:700}.speed .st small{font-size:14px;color:#a9bce0}
-.startbtn{position:absolute;left:104px;top:66px;width:154px;height:34px;border-radius:17px;display:flex;align-items:center;justify-content:center;gap:10px;font-size:16px;font-weight:600;cursor:pointer;
+.speed .gauge{position:absolute;left:12px;top:12px;width:78px;height:78px}
+.speed .st{position:absolute;left:108px;top:14px}
+.speed .st b{display:block;font-size:19px;font-weight:700;line-height:1.2}.speed .st small{display:block;font-size:12.5px;color:#c9d8f5;margin-top:2px}
+.startbtn{position:absolute;left:104px;top:64px;width:154px;height:34px;border-radius:17px;display:flex;align-items:center;justify-content:center;gap:10px;font-size:16px;font-weight:600;cursor:pointer;
   background:linear-gradient(180deg,#4a86ff,#1d4fd8);border:1px solid rgba(190,215,255,.85);box-shadow:0 0 18px rgba(60,120,255,.75),inset 0 1px 0 rgba(255,255,255,.35)}
 .metrics{position:absolute;left:8px;right:8px;bottom:8px;height:60px;border-radius:16px;display:grid;grid-template-columns:1fr 1fr 1fr;
   background:rgba(8,18,42,.55);border:1px solid rgba(110,160,255,.3)}
-.metrics div{display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:12px;color:#c9d7f5}
+.metrics div{display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:12px;color:#dbe6fb}
 .metrics div+div{border-left:1px solid rgba(110,160,255,.3)}
 .metrics b{font-size:14px;font-weight:500;color:#fff;margin-top:1px}.metrics svg{width:17px;height:17px;margin-bottom:2px}
 .tool{left:12px;right:12px;height:50px;display:flex;align-items:center;padding:0 10px 0 9px;border-radius:18px;cursor:pointer}
 .tool .sq{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;flex-shrink:0;background:radial-gradient(circle,rgba(60,120,255,.4),rgba(14,26,54,.3));border:1px solid rgba(110,160,255,.4);box-shadow:inset 0 0 10px rgba(60,120,255,.35)}
 .tool .sq svg{width:30px;height:30px;display:block;filter:drop-shadow(0 0 5px rgba(90,150,255,.9))}
-.tool .tt{flex:1;margin-left:16px;min-width:0}.tool .tt b{display:block;font-size:14.5px;font-weight:500;white-space:nowrap}.tool .tt small{display:block;font-size:11.5px;color:#9db0d6;line-height:1.25}
+.tool .tt{flex:1;margin-left:14px;min-width:0;margin-right:8px}.tool .tt b{display:block;font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tool .tt small{display:block;font-size:11.5px;color:#b9c9e8;line-height:1.25}
 .act{height:28px;padding:0 10px 0 14px;border-radius:14px;display:flex;align-items:center;gap:6px;font-size:12.5px;border:1px solid rgba(130,175,255,.6);background:rgba(14,28,60,.55);white-space:nowrap}
 .val{font-size:14px;margin-right:8px}
 .sw{width:50px;height:28px;border-radius:14px;background:linear-gradient(90deg,#1f4fd6,#4a86ff);border:1px solid rgba(190,215,255,.7);position:relative;box-shadow:0 0 12px rgba(60,120,255,.6);cursor:pointer;transition:background .3s}
@@ -191,7 +191,7 @@ body{display:flex;justify-content:center;align-items:flex-start;padding:0;font-f
 .foot::before,.foot::after{content:'';width:54px;height:1px;background:rgba(110,160,255,.35)}
 
 /* ---------- режимы ---------- */
-.lead{position:absolute;top:100px;left:21px;right:21px;font-size:13px;line-height:1.35;color:#b8c9ea;z-index:3}
+.lead{position:absolute;top:100px;left:21px;right:21px;font-size:13px;line-height:1.35;color:#d0ddf5;z-index:3}
 .mcard{left:10px;right:10px;border-radius:24px;padding:14px 34px 0 16px;cursor:pointer;display:flex}
 .mcard.sel{border:2px solid #b3d2ff;box-shadow:0 0 0 1px #3d7bff,0 0 34px 6px rgba(60,130,255,.85),inset 0 0 34px rgba(60,130,255,.28)}
 .mcard .big{width:60px;height:60px;border-radius:20px;display:grid;place-items:center;flex-shrink:0;margin-top:4px;
@@ -199,8 +199,8 @@ body{display:flex;justify-content:center;align-items:flex-start;padding:0;font-f
 .mcard .big svg{width:46px;height:46px;display:block;filter:drop-shadow(0 0 6px rgba(80,150,255,.9))}
 .mcard .mt{flex:1;margin-left:14px}
 .mcard .mt b{font-size:17px;font-weight:700}.badge{font-size:11.5px;color:#cfe0ff;padding:3px 9px;border-radius:11px;margin-left:8px;border:1px solid rgba(110,160,255,.6);background:rgba(30,60,140,.5);vertical-align:3px}
-.mcard .mt p{font-size:12px;color:#a9c4f5;margin-top:3px;line-height:1.3}
-.chips{display:flex;gap:6px;margin-top:8px}
+.mcard .mt p{font-size:12px;color:#c4d6f8;margin-top:3px;line-height:1.3}
+.chips{display:flex;gap:6px;margin-top:8px;flex-wrap:nowrap;max-width:100%;overflow:hidden}
 .chip{display:flex;align-items:center;gap:5px;font-size:10px;padding:3px 7px 3px 3px;border-radius:13px;white-space:nowrap}
 .chip i{width:16px;height:16px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-weight:700;font-size:14px;color:#08121e}
 .chip.plus{color:#9cf0b0;background:rgba(40,160,80,.16);border:1px solid rgba(60,200,100,.35)}.chip.plus i{background:#2fcf5a}
@@ -336,7 +336,7 @@ body{display:flex;justify-content:center;align-items:flex-start;padding:0;font-f
     <div class="card mcard press sel" data-m="0" style="top:166px;height:129px"><div class="big"><svg viewBox="0 0 24 24"><defs><linearGradient id="gr3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8f4ff"/><stop offset="1" stop-color="#3d7bff"/></linearGradient></defs><path fill="url(#gr3)" d="M14 1.5 4.5 14h6.5l-1.5 8.5L19.5 10H13z"/></svg></div><div class="mt"><b>Баланс</b><span class="badge">★ Рекомендуем</span><p>Оптимальное сочетание скорости<br>и стабильности.</p><div class="split"><div><i style="background:#2fcf5a">+</i>Стабильно<br>и быстро</div><div><i style="background:#f5a03b">−</i>Не максимум<br>скорости</div></div></div><div class="mchk"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div></div>
     <div class="card mcard press" data-m="1" style="top:307px;height:92px"><div class="big"><svg viewBox="0 0 24 24"><defs><linearGradient id="gr2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8f4ff"/><stop offset="1" stop-color="#3d7bff"/></linearGradient></defs><path fill="url(#gr2)" d="M7 7h10a5 5 0 0 1 4.8 6.4l-1.2 4.2a2.7 2.7 0 0 1-4.5 1.2L14 16.6h-4l-2.1 2.2a2.7 2.7 0 0 1-4.5-1.2l-1.2-4.2A5 5 0 0 1 7 7z"/><path stroke="#0b1630" stroke-width="1.8" stroke-linecap="round" d="M7.5 10.5v4M5.5 12.5h4"/><circle cx="16" cy="11" r="1.1" fill="#0b1630"/><circle cx="18" cy="13.2" r="1.1" fill="#0b1630"/></svg></div><div class="mt"><b>Игровой</b><p>Ровный пинг без скачков.</p><div class="chips"><div class="chip plus"><i>+</i>Меньше лагов</div><div class="chip minus"><i>−</i>До 30 Мбит/с</div></div></div><div class="mchev"><span style="width:18px;height:18px;display:block"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div></div>
     <div class="card mcard press" data-m="2" style="top:411px;height:98px"><div class="big"><svg viewBox="0 0 24 24"><defs><linearGradient id="gr1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8f4ff"/><stop offset="1" stop-color="#3d7bff"/></linearGradient></defs><g transform="rotate(45 12 12)"><path fill="url(#gr1)" d="M12 1c3 2.6 3.2 7.6 2 11.6H10C8.8 8.6 9 3.6 12 1z"/><path fill="#3d7bff" d="M9.6 8.6 6.4 12l.4 2.8 3.4-2.2zM14.4 8.6l3.2 3.4-.4 2.8-3.4-2.2z"/><circle cx="12" cy="6.4" r="1.4" fill="#0b1630"/><path fill="#cfe0ff" d="M10.6 13.4 12 18l1.4-4.6z"/></g></svg></div><div class="mt"><b>Турбо</b><p>Максимум скорости для фильмов<br>и загрузок.</p><div class="chips"><div class="chip plus"><i>+</i>До 500 Мбит/с</div><div class="chip minus"><i>−</i>Пинг может прыгать</div></div></div><div class="mchev"><span style="width:18px;height:18px;display:block"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div></div>
-    <div class="card mcard press" data-m="3" style="top:521px;height:98px"><div class="big"><svg viewBox="0 0 24 24"><defs><linearGradient id="gr5" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8f4ff"/><stop offset="1" stop-color="#3d7bff"/></linearGradient></defs><path fill="url(#gr5)" d="M7.5 10 8.7 4h6.6l1.2 6z"/><ellipse cx="12" cy="10.6" rx="10" ry="1.9" fill="url(#gr5)"/><circle cx="8" cy="16.2" r="3" fill="url(#gr5)"/><circle cx="16" cy="16.2" r="3" fill="url(#gr5)"/><path d="M11 16h2" stroke="#6fa8ff" stroke-width="1.6"/></svg></div><div class="mt"><b>Невидимка</b><p>Весь трафик через VPN, даже<br>российские сайты.</p><div class="chips"><div class="chip plus"><i>+</i>Максимум приватности</div><div class="chip minus"><i>−</i>Банки могут не открыться</div></div></div><div class="mchev"><span style="width:18px;height:18px;display:block"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div></div>
+    <div class="card mcard press" data-m="3" style="top:521px;height:98px"><div class="big"><svg viewBox="0 0 24 24"><defs><linearGradient id="gr5" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8f4ff"/><stop offset="1" stop-color="#3d7bff"/></linearGradient></defs><path fill="url(#gr5)" d="M7.5 10 8.7 4h6.6l1.2 6z"/><ellipse cx="12" cy="10.6" rx="10" ry="1.9" fill="url(#gr5)"/><circle cx="8" cy="16.2" r="3" fill="url(#gr5)"/><circle cx="16" cy="16.2" r="3" fill="url(#gr5)"/><path d="M11 16h2" stroke="#6fa8ff" stroke-width="1.6"/></svg></div><div class="mt"><b>Невидимка</b><p>Весь трафик через VPN, даже<br>российские сайты.</p><div class="chips"><div class="chip plus"><i>+</i>Макс. приватность</div><div class="chip minus"><i>−</i>Банки могут сбоить</div></div></div><div class="mchev"><span style="width:18px;height:18px;display:block"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div></div>
     <div class="card mcard press" data-m="4" style="top:634px;height:90px"><div class="big"><svg viewBox="0 0 24 24"><defs><linearGradient id="gr6" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8f4ff"/><stop offset="1" stop-color="#3d7bff"/></linearGradient></defs><rect x="6" y="4" width="10" height="17" rx="2.2" fill="none" stroke="#6fa8ff" stroke-width="2"/><rect x="9" y="2" width="4" height="2" rx=".6" fill="#6fa8ff"/><rect x="8.3" y="13.5" width="5.4" height="5.4" rx="1" fill="url(#gr6)"/><rect x="8.3" y="8" width="5.4" height="4.2" rx="1" fill="url(#gr6)"/><path fill="url(#gr6)" d="M14.5 21c0-4.5 2.8-7.2 7.5-7.5-.2 4.6-2.8 7.4-7.5 7.5z"/></svg></div><div class="mt"><b>Эконом</b><p>Реже фоновые проверки.</p><div class="chips"><div class="chip plus"><i>+</i>Батарея и трафик</div><div class="chip minus"><i>−</i>Медленнее</div></div></div><div class="mchev"><span style="width:18px;height:18px;display:block"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div></div>
     </div>
     <div class="card info"><span style="width:24px;height:24px;display:block;flex-shrink:0"><svg viewBox="0 0 24 24" fill="none" stroke="#6fa8ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><circle cx="12" cy="7.6" r=".6" fill="#6fa8ff"/></svg></span>Выбранный режим можно изменить<br>в любое время</div>
