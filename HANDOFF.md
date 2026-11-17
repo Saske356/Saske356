@@ -56,6 +56,12 @@
 
 ---
 
+### Версия 1.8 (в работе)
+- Межстраничная реклама между забегами (`InterstitialAds.java`, `window.AndroidInter`):
+  не новичкам (от 3 забегов), не чаще раза в 2,5 мин, не сразу после рекламы за награду.
+  ID блока — `yandexInterstitialId` в `gradle.properties` (нужен боевой из Яндекс Партнёров).
+- Кнопка в меню «▶ +30 жемчуга за рекламу» — до 5 раз в день.
+
 ## КЛЮЧ ПОДПИСИ — ВАЖНО
 
 APK подписан ключом. **Без него нельзя выпускать обновления** (RuStore требует
@@ -89,11 +95,12 @@ export ANDROID_HOME=/путь/к/android-sdk   # platforms/android-35 + build-to
 # затем переподписать v1+v2+v3:
 BT=$ANDROID_HOME/build-tools/35.0.0
 $BT/zipalign -f -p 4 app/build/outputs/apk/release/app-release.apk aligned.apk
-$BT/apksigner sign --ks /путь/svetbezdny.keystore --ks-pass pass:ПАРОЛЬ \
+$BT/apksigner sign --min-sdk-version 21 --ks /путь/svetbezdny.keystore --ks-pass pass:ПАРОЛЬ \
   --key-pass pass:ПАРОЛЬ --ks-key-alias svetbezdny \
   --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
   --out ../dist/SvetBezdny.apk aligned.apk
-$BT/apksigner verify -v ../dist/SvetBezdny.apk   # должно быть v1/v2/v3: true
+$BT/apksigner verify -v --min-sdk-version 21 ../dist/SvetBezdny.apk   # v1/v2/v3: true
+# без --min-sdk-version 21 apksigner молча пропускает v1 (minSdk 24)
 ```
 Рекламный блок Яндекса задаётся в `game/android/gradle.properties`
 (`yandexRewardedId=R-M-20345698-1`). При новой версии поднимать `versionCode` и

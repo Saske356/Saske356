@@ -18,6 +18,7 @@ import android.webkit.WebViewClient;
 public class MainActivity extends Activity {
     private WebView web;
     private RewardedAds ads;
+    private InterstitialAds inter;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -49,6 +50,9 @@ public class MainActivity extends Activity {
         // Реклама за награду: игра видит объект window.AndroidAds
         ads = new RewardedAds(this, web);
         web.addJavascriptInterface(ads, "AndroidAds");
+        // Межстраничная реклама между забегами: window.AndroidInter
+        inter = new InterstitialAds(this, web);
+        web.addJavascriptInterface(inter, "AndroidInter");
 
         if (savedInstanceState != null) web.restoreState(savedInstanceState);
         else web.loadUrl("file:///android_asset/index.html");
@@ -135,6 +139,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         if (ads != null) ads.destroy();
+        if (inter != null) inter.destroy();
         if (web != null) web.destroy();
         super.onDestroy();
     }

@@ -265,6 +265,7 @@ flex-wrap:wrap;justify-content:center;align-content:center;gap:0 10px}
     <div class="tStats" id="tStats"></div>
     <button class="btn big" id="btnPlay">ИГРАТЬ</button>
     <button class="btn" id="btnQuest" style="min-height:46px;font-size:16px;margin:2px auto 6px">Задания</button>
+    <button class="btn gold" id="btnAdGift" style="min-height:42px;font-size:14px;margin:0 auto 6px" hidden>▶ +30 жемчуга за рекламу</button>
     <div class="row">
       <button class="btn pink" id="btnShop">Улучшения</button>
       <button class="btn gold" id="btnAch">Награды</button>
@@ -411,6 +412,7 @@ flex-wrap:wrap;justify-content:center;align-content:center;gap:0 10px}
 const CFG = {
   ARENA_R: 1250,          // радиус круглой арены (мировые единицы)
   MAX_ENEMIES: 170,
+  INTER_GAP: 150000,      // межстраничная реклама — не чаще раза в 2,5 мин
   MAX_EBUL: 520,
   MAX_PBUL: 380,
   MAX_PART_HI: 650,
@@ -650,7 +652,7 @@ const EN = {
     winN:(n)=>'VICTORY #'+n, max:'MAX', chosen:'Chosen', choose:'Choose', worn:'Worn', wear:'Wear',
     healthW:(h)=>' Health '+h+'.', skinWin:'Dawnlight. The prize for defeating the Heart of the Abyss', skinColor:'Glow and projectile color', winBtn:'Win it',
     achHead:(n,m)=>'Unlocked <b style="color:#ffd54f">'+n+' / '+m+'</b> · earned ',
-    achReward:(r)=>'AWARD · +'+r+' PEARLS', pearlsGen:'pearls',
+    achReward:(r)=>'AWARD · +'+r+' PEARLS', pearlsGen:'pearls', adGift:(r,n)=>'▶ +'+r+' pearls for an ad ('+n+')', giftT:'GIFT FROM THE DEEP',
     reroll2:(n)=>'Reroll ('+n+')', lvSubMore:(n)=>'Pick an upgrade · '+n+' more',
     tutDone:'Done!', tutFin:'Great! You are ready.', tutFinS:'Dive deeper — a lord of the abyss waits at 500 m',
     introDark:'The ocean went dark.', introSpark:'But one spark still lives…', skip:'tap to skip',
@@ -700,7 +702,7 @@ const RU = {ui:{
   winN:(n)=>'ПОБЕДА №'+n, max:'МАКС', chosen:'Выбрана', choose:'Выбрать', worn:'Надет', wear:'Надеть',
   healthW:(h)=>' Здоровье '+h+'.', skinWin:'Рассветное сияние. Награда за победу над Сердцем Бездны', skinColor:'Цвет свечения и снарядов', winBtn:'Победа',
   achHead:(n,m)=>'Открыто <b style="color:#ffd54f">'+n+' / '+m+'</b> · получено ',
-  achReward:(r)=>'НАГРАДА · +'+r+' ЖЕМЧУГА', pearlsGen:'жемчуга',
+  achReward:(r)=>'НАГРАДА · +'+r+' ЖЕМЧУГА', pearlsGen:'жемчуга', adGift:(r,n)=>'▶ +'+r+' жемчуга за рекламу ('+n+')', giftT:'ДАР БЕЗДНЫ',
   reroll2:(n)=>'Перебор ('+n+')', lvSubMore:(n)=>'Выбери улучшение · ещё '+n,
   tutDone:'Готово!', tutFin:'Отлично! Ты готов.', tutFinS:'Ныряй глубже — на 500 м ждёт владыка бездны',
   introDark:'Океан погас.', introSpark:'Но одна искра ещё жива…', skip:'коснись, чтобы пропустить',
@@ -2793,7 +2795,7 @@ function updateTitle() {
   $('tStats').innerHTML = uiT('record') + ': <b>' + fmt(S.best) + '</b> · ' + uiT('depthW') + ': <b>' + S.bestDepth + ' ' + uiT('m') + '</b><br><span class="pearl"></span><b>' + S.pearls +
     '</b> ' + uiT('pearlsW') + ' · ' + uiT('spark') + ': <b>' + CHARS[S.char].name + '</b>' + (S.wins ? '<br>' + uiT('winsLine') + '<b>' + S.wins + '</b>' : '');
 }
-function toTitle() { G.state = 'title'; $('hud').classList.remove('on'); show('scrTitle'); updateTitle(); Snd.setIntensity(0); }
+function toTitle() { G.state = 'title'; $('hud').classList.remove('on'); show('scrTitle'); updateTitle(); updGift(); Snd.setIntensity(0); }
 /* ---------- интро: искра загорается во тьме ---------- */
 const INTRO = {t: 0, dur: 1.4, full: false, ig: 0.1, revealed: false};
 function startIntro() {
@@ -3127,7 +3129,7 @@ function dailyCheck() {
     const ids = Object.keys(QDEF), pick = [];
     while (pick.length < 3) { const id = ids[(rnd() * ids.length) | 0]; if (!pick.includes(id)) pick.push(id); }
     D.quests = pick.map(id => { const t = (rnd() * 3) | 0; return {id, need: QDEF[id].need[t], r: QDEF[id].r[t], p: 0, done: 0, got: 0}; });
-    D.day = today;
+    D.day = today; D.gift = 0;
   }
   if (D.last !== today) {
     D.streak = D.last === dayStr(y) ? (D.streak || 0) + 1 : 1; D.last = today;
@@ -3265,18 +3267,45 @@ function qualityTick(ms) {
    (isReady(), show(place)) и сообщает итог через window.__adResult(place, ok).
    В браузере кнопок рекламы просто нет. */
 const Ads = {
-  cb: null,
+  cb: null, last: 0, t0: Date.now(),
   ready() { try { return !!(window.AndroidAds && window.AndroidAds.isReady()); } catch (e) { return false; } },
   show(place, cb) {
     if (this.cb || !this.ready()) { cb(false); return; }
     this.cb = cb;
     try { window.AndroidAds.show(place); } catch (e) { this.cb = null; cb(false); }
+  },
+  interReady() { try { return !!(window.AndroidInter && window.AndroidInter.isReady()); } catch (e) { return false; } },
+  /** Межстраничная реклама между забегами — бережно: не новичкам, не чаще раза в 2,5 мин
+      и не сразу после рекламы за награду. Затем в любом случае выполняется next(). */
+  between(next) {
+    const now = Date.now();
+    if (this.cb || S.runs < 3 || now - this.last < CFG.INTER_GAP || now - this.t0 < 90000 || !this.interReady()) { next(); return; }
+    this.cb = () => next();
+    try { window.AndroidInter.show(); } catch (e) { this.cb = null; next(); }
   }
 };
 window.__adResult = function (place, ok) {
   const cb = Ads.cb; Ads.cb = null;
+  if (ok) Ads.last = Date.now();
   if (cb) setTimeout(() => cb(!!ok), 0);
 };
+/** Подарок в меню: жемчуг за добровольный просмотр, несколько раз в день. */
+const GIFT = {r: 30, max: 5};
+function updGift() {
+  const b = $('btnAdGift'); if (!b) return;
+  const left = GIFT.max - (S.daily.gift || 0);
+  b.hidden = !(left > 0 && Ads.ready());
+  if (!b.hidden) b.textContent = uiT('adGift')(GIFT.r, left);
+}
+function adGift() {
+  Ads.show('gift', ok => {
+    if (!ok || (S.daily.gift || 0) >= GIFT.max) { updGift(); return; }
+    S.daily.gift = (S.daily.gift || 0) + 1; S.pearls += GIFT.r; S.totalPearls = (S.totalPearls || 0) + GIFT.r; persist();
+    sfx.pickCard(); vibrate(30); toastMsg(uiT('giftT'), '+' + GIFT.r + ' ' + uiT('pearlsGen'));
+    if (G.state === 'title') updateTitle(); updGift();
+  });
+}
+setInterval(() => { if ($('scrTitle').classList.contains('on')) updGift(); }, 2000);
 
 /** После гибели: предложить «второй шанс» за рекламу (раз за забег). */
 function offerRevive() {
@@ -3364,9 +3393,10 @@ click('btnSetBack', () => show(backTo));
 click('btnResume', resumeGame);
 click('btnPauseSet', () => openSet('scrPause'));
 click('btnQuit', () => { show(null); G.state = 'play'; P.hp = 0; startDying(); $('hud').classList.remove('on'); });
-click('btnAgain', startRun);
+click('btnAgain', () => Ads.between(startRun));
 click('btnOverShop', () => openShop('scrOver'));
-click('btnOverMenu', toTitle);
+click('btnOverMenu', () => Ads.between(toTitle));
+click('btnAdGift', adGift);
 click('btnReroll', () => { if (G.rerolls > 0) { G.rerolls--; renderCards(); } });
 click('btnAdReroll', adReroll);
 click('btnAdRevive', adRevive);
@@ -3443,7 +3473,7 @@ applyLang(); dailyCheck(); applyQuality(); updMute(); startIntro();
 requestAnimationFrame(t => { lastT = t; frame(t); });
 
 // Хук для автотестов и отладки (QA): window.__SB
-window.__SB = {G, P, S, ST, PERF, SPR, DECOR, enemies, ebul, pbul, parts, picks, startRun, pauseGame, resumeGame, gameOver,
+window.__SB = {G, P, S, ST, Ads, adGift, updGift, PERF, SPR, DECOR, enemies, ebul, pbul, parts, picks, startRun, pauseGame, resumeGame, gameOver,
   jumpZone(z) { G.zone = z - 1; G.zoneT = CFG.ZONE_TIME; }, giveXP(n) { addXP(n); }, god(on) { G.god = !!on; },
   up(id, n) { P.up[id] = (P.up[id] || 0) + (n || 1); computeStats(); }, killBoss() { if (G.boss) killEnemy(G.boss, null); },
   intro: startIntro, ending() { G.zone = 15; G.victory = true; startEnding(); }, TUT, END, INTRO, renderAch,
