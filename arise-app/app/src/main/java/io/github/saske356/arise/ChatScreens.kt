@@ -595,6 +595,10 @@ private fun ProtectScreen(ui: ChatUi, back: () -> Unit, openAdmin: () -> Unit) {
         }
         ToggleRow("🚫", "Запрет скриншотов и превью в «недавних»", ui.noScreens) { Chat.setNoScreens(!ui.noScreens) }
         ToggleRow("⏲", "Закрывать чат, если свернули приложение", ui.lockOnLeave) { Chat.setLockOnLeave(!ui.lockOnLeave) }
+        if (!rememberNotifyEnabled()) {
+            val askNotify = rememberNotifyAsk()
+            Tool("⚠️", "Уведомления запрещены", "Телефон их не покажет, пока не разрешите", "Включить") { askNotify() }
+        }
         if (ui.decoy) {
             // Во втором профиле — своя настройка (основную отсюда не трогаем): только тихие уведомления
             var on by remember { mutableStateOf(ChatVault.secondNotify) }

@@ -320,6 +320,7 @@ private fun Home(
         ) {
             TopBar(openTools, openChat)
             UpdateCard()
+            NotifyCard()
             SubBar(data, onOpen)
             Spacer(Modifier.height(if (running) 14.dp else 30.dp))
             Hero(running, vpn.status == Status.CONNECTING, onToggle)
@@ -930,6 +931,10 @@ private fun ToolsScreen(
             Repo.setAutoConnect(!data.autoConnect)
         }
         Tool("🔘", "Кнопка в шторке", "Включать VPN, не открывая приложение", "Добавить", onTile)
+        val notifyOn = rememberNotifyEnabled()
+        val askNotify = rememberNotifyAsk()
+        Tool("🔔", "Уведомления", if (notifyOn) "Разрешены" else "Выключены в настройках телефона",
+            if (notifyOn) "Настроить" else "Включить") { if (notifyOn) Notify.openSettings(ctx) else askNotify() }
         val upd by AppUpdate.flow.collectAsState()
         Tool("⬆️", "Обновление приложения",
             when {
