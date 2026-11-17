@@ -1722,8 +1722,12 @@ class XrayProvider(VpnProvider):
             if parts and parts[0] in ("GET", "POST") and uid is not None and chat:
                 body_in = b""
                 if parts[0] == "POST":
-                    if clen > 64 * 1024:
+                    # фото в чате — до 3 МБ (≈4 МБ в base64), остальное — до 64 КБ
+                    big = chat == "blob"
+                    if clen > (5 * 1024 * 1024 if big else 64 * 1024):
                         raise ValueError("слишком большое тело")
+                    if big:
+                        deadline += 120  # медленный мобильный интернет: фото идёт дольше 10 секунд
                     body_in = await asyncio.wait_for(reader.readexactly(clen), left()) if clen else b""
                 hwid = dev.get("x-hwid", "")[:128]
                 if self.state["users"].get(str(uid), 0) <= time.time():
@@ -1742,6 +1746,7 @@ class XrayProvider(VpnProvider):
                         # («Сбросить все»), по нему приложение находит своё хранилище переписки
                         answer["space"] = self.chat_space(uid)
                 status = {200: "200 OK", 400: "400 Bad Request", 403: "403 Forbidden", 404: "404 Not Found",
+                          413: "413 Payload Too Large",
                           409: "409 Conflict", 429: "429 Too Many Requests", 507: "507 Insufficient Storage"
                           }.get(code, f"{code} Error")
                 body = json.dumps(answer).encode()

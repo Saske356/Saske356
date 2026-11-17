@@ -177,6 +177,25 @@ object ChatVault {
 
         /** Сменить PIN этого хранилища: ключ хранилища тот же, обёртка новая. */
         fun changePin(pin: String) = ChatVault.wrap(slot, key, pin)
+
+        // Фото переписки: отдельные файлы, зашифрованные тем же ключом хранилища
+        private fun mediaFile(name: String) = File(ChatVault.dir, slot.file + "_m_" + name.filter { it.isLetterOrDigit() })
+
+        fun putMedia(name: String, bytes: ByteArray) = mediaFile(name).writeBytes(ChatVault.seal(key, bytes))
+
+        fun getMedia(name: String): ByteArray? = try {
+            ChatVault.unseal(key, mediaFile(name).readBytes())
+        } catch (e: Exception) {
+            null
+        }
+
+        fun dropMedia(name: String) {
+            mediaFile(name).delete()
+        }
+    }
+
+    private fun dropAllMedia(s: Slot) {
+        dir.listFiles { f -> f.name.startsWith(s.file + "_m_") }?.forEach { it.delete() }
     }
 
     private fun wrap(slot: Slot, vaultKey: SecretKey, pin: String) {
@@ -263,6 +282,7 @@ object ChatVault {
         for (s in Slot.entries) {
             keyFile(s).delete()
             dataFile(s).delete()
+            dropAllMedia(s)
         }
         try {
             KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(alias)
@@ -275,5 +295,6 @@ object ChatVault {
     fun dropDecoy() {
         keyFile(Slot.DECOY).delete()
         dataFile(Slot.DECOY).delete()
+        dropAllMedia(Slot.DECOY)
     }
 }

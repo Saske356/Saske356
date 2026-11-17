@@ -123,6 +123,29 @@ class ChatRelayTest(unittest.TestCase):
         self.call(3, "register", "POST", {"key": KEY_A})
         self.assertEqual(self.call(3, "send", "POST", {"to": b, "box": BOX})[0], 200, "другие пишут как обычно")
 
+    def test_photos_go_through_as_ciphertext_to_the_recipient_only(self):
+        a = self.call(1, "register", "POST", {"key": KEY_A})[1]["code"]
+        b = self.call(2, "register", "POST", {"key": KEY_B})[1]["code"]
+        self.call(3, "register", "POST", {"key": KEY_B})
+        data = base64.b64encode(b"\x01encrypted photo bytes").decode()
+        bid = self.call(1, "blob", "POST", {"to": b, "data": data})[1]["id"]
+        path = os.path.join(self.d, "chat_blobs", bid)
+        self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
+        self.assertEqual(self.call(3, "blob", id=bid)[0], 404, "чужому не отдаётся")
+        self.assertEqual(self.call(1, "blob", id=bid)[0], 404, "и отправителю тоже")
+        self.assertEqual(self.call(2, "blob", id=bid)[1]["data"], data)
+        self.call(2, "blobdone", "POST", {"id": bid})
+        self.assertFalse(os.path.exists(path), "скачал — с сервера удалено")
+        self.assertEqual(self.call(2, "blob", id=bid)[0], 404)
+        big = base64.b64encode(b"x" * (chat_relay.MAX_BLOB + 1)).decode()
+        self.assertEqual(self.call(1, "blob", "POST", {"to": b, "data": big})[0], 413)
+        codes = [self.call(1, "blob", "POST", {"to": b, "data": data})[0] for _ in range(chat_relay.BLOBS_PER_HOUR + 1)]
+        self.assertEqual(codes[-1], 429)
+        for meta in self.c.data["blobs"].values():
+            meta["t"] = time.time() - chat_relay.MAX_AGE - 1
+        self.call(99, "admin")  # чистка старого
+        self.assertEqual(os.listdir(os.path.join(self.d, "chat_blobs")), [], "неделю не забрали — удалено")
+
     def test_admin_switches_chat(self):
         self.assertEqual(self.call(1, "status")[1], {"enabled": True, "admin": False, "code": "", "notice": ""})
         self.assertTrue(self.call(99, "status")[1]["admin"])

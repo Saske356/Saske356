@@ -8,6 +8,16 @@ import android.content.Intent
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -92,7 +102,8 @@ fun ChatRoot(back: () -> Unit) {
     val owner = LocalLifecycleOwner.current
     DisposableEffect(owner) {
         val obs = LifecycleEventObserver { _, e ->
-            if (e == Lifecycle.Event.ON_STOP && Chat.flow.value.lockOnLeave) Chat.lockNow()
+            // во время выбора фото приложение тоже «уходит» с экрана — тогда не запираем
+            if (e == Lifecycle.Event.ON_STOP && Chat.flow.value.lockOnLeave && !Chat.keepOpen) Chat.lockNow()
         }
         owner.lifecycle.addObserver(obs)
         onDispose { owner.lifecycle.removeObserver(obs) }
@@ -397,6 +408,12 @@ private fun Talk(ui: ChatUi, code: String, back: () -> Unit, info: () -> Unit) {
     val msgs = ui.msgs[code].orEmpty()
     var text by remember { mutableStateOf("") }
     val list = rememberLazyListState()
+    val ctx = LocalContext.current
+    var full by remember { mutableStateOf<ImageBitmap?>(null) }  // фото на весь экран
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        Chat.keepOpen = false
+        if (uri != null) Chat.sendPhoto(ctx, code, uri)
+    }
     LaunchedEffect(msgs.size) {
         if (msgs.isNotEmpty()) list.animateScrollToItem(msgs.size - 1)
         Chat.read(code)
@@ -447,14 +464,36 @@ private fun Talk(ui: ChatUi, code: String, back: () -> Unit, info: () -> Unit) {
                             .background(if (m.out) Brush.linearGradient(listOf(Color(0xFF4A86F0), BlueDeep)) else Brush.linearGradient(listOf(Color(0x12FFFFFF), Color(0x12FFFFFF))))
                             .padding(horizontal = 13.dp, vertical = 9.dp)
                     ) {
-                        Text(m.text, color = TextMain, fontSize = 14.5.sp)
+                        if (m.img.isNotEmpty()) {
+                            val bmp by produceState<ImageBitmap?>(null, m.img) {
+                                value = withContext(Dispatchers.IO) {
+                                    Chat.media(m.img)?.let { b -> BitmapFactory.decodeByteArray(b, 0, b.size)?.asImageBitmap() }
+                                }
+                            }
+                            val b = bmp
+                            if (b != null) Image(
+                                b, contentDescription = "Фото", contentScale = ContentScale.Crop,
+                                modifier = Modifier.size(220.dp, 220.dp * b.height / b.width.coerceAtLeast(1))
+                                    .clip(RoundedCornerShape(12.dp)).clickable { full = b }
+                            ) else Text("📷 Фото удалено", color = TextMain, fontSize = 14.5.sp)
+                        } else Text(m.text, color = TextMain, fontSize = 14.5.sp)
                         Text(hhmm(m.t) + if (m.exp > 0) " · ⏱" else "", color = TextMain.copy(alpha = 0.6f), fontSize = 10.5.sp,
                             modifier = Modifier.align(Alignment.End).padding(top = 2.dp))
                     }
                 }
             }
         }
+        if (ui.busy) Text("Отправляю фото…", color = TextSoft, fontSize = 12.sp, modifier = Modifier.padding(start = 18.dp))
         Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.padding(end = 8.dp).size(46.dp).clip(RoundedCornerShape(15.dp)).background(Glass)
+                    .border(1.dp, GlassLine, RoundedCornerShape(15.dp))
+                    .clickable(enabled = c != null && !ui.busy) {
+                        Chat.keepOpen = true
+                        pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    },
+                contentAlignment = Alignment.Center
+            ) { Text("📎", fontSize = 19.sp) }
             OutlinedTextField(
                 value = text, onValueChange = { text = it.take(4000) },
                 placeholder = { Text("Сообщение", color = TextDim) }, shape = RoundedCornerShape(18.dp),
@@ -474,6 +513,12 @@ private fun Talk(ui: ChatUi, code: String, back: () -> Unit, info: () -> Unit) {
                     },
                 contentAlignment = Alignment.Center
             ) { Text("➤", color = Ink, fontSize = 20.sp) }
+        }
+    }
+    full?.let { b ->
+        Dialog(onDismissRequest = { full = null }) {
+            Image(b, contentDescription = "Фото", contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { full = null })
         }
     }
 }

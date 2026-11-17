@@ -31,6 +31,11 @@ MAX_AGE = 7 * 86400           # сколько письмо ждёт получ�
 SEND_PER_MIN = 60             # сообщений в минуту от одного отправителя
 MAX_KEY = 4096                # открытый ключ (набор ключей Tink в JSON/base64)
 MAX_PER_SUB = 2               # аккаунтов чата на подписку: основной и второй
+# Вложения (фото): телефон шифрует их сам случайным ключом, ключ — внутри сообщения. Сервер хранит
+# только шифр, отдаёт его одному получателю и удаляет после скачивания или через MAX_AGE.
+MAX_BLOB = 3 * 1024 * 1024    # байт одного вложения (уже зашифрованного)
+MAX_BLOBS_TOTAL = 500 * 1024 * 1024  # всего вложений на сервере
+BLOBS_PER_HOUR = 30           # вложений в час от одного отправителя
 
 
 def norm_code(code: str) -> str:
@@ -46,7 +51,9 @@ class ChatRelay:
         # Каждое действие из админ-панели приложения уходит админам в бот: если ссылку админской
         # подписки кто-то получил, это сразу видно (отрезать — «Сбросить все» в «📱 Устройства»)
         self.on_admin = lambda text: None
-        self.data = {"enabled": True, "users": {}, "codes": {}, "boxes": {}, "banned": [], "notice": ""}
+        self.data = {"enabled": True, "users": {}, "codes": {}, "boxes": {}, "banned": [], "notice": "", "blobs": {}}
+        self.blob_dir = os.path.join(os.path.dirname(path) or ".", "chat_blobs")
+        self._blob_rate: dict[str, list[float]] = {}
         self._rate: dict[str, list[float]] = {}
         try:
             with open(path, encoding="utf-8") as f:
@@ -93,6 +100,63 @@ class ChatRelay:
             box[:] = [m for m in box if now - m["t"] < MAX_AGE]
             if not box:
                 del self.data["boxes"][code]
+        for bid, meta in list(self.data.setdefault("blobs", {}).items()):
+            if now - meta["t"] >= MAX_AGE:
+                self._drop_blob(bid)
+
+    # ---------- вложения ----------
+
+    def _blob_path(self, bid: str) -> str:
+        return os.path.join(self.blob_dir, bid)
+
+    def _drop_blob(self, bid: str) -> None:
+        self.data.setdefault("blobs", {}).pop(bid, None)
+        try:
+            os.unlink(self._blob_path(bid))
+        except OSError:
+            pass
+
+    def _put_blob(self, uid: int, me: str, to: str, data: str) -> tuple[int, dict]:
+        if to not in self.data["codes"] or to in self.data.get("banned", []):
+            return 404, {"error": "no such code"}
+        try:
+            raw = base64.b64decode(data, validate=True)
+        except ValueError:
+            return 400, {"error": "bad blob"}
+        if not raw or len(raw) > MAX_BLOB:
+            return 413, {"error": "too big"}
+        now = time.time()
+        self._prune(now)
+        recent = [t for t in self._blob_rate.get(me, []) if now - t < 3600]
+        if len(recent) >= BLOBS_PER_HOUR:
+            return 429, {"error": "too fast"}
+        if sum(m["size"] for m in self.data["blobs"].values()) + len(raw) > MAX_BLOBS_TOTAL:
+            return 507, {"error": "storage full"}
+        recent.append(now)
+        self._blob_rate[me] = recent
+        os.makedirs(self.blob_dir, mode=0o700, exist_ok=True)
+        bid = secrets.token_hex(12)
+        fd = os.open(self._blob_path(bid), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            f.write(raw)
+        self.data["blobs"][bid] = {"to": to, "from": me, "t": now, "size": len(raw)}
+        self._save()
+        return 200, {"id": bid}
+
+    def _get_blob(self, me: str, bid: str, done: bool) -> tuple[int, dict]:
+        meta = self.data.setdefault("blobs", {}).get(bid)
+        if not meta or meta["to"] != me:  # чужое вложение — как будто его нет
+            return 404, {"error": "no such blob"}
+        if done:  # получатель скачал и сохранил у себя — с сервера убираем
+            self._drop_blob(bid)
+            self._save()
+            return 200, {"ok": True}
+        try:
+            with open(self._blob_path(bid), "rb") as f:
+                return 200, {"data": base64.b64encode(f.read()).decode()}
+        except OSError:
+            self._drop_blob(bid)
+            return 404, {"error": "no such blob"}
 
     # ---------- запросы ----------
 
@@ -167,6 +231,12 @@ class ChatRelay:
             msgs = self.data["boxes"].get(me, [])[:200]
             return 200, {"messages": [{"id": m["id"], "from": m["from"], "box": m["box"], "t": int(m["t"])}
                                       for m in msgs]}
+        if action == "blob":
+            if method == "POST":
+                return self._put_blob(uid, me, norm_code(str(req.get("to", ""))), str(req.get("data", "")))
+            return self._get_blob(me, (query.get("id") or [""])[0], done=False)
+        if action == "blobdone" and method == "POST":
+            return self._get_blob(me, str(req.get("id", "")), done=True)
         if action == "peek":
             # Для уведомлений: только сколько писем ждёт и когда пришло последнее, без содержимого
             box = [m for m in self.data["boxes"].get(me, []) if time.time() - m["t"] < MAX_AGE]

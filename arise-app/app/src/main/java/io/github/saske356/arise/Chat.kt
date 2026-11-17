@@ -21,7 +21,7 @@ import java.net.URLEncoder
 import java.security.SecureRandom
 
 data class ChatContact(val code: String, val name: String, val key: String, val verified: Boolean, val keyChanged: Boolean)
-data class ChatMsg(val id: String, val out: Boolean, val text: String, val t: Long, val exp: Long)
+data class ChatMsg(val id: String, val out: Boolean, val text: String, val t: Long, val exp: Long, val img: String = "")
 
 /** Состояние чата для экранов. */
 data class ChatUi(
@@ -62,7 +62,7 @@ object Chat {
 
     private fun base(): String = Store.subUrl.trim().substringBefore('?').trimEnd('/') + "/chat/"
 
-    private fun request(path: String, body: JSONObject? = null, main: Boolean = false): JSONObject {
+    private fun request(path: String, body: JSONObject? = null, main: Boolean = false, slow: Boolean = false): JSONObject {
         var last: Exception? = null
         val viaVpn = VpnState.flow.value.status == Status.RUNNING
         for (tunnel in if (viaVpn) listOf(true, false) else listOf(false)) {
@@ -71,7 +71,7 @@ object Chat {
             else url.openConnection()) as HttpURLConnection
             try {
                 c.connectTimeout = 15_000
-                c.readTimeout = 20_000
+                c.readTimeout = if (slow) 120_000 else 20_000  // фото по мобильному идёт дольше
                 c.setRequestProperty("User-Agent", "AriseApp/${BuildConfig.VERSION_NAME}")
                 c.setRequestProperty("x-hwid", Subscription.hwid)
                 c.setRequestProperty("x-device-model", android.os.Build.MODEL ?: "")
@@ -206,7 +206,7 @@ object Chat {
         val a = d()?.optJSONObject("msgs")?.optJSONArray(code) ?: return mutableListOf()
         return MutableList(a.length()) {
             val o = a.getJSONObject(it)
-            ChatMsg(o.getString("id"), o.optBoolean("out"), o.optString("x"), o.optLong("t"), o.optLong("exp"))
+            ChatMsg(o.getString("id"), o.optBoolean("out"), o.optString("x"), o.optLong("t"), o.optLong("exp"), o.optString("img"))
         }
     }
 
@@ -214,7 +214,10 @@ object Chat {
         val data = d() ?: return
         val all = data.optJSONObject("msgs") ?: JSONObject().also { data.put("msgs", it) }
         val a = JSONArray()
-        list.forEach { a.put(JSONObject().put("id", it.id).put("out", it.out).put("x", it.text).put("t", it.t).put("exp", it.exp)) }
+        list.forEach {
+            a.put(JSONObject().put("id", it.id).put("out", it.out).put("x", it.text).put("t", it.t).put("exp", it.exp)
+                .put("img", it.img))
+        }
         if (list.isEmpty()) all.remove(code) else all.put(code, a)
     }
 
@@ -226,6 +229,7 @@ object Chat {
         for (c in codes) {
             val list = msgsOf(c)
             val left = list.filter { it.exp == 0L || it.exp > now }
+            list.filter { it !in left && it.img.isNotEmpty() }.forEach { vault?.dropMedia(it.img) }  // и фото
             if (left.size != list.size) {
                 putMsgs(c, left)
                 changed = true
@@ -340,8 +344,24 @@ object Chat {
                     val id = p.optString("id")
                     if (list.none { it.id == id }) {
                         val ttl = p.optLong("ttl")
-                        list.add(ChatMsg(id, false, p.optString("x"), p.optLong("t"),
-                            if (ttl > 0) System.currentTimeMillis() + ttl * 3_600_000L else 0L))
+                        var text = p.optString("x")
+                        var img = ""
+                        p.optJSONObject("img")?.let { im ->
+                            // Фото: скачать шифр, расшифровать ключом из сообщения, сохранить в хранилище
+                            img = mediaName(id)
+                            try {
+                                val r2 = request("blob?id=" + URLEncoder.encode(im.getString("b"), "UTF-8"), slow = true)
+                                val blob = android.util.Base64.decode(r2.getString("data"), android.util.Base64.NO_WRAP)
+                                val key = android.util.Base64.decode(im.getString("k"), android.util.Base64.NO_WRAP)
+                                vault?.putMedia(img, ChatMedia.decrypt(blob, key))
+                                request("blobdone", JSONObject().put("id", im.getString("b")))
+                            } catch (e: Exception) {
+                                img = ""
+                                text = "📷 Фото не скачалось"
+                            }
+                        }
+                        list.add(ChatMsg(id, false, text, p.optLong("t"),
+                            if (ttl > 0) System.currentTimeMillis() + ttl * 3_600_000L else 0L, img))
                         putMsgs(from, list)
                         counts[from] = (counts[from] ?: 0) + 1
                     }
@@ -382,6 +402,53 @@ object Chat {
         }
     }
 
+    private fun mediaName(msgId: String) = "p" + msgId.filter { it.isLetterOrDigit() }
+
+    /** Расшифрованное фото из хранилища (для показа). */
+    fun media(name: String): ByteArray? = vault?.getMedia(name)
+
+    /** Пока открыт выбор фото, чат не запираем (иначе он закроется при уходе в галерею). */
+    @Volatile
+    var keepOpen = false
+
+    /** Отправить фото: сжать, зашифровать случайным ключом, шифр — на сервер, ключ — в сообщении. */
+    fun sendPhoto(ctx: android.content.Context, code: String, uri: android.net.Uri) = scope.launch {
+        val c = contacts().firstOrNull { it.code == code } ?: return@launch
+        val data = d() ?: return@launch
+        flow.update { it.copy(busy = true, error = "") }
+        try {
+            val jpeg = ChatMedia.compress(ctx, uri)
+            val (blob, key) = ChatMedia.encrypt(jpeg)
+            val up = request("blob", JSONObject().put("to", code)
+                .put("data", android.util.Base64.encodeToString(blob, android.util.Base64.NO_WRAP)), slow = true)
+            if (up.has("error")) {
+                flow.update { it.copy(error = if (up.getString("error") == "too big") "Фото слишком большое" else explain(up.getString("error"))) }
+                return@launch
+            }
+            val ttl = data.optInt("ttl", 24)
+            val id = ByteArray(8).also { rnd.nextBytes(it) }.joinToString("") { "%02x".format(it) }
+            val now = System.currentTimeMillis()
+            val payload = JSONObject().put("f", data.optString("code")).put("id", id).put("x", "📷 Фото")
+                .put("t", now).put("ttl", ttl)
+                .put("img", JSONObject().put("b", up.getString("id"))
+                    .put("k", android.util.Base64.encodeToString(key, android.util.Base64.NO_WRAP)))
+            lock.withLock {
+                vault?.putMedia(mediaName(id), jpeg)
+                val list = msgsOf(code)
+                list.add(ChatMsg(id, true, "📷 Фото", now, if (ttl > 0) now + ttl * 3_600_000L else 0L, mediaName(id)))
+                putMsgs(code, list)
+                vault?.save()
+            }
+            publish()
+            val r = request("send", JSONObject().put("to", code).put("box", ChatCrypto.seal(payload, data.getString("ssk"), c.key)))
+            if (r.has("error")) flow.update { it.copy(error = explain(r.getString("error"))) }
+        } catch (e: Exception) {
+            flow.update { it.copy(error = "Фото не отправлено: ${e.message ?: "нет связи"}") }
+        } finally {
+            flow.update { it.copy(busy = false) }
+        }
+    }
+
     /** Новый собеседник по коду: берём его открытый ключ с сервера. */
     suspend fun addContact(rawCode: String, name: String): String? {
         val code = rawCode.uppercase().filter { it in "ABCDEFGHJKMNPQRSTUVWXYZ23456789" }
@@ -418,6 +485,7 @@ object Chat {
 
     fun deleteChat(code: String) = scope.launch {
         lock.withLock {
+            msgsOf(code).filter { it.img.isNotEmpty() }.forEach { vault?.dropMedia(it.img) }
             putMsgs(code, emptyList())
             val data = d() ?: return@withLock
             val a = JSONArray()
