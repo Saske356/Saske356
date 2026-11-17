@@ -239,6 +239,75 @@ flex-wrap:wrap;justify-content:center;align-content:center;gap:0 10px}
 .item.lockA .nm{color:#bcd}
 @media (max-height:640px){ #scrEnd h2{font-size:28px} .unlockBox{padding:7px 10px;margin-bottom:6px} }
 @media (max-height:460px){ #scrEnd h2{font-size:22px} .unlockBox{display:none} }
+
+/* =====================================================================
+   LIGHT OF THE ABYSS — аккуратная полировка интерфейса.
+   Игровая логика, баланс, управление и структура экранов не изменены.
+   ===================================================================== */
+:root{
+  --ui-glass:rgba(5,18,38,.78);
+  --ui-line:rgba(130,225,255,.22);
+  --ui-soft-shadow:0 12px 34px rgba(0,0,0,.28);
+}
+html{color-scheme:dark;}
+body{
+  background-image:radial-gradient(ellipse at 50% 42%,rgba(10,45,82,.18),transparent 66%);
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+button{ -webkit-appearance:none; appearance:none; }
+.btn,.hbtn,.card,.item{
+  -webkit-backface-visibility:hidden;
+  backface-visibility:hidden;
+}
+.btn{
+  position:relative;
+  isolation:isolate;
+  overflow:hidden;
+  text-shadow:0 1px 8px rgba(0,0,0,.42);
+  box-shadow:0 8px 22px rgba(0,0,0,.18),0 0 16px rgba(63,240,255,.25),inset 0 1px 0 rgba(255,255,255,.16),inset 0 0 14px rgba(63,240,255,.14);
+}
+.btn::before{
+  content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;
+  background:linear-gradient(115deg,transparent 15%,rgba(255,255,255,.10) 48%,transparent 72%);
+  opacity:.55;transform:translateX(-115%);transition:transform .55s ease;
+}
+.btn:focus-visible,.hbtn:focus-visible,.card:focus-visible,.linkBtn:focus-visible{
+  outline:3px solid #fff;outline-offset:4px;
+}
+.card{
+  box-shadow:var(--ui-soft-shadow),0 0 14px rgba(63,240,255,.2),inset 0 1px 0 rgba(255,255,255,.08);
+}
+.item{
+  box-shadow:0 5px 18px rgba(0,0,0,.16),inset 0 1px 0 rgba(255,255,255,.045);
+}
+.screen{
+  scrollbar-width:thin;
+  scrollbar-color:rgba(100,210,255,.35) transparent;
+}
+.screen::-webkit-scrollbar{width:5px}
+.screen::-webkit-scrollbar-thumb{background:rgba(100,210,255,.32);border-radius:8px}
+#hud .hbtn{ -webkit-user-select:none;user-select:none; }
+#bDash,#bFlare{box-shadow:0 8px 24px rgba(0,0,0,.25),0 0 18px rgba(63,240,255,.28),inset 0 1px 0 rgba(255,255,255,.16);}
+#toasts .toast{max-width:min(92vw,440px);text-wrap:balance;}
+@media (hover:hover) and (pointer:fine){
+  .btn:not([disabled]):hover::before{transform:translateX(115%)}
+  .btn:not([disabled]):hover{filter:brightness(1.12);}
+  .card:hover{border-color:rgba(170,250,255,.95);filter:brightness(1.08);}
+  .item:not(.lockA):hover{border-color:rgba(120,245,255,.62);}
+}
+@media (pointer:coarse){
+  .btn{touch-action:manipulation;}
+  .linkBtn{min-height:40px;}
+}
+@media (max-width:380px){
+  .screen{padding-left:calc(12px + var(--sal));padding-right:calc(12px + var(--sar));}
+  .tabs{gap:4px;}
+  .tabs .btn{font-size:clamp(11px,3.4vw,14px);}
+  .wallet{font-size:16px;}
+}
+
+.skinPreview{position:relative;overflow:hidden;background-blend-mode:screen;transform:rotate(45deg);border-radius:10px!important;box-shadow:0 0 18px currentColor,inset 0 0 10px rgba(255,255,255,.45)!important}.skinPreview:after{content:'';position:absolute;inset:22%;border:1px solid rgba(255,255,255,.9);border-radius:50%;box-shadow:0 0 8px rgba(255,255,255,.9)}
 </style>
 </head>
 <body>
@@ -432,6 +501,15 @@ const PAL = ['#5fffb0','#ff9a3c','#ff4fd8','#ffe14f','#7dff4f','#a97bff','#ff4f5
              '#ffffff','#ffd54f','#8fd8ff','#ff6a3d','#c04fff','#ffb340','#c77dff','#4fff9a','#ff6f91','#eaf2ff','#fff0b0'];
 const C = {DRIFT:0,DART:1,JELLY:2,URCH:3,EEL:4,SQUID:5,CRAB:6,CYAN:7,WHITE:8,GOLD:9,ICE:10,FIRE:11,PURP:12,
            AMBER:13,AMETH:14,EMER:15,CORAL:16,GHOST:17,DAWN:18};
+// Дополнительные оттенки обликов. Индексы добавляются после базовой палитры,
+// поэтому существующие цвета врагов, эффектов и снарядов не меняются.
+const SKIN_PALETTE = {
+  void:'#7657ff', aurora:'#55f4d1', solar:'#ffcf55', venom:'#a5ff42',
+  royal:'#ff65c8', nebula:'#9b8cff', cyber:'#48d9ff', lunar:'#dce8ff',
+  inferno:'#ff7048', abyss:'#2879ff', jade:'#38e6a1', prism:'#f5a7ff'
+};
+const SKIN_COLOR = {};
+for (const k in SKIN_PALETTE) { SKIN_COLOR[k] = PAL.length; PAL.push(SKIN_PALETTE[k]); }
 
 // Типы врагов: базовые параметры (масштабируются глубиной)
 const ET = {
@@ -515,6 +593,18 @@ const SKINS = {
   ember:   {name:'Уголь',   pal:C.FIRE,  cost:260},
   frost:   {name:'Иней',    pal:C.ICE,   cost:300},
   dawn:    {name:'Заря',    pal:C.DAWN,  cost:0, win:1}, // награда за победу над Сердцем Бездны
+  void:    {name:'Пустота', pal:SKIN_COLOR.void, cost:420},
+  aurora:  {name:'Аврора',  pal:SKIN_COLOR.aurora, cost:460},
+  solar:   {name:'Солярис', pal:SKIN_COLOR.solar, cost:500},
+  venom:   {name:'Яд',      pal:SKIN_COLOR.venom, cost:540},
+  royal:   {name:'Корона',  pal:SKIN_COLOR.royal, cost:580},
+  nebula:  {name:'Туманность',pal:SKIN_COLOR.nebula,cost:620},
+  cyber:   {name:'Кибер',   pal:SKIN_COLOR.cyber, cost:660},
+  lunar:   {name:'Лунный лёд',pal:SKIN_COLOR.lunar,cost:700},
+  inferno: {name:'Инферно', pal:SKIN_COLOR.inferno,cost:740},
+  abyss:   {name:'Сингулярность',pal:SKIN_COLOR.abyss,cost:780},
+  jade:    {name:'Нефрит',  pal:SKIN_COLOR.jade, cost:820},
+  prism:   {name:'Призма',  pal:SKIN_COLOR.prism, cost:900},
 };
 // Постоянные усиления (за жемчуг)
 const SHOP = [
@@ -587,7 +677,7 @@ const EN = {
     shell:['Shell','Slow tank: two orbiting spores and armor from the start.'],
     squall:['Squall','Glass cannon: +30% damage, +1 pierce and frequent dash, but fragile.'],
   },
-  skins: { azure:'Azure', amber:'Amber', amethyst:'Amethyst', emerald:'Emerald', coral:'Coral', ghost:'Ghost', ember:'Ember', frost:'Frost', dawn:'Dawn' },
+  skins: { azure:'Azure', amber:'Amber', amethyst:'Amethyst', emerald:'Emerald', coral:'Coral', ghost:'Ghost', ember:'Ember', frost:'Frost', dawn:'Dawn', void:'Void', aurora:'Aurora', solar:'Solaris', venom:'Venom', royal:'Crown', nebula:'Nebula', cyber:'Cyber', lunar:'Moon Ice', inferno:'Inferno', abyss:'Singularity', jade:'Jade', prism:'Prism' },
   shop: {
     hp:['Sturdy Shell','+10 health'], dmg:['Brightness','+6% damage'], spd:['Streamlined','+4% speed'],
     mag:['Attraction','+15% pickup radius'], xp:['Deep Wisdom','+8% XP'],
@@ -1279,6 +1369,40 @@ function buildSprites() {
     const pc = PAL[SKINS[k].pal];
     makeSprite('pl_' + k, 13, 14, (g, r) => {
       g.shadowColor = pc; g.shadowBlur = 20;
+      // Внешняя оболочка отличается у каждого облика, а не только оттенком.
+      const shape = {
+        void: 'spokes', aurora: 'ribbons', solar: 'crown', venom: 'spikes',
+        royal: 'crown', nebula: 'orbits', cyber: 'hex', lunar: 'crescent',
+        inferno: 'flames', abyss: 'shards', jade: 'leaves', prism: 'prism'
+      }[k] || 'fins';
+      g.save(); g.globalAlpha = 0.92; g.lineWidth = 1.5;
+      g.strokeStyle = hexA(pc, 0.92); g.fillStyle = hexA(pc, 0.28);
+      if (shape === 'spokes' || shape === 'shards' || shape === 'spikes') {
+        const n = shape === 'spokes' ? 12 : 8;
+        for (let i=0;i<n;i++) { const a=i*TAU/n, r0=r*1.0, r1=r*(shape==='spikes'?1.85:1.65);
+          g.beginPath(); g.moveTo(Math.cos(a)*r0,Math.sin(a)*r0);
+          g.lineTo(Math.cos(a+0.13)*r1,Math.sin(a+0.13)*r1);
+          g.lineTo(Math.cos(a-0.13)*r1,Math.sin(a-0.13)*r1); g.closePath(); g.fill(); g.stroke(); }
+      } else if (shape === 'crown') {
+        g.beginPath(); g.moveTo(-r*.9,-r*.25); g.lineTo(-r*.95,-r*1.65); g.lineTo(-r*.25,-r*1.0);
+        g.lineTo(0,-r*1.85); g.lineTo(r*.3,-r*1.0); g.lineTo(r*.95,-r*1.6); g.lineTo(r*.9,-r*.25); g.closePath(); g.fill(); g.stroke();
+        for(let i=-1;i<=1;i++) { g.fillStyle='#fff'; g.beginPath(); g.arc(i*r*.55,-r*(1.1+(.25-Math.abs(i)*.1)),1.6,0,TAU); g.fill(); }
+      } else if (shape === 'hex' || shape === 'prism') {
+        for(let j=0;j<(shape==='prism'?2:1);j++){ g.beginPath(); for(let i=0;i<6;i++){const a=i*TAU/6+j*.22; const rr=r*(shape==='prism'?1.75-j*.28:1.65); g.lineTo(Math.cos(a)*rr,Math.sin(a)*rr);} g.closePath(); g.stroke(); }
+        g.beginPath(); g.moveTo(-r*1.5,0);g.lineTo(0,-r*1.65);g.lineTo(r*1.5,0);g.lineTo(0,r*1.65);g.closePath();g.fill();
+      } else if (shape === 'crescent') {
+        g.beginPath(); g.arc(0,0,r*1.65,-1.2,1.2); g.arc(r*.58,0,r*1.18,1.15,-1.15,true); g.closePath(); g.fill(); g.stroke();
+      } else if (shape === 'orbits') {
+        for(let j=0;j<3;j++){g.save();g.rotate(j*TAU/3);g.beginPath();g.ellipse(0,0,r*1.75,r*.48,0,0,TAU);g.stroke();g.restore();}
+      } else if (shape === 'ribbons' || shape === 'leaves') {
+        for(let j=-1;j<=1;j++){g.beginPath();g.moveTo(-r*.35,j*r*.35);g.bezierCurveTo(-r*1.5,j*r*1.6-r*.4,r*1.25,j*r*1.45,r*1.15,j*r*.2);g.quadraticCurveTo(r*.15,j*r*.5,-r*.35,j*r*.35);g.fill();g.stroke();}
+      } else if (shape === 'flames') {
+        for(let j=0;j<5;j++){const a=-1.15+j*.57;g.beginPath();g.moveTo(Math.cos(a)*r*.9,Math.sin(a)*r*.9);g.quadraticCurveTo(Math.cos(a)*r*2.1,Math.sin(a)*r*2.1,Math.cos(a+.18)*r*1.15,Math.sin(a+.18)*r*1.15);g.fill();g.stroke();}
+      } else {
+        g.beginPath();g.moveTo(-r*.8,-r*.1);g.quadraticCurveTo(-r*1.7,-r*1.4,-r*1.9,-r*.1);g.quadraticCurveTo(-r*1.5,r*.8,-r*.7,r*.3);g.fill();g.stroke();
+        g.beginPath();g.moveTo(-r*.8,r*.1);g.quadraticCurveTo(-r*1.7,r*1.4,-r*1.9,r*.1);g.quadraticCurveTo(-r*1.5,-r*.8,-r*.7,-r*.3);g.fill();g.stroke();
+      }
+      g.restore();
       g.fillStyle = lin(g, r * 0.9, 0, r * 2.0, 0, [[0, pc], [1, hexA(pc, 0.15)]]);
       g.beginPath(); g.moveTo(r * 2.0, 0); g.quadraticCurveTo(r * 1.2, -r * 0.55, r * 0.85, -r * 0.5); g.lineTo(r * 1.1, 0); g.lineTo(r * 0.85, r * 0.5); g.quadraticCurveTo(r * 1.2, r * 0.55, r * 2.0, 0); g.fill();
       g.strokeStyle = hexA(pc, 0.75); g.lineWidth = 2; g.beginPath(); g.arc(0, 0, r * 1.3, 0, TAU); g.stroke();
@@ -1287,9 +1411,14 @@ function buildSprites() {
       g.fillStyle = gr; g.beginPath(); g.arc(0, 0, r, 0, TAU); g.fill();
       g.shadowColor = '#fff'; g.shadowBlur = 10; g.fillStyle = '#ffffff';
       g.beginPath(); for (let i = 0; i < 8; i++) { const a = i / 8 * TAU, q = i % 2 ? r * 0.18 : r * 0.62; g.lineTo(Math.cos(a) * q, Math.sin(a) * q); } g.closePath(); g.fill();
-      g.shadowBlur = 0; g.fillStyle = hexA(pc, 0.9); for (let i = 0; i < 6; i++) { const a = i / 6 * TAU + 0.5; g.beginPath(); g.arc(Math.cos(a) * r * 1.3, Math.sin(a) * r * 1.3, 1.6, 0, TAU); g.fill(); }
+      // Грани и световые дорожки на корпусе.
+      g.shadowBlur = 0; g.strokeStyle = 'rgba(255,255,255,.62)'; g.lineWidth = 0.8;
+      g.beginPath(); g.moveTo(-r*.52,-r*.18); g.quadraticCurveTo(0,-r*.72,r*.52,-r*.18);
+      g.moveTo(-r*.52,r*.18); g.quadraticCurveTo(0,r*.72,r*.52,r*.18); g.stroke();
+      g.fillStyle = hexA(pc, 0.9); for (let i = 0; i < 6; i++) { const a = i / 6 * TAU + 0.5; g.beginPath(); g.arc(Math.cos(a) * r * 1.3, Math.sin(a) * r * 1.3, 1.6, 0, TAU); g.fill(); }
     });
   }
+
 }
 
 /* ============================ 6. STATE ============================ */
@@ -2566,11 +2695,24 @@ function renderWorld(rdt) {
       case 'boss2': drawBoss2(e, sc, wht); break;
       case 'boss3': drawBoss3(e, sc, wht); break;
       case 'crystal': setXf(e.x, e.y, G.t * 2, sc); drawSpr(SPR.crystal, wht); break;
-      default: setXf(e.x, e.y, e.ang, sc); drawSpr(SPR[e.type], wht);
+      default: {
+        const breathe = 1 + Math.sin(G.t * (e.elite ? 3.1 : 2.35) + e.phase) * (e.elite ? 0.045 : 0.025);
+        const drift = Math.sin(G.t * 1.7 + e.phase) * 1.4;
+        setXf(e.x, e.y + drift, e.ang, sc * breathe); drawSpr(SPR[e.type], wht);
+        break;
+      }
     }
     if (e.freeze > 0) { setWorld(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.7; glowAt(SOFT[C.ICE], e.x, e.y, e.r * e.scale * 2); ctx.globalCompositeOperation = 'source-over'; }
     else if (e.slow > 0 && hi) { setWorld(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.35; glowAt(SOFT[C.ICE], e.x, e.y, e.r * e.scale * 1.6); ctx.globalCompositeOperation = 'source-over'; }
     if (e.elite) { setWorld(); ctx.globalAlpha = 0.8; ctx.strokeStyle = PAL[C.GOLD]; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(e.x, e.y, e.r * e.scale * 1.35, G.t * 2, G.t * 2 + 4.6); ctx.stroke(); }
+    if ((e.elite || e.hp < e.maxHp * 0.72) && !ET[e.type].boss && e.type !== 'chest') {
+      setWorld();
+      const bw = Math.max(22, e.r * e.scale * 2.1), by = e.y - e.r * e.scale - 9;
+      ctx.globalAlpha = e.elite ? 0.92 : 0.68;
+      ctx.fillStyle = 'rgba(0,0,8,.72)'; ctx.fillRect(e.x - bw / 2, by, bw, 3.5);
+      ctx.fillStyle = e.elite ? PAL[C.GOLD] : '#ff779b';
+      ctx.fillRect(e.x - bw / 2, by, bw * clamp(e.hp / e.maxHp, 0, 1), 3.5);
+    }
     ctx.globalAlpha = 1;
   }
   setWorld();
@@ -2580,9 +2722,51 @@ function renderWorld(rdt) {
     for (let k = 1; k < 12; k++) { const j = ((trailHead - k) % 12 + 12) % 12; ctx.globalAlpha = (1 - k / 12) * 0.55; glowAt(SOFT[P.pal], TRAIL[j * 2], TRAIL[j * 2 + 1], 16 * (1 - k / 14)); }
     ctx.globalAlpha = 0.55 + 0.15 * Math.sin(G.t * 5); glowAt(SOFT[P.pal], P.x, P.y, P.dashT > 0 ? 70 : 46);
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
-    if (!(P.inv > 0 && (G.t * 16 | 0) % 2)) { setXf(P.x, P.y, P.ang, 1); drawSpr(SPR['pl_' + P.skin], false); }
-    // орбитальные искорки-«кометы» вокруг ядра
+    if (!(P.inv > 0 && (G.t * 16 | 0) % 2)) {
+      setXf(P.x, P.y, P.ang, 1);
+      drawSpr(SPR['pl_' + P.skin], false);
+      // Подвижные боковые плавники и многослойное энергетическое ядро.
+      const flap = Math.sin(G.t * 13) * 0.18, pulse = 1 + Math.sin(G.t * 6) * 0.07;
+      ctx.save(); ctx.rotate(flap);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = hexA(PAL[P.pal], 0.52);
+      ctx.beginPath(); ctx.moveTo(-3, -5); ctx.quadraticCurveTo(-19, -18 - flap * 18, -24, -11); ctx.quadraticCurveTo(-15, -2, -3, 1); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-3, 5); ctx.quadraticCurveTo(-19, 18 + flap * 18, -24, 11); ctx.quadraticCurveTo(-15, 2, -3, -1); ctx.fill();
+      ctx.restore();
+      ctx.globalCompositeOperation = 'lighter';
+      const core = ctx.createRadialGradient(2, 0, 1, 2, 0, 10 * pulse);
+      core.addColorStop(0, '#ffffff'); core.addColorStop(0.28, '#eaffff');
+      core.addColorStop(0.62, PAL[P.pal]); core.addColorStop(1, hexA(PAL[P.pal], 0));
+      ctx.fillStyle = core; ctx.beginPath(); ctx.arc(2, 0, 10 * pulse, 0, TAU); ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = 'rgba(255,255,255,.72)'; ctx.lineWidth = 1.15;
+      ctx.beginPath(); ctx.arc(0, 0, 11.5 + Math.sin(G.t * 4) * 0.7, -1.2, 1.35); ctx.stroke();
+    }
+    // Орнамент каждого редкого облика получает собственную динамическую анимацию.
     setWorld(); ctx.globalCompositeOperation = 'lighter';
+    const ornament = {
+      void:'void', aurora:'ribbon', solar:'crown', venom:'spikes', royal:'crown',
+      nebula:'orbit', cyber:'hex', lunar:'moon', inferno:'flame', abyss:'shards',
+      jade:'leaf', prism:'prism'
+    }[P.skin];
+    const oa = G.t * (ornament === 'orbit' ? 1.35 : 2.1);
+    if (ornament === 'orbit' || ornament === 'hex' || ornament === 'prism') {
+      for(let k=0;k<3;k++){const a=oa+k*TAU/3,rr=ornament==='orbit'?28:24;
+        const x=P.x+Math.cos(a)*rr,y=P.y+Math.sin(a)*rr;
+        ctx.globalAlpha=.75;ctx.strokeStyle=PAL[P.pal];ctx.lineWidth=1.5;
+        ctx.beginPath();ctx.arc(x,y,ornament==='hex'?5:3.5,a,a+Math.PI*1.55);ctx.stroke();
+        glowAt(GLOW[P.pal],x,y,ornament==='prism'?7:4);
+      }
+    } else if (ornament) {
+      for(let k=0;k<4;k++){const a=oa+k*TAU/4,rr=ornament==='crown'?24:30;
+        const x=P.x+Math.cos(a)*rr,y=P.y+Math.sin(a)*rr;
+        ctx.globalAlpha=.72;glowAt(GLOW[P.pal],x,y,ornament==='flame'?7:5);
+        ctx.globalAlpha=.8;ctx.strokeStyle=PAL[P.pal];ctx.lineWidth=1.2;
+        ctx.beginPath();ctx.moveTo(P.x+Math.cos(a)*15,P.y+Math.sin(a)*15);
+        ctx.lineTo(x,y);ctx.stroke();
+      }
+    }
+    ctx.globalAlpha=1;
     for (let k = 0; k < 3; k++) { const a = G.t * 3 + k * TAU / 3; glowAt(GLOW[P.pal], P.x + Math.cos(a) * 21, P.y + Math.sin(a) * 21, 5); }
     for (let i = 0; i < ST.orbN; i++) { glowAt(GLOW[C.DRIFT], ORB[i * 2], ORB[i * 2 + 1], 16); glowAt(GLOW[C.WHITE], ORB[i * 2], ORB[i * 2 + 1], 6); }
     ctx.globalCompositeOperation = 'source-over';
@@ -2597,7 +2781,10 @@ function renderWorld(rdt) {
   for (let i = 0; i < pbul.n; i++) { const b = pbul.items[i]; if (!inView(b.x, b.y, 10)) continue;
     const s = Math.hypot(b.vx, b.vy) || 1, cs = b.vx / s * WS, sn = b.vy / s * WS;
     ctx.setTransform(cs, sn, -sn, cs, OX + b.x * WS, OY + b.y * WS);
-    ctx.drawImage(pimg, -20, -8, 34, 16); ctx.drawImage(GLOW[C.WHITE], -7, -3, 16, 6); if (b.crit) ctx.drawImage(GLOW[C.GOLD], -11, -11, 22, 22); }
+    ctx.globalAlpha = 0.52; ctx.drawImage(pimg, -24, -7, 34, 14);
+    ctx.globalAlpha = 1; ctx.drawImage(pimg, -10, -6, 22, 12);
+    ctx.drawImage(GLOW[C.WHITE], 0, -3.5, 10, 7);
+    if (b.crit) ctx.drawImage(GLOW[C.GOLD], -11, -11, 22, 22); }
   setWorld();
   // частицы
   for (let i = 0; i < parts.n; i++) { const p = parts.items[i]; const k = p.life / p.max; if (!inView(p.x, p.y, 20)) continue;
@@ -3178,7 +3365,7 @@ function renderShop() {
   } else {
     for (const k in SKINS) {
       const c = SKINS[k], own = S.skins[k], sel = S.skin === k;
-      h += '<div class="item' + (sel ? ' done' : '') + '"' + (c.win ? ' style="border-color:rgba(255,213,79,.75);box-shadow:0 0 14px rgba(255,213,79,.25)"' : '') + '><div class="sw" style="background:radial-gradient(circle,#fff 20%,' + PAL[c.pal] + ' 55%,transparent 72%);box-shadow:0 0 14px ' + PAL[c.pal] + '"></div><div class="info"><div class="nm">' + c.name +
+      h += '<div class="item' + (sel ? ' done' : '') + '"' + (c.win ? ' style="border-color:rgba(255,213,79,.75);box-shadow:0 0 14px rgba(255,213,79,.25)"' : '') + '><div class="sw skinPreview" style="background:radial-gradient(circle,#fff 12%,' + PAL[c.pal] + ' 34%,transparent 72%);box-shadow:0 0 18px ' + PAL[c.pal] + ';border:1px solid ' + PAL[c.pal] + '"></div><div class="info"><div class="nm">' + c.name +
         '</div><div class="ds">' + (c.win ? uiT('skinWin') : uiT('skinColor')) + '</div></div>' +
         (sel ? '<button class="btn small" disabled>' + uiT('worn') + '</button>' : own ? '<button class="btn small" data-skin="' + k + '">' + uiT('wear') + '</button>' : c.win ? '<button class="btn small" disabled>' + uiT('winBtn') + '</button>' :
           '<button class="btn small" data-skin="' + k + '"' + (S.pearls < c.cost ? ' disabled' : '') + '>' + pearlHTML(c.cost) + '</button>') + '</div>';
