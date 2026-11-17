@@ -218,6 +218,12 @@ class MainActivity : ComponentActivity() {
         }
         val vpn by VpnState.flow.collectAsState()
         val data by Repo.flow.collectAsState()
+        // VPN выключили — сразу меряем страны заново (без VPN), а не через 5 минут
+        var lastStatus by remember { mutableStateOf(vpn.status) }
+        LaunchedEffect(vpn.status) {
+            if (vpn.status == Status.STOPPED && lastStatus == Status.RUNNING) Repo.pingAll()
+            lastStatus = vpn.status
+        }
         var screen by remember { mutableStateOf(Screen.HOME) }
         var sheet by remember { mutableStateOf(false) }
         BackHandler(enabled = sheet || screen != Screen.HOME) {
@@ -699,6 +705,8 @@ private fun CountrySheet(open: Boolean, vpn: VpnUi, data: Data, close: () -> Uni
     AnimatedVisibility(open, enter = fadeIn(), exit = fadeOut()) {
         Box(Modifier.fillMaxSize().background(Color(0xA6000000)).clickable(onClick = close))
     }
+    // Открыли список — свежий замер, если последний был больше минуты назад
+    LaunchedEffect(open) { if (open) Repo.pingIfStale(60_000L) }
     AnimatedVisibility(open, enter = slideInVertically { it }, exit = slideOutVertically { it }) {
         var query by remember { mutableStateOf("") }
         Box(Modifier.fillMaxSize()) {
@@ -775,17 +783,18 @@ private fun CountryRow(s: Server, vpn: VpnUi, data: Data, onPick: (String) -> Un
             Text(title, color = TextMain, fontSize = 15.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (note.isNotEmpty()) Text(note, color = TextDim, fontSize = 12.sp)
         }
-        PingLabel(ping)
+        PingLabel(ping, busy = s.name in data.measuring)
     }
 }
 
 @Composable
-private fun PingLabel(ping: Long) {
+private fun PingLabel(ping: Long, busy: Boolean = false) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(pingColor(ping)))
+        Box(Modifier.size(8.dp).clip(CircleShape).background(pingColor(if (busy && ping < 0) 0L else ping)))
         Text(
             when {
                 ping > 0 -> "  $ping мс"
+                busy -> "  …"           // меряется прямо сейчас: старое «нет связи» не показываем
                 ping < 0 -> "  нет связи"
                 else -> "  —"
             },

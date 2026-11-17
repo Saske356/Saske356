@@ -53,7 +53,8 @@ data class Data(
     val subUrl: String = "",
     val servers: List<Server> = emptyList(),
     val pings: Map<String, Long> = emptyMap(),
-    val pingError: String = "",   // почему не удался замер без VPN (последняя ошибка)
+    val pingError: String = "",
+    val measuring: Set<String> = emptySet(),   // какие страны мерятся прямо сейчас (показываем «…»)   // почему не удался замер без VPN (последняя ошибка)
     val selected: String = "",
     val expire: Long = 0L,
     val title: String = "",
@@ -114,6 +115,13 @@ object Repo {
 
     @Volatile
     private var pingStarted = 0L
+    @Volatile
+    private var pingDone = 0L
+
+    /** Замерить, если последний замер был давно (открыли список стран и т. п.). */
+    fun pingIfStale(maxAgeMs: Long = 60_000L) {
+        if (System.currentTimeMillis() - pingDone > maxAgeMs) pingAll()
+    }
 
     /**
      * Настоящая задержка до каждой страны (по 4 одновременно), и при выключенном VPN.
@@ -128,9 +136,10 @@ object Repo {
         flow.update { it.copy(pinging = true) }
         try {
             Core.init(app)
-            val sem = Semaphore(4)
+            val sem = Semaphore(6)
             val sel = flow.value.selected
             val list = Store.servers().sortedBy { if (it.name == sel) 0 else 1 }
+            flow.update { it.copy(measuring = list.map { s -> s.name }.toSet()) }
             list.map { s ->
                 async {
                     sem.withPermit {
@@ -140,13 +149,17 @@ object Repo {
                         synchronized(this@Repo) {
                             val all = flow.value.pings + (s.name to ms)
                             Store.pings = all
-                            flow.update { it.copy(pings = all, pingError = if (ms > 0) "" else Core.lastMeasureError) }
+                            flow.update {
+                                it.copy(pings = all, pingError = if (ms > 0) "" else Core.lastMeasureError,
+                                    measuring = it.measuring - s.name)
+                            }
                         }
                     }
                 }
             }.awaitAll()
         } finally {
-            flow.update { it.copy(pinging = false) }
+            pingDone = System.currentTimeMillis()
+            flow.update { it.copy(pinging = false, measuring = emptySet()) }
         }
     }
 
