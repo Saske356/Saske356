@@ -130,8 +130,38 @@ object Core {
     fun measure(server: String): Long = try {
         val o = JSONObject(server)
         o.put("inbounds", JSONArray())
+        resolveAddresses(o)
         Libv2ray.measureOutboundDelay(o.toString(), PING_URL)
     } catch (e: Exception) {
         -1L
+    }
+
+    /**
+     * Для замера без VPN ядро запускается без своего DNS, а сам Go на Android не знает, у кого
+     * спрашивать адреса, — сервер, заданный именем, не находился, и у всех стран было «нет связи».
+     * Поэтому имя сервера заранее превращаем в IPv4 средствами телефона. Имя для TLS (serverName)
+     * в подписке задано отдельно, так что маскировка не меняется.
+     */
+    private fun resolveAddresses(o: JSONObject) {
+        val outs = o.optJSONArray("outbounds") ?: return
+        for (i in 0 until outs.length()) {
+            val st = outs.optJSONObject(i)?.optJSONObject("settings") ?: continue
+            fix(st)
+            for (key in listOf("vnext", "servers")) {
+                val arr = st.optJSONArray(key) ?: continue
+                for (j in 0 until arr.length()) arr.optJSONObject(j)?.let { fix(it) }
+            }
+        }
+    }
+
+    private fun fix(node: JSONObject) {
+        val host = node.optString("address")
+        if (host.isEmpty() || host.all { it.isDigit() || it == '.' } || host.contains(':')) return
+        val ip = try {
+            java.net.InetAddress.getAllByName(host).firstOrNull { it is java.net.Inet4Address }?.hostAddress
+        } catch (e: Exception) {
+            null
+        } ?: return
+        node.put("address", ip)
     }
 }
