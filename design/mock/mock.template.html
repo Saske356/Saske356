@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Arise VPN — макет</title>
+<style>
+/*FONTS*/
+:root{
+  --bg:#02050f; --text:#eef4ff; --soft:#a9bce0; --dim:#7487ad;
+  --blue:#4f8dff; --ice:#9cc6ff; --deep:#1f4fd6; --line:rgba(91,140,255,.32);
+  --glass:linear-gradient(180deg,rgba(34,58,110,.30),rgba(14,26,54,.18));
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#000;height:100%}
+body{display:flex;justify-content:center;align-items:flex-start;font-family:Inter,system-ui,sans-serif;color:var(--text);-webkit-tap-highlight-color:transparent}
+.phone{position:relative;width:393px;height:852px;overflow:hidden;background:radial-gradient(ellipse 120% 60% at 50% 38%,#071433 0,#030816 55%,#02040b 100%)}
+@media (max-width:420px){.phone{width:100vw;height:100svh;min-height:760px}}
+
+/* звёзды и дуги внизу */
+.stars{position:absolute;inset:0;pointer-events:none}
+.stars i{position:absolute;width:2px;height:2px;border-radius:50%;background:#cfe2ff;animation:tw 4s ease-in-out infinite}
+@keyframes tw{0%,100%{opacity:.15}50%{opacity:.8}}
+.floor{position:absolute;bottom:-120px;width:420px;height:300px;pointer-events:none;background:radial-gradient(ellipse at center,rgba(47,107,255,.55) 0,rgba(47,107,255,.18) 35%,transparent 65%)}
+.floor.l{left:-260px}.floor.r{right:-260px}
+
+/* статусбар как на телефоне */
+.sb{position:absolute;top:0;left:0;right:0;height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 26px 0 30px;font-weight:600;font-size:16px;z-index:5}
+.sb .r{display:flex;gap:6px;align-items:center}
+
+.screen{position:absolute;inset:0;padding-top:44px}
+
+/* шапка */
+.top{position:absolute;top:47px;left:22px;right:17px;height:48px;display:flex;align-items:center;z-index:4}
+.mark{width:44px;height:44px;filter:drop-shadow(0 0 10px rgba(60,120,255,.85))}
+.brand{font-size:27px;font-weight:600;margin-left:16px;flex:1;letter-spacing:.2px}
+.round{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 50% 30%,rgba(40,70,140,.55),rgba(10,18,40,.7));
+  border:1px solid rgba(110,160,255,.35);box-shadow:0 0 18px rgba(40,100,255,.25),inset 0 1px 0 rgba(255,255,255,.08)}
+
+/* подписка */
+.sub{position:absolute;top:114px;left:17px;right:17px;height:47px;border-radius:24px;display:flex;align-items:center;padding:0 8px 0 18px;z-index:4;
+  background:linear-gradient(180deg,rgba(28,44,86,.55),rgba(10,18,40,.55));border:1px solid rgba(110,160,255,.28);backdrop-filter:blur(6px)}
+.sub svg{flex-shrink:0}.sub span{flex:1;font-size:13px;color:var(--soft);margin-left:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pill{flex-shrink:0}
+.pill{height:31px;padding:0 17px;border-radius:16px;display:grid;place-items:center;font-size:14px;font-weight:600;color:#fff;
+  background:linear-gradient(180deg,#4a86ff,#1d4fd8);border:1px solid rgba(170,205,255,.7);box-shadow:0 0 16px rgba(60,120,255,.6),inset 0 1px 0 rgba(255,255,255,.35)}
+
+/* глобус и кнопка */
+.globe{position:absolute;left:50%;top:162px;width:424px;height:424px;transform:translateX(-50%);z-index:1;
+  -webkit-mask-image:linear-gradient(180deg,#000 0,#000 58%,transparent 86%);mask-image:linear-gradient(180deg,#000 0,#000 58%,transparent 86%)}
+.globe img{position:absolute;inset:-9.1%;width:118.2%;height:118.2%;animation:breathe 6s ease-in-out infinite}
+@keyframes breathe{0%,100%{filter:brightness(1)}50%{filter:brightness(1.18)}}
+.globe svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.orbit{fill:none;stroke:rgba(140,190,255,.35);stroke-width:1}
+.spark{fill:#fff;filter:drop-shadow(0 0 4px #7fb2ff) drop-shadow(0 0 8px #3d7bff)}
+
+.hero{position:absolute;left:50%;top:235px;width:144px;height:144px;transform:translateX(-50%);z-index:3}
+.halo{position:absolute;inset:-70px;border-radius:50%;background:radial-gradient(circle,rgba(90,150,255,.95) 0,rgba(47,107,255,.55) 34%,rgba(47,107,255,.12) 55%,transparent 70%);transition:opacity .5s}.off .halo{opacity:.35}
+.ring{position:absolute;inset:-18px;border-radius:50%;border:1px solid rgba(110,165,255,.35)}
+.ring.r2{inset:-38px;border-color:rgba(110,165,255,.18)}
+.wave{position:absolute;inset:0;border-radius:50%;border:2px solid rgba(150,195,255,.55);opacity:0}
+.on .wave{animation:wave 2.6s ease-out infinite}.on .wave.w2{animation-delay:.87s}.on .wave.w3{animation-delay:1.74s}
+@keyframes wave{0%{transform:scale(1);opacity:.7}100%{transform:scale(1.75);opacity:0}}
+.btn{position:absolute;inset:0;border-radius:50%;cursor:pointer;display:grid;place-items:center;
+  background:radial-gradient(circle at 50% 40%,#16284f 0,#0a1430 60%,#060c1f 100%);
+  border:4px solid #b8d6ff;box-shadow:0 0 0 3px #3a78ff,0 0 14px 6px rgba(80,140,255,.95),0 0 46px 16px rgba(47,107,255,.6),inset 0 0 0 9px rgba(12,26,62,.85),inset 0 0 0 11px rgba(90,150,255,.35),inset 0 0 34px rgba(47,107,255,.6);
+  transition:transform .25s cubic-bezier(.3,1.6,.5,1),box-shadow .5s,border-color .5s}
+.btn:active{transform:scale(.93)}
+.off .btn{border-color:rgba(160,195,255,.55);box-shadow:0 0 0 2px rgba(60,120,255,.35),0 0 18px 4px rgba(47,107,255,.35),inset 0 0 18px rgba(47,107,255,.25)}
+.btn svg{width:52px;height:52px;filter:drop-shadow(0 0 8px rgba(160,200,255,1)) drop-shadow(0 0 16px rgba(80,140,255,.8))}
+.spin{position:absolute;inset:-6px;border-radius:50%;border:4px solid transparent;border-top-color:#e6f1ff;opacity:0;filter:drop-shadow(0 0 6px #7fb2ff)}
+.connecting .spin{opacity:1;animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.flash{position:absolute;inset:0;border-radius:50%;border:4px solid #e6f1ff;opacity:0;pointer-events:none}
+.flash.go{animation:flash .9s ease-out}
+@keyframes flash{0%{opacity:.8;transform:scale(1)}100%{opacity:0;transform:scale(1.9)}}
+
+.status{position:absolute;top:392px;left:0;right:0;text-align:center;z-index:3}
+.status b{display:block;font-size:31px;font-weight:700;letter-spacing:.2px;transition:opacity .3s}
+.timer{font-size:27px;font-weight:600;color:#86bcff;letter-spacing:.5px;margin-top:2px;font-variant-numeric:tabular-nums;text-shadow:0 0 14px rgba(70,130,255,.55)}
+.off .timer{font-size:14px;font-weight:400;color:var(--dim);text-shadow:none;margin-top:8px}
+
+/* стеклянные карточки */
+.card{position:absolute;left:17px;right:17px;border-radius:24px;background:var(--glass);border:1px solid rgba(110,160,255,.35);
+  box-shadow:0 0 22px rgba(30,90,255,.18),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(4px);z-index:3}
+.press{transition:transform .2s cubic-bezier(.3,1.5,.5,1)}.press:active{transform:scale(.965)}
+.country{top:470px;height:57px;display:flex;align-items:center;padding:0 16px 0 18px;cursor:pointer;border-color:rgba(120,170,255,.55);box-shadow:0 0 26px rgba(40,100,255,.3),inset 0 1px 0 rgba(255,255,255,.08)}
+.flag{width:36px;height:36px;border-radius:50%;overflow:hidden;background:linear-gradient(180deg,#f4f6fb 50%,#d8203a 50%);box-shadow:inset 0 -6px 10px rgba(0,0,0,.25),0 2px 6px rgba(0,0,0,.4)}
+.country .name{flex:1;margin-left:20px;font-size:17px;font-weight:500}
+.dot{width:9px;height:9px;border-radius:50%;background:#35d45a;box-shadow:0 0 8px #35d45a}
+.ms{font-size:16px;margin:0 12px 0 8px}
+.bars{display:flex;gap:2.5px;align-items:flex-end;height:16px;margin-right:16px}
+.bars i{width:3.5px;border-radius:2px;background:#3fd462}
+.bars i:nth-child(1){height:5px}.bars i:nth-child(2){height:8px}.bars i:nth-child(3){height:12px}.bars i:nth-child(4){height:16px}
+
+.tiles{position:absolute;top:540px;left:17px;right:17px;height:83px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;z-index:3}
+.tile{position:static;border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.tile svg{width:26px;height:26px;margin-bottom:3px;filter:drop-shadow(0 0 6px rgba(80,150,255,.8))}
+.tile small{font-size:13px;color:#d6e3ff}
+.tile b{font-size:16.5px;font-weight:600}
+
+.graph{top:642px;height:87px;padding:12px 14px 0 15px}
+.graph .h{display:flex;justify-content:space-between;font-size:13.5px}
+.graph .h span:first-child{font-weight:600}
+.graph .h span:last-child{color:#8fbaff}
+.graph svg{position:absolute;left:12px;right:12px;bottom:6px;width:calc(100% - 24px);height:56px;overflow:visible}
+.line{fill:none;stroke:#8cc0ff;stroke-width:2.6;stroke-linecap:round;filter:drop-shadow(0 0 4px #3d7bff) drop-shadow(0 0 10px #2f6bff);stroke-dasharray:900;stroke-dashoffset:900;animation:draw 2.4s ease-out forwards}
+@keyframes draw{to{stroke-dashoffset:0}}
+
+.modes{top:746px;height:46px;padding:4px;display:flex;align-items:center;border-radius:24px}
+.mode{flex:1;height:38px;border-radius:19px;display:flex;align-items:center;justify-content:center;gap:9px;font-size:15px;color:#c3d3f3;cursor:pointer;position:relative;z-index:1}
+.mode svg{width:24px;height:24px}
+.mode.sel{color:#fff;font-weight:600}
+.slider{position:absolute;top:4px;bottom:4px;left:4px;width:calc((100% - 8px)/3);border-radius:19px;
+  background:linear-gradient(180deg,#3f7bff,#1a46c8);border:1.5px solid rgba(210,230,255,.85);box-shadow:0 0 18px rgba(60,120,255,.8),inset 0 1px 0 rgba(255,255,255,.35);
+  transition:transform .45s cubic-bezier(.3,1.3,.5,1)}
+.home-ind{position:absolute;bottom:8px;left:50%;width:134px;height:5px;margin-left:-67px;border-radius:3px;background:rgba(200,215,255,.75);z-index:6}
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="stars" id="stars"></div>
+  <div class="floor l"></div><div class="floor r"></div>
+  <div class="sb"><span>9:41</span><span class="r">
+    <svg width="18" height="12" viewBox="0 0 18 12"><rect x="0" y="8" width="3" height="4" rx="1" fill="#fff"/><rect x="5" y="5.5" width="3" height="6.5" rx="1" fill="#fff"/><rect x="10" y="3" width="3" height="9" rx="1" fill="#fff"/><rect x="15" y="0" width="3" height="12" rx="1" fill="#fff"/></svg>
+    <svg width="17" height="12" viewBox="0 0 17 12"><path d="M8.5 11.5l2.4-2.9a3.6 3.6 0 0 0-4.8 0zM3.3 6.2a7.6 7.6 0 0 1 10.4 0l1.6-1.9a10.1 10.1 0 0 0-13.6 0zM.2 2.6a12.4 12.4 0 0 1 16.6 0L17 2.3" fill="#fff" stroke="#fff" stroke-width=".4"/></svg>
+    <svg width="27" height="13" viewBox="0 0 27 13"><rect x=".5" y=".5" width="23" height="12" rx="3.5" fill="none" stroke="#fff" opacity=".5"/><rect x="2" y="2" width="20" height="9" rx="2" fill="#fff"/><rect x="24.5" y="4" width="2" height="5" rx="1" fill="#fff" opacity=".5"/></svg>
+  </span></div>
+
+  <div class="screen on" id="home">
+    <div class="top">
+      <svg class="mark" viewBox="218 265 820 672"><defs><linearGradient id="mg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eaf5ff"/><stop offset="1" stop-color="#2563ff"/></linearGradient></defs>
+        <polygon fill="url(#mg)" points="628,265 1038,937 713,815 683,704 776,741 628,515 480,741 573,704 543,815 218,937"/></svg>
+      <div class="brand">Arise</div>
+      <div class="round press"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#dbe8ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v2.6M12 18.9v2.6M4.6 4.6l1.9 1.9M17.5 17.5l1.9 1.9M2.5 12h2.6M18.9 12h2.6M4.6 19.4l1.9-1.9M17.5 6.5l1.9-1.9"/><circle cx="12" cy="12" r="6.8"/></svg></div>
+    </div>
+
+    <div class="sub">
+      <svg width="22" height="20" viewBox="0 0 24 22"><defs><linearGradient id="gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe9a8"/><stop offset="1" stop-color="#e2a631"/></linearGradient></defs>
+        <path fill="url(#gold)" d="M2 6l5 5 5-8 5 8 5-5-2 10H4z"/><rect x="4" y="17.5" width="16" height="2.6" rx="1" fill="url(#gold)"/>
+        <circle cx="2" cy="5.5" r="1.6" fill="#ffe9a8"/><circle cx="12" cy="2.5" r="1.6" fill="#ffe9a8"/><circle cx="22" cy="5.5" r="1.6" fill="#ffe9a8"/></svg>
+      <span>Подписка до 11.01 · 1 устройство</span>
+      <div class="pill press">Продлить</div>
+    </div>
+
+    <div class="globe" id="globe">
+      <img src="GLOBE_DATA" alt="">
+      <svg viewBox="0 0 424 424" id="orbits">
+        <ellipse class="orbit" cx="212" cy="212" rx="230" ry="70" transform="rotate(-18 212 212)"/>
+        <ellipse class="orbit" cx="212" cy="212" rx="250" ry="120" transform="rotate(14 212 212)"/>
+        <ellipse class="orbit" cx="212" cy="230" rx="215" ry="40" transform="rotate(4 212 212)"/>
+        <circle class="spark" r="3" id="s1"/><circle class="spark" r="2.5" id="s2"/><circle class="spark" r="2.5" id="s3"/>
+        <circle class="spark" cx="300" cy="138" r="2.2"/><circle class="spark" cx="70" cy="226" r="2"/><circle class="spark" cx="372" cy="244" r="2"/>
+      </svg>
+    </div>
+
+    <div class="hero" id="hero">
+      <div class="halo"></div><div class="ring r2"></div><div class="ring"></div>
+      <div class="wave"></div><div class="wave w2"></div><div class="wave w3"></div>
+      <div class="spin"></div><div class="flash" id="flash"></div>
+      <div class="btn" id="btn"><svg viewBox="0 0 24 24" fill="none" stroke="#dcebff" stroke-width="2.2" stroke-linecap="round"><path d="M7.4 6.1a8 8 0 1 0 9.2 0"/><path d="M12 2.8v8.4"/></svg></div>
+    </div>
+
+    <div class="status"><b id="st">Защищено</b><div class="timer" id="timer">00:12:45</div></div>
+
+    <div class="card country press">
+      <div class="flag"></div><div class="name">Польша</div>
+      <div class="dot"></div><div class="ms">42 мс</div>
+      <div class="bars"><i></i><i></i><i></i><i></i></div>
+      <svg width="12" height="18" viewBox="0 0 12 18" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2l7 7-7 7"/></svg>
+    </div>
+
+    <div class="tiles">
+      <div class="card tile press"><svg viewBox="0 0 24 24"><defs><linearGradient id="bg1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b5d3ff"/><stop offset="1" stop-color="#4f8dff"/></linearGradient></defs><path fill="url(#bg1)" d="M14 1.5 4.5 14h6.5l-1.5 8.5L19.5 10H13z"/></svg><small>Пинг</small><b><span id="ping">42</span> мс</b></div>
+      <div class="card tile press"><svg viewBox="0 0 24 24" fill="none" stroke="#6fa8ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M6.5 10l5.5 5.5 5.5-5.5M4.5 20.5h15"/></svg><small>Загрузка</small><b><span id="down">85</span> Мбит/с</b></div>
+      <div class="card tile press"><svg viewBox="0 0 24 24" fill="none" stroke="#6fa8ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V9M6.5 14 12 8.5l5.5 5.5M4.5 3.5h15"/></svg><small>Отдача</small><b><span id="up">20</span> Мбит/с</b></div>
+    </div>
+
+    <div class="card graph">
+      <div class="h"><span>Скорость за последние 5 мин</span><span>↓ <span id="down2">85</span> Мбит/с</span></div>
+      <svg viewBox="0 0 330 56" preserveAspectRatio="none"><defs><linearGradient id="fillg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(47,107,255,.45)"/><stop offset="1" stop-color="rgba(47,107,255,0)"/></linearGradient></defs>
+        <path id="area" fill="url(#fillg)" d=""/><path class="line" id="line" d=""/><circle id="tip" r="3.2" fill="#fff" style="filter:drop-shadow(0 0 5px #8cc0ff)"/></svg>
+    </div>
+
+    <div class="card modes">
+      <div class="slider" id="slider"></div>
+      <div class="mode sel" data-i="0"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M14 1.5 4.5 14h6.5l-1.5 8.5L19.5 10H13z"/></svg>Баланс</div>
+      <div class="mode" data-i="1"><svg viewBox="0 0 24 24"><path fill="#9bbcff" d="M7 7h10a5 5 0 0 1 4.8 6.4l-1.2 4.2a2.7 2.7 0 0 1-4.5 1.2L14 16.6h-4l-2.1 2.2a2.7 2.7 0 0 1-4.5-1.2l-1.2-4.2A5 5 0 0 1 7 7z"/><path stroke="#0b1630" stroke-width="1.8" stroke-linecap="round" d="M7.5 10.5v4M5.5 12.5h4"/><circle cx="16" cy="11" r="1.1" fill="#0b1630"/><circle cx="18" cy="13.2" r="1.1" fill="#0b1630"/></svg>Игровой</div>
+      <div class="mode" data-i="2"><svg viewBox="0 0 24 24"><g transform="rotate(45 12 12)"><path fill="#9bbcff" d="M12 1c3 2.6 3.2 7.6 2 11.6H10C8.8 8.6 9 3.6 12 1z"/><path fill="#6f9cff" d="M9.6 8.6 6.4 12l.4 2.8 3.4-2.2zM14.4 8.6l3.2 3.4-.4 2.8-3.4-2.2z"/><circle cx="12" cy="6.4" r="1.4" fill="#0b1630"/><path fill="#cfe0ff" d="M10.6 13.4 12 18l1.4-4.6z"/></g></svg>Турбо</div>
+    </div>
+    <div class="home-ind"></div>
+  </div>
+</div>
+<script>
+// звёзды
+const st=document.getElementById('stars');
+for(let i=0;i<70;i++){const s=document.createElement('i');const k=(i*0.618)%1,q=(i*0.4142+0.13)%1;s.style.left=(k*100)+'%';s.style.top=(q*100)+'%';
+  const z=0.6+((i*7919)%10)/10;s.style.width=s.style.height=z+'px';s.style.animationDelay=(-(i*0.37)%4)+'s';st.appendChild(s)}
+// огоньки бегут по орбитам вокруг глобуса
+const orbits=[...document.querySelectorAll('.orbit')],sparks=['s1','s2','s3'].map(id=>document.getElementById(id));
+function frame(t){sparks.forEach((s,i)=>{const o=orbits[i],L=o.getTotalLength(),p=o.getPointAtLength(((t/(9000+i*2500))+i*.3)%1*L);
+  const m=o.getCTM(),sv=o.ownerSVGElement.getCTM().inverse(),pt=new DOMPoint(p.x,p.y).matrixTransform(m).matrixTransform(sv);s.setAttribute('cx',pt.x);s.setAttribute('cy',pt.y)});requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+// график скорости
+const pts=[];for(let i=0;i<=48;i++){const x=i/48*330;const y=48-(Math.sin(i/3.2)*4+Math.sin(i/7)*3+i*0.78)+((i*37)%7-3)*0.5;pts.push([x,Math.max(4,Math.min(52,y))])}
+const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+document.getElementById('line').setAttribute('d',d);document.getElementById('area').setAttribute('d',d+' L330 56 L0 56 Z');
+const tip=pts[pts.length-1];document.getElementById('tip').setAttribute('cx',tip[0]);document.getElementById('tip').setAttribute('cy',tip[1]);
+// режимы: подсветка переезжает
+document.querySelectorAll('.mode').forEach(m=>m.onclick=()=>{document.querySelectorAll('.mode').forEach(x=>x.classList.remove('sel'));m.classList.add('sel');
+  document.getElementById('slider').style.transform='translateX('+(m.dataset.i*100)+'%)'});
+// кнопка: выкл → подключение → защищено
+const home=document.getElementById('home'),stEl=document.getElementById('st'),timer=document.getElementById('timer');
+let state='on',started=Date.now()-(12*60+45)*1000,tick;
+function fmt(ms){const s=Math.floor(ms/1000);return [s/3600|0,(s/60|0)%60,s%60].map(v=>String(v).padStart(2,'0')).join(':')}
+function show(){home.classList.toggle('on',state==='on');home.classList.toggle('off',state!=='on');home.classList.toggle('connecting',state==='connecting');
+  stEl.textContent=state==='on'?'Защищено':state==='connecting'?'Подключаемся…':'Не защищено';
+  timer.textContent=state==='on'?fmt(Date.now()-started):state==='connecting'?'· · ·':'Нажмите кнопку, чтобы подключиться'}
+document.getElementById('btn').onclick=()=>{if(state==='on'){state='off';show();return}
+  if(state==='off'){state='connecting';show();setTimeout(()=>{state='on';started=Date.now();show();const f=document.getElementById('flash');f.classList.remove('go');void f.offsetWidth;f.classList.add('go')},1600)}};
+setInterval(()=>{if(state==='on')timer.textContent=fmt(Date.now()-started)},1000);show();
+</script>
+</body>
+</html>
