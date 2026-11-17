@@ -7,6 +7,7 @@
 <style>
 /*FONTS*/
 :root{
+  --earth:url(GLOBE_DATA);
   --bg:#02050f; --text:#ffffff; --soft:#c9d8f5; --dim:#93a6cc;
   --blue:#4f8dff; --ice:#9cc6ff; --deep:#1f4fd6; --line:rgba(91,140,255,.32);
   --glass:linear-gradient(180deg,rgba(22,40,84,.72),rgba(8,16,38,.78));
@@ -40,7 +41,7 @@ body{display:flex;justify-content:center;align-items:flex-start;padding:0;font-f
 /* подписка */
 .sub{position:absolute;top:114px;left:17px;right:17px;height:47px;border-radius:24px;display:flex;align-items:center;padding:0 8px 0 18px;z-index:4;
   background:linear-gradient(180deg,rgba(28,44,86,.55),rgba(10,18,40,.55));border:1px solid rgba(110,160,255,.28);backdrop-filter:blur(6px)}
-.sub svg{flex-shrink:0}.sub span{flex:1;font-size:13px;color:#dbe6fb;margin-left:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pill{flex-shrink:0}
+.sub .ico{flex-shrink:0}.sub > span:not(.ico){flex:1;font-size:13px;color:#dbe6fb;margin-left:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pill{flex-shrink:0}
 .pill{height:31px;padding:0 17px;border-radius:16px;display:grid;place-items:center;font-size:14px;font-weight:600;color:#fff;
   background:linear-gradient(180deg,#4a86ff,#1d4fd8);border:1px solid rgba(170,205,255,.7);box-shadow:0 0 16px rgba(60,120,255,.6),inset 0 1px 0 rgba(255,255,255,.35)}
 
@@ -129,7 +130,7 @@ body{display:flex;justify-content:center;align-items:flex-start;padding:0;font-f
 .pagehead h1{font-size:21px;font-weight:700;margin-left:16px;letter-spacing:.1px}
 .earthtop{position:absolute;top:0;right:-120px;width:420px;height:420px;opacity:.55;pointer-events:none;
   -webkit-mask-image:radial-gradient(circle at 60% 30%,#000 0,#000 30%,transparent 62%);mask-image:radial-gradient(circle at 60% 30%,#000 0,#000 30%,transparent 62%)}
-.earthtop img{width:100%;height:100%}
+.earthtop{background:var(--earth) center/contain no-repeat}
 
 /* ---------- список стран (шторка) ---------- */
 .dim{position:absolute;inset:0;background:rgba(1,4,12,.55);z-index:5;opacity:0;pointer-events:none;transition:opacity .3s}
@@ -217,12 +218,13 @@ body{display:flex;justify-content:center;align-items:flex-start;padding:0;font-f
 .switch button{font:500 13px Inter,sans-serif;color:#cfe0ff;background:#0c1a38;border:1px solid #2c4a80;border-radius:12px;padding:8px 12px;cursor:pointer}
 .switch button.on{background:linear-gradient(180deg,#3d7bff,#1f4fd6);border-color:#9cc2ff;color:#fff}
 .shot .switch{display:none}
+/*SCREENS_CSS*/
 .home-ind{position:absolute;bottom:8px;left:50%;width:134px;height:5px;margin-left:-67px;border-radius:3px;background:rgba(200,215,255,.75);z-index:6}
 </style>
 </head>
 <body>
 <div class="wrap">
-<nav class="switch" id="switch"><button data-go="home" class="on">Главная</button><button data-go="countries">Страны</button><button data-go="tools">Инструменты</button><button data-go="modes">Режимы</button></nav>
+<nav class="switch" id="switch"><button data-go="home" class="on">Главная</button><button data-go="countries">Страны</button><button data-go="tools">Инструменты</button><button data-go="modes">Режимы</button><button data-go="pin">PIN</button><button data-go="chats">Чаты</button><button data-go="talk">Диалог</button><button data-go="welcome">Старт</button></nav>
 <div class="phone">
   <div class="stars" id="stars"></div>
   <div class="floor l"></div><div class="floor r"></div>
@@ -237,14 +239,11 @@ body{display:flex;justify-content:center;align-items:flex-start;padding:0;font-f
       <svg class="mark" viewBox="218 265 820 672"><defs><linearGradient id="mg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eaf5ff"/><stop offset="1" stop-color="#2563ff"/></linearGradient></defs>
         <polygon fill="url(#mg)" points="628,265 1038,937 713,815 683,704 776,741 628,515 480,741 573,704 543,815 218,937"/></svg>
       <div class="brand">Arise</div>
-      <div class="round press" data-go="tools"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#dbe8ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v2.6M12 18.9v2.6M4.6 4.6l1.9 1.9M17.5 17.5l1.9 1.9M2.5 12h2.6M18.9 12h2.6M4.6 19.4l1.9-1.9M17.5 6.5l1.9-1.9"/><circle cx="12" cy="12" r="6.8"/></svg></div>
+      <div class="round press" data-go="tools">{{ico:gear:26}}</div>
     </div>
 
     <div class="sub">
-      <svg width="22" height="20" viewBox="0 0 24 22"><defs><linearGradient id="gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe9a8"/><stop offset="1" stop-color="#e2a631"/></linearGradient></defs>
-        <path fill="url(#gold)" d="M2 6l5 5 5-8 5 8 5-5-2 10H4z"/><rect x="4" y="17.5" width="16" height="2.6" rx="1" fill="url(#gold)"/>
-        <circle cx="2" cy="5.5" r="1.6" fill="#ffe9a8"/><circle cx="12" cy="2.5" r="1.6" fill="#ffe9a8"/><circle cx="22" cy="5.5" r="1.6" fill="#ffe9a8"/></svg>
+      {{ico:crown:24}}
       <span>Подписка до 11.01 · 1 устройство</span>
       <div class="pill press">Продлить</div>
     </div>
@@ -273,9 +272,9 @@ body{display:flex;justify-content:center;align-items:flex-start;padding:0;font-f
     </div>
 
     <div class="tiles">
-      <div class="card tile press"><svg viewBox="0 0 24 24"><defs><linearGradient id="bg1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b5d3ff"/><stop offset="1" stop-color="#4f8dff"/></linearGradient></defs><path fill="url(#bg1)" d="M14 1.5 4.5 14h6.5l-1.5 8.5L19.5 10H13z"/></svg><small>Пинг</small><b><span id="ping">42</span> мс</b></div>
-      <div class="card tile press"><svg viewBox="0 0 24 24" fill="none" stroke="#6fa8ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M6.5 10l5.5 5.5 5.5-5.5M4.5 20.5h15"/></svg><small>Загрузка</small><b><span id="down">85</span> Мбит/с</b></div>
-      <div class="card tile press"><svg viewBox="0 0 24 24" fill="none" stroke="#6fa8ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V9M6.5 14 12 8.5l5.5 5.5M4.5 3.5h15"/></svg><small>Отдача</small><b><span id="up">20</span> Мбит/с</b></div>
+      <div class="card tile press">{{ico:bolt:30}}<small>Пинг</small><b><span id="ping">42</span> мс</b></div>
+      <div class="card tile press">{{ico:down:30}}<small>Загрузка</small><b><span id="down">85</span> Мбит/с</b></div>
+      <div class="card tile press">{{ico:up:30}}<small>Отдача</small><b><span id="up">20</span> Мбит/с</b></div>
     </div>
 
     <div class="card graph">
@@ -286,61 +285,16 @@ body{display:flex;justify-content:center;align-items:flex-start;padding:0;font-f
 
     <div class="card modes">
       <div class="slider" id="slider"></div>
-      <div class="mode sel" data-i="0"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M14 1.5 4.5 14h6.5l-1.5 8.5L19.5 10H13z"/></svg>Баланс</div>
-      <div class="mode" data-i="1"><svg viewBox="0 0 24 24"><path fill="#9bbcff" d="M7 7h10a5 5 0 0 1 4.8 6.4l-1.2 4.2a2.7 2.7 0 0 1-4.5 1.2L14 16.6h-4l-2.1 2.2a2.7 2.7 0 0 1-4.5-1.2l-1.2-4.2A5 5 0 0 1 7 7z"/><path stroke="#0b1630" stroke-width="1.8" stroke-linecap="round" d="M7.5 10.5v4M5.5 12.5h4"/><circle cx="16" cy="11" r="1.1" fill="#0b1630"/><circle cx="18" cy="13.2" r="1.1" fill="#0b1630"/></svg>Игровой</div>
-      <div class="mode" data-i="2"><svg viewBox="0 0 24 24"><g transform="rotate(45 12 12)"><path fill="#9bbcff" d="M12 1c3 2.6 3.2 7.6 2 11.6H10C8.8 8.6 9 3.6 12 1z"/><path fill="#6f9cff" d="M9.6 8.6 6.4 12l.4 2.8 3.4-2.2zM14.4 8.6l3.2 3.4-.4 2.8-3.4-2.2z"/><circle cx="12" cy="6.4" r="1.4" fill="#0b1630"/><path fill="#cfe0ff" d="M10.6 13.4 12 18l1.4-4.6z"/></g></svg>Турбо</div>
+      <div class="mode sel" data-i="0">{{ico:bolt:26}}Баланс</div>
+      <div class="mode" data-i="1">{{ico:gamepad:26}}Игровой</div>
+      <div class="mode" data-i="2">{{ico:rocket:26}}Турбо</div>
     </div>
     <div class="home-ind"></div>
 
-    <div class="dim" id="dim"></div>
-    <div class="sheet" id="sheet">
-      <div class="handle"></div>
-      <div class="sh-head"><div class="circ" style="width:40px;height:40px"><span style="width:22px;height:22px;display:block"><svg viewBox="0 0 24 24" fill="none" stroke="#dbe8ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18M4.5 7.5h15M4.5 16.5h15"/></svg></span></div><h2>Выберите страну</h2>
-        <div class="circ" id="closeSheet"><span style="width:15px;height:15px;display:block"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg></span></div></div>
-      <div class="search"><span style="width:20px;height:20px;display:block"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg></span><input id="q" placeholder="Поиск страны"></div>
-      <div class="label"><span>РЕКОМЕНДУЕМ</span></div>
-      <div class="rec">
-        <div class="card press"><div class="ic"><svg viewBox="0 0 24 24"><defs><linearGradient id="gr1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8f4ff"/><stop offset="1" stop-color="#3d7bff"/></linearGradient></defs><g transform="rotate(45 12 12)"><path fill="url(#gr1)" d="M12 1c3 2.6 3.2 7.6 2 11.6H10C8.8 8.6 9 3.6 12 1z"/><path fill="#3d7bff" d="M9.6 8.6 6.4 12l.4 2.8 3.4-2.2zM14.4 8.6l3.2 3.4-.4 2.8-3.4-2.2z"/><circle cx="12" cy="6.4" r="1.4" fill="#0b1630"/><path fill="#cfe0ff" d="M10.6 13.4 12 18l1.4-4.6z"/></g></svg></div><div class="t"><b>Лучший сервер</b><small>Выбирает самый быстрый сам</small></div><span style="width:14px;height:14px;display:block"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div>
-        <div class="card press"><div class="ic"><svg viewBox="0 0 24 24"><defs><linearGradient id="gr2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8f4ff"/><stop offset="1" stop-color="#3d7bff"/></linearGradient></defs><path fill="url(#gr2)" d="M7 7h10a5 5 0 0 1 4.8 6.4l-1.2 4.2a2.7 2.7 0 0 1-4.5 1.2L14 16.6h-4l-2.1 2.2a2.7 2.7 0 0 1-4.5-1.2l-1.2-4.2A5 5 0 0 1 7 7z"/><path stroke="#0b1630" stroke-width="1.8" stroke-linecap="round" d="M7.5 10.5v4M5.5 12.5h4"/><circle cx="16" cy="11" r="1.1" fill="#0b1630"/><circle cx="18" cy="13.2" r="1.1" fill="#0b1630"/></svg></div><div class="t"><b>Игры</b><small>Напрямую, ровный пинг</small></div><span style="width:14px;height:14px;display:block"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div>
-      </div>
-      <div class="label"><span>ВСЕ СТРАНЫ</span><div class="sortp" id="sort">⇅ По пингу ⌄</div></div>
-      <div class="rows" id="rows"><div class="row press sel" data-name="Польша"><div class="fl">🇵🇱</div><div class="nm">Польша</div><div class="d g"></div><div class="p" style="">42 мс</div><div class="bars"><i></i><i></i><i></i><i></i></div><div class="chk"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div></div><div class="row press" data-name="Германия"><div class="fl">🇩🇪</div><div class="nm">Германия</div><div class="d g"></div><div class="p" style="">61 мс</div><div class="bars"><i></i><i></i><i></i><i></i></div><span style="width:16px;height:16px;display:inline-block"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div><div class="row press" data-name="Нидерланды"><div class="fl">🇳🇱</div><div class="nm">Нидерланды</div><div class="d g"></div><div class="p" style="">75 мс</div><div class="bars"><i></i><i></i><i></i><i></i></div><span style="width:16px;height:16px;display:inline-block"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div><div class="row press" data-name="США"><div class="fl">🇺🇸</div><div class="nm">США</div><div class="d y"></div><div class="p" style="">180 мс</div><div class="bars"><i></i><i></i><i></i><i></i></div><span style="width:16px;height:16px;display:inline-block"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div><div class="row press" data-name="Япония"><div class="fl">🇯🇵</div><div class="nm">Япония</div><div class="d y"></div><div class="p" style="">290 мс</div><div class="bars"><i></i><i></i><i></i><i></i></div><span style="width:16px;height:16px;display:inline-block"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div><div class="row press" data-name="Сингапур"><div class="fl">🇸🇬</div><div class="nm">Сингапур</div><div class="d n"></div><div class="p" style="">…</div><div class="bars grey"><i></i><i></i><i></i><i></i></div><span style="width:16px;height:16px;display:inline-block"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div><div class="row press" data-name="Бразилия"><div class="fl">🇧🇷</div><div class="nm">Бразилия</div><div class="d rd"></div><div class="p" style="color:#ff8a94">нет связи</div><div class="bars grey"><i></i><i></i><i></i><i></i></div><span style="width:16px;height:16px;display:inline-block"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div></div>
-    </div>
+<!--SHEET-->
   </div>
 
-  <div class="view hidden" id="tools">
-    <div class="earthtop"><img src="GLOBE_DATA" alt=""></div>
-    <div class="pagehead"><div class="back" data-go="home"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#dbe8ff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></div><h1>Инструменты</h1></div>
-    <div class="card speed">
-      <div class="gauge"><svg viewBox="0 0 80 80"><defs><linearGradient id="gg" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#1f4fd6"/><stop offset="1" stop-color="#8cc0ff"/></linearGradient></defs><path d="M12 58A32 32 0 1 1 68 58" fill="none" stroke="url(#gg)" stroke-width="7" stroke-linecap="round" style="filter:drop-shadow(0 0 6px #3d7bff)"/><path d="M40 12v6M17 24l4 4M63 24l-4 4M10 42h6M64 42h6" stroke="#4f8dff" stroke-width="2.5" stroke-linecap="round"/><path d="M40 46 55 30" stroke="#8cc0ff" stroke-width="4" stroke-linecap="round"/><circle cx="40" cy="46" r="6" fill="#0b1630" stroke="#8cc0ff" stroke-width="3"/></svg></div>
-      <div class="st"><b>Тест скорости</b><small>Проверьте ваше соединение</small></div>
-      <div class="startbtn press" id="startTest"><svg width="14" height="16" viewBox="0 0 14 16"><path d="M1 1l12 7-12 7z" fill="#fff"/></svg><span>Начать</span></div>
-      <div class="metrics"><div><svg viewBox="0 0 24 24" fill="none" stroke="#6fa8ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M6.5 10l5.5 5.5 5.5-5.5M4.5 20.5h15"/></svg>Загрузка<b id="tD">85 Мбит/с</b></div><div><svg viewBox="0 0 24 24" fill="none" stroke="#6fa8ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V9M6.5 14 12 8.5l5.5 5.5M4.5 3.5h15"/></svg>Отдача<b id="tU">20 Мбит/с</b></div><div><svg viewBox="0 0 24 24" fill="none" stroke="#6fa8ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.3-5.6"/><path d="M4 4v4h4"/><path d="M12 8v4l3 2"/></svg>Пинг<b id="tP">42 мс</b></div></div>
-    </div>
-    <div class="card tool press" style="top:307px;height:50px"><div class="sq"><svg viewBox="0 0 24 24" fill="none" stroke="#6fa8ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5 20 5.5v6.2c0 4.6-3.3 8.3-8 9.8-4.7-1.5-8-5.2-8-9.8V5.5z"/><rect x="9" y="11" width="6" height="5" rx="1" fill="#6fa8ff" stroke="none"/><path d="M10 11V9.6a2 2 0 0 1 4 0V11"/></svg></div><div class="tt"><b>Защита от утечек</b><small>Без VPN интернет блокируется</small></div><div class="act">Настроить<span style="width:12px;height:12px;display:block"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div></div>
-    <div class="card tool press" style="top:364px;height:50px"><div class="sq"><svg viewBox="0 0 24 24" fill="none" stroke="#6fa8ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg></div><div class="tt"><b>Приложения мимо VPN</b><small>Банки, Госуслуги и свои</small></div><span class="val">52</span><span style="width:18px;height:18px;display:block;margin-right:6px"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div>
-    <div class="card tool press" style="top:417px;height:50px"><div class="sq"><svg viewBox="0 0 24 24" fill="none" stroke="#dbe8ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18M4.5 7.5h15M4.5 16.5h15"/></svg></div><div class="tt"><b>DNS</b><small>1.1.1.1 · быстрый и приватный</small></div><span class="val">Cloudflare</span><span style="width:18px;height:18px;display:block;margin-right:6px"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div>
-    <div class="card tool press" style="top:470px;height:50px"><div class="sq"><svg viewBox="0 0 24 24" fill="none" stroke="#6fa8ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.4 6.1a8 8 0 1 0 9.2 0"/><path d="M12 2.8v8.4"/></svg></div><div class="tt"><b>Автоподключение</b><small>При включении телефона</small></div><div class="sw" id="auto"></div></div>
-    <div class="card tool press" style="top:524px;height:56px"><div class="sq"><svg viewBox="0 0 24 24"><defs><linearGradient id="gr3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8f4ff"/><stop offset="1" stop-color="#3d7bff"/></linearGradient></defs><path fill="url(#gr3)" d="M14 1.5 4.5 14h6.5l-1.5 8.5L19.5 10H13z"/></svg></div><div class="tt"><b>Кнопка в шторке</b><small>Включать VPN, не открывая приложение</small></div><div class="act">Добавить<span style="width:12px;height:12px;display:block"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div></div>
-    <div class="card tool press" style="top:586px;height:50px"><div class="sq"><svg viewBox="0 0 24 24"><defs><linearGradient id="gr4" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8f4ff"/><stop offset="1" stop-color="#3d7bff"/></linearGradient></defs><path fill="url(#gr4)" d="M12 2.5c3.9 0 6 2.8 6 6.6v3.4l1.8 3.3H4.2L6 12.5V9.1c0-3.8 2.1-6.6 6-6.6z"/><circle cx="12" cy="19.2" r="1.9" fill="#6fa8ff"/></svg></div><div class="tt"><b>Уведомления</b><small>Разрешены</small></div><div class="act">Настроить<span style="width:12px;height:12px;display:block"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div></div>
-    <div class="card tool press" style="top:639px;height:50px"><div class="sq"><svg viewBox="0 0 24 24" fill="none" stroke="#6fa8ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 0 1-13.7 5.7M4 12a8 8 0 0 1 13.7-5.7"/><path d="M18 2.5v4.2h-4.2M6 21.5v-4.2h4.2"/></svg></div><div class="tt"><b>Обновление приложения</b><small>Сейчас 0.1.49</small></div><div class="act">Проверить<span style="width:12px;height:12px;display:block"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div></div>
-    <div class="card tool press" style="top:690px;height:50px"><div class="sq"><svg viewBox="0 0 24 22"><defs><linearGradient id="gold2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe9a8"/><stop offset="1" stop-color="#e2a631"/></linearGradient></defs><path fill="url(#gold2)" d="M2 6l5 5 5-8 5 8 5-5-2 10H4z"/><rect x="4" y="17.5" width="16" height="2.6" rx="1" fill="url(#gold2)"/></svg></div><div class="tt"><b>Обновить подписку</b><small>Страны и срок — с сервера</small></div><span style="width:18px;height:18px;display:block;margin-right:6px"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div>
-    <div class="card tool press" style="top:744px;height:50px"><div class="sq"><svg viewBox="0 0 24 24" fill="none" stroke="#6fa8ff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h15M15 4l4 4-4 4M20 16H5M9 12l-4 4 4 4"/></svg></div><div class="tt"><b>Сменить подписку</b><small>Удалить эту и добавить другую</small></div><span style="width:18px;height:18px;display:block;margin-right:6px"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div>
-    <div class="foot">Arise VPN 0.1.49</div>
-  </div>
-  <div class="view hidden" id="modes">
-    <div class="earthtop"><img src="GLOBE_DATA" alt=""></div>
-    <div class="pagehead"><div class="back" data-go="home"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#dbe8ff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></div><h1>Режим соединения</h1></div>
-    <div class="lead">Каждый режим по-настоящему меняет настройки VPN. Чем-то всегда жертвуем — честно пишем, чем.</div>
-    <div id="mlist">
-    <div class="card mcard press sel" data-m="0" style="top:166px;height:129px"><div class="big"><svg viewBox="0 0 24 24"><defs><linearGradient id="gr3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8f4ff"/><stop offset="1" stop-color="#3d7bff"/></linearGradient></defs><path fill="url(#gr3)" d="M14 1.5 4.5 14h6.5l-1.5 8.5L19.5 10H13z"/></svg></div><div class="mt"><b>Баланс</b><span class="badge">★ Рекомендуем</span><p>Оптимальное сочетание скорости<br>и стабильности.</p><div class="split"><div><i style="background:#2fcf5a">+</i>Стабильно<br>и быстро</div><div><i style="background:#f5a03b">−</i>Не максимум<br>скорости</div></div></div><div class="mchk"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div></div>
-    <div class="card mcard press" data-m="1" style="top:307px;height:92px"><div class="big"><svg viewBox="0 0 24 24"><defs><linearGradient id="gr2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8f4ff"/><stop offset="1" stop-color="#3d7bff"/></linearGradient></defs><path fill="url(#gr2)" d="M7 7h10a5 5 0 0 1 4.8 6.4l-1.2 4.2a2.7 2.7 0 0 1-4.5 1.2L14 16.6h-4l-2.1 2.2a2.7 2.7 0 0 1-4.5-1.2l-1.2-4.2A5 5 0 0 1 7 7z"/><path stroke="#0b1630" stroke-width="1.8" stroke-linecap="round" d="M7.5 10.5v4M5.5 12.5h4"/><circle cx="16" cy="11" r="1.1" fill="#0b1630"/><circle cx="18" cy="13.2" r="1.1" fill="#0b1630"/></svg></div><div class="mt"><b>Игровой</b><p>Ровный пинг без скачков.</p><div class="chips"><div class="chip plus"><i>+</i>Меньше лагов</div><div class="chip minus"><i>−</i>До 30 Мбит/с</div></div></div><div class="mchev"><span style="width:18px;height:18px;display:block"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div></div>
-    <div class="card mcard press" data-m="2" style="top:411px;height:98px"><div class="big"><svg viewBox="0 0 24 24"><defs><linearGradient id="gr1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8f4ff"/><stop offset="1" stop-color="#3d7bff"/></linearGradient></defs><g transform="rotate(45 12 12)"><path fill="url(#gr1)" d="M12 1c3 2.6 3.2 7.6 2 11.6H10C8.8 8.6 9 3.6 12 1z"/><path fill="#3d7bff" d="M9.6 8.6 6.4 12l.4 2.8 3.4-2.2zM14.4 8.6l3.2 3.4-.4 2.8-3.4-2.2z"/><circle cx="12" cy="6.4" r="1.4" fill="#0b1630"/><path fill="#cfe0ff" d="M10.6 13.4 12 18l1.4-4.6z"/></g></svg></div><div class="mt"><b>Турбо</b><p>Максимум скорости для фильмов<br>и загрузок.</p><div class="chips"><div class="chip plus"><i>+</i>До 500 Мбит/с</div><div class="chip minus"><i>−</i>Пинг может прыгать</div></div></div><div class="mchev"><span style="width:18px;height:18px;display:block"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div></div>
-    <div class="card mcard press" data-m="3" style="top:521px;height:98px"><div class="big"><svg viewBox="0 0 24 24"><defs><linearGradient id="gr5" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8f4ff"/><stop offset="1" stop-color="#3d7bff"/></linearGradient></defs><path fill="url(#gr5)" d="M7.5 10 8.7 4h6.6l1.2 6z"/><ellipse cx="12" cy="10.6" rx="10" ry="1.9" fill="url(#gr5)"/><circle cx="8" cy="16.2" r="3" fill="url(#gr5)"/><circle cx="16" cy="16.2" r="3" fill="url(#gr5)"/><path d="M11 16h2" stroke="#6fa8ff" stroke-width="1.6"/></svg></div><div class="mt"><b>Невидимка</b><p>Весь трафик через VPN, даже<br>российские сайты.</p><div class="chips"><div class="chip plus"><i>+</i>Макс. приватность</div><div class="chip minus"><i>−</i>Банки могут сбоить</div></div></div><div class="mchev"><span style="width:18px;height:18px;display:block"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div></div>
-    <div class="card mcard press" data-m="4" style="top:634px;height:90px"><div class="big"><svg viewBox="0 0 24 24"><defs><linearGradient id="gr6" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8f4ff"/><stop offset="1" stop-color="#3d7bff"/></linearGradient></defs><rect x="6" y="4" width="10" height="17" rx="2.2" fill="none" stroke="#6fa8ff" stroke-width="2"/><rect x="9" y="2" width="4" height="2" rx=".6" fill="#6fa8ff"/><rect x="8.3" y="13.5" width="5.4" height="5.4" rx="1" fill="url(#gr6)"/><rect x="8.3" y="8" width="5.4" height="4.2" rx="1" fill="url(#gr6)"/><path fill="url(#gr6)" d="M14.5 21c0-4.5 2.8-7.2 7.5-7.5-.2 4.6-2.8 7.4-7.5 7.5z"/></svg></div><div class="mt"><b>Эконом</b><p>Реже фоновые проверки.</p><div class="chips"><div class="chip plus"><i>+</i>Батарея и трафик</div><div class="chip minus"><i>−</i>Медленнее</div></div></div><div class="mchev"><span style="width:18px;height:18px;display:block"><svg viewBox="0 0 24 24" fill="none" stroke="#8fb5ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></div></div>
-    </div>
-    <div class="card info"><span style="width:24px;height:24px;display:block;flex-shrink:0"><svg viewBox="0 0 24 24" fill="none" stroke="#6fa8ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><circle cx="12" cy="7.6" r=".6" fill="#6fa8ff"/></svg></span>Выбранный режим можно изменить<br>в любое время</div>
-  </div>
+<!--VIEWS-->
 </div>
 <script>
 // звёзды
@@ -366,7 +320,7 @@ document.getElementById('btn').onclick=()=>{if(state==='on'){state='off';show();
   if(state==='off'){state='connecting';show();setTimeout(()=>{state='on';started=Date.now();show();const f=document.getElementById('flash');f.classList.remove('go');void f.offsetWidth;f.classList.add('go')},1600)}};
 
 // ---------- навигация между экранами ----------
-const views={home:document.getElementById('home'),tools:document.getElementById('tools'),modes:document.getElementById('modes')};
+const views={};['home','tools','modes','pin','chats','talk','welcome'].forEach(k=>views[k]=document.getElementById(k));
 function go(v){
   document.querySelectorAll('#switch button').forEach(b=>b.classList.toggle('on',b.dataset.go===v));
   const phone=document.querySelector('.phone');
@@ -388,6 +342,7 @@ document.querySelectorAll('.mcard').forEach(c=>c.onclick=()=>{document.querySele
 document.getElementById('auto').onclick=e=>e.target.classList.toggle('offs');
 document.getElementById('startTest').onclick=()=>{const b=document.getElementById('startTest').querySelector('span');b.textContent='Проверяю…';
   let n=0;const t=setInterval(()=>{n++;document.getElementById('tD').textContent=(40+Math.random()*60).toFixed(1)+' Мбит/с';if(n>14){clearInterval(t);b.textContent='Начать'}},120)};
+//SCREENS_JS
 if(location.hash)go(location.hash.slice(1));
 
 setInterval(()=>{if(state==='on')timer.textContent=fmt(Date.now()-started)},1000);show();

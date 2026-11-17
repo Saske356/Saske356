@@ -2,8 +2,12 @@
 
 python3 design/mock/build.py  →  design/mock/arise-mock.html
 """
-import base64, os
+import base64, os, re, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "icons"))
+import icons  # noqa: E402
+import screens  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(HERE))
 FONT = os.path.join(ROOT, "arise-app/app/src/main/res/font")
 
@@ -18,7 +22,20 @@ fonts = "".join(
     for n, w in (("regular", 400), ("medium", 500), ("semibold", 600), ("bold", 700))
 )
 html = open(os.path.join(HERE, "mock.template.html"), encoding="utf-8").read()
+html = (html.replace("<!--SHEET-->", screens.sheet()).replace("<!--VIEWS-->", screens.views())
+        .replace("/*SCREENS_CSS*/", screens.CSS).replace("//SCREENS_JS", screens.JS))
+_n = [0]
+
+
+def _ico(m):
+    _n[0] += 1
+    name, px = m.group(1), m.group(2)
+    return f'<span class="ico" style="width:{px}px;height:{px}px">{icons.svg(name, "_" + str(_n[0]))}</span>'
+
+
+html = re.sub(r"\{\{ico:(\w+):(\d+)\}\}", _ico, html)
 html = (html.replace("/*FONTS*/", fonts)
+        .replace("PHOTO_DATA", "data:image/jpeg;base64," + b64(os.path.join(HERE, "chat_photo.jpg")))
         .replace("GLOBE_DATA", "data:image/webp;base64," + b64(os.path.join(HERE, os.environ.get("GLOBE", "globe_gpt.webp"))))
         .replace("RING_DATA", "data:image/webp;base64," + b64(os.path.join(HERE, "ring_gpt.webp"))))
 with open(os.path.join(HERE, "arise-mock.html"), "w", encoding="utf-8") as f:
