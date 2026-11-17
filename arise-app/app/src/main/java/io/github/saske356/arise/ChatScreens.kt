@@ -98,7 +98,15 @@ fun ChatRoot(back: () -> Unit) {
         onDispose { owner.lifecycle.removeObserver(obs) }
     }
     if (!ui.unlocked) {
-        PinScreen(back)
+        // Сначала выбираем хранилище этой подписки (номер от сервера), потом спрашиваем PIN
+        var ready by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            Chat.prepare()
+            ready = true
+        }
+        if (ready) PinScreen(back) else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("🔒", fontSize = 38.sp)
+        }
         return
     }
     var page by remember { mutableStateOf<ChatPage>(ChatPage.Home) }
@@ -122,7 +130,10 @@ private const val PIN_LEN = 6
 @Composable
 private fun PinScreen(back: () -> Unit) {
     val scope = rememberCoroutineScope()
-    val first = !ChatVault.exists()
+    // Нет хранилища, но есть переписка под прежней ссылкой — спрашиваем её PIN, а не новый
+    val orphan = !ChatVault.exists() && ChatVault.hasOrphans()
+    var startNew by remember { mutableStateOf(false) }
+    val first = !ChatVault.exists() && (!orphan || startNew)
     var pin by remember { mutableStateOf("") }
     var firstPin by remember { mutableStateOf("") }
     var msg by remember { mutableStateOf("") }
@@ -202,6 +213,10 @@ private fun PinScreen(back: () -> Unit) {
         }
         if (!first) Text("После ${ChatVault.MAX_FAILS} неверных попыток переписка стирается",
             color = TextDim, fontSize = 12.sp, modifier = Modifier.padding(top = 22.dp))
+        if (orphan && !startNew) Text(
+            "Забыли PIN? Начать новый чат", color = Blue, fontSize = 13.sp,
+            modifier = Modifier.padding(top = 12.dp).clickable { startNew = true; pin = ""; msg = "" }
+        )
     }
 }
 

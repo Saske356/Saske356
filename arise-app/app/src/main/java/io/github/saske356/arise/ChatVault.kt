@@ -57,16 +57,58 @@ object ChatVault {
         }
     }
 
-    /** Отпечаток текущей подписки: по нему у каждой подписки свои файлы, ключ и счётчик. */
-    fun space(): String {
+    /** Отпечаток ссылки подписки — так хранилища назывались до постоянных номеров (и сейчас, пока
+     *  сервер не ответил). */
+    private fun urlHash(): String {
         val sub = Store.subUrl.trim().substringBefore('?').trimEnd('/')
         val h = java.security.MessageDigest.getInstance("SHA-256").digest(sub.toByteArray())
         return h.take(8).joinToString("") { "%02x".format(it) }
     }
 
-    private val dir: File get() = File(root, space()).also { it.mkdirs() }
-    private val alias: String get() = ALIAS + "_" + space()
-    private val failsKey: String get() = "fails_" + space()
+    /** Папка хранилища текущей подписки (выбирает bind). */
+    @Volatile
+    private var current: String = ""
+
+    private fun name(): String = current.ifEmpty {
+        prefs.getString("url_" + urlHash(), null)?.let { prefs.getString("dir_$it", null) } ?: urlHash()
+    }
+
+    /**
+     * Привязать хранилище к постоянному номеру подписки от сервера (не меняется при «Сбросить все»,
+     * когда меняется ссылка). Номера нет (нет связи) — берём последний известный для этой ссылки.
+     */
+    fun bind(serverSpace: String?) {
+        if (!serverSpace.isNullOrEmpty()) prefs.edit().putString("url_" + urlHash(), serverSpace).apply()
+        val sp = serverSpace?.ifEmpty { null } ?: prefs.getString("url_" + urlHash(), null)
+        if (sp == null) {
+            current = urlHash()
+            return
+        }
+        val mapped = prefs.getString("dir_$sp", null)
+        current = when {
+            mapped != null -> mapped
+            File(File(root, urlHash()), Slot.REAL.file + ".key").exists() -> urlHash()  // хранилище до обновления
+            else -> sp
+        }
+        prefs.edit().putString("dir_$sp", current).apply()
+    }
+
+    fun space(): String = name()
+
+    /** Хранилища, которые не принадлежат ни одной известной подписке (остались после смены ссылки
+     *  в старой версии). Открыть такое можно только его PIN — тогда оно переходит к этой подписке. */
+    private fun orphans(): List<String> {
+        val owned = prefs.all.filterKeys { it.startsWith("dir_") }.values.map { it.toString() }.toSet()
+        return root.listFiles().orEmpty()
+            .filter { it.isDirectory && it.name != name() && it.name !in owned && File(it, Slot.REAL.file + ".key").exists() }
+            .map { it.name }
+    }
+
+    fun hasOrphans(): Boolean = !exists() && orphans().isNotEmpty()
+
+    private val dir: File get() = File(root, name()).also { it.mkdirs() }
+    private val alias: String get() = ALIAS + "_" + name()
+    private val failsKey: String get() = "fails_" + name()
 
     private fun keyFile(s: Slot) = File(dir, s.file + ".key")
     private fun dataFile(s: Slot) = File(dir, s.file + ".dat")
@@ -169,7 +211,21 @@ object ChatVault {
 
     /** Ввод PIN: настоящий открывает переписку, ложный — пустую, неверный считается. */
     fun unlock(pin: String): Unlock {
-        val opened = tryOpen(Slot.REAL, pin) ?: tryOpen(Slot.DECOY, pin)
+        var opened = tryOpen(Slot.REAL, pin) ?: tryOpen(Slot.DECOY, pin)
+        if (opened == null && !exists()) {
+            // У этой подписки ещё нет хранилища: может, это её переписка под старой ссылкой
+            val mine = current
+            val sp = prefs.getString("url_" + urlHash(), null)
+            for (o in orphans()) {
+                current = o
+                opened = tryOpen(Slot.REAL, pin) ?: tryOpen(Slot.DECOY, pin)
+                if (opened != null) {
+                    if (sp != null) prefs.edit().putString("dir_$sp", o).apply()  // теперь она этой подписки
+                    break
+                }
+            }
+            if (opened == null) current = mine
+        }
         if (opened != null) {
             prefs.edit().putInt(failsKey, 0).apply()
             return Unlock.Ok(opened)
@@ -177,6 +233,13 @@ object ChatVault {
         val n = fails + 1
         prefs.edit().putInt(failsKey, n).apply()
         if (n >= MAX_FAILS) {
+            // и бесхозные хранилища: иначе их PIN можно было бы перебирать бесконечно
+            for (o in orphans()) {
+                val mine = current
+                current = o
+                wipe()
+                current = mine
+            }
             wipe()
             return Unlock.Wiped
         }

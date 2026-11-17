@@ -451,7 +451,16 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
             await w.drain()
             data = await r.read(); w.close()
             return json.loads(data.partition(b"\r\n\r\n")[2])
-        self.assertEqual((await get_dev(path + "/chat/status", "dev1"))["code"], ans["code"])
+        st1 = await get_dev(path + "/chat/status", "dev1")
+        self.assertEqual(st1["code"], ans["code"])
+        self.assertEqual(len(st1["space"]), 16, "постоянный номер подписки для чата")
+        # «Сбросить все»: ссылка новая, а номер для чата и сам код те же — переписка не пропадает
+        from urllib.parse import urlparse
+        new_path = urlparse(await self.v.reset_key(1)).path
+        st2 = await get_dev(new_path + "/chat/status", "dev1")
+        self.assertEqual((st2["space"], st2["code"]), (st1["space"], st1["code"]))
+        self.assertIn(b"404", (await get(path + "/chat/status", "x"))[0], "старая ссылка больше не пускает")
+        path = new_path
         self.assertEqual((await get_dev(path + "/chat/key?code=ZZZZZZZZZ", "dev1"))["status"], 404,
                          "«нет кода» не считается перебором ссылок")
         async def status_profile(prof):

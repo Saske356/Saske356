@@ -340,13 +340,17 @@ class XrayProvider(VpnProvider):
     def sub_token(self, user_id: int) -> str:
         return hmac.new(self.state["secret"].encode(), self._kid(user_id).encode(), hashlib.sha256).hexdigest()[:24]
 
+    def chat_space(self, user_id: int) -> str:
+        return hmac.new(self.state["secret"].encode(), f"chat-space:{user_id}".encode(), hashlib.sha256).hexdigest()[:16]
+
     async def reset_key(self, user_id: int) -> str:
         """Новые ссылка и пароли подписки: все подключённые устройства отключаются, и подключиться
         снова можно только по новой ссылке. Возвращает новую ссылку."""
         gens = self.state.setdefault("gen", {})
         gens[str(user_id)] = int(gens.get(str(user_id), 0)) + 1
         self.state.get("hwids", {}).pop(str(user_id), None)  # все устройства — заново
-        self.chat.drop(user_id)  # и коды чата: ссылку могли украсть
+        # Коды чата не трогаем: со старой ссылкой чужое устройство всё равно не войдёт, а владелец
+        # сохраняет код и переписку (раньше после «Сбросить все» чаты пропадали).
         self._short = {}
         self._hy2_nets.pop(user_id, None)
         self._save()
@@ -1699,6 +1703,10 @@ class XrayProvider(VpnProvider):
                     prof = dev.get("x-chat-profile", "")
                     who = hwid + ("#" + prof if prof.isdigit() and prof != "0" and len(prof) == 1 else "")
                     code, answer = self.chat.handle(uid, chat, parts[0], parse_qs(query), body_in, who)
+                    if chat == "status" and code == 200:
+                        # Постоянный номер подписки для чата: не меняется при смене ссылки
+                        # («Сбросить все»), по нему приложение находит своё хранилище переписки
+                        answer["space"] = self.chat_space(uid)
                 status = {200: "200 OK", 400: "400 Bad Request", 403: "403 Forbidden", 404: "404 Not Found",
                           409: "409 Conflict", 429: "429 Too Many Requests", 507: "507 Insufficient Storage"
                           }.get(code, f"{code} Error")

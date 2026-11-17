@@ -112,6 +112,21 @@ object Chat {
 
     // ---------- вход ----------
 
+    /**
+     * Перед экраном PIN: узнать у сервера постоянный номер подписки для чата и выбрать по нему
+     * хранилище (после «Сбросить все» ссылка новая, а переписка та же). Нет связи — последний известный.
+     */
+    suspend fun prepare() {
+        val sp = try {
+            kotlinx.coroutines.withTimeoutOrNull(6_000) {
+                kotlinx.coroutines.withContext(Dispatchers.IO) { request("status").optString("space") }
+            }
+        } catch (e: Exception) {
+            null
+        }
+        ChatVault.bind(sp)
+    }
+
     /** Первый вход: создать хранилище под PIN и новые ключи устройства. */
     fun setup(pin: String) = scope.launch {
         lock.withLock {
