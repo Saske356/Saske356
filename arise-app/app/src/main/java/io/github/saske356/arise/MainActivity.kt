@@ -1,5 +1,7 @@
 package io.github.saske356.arise
 
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.graphics.drawscope.rotate
 import android.Manifest
 import android.app.StatusBarManager
 import android.content.ClipboardManager
@@ -581,30 +583,71 @@ private fun Welcome(data: Data, onOpen: (String) -> Unit) {
             .padding(horizontal = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(Modifier.height(28.dp))
-        AriseMark(96.dp)
-        Text("Arise VPN", color = TextMain, fontSize = 38.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 14.dp))
-        Text("Быстрый и приватный интернет без границ", color = Blue, fontSize = 15.5.sp, textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 4.dp))
-        Globe(Modifier.size(360.dp), on = true, fadeBottom = false)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+        Spacer(Modifier.height(30.dp))
+        // знак с орбитой (.wmark): эллипс повёрнут на −14°, знак светится
+        Box(Modifier.size(180.dp, 130.dp), contentAlignment = Alignment.TopCenter) {
+            Canvas(Modifier.size(220.dp, 120.dp).offset(y = 22.dp)) {
+                rotate(-14f) {
+                    val k = size.width / 220f
+                    drawOval(Color(0x553D7BFF), Offset(6f * k, 30f * k), Size(208f * k, 60f * k), style = Stroke(10f * k))
+                    drawOval(Color(0xFF6FA8FF), Offset(6f * k, 30f * k), Size(208f * k, 60f * k), style = Stroke(4f * k))
+                }
+            }
+            Box(Modifier.padding(top = 8.dp)) { AriseMark(104.dp) }
+        }
+        Text(
+            "Arise VPN", fontSize = 44.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 2.dp),
+            style = androidx.compose.ui.text.TextStyle(
+                brush = Brush.verticalGradient(listOf(Color.White, Color(0xFF9FC3FF))),
+                shadow = androidx.compose.ui.graphics.Shadow(Color(0x993C78FF), Offset.Zero, 28f)
+            )
+        )
+        Text("Быстрый и приватный интернет без границ", color = Color(0xFF9CC2FF), fontSize = 16.sp, textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 2.dp))
+        Globe(Modifier.size(320.dp).offset(y = (-6).dp), on = true, fadeBottom = false)
+        Row(Modifier.fillMaxWidth().offset(y = (-14).dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
             Feature(Ico.BOLT, "Высокая\nскорость")
-            Feature(null, "Без логов")
+            Box(Modifier.padding(top = 6.dp).width(1.dp).height(70.dp).background(Color(0x4D8CB9FF)))
+            Feature(Ico.SHIELD, "Без логов")
+            Box(Modifier.padding(top = 6.dp).width(1.dp).height(70.dp).background(Color(0x4D8CB9FF)))
             Feature(Ico.GLOBE, "Десятки\nстран")
         }
-        Spacer(Modifier.height(24.dp))
-        Big("Попробовать бесплатно  ›", gold = true) { onOpen("https://t.me/$BOT?start=trial") }
+        Spacer(Modifier.height(4.dp))
+        // главная кнопка (.wbtn): 54 dp, синяя со свечением, «›» справа
+        Row(
+            Modifier.fillMaxWidth().height(54.dp)
+                .pressable { onOpen("https://t.me/$BOT?start=trial") }
+                .neon(27.dp, spread = 18.dp, alpha = 1f)
+                .clip(RoundedCornerShape(27.dp))
+                .background(Brush.verticalGradient(listOf(Color(0xFF4A86FF), Color(0xFF1D4FD8))))
+                .border(1.5.dp, Color(0xE6C8E1FF), RoundedCornerShape(27.dp)),
+            horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Попробовать бесплатно", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            Text("›", color = Color(0xFFCFE2FF), fontSize = 26.sp, modifier = Modifier.padding(start = 12.dp, bottom = 3.dp))
+        }
         Spacer(Modifier.height(12.dp))
-        Big(if (data.loading) "Загружаю…" else "🔗  Вставить ссылку подписки", gold = false) {
-            val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            val clip = cm.primaryClip?.getItemAt(0)?.coerceToText(ctx)?.toString()?.trim() ?: ""
-            if (clip.startsWith("http")) {
-                link = clip
-                Repo.refresh(clip)
-            } else {
-                manual = true
-                Toast.makeText(ctx, "Скопируйте ссылку подписки в боте или вставьте её ниже", Toast.LENGTH_LONG).show()
-            }
+        // вторая кнопка (.wbtn2): 50 dp, тёмное стекло, скрепка
+        Row(
+            Modifier.fillMaxWidth().height(50.dp)
+                .pressable(enabled = !data.loading) {
+                    val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val clip = cm.primaryClip?.getItemAt(0)?.coerceToText(ctx)?.toString()?.trim() ?: ""
+                    if (clip.startsWith("http")) {
+                        link = clip
+                        Repo.refresh(clip)
+                    } else {
+                        manual = true
+                        Toast.makeText(ctx, "Скопируйте ссылку подписки в боте или вставьте её ниже", Toast.LENGTH_LONG).show()
+                    }
+                }
+                .clip(RoundedCornerShape(25.dp))
+                .background(Color(0x990A142E)).border(1.dp, Color(0x8C8CB9FF), RoundedCornerShape(25.dp)),
+            horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
+        ) {
+            LineIcon(Ico.CLIP, 22.dp, BlueLight)
+            Text(if (data.loading) "Загружаю…" else "Вставить ссылку подписки", color = TextMain, fontSize = 16.sp,
+                modifier = Modifier.padding(start = 12.dp))
         }
         if (manual) {
             Field(link, "Ссылка подписки", Modifier.padding(top = 12.dp)) { link = it }
@@ -615,28 +658,23 @@ private fun Welcome(data: Data, onOpen: (String) -> Unit) {
             }
         }
         if (data.error.isNotEmpty()) Text(data.error, color = Red, fontSize = 13.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 12.dp))
-        Row(
-            Modifier.padding(top = 20.dp).clip(RoundedCornerShape(14.dp)).clickable { onOpen("https://t.me/$BOT") }
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(Modifier.size(34.dp).clip(CircleShape).glass(17.dp), contentAlignment = Alignment.Center) {
-                LineIcon(Ico.SEND, 18.dp, BlueLight)
-            }
-            Text("Подписку можно купить в Telegram-боте @$BOT", color = TextSoft, fontSize = 13.sp,
-                modifier = Modifier.padding(start = 10.dp))
-        }
+        Text("Подписку можно купить в Telegram-боте @$BOT", color = TextDim, fontSize = 11.5.sp, textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 12.dp).clip(RoundedCornerShape(10.dp)).clickable { onOpen("https://t.me/$BOT") }
+                .padding(horizontal = 8.dp, vertical = 6.dp))
         Spacer(Modifier.height(24.dp))
     }
 }
 
 @Composable
-private fun Feature(ico: Ico?, text: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(100.dp)) {
-        Box(Modifier.size(56.dp).glass(18.dp), contentAlignment = Alignment.Center) {
-            LineIcon(ico ?: Ico.SHIELD, 40.dp, Blue)
-        }
-        Text(text, color = TextMain, fontSize = 14.sp, textAlign = TextAlign.Center, lineHeight = 18.sp,
+private fun Feature(ico: Ico, text: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(104.dp)) {
+        Box(
+            Modifier.size(58.dp).neon(18.dp, color = Color(0xFF2F6BFF), spread = 10.dp, alpha = 0.6f).clip(RoundedCornerShape(18.dp))
+                .background(Brush.radialGradient(listOf(Color(0x733C78FF), Color(0xB30A142E))))
+                .border(1.dp, Color(0x8C8CB9FF), RoundedCornerShape(18.dp)),
+            contentAlignment = Alignment.Center
+        ) { LineIcon(ico, 32.dp, Blue) }
+        Text(text, color = TextMain, fontSize = 14.sp, textAlign = TextAlign.Center, lineHeight = 17.5.sp,
             modifier = Modifier.padding(top = 8.dp))
     }
 }
@@ -664,13 +702,13 @@ internal fun Big(text: String, gold: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(50)
     val m = Modifier.fillMaxWidth()
         .pressable(onClick = onClick)
-        .then(if (gold) Modifier.shadow(14.dp, shape, ambientColor = BlueMid, spotColor = BlueMid) else Modifier)
+        .then(if (gold) Modifier.neon(27.dp, spread = 16.dp, alpha = 0.9f) else Modifier)
         .clip(shape)
     Text(
         text, color = if (gold) Color.White else TextMain, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
-        modifier = (if (gold) m.background(Brush.verticalGradient(listOf(Color(0xFF3D7BFF), Color(0xFF1F4FD6))))
-            .border(1.dp, Color(0xAA9CC2FF), shape)
-        else m.background(Color(0x1A223A6E)).border(1.dp, Blue.copy(alpha = 0.45f), shape))
+        modifier = (if (gold) m.background(Brush.verticalGradient(listOf(Color(0xFF4A86FF), Color(0xFF1D4FD8))))
+            .border(1.5.dp, Color(0xE6C8E1FF), shape)
+        else m.background(Color(0x990A142E)).border(1.dp, Color(0x8C8CB9FF), shape))
             .padding(vertical = 16.dp)
     )
 }

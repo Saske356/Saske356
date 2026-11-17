@@ -224,6 +224,7 @@ private val TWINKLES = listOf(0.74f to 0.07f, 0.09f to 0.41f, 0.91f to 0.55f, 0.
 internal enum class Ico {
     BOLT, DOWN, UP, GEAR, CHEVRON, CHECK, SEARCH, GLOBE, CLOSE, BACK, CLOCK,
     ROCKET, GAMEPAD, CROWN, SHIELD, LOCK, APPS, POWER, BELL, REFRESH, SWAP, CLIP, SEND, HAT, BATTERY, INFO,
+    BACKSPACE, SHARE, BUBBLE,
 }
 
 /** Эмодзи из старого кода → свой значок (если есть). */
@@ -289,6 +290,9 @@ private fun gptIcon(ico: Ico): Int? = when (ico) {
     Ico.GEAR -> R.drawable.ic_gpt_gear
     Ico.SEARCH -> R.drawable.ic_gpt_search
     Ico.GLOBE -> R.drawable.ic_gpt_globe
+    Ico.BACKSPACE -> R.drawable.ic_gpt_backspace
+    Ico.SHARE -> R.drawable.ic_gpt_share
+    Ico.BUBBLE -> R.drawable.ic_gpt_bubble
     else -> null
 }
 
@@ -444,6 +448,18 @@ private fun DrawScope.drawIco(ico: Ico, color: Color) {
             drawCircle(color, s * 0.40f, center, style = st)
             drawCircle(color, s * 0.05f, p(0.5f, 0.31f))
             line(listOf(p(0.5f, 0.45f), p(0.5f, 0.72f)))
+        }
+        Ico.BACKSPACE -> {
+            line(listOf(p(0.30f, 0.22f), p(0.88f, 0.22f), p(0.88f, 0.78f), p(0.30f, 0.78f), p(0.08f, 0.5f), p(0.30f, 0.22f)))
+            line(listOf(p(0.46f, 0.38f), p(0.70f, 0.62f))); line(listOf(p(0.70f, 0.38f), p(0.46f, 0.62f)))
+        }
+        Ico.SHARE -> {
+            line(listOf(p(0.72f, 0.22f), p(0.28f, 0.5f), p(0.72f, 0.78f)))
+            for ((x, y) in listOf(0.72f to 0.22f, 0.28f to 0.5f, 0.72f to 0.78f)) drawCircle(color, 0.12f * s, p(x, y))
+        }
+        Ico.BUBBLE -> {
+            drawRoundRect(color, Offset(0.10f * s, 0.16f * s), Size(0.80f * s, 0.56f * s), androidx.compose.ui.geometry.CornerRadius(0.2f * s), style = st)
+            line(listOf(p(0.30f, 0.72f), p(0.26f, 0.90f), p(0.48f, 0.72f)))
         }
         Ico.GEAR -> {
             val r1 = s * 0.27f

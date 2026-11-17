@@ -1,5 +1,13 @@
 package io.github.saske356.arise
 
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -158,8 +166,8 @@ private fun PinScreen(back: () -> Unit) {
         else -> "Повторите PIN"
     }
     val lead = when {
-        !first -> "Введите PIN. Без него переписку не открыть, даже если телефон в чужих руках."
-        firstPin.isEmpty() -> "6 цифр. Его не знает никто, даже мы: забудете — переписку не восстановить."
+        !first -> "Без PIN переписку не открыть,\nдаже если телефон в чужих руках."
+        firstPin.isEmpty() -> "6 цифр. Его не знает никто, даже мы:\nзабудете — переписку не восстановить."
         else -> "Введите тот же PIN ещё раз."
     }
     fun done(entered: String) {
@@ -180,78 +188,96 @@ private fun PinScreen(back: () -> Unit) {
             busy = false
         }
     }
+    Box(Modifier.fillMaxSize()) {
+    EarthTop()
     Column(
         Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Row(Modifier.fillMaxWidth().padding(top = 14.dp)) { BackBtn(back) }
-        Spacer(Modifier.height(36.dp))
+        Row(Modifier.fillMaxWidth().padding(top = 12.dp).offset(x = (-7).dp)) { BackBtn(back) }
+        Spacer(Modifier.height(26.dp))
+        // замок в светящемся круге (.lockbadge)
         Box(
-            Modifier.size(104.dp).clip(CircleShape)
-                .background(Brush.radialGradient(listOf(Color(0x882F6BFF), Color(0x220E1A36))))
-                .border(1.5.dp, Blue.copy(alpha = 0.6f), CircleShape),
+            Modifier.size(100.dp).neon(50.dp, color = Color(0xFF2F6BFF), spread = 22.dp, alpha = 0.9f).clip(CircleShape)
+                .background(Brush.radialGradient(listOf(Color(0x803C78FF), Color(0xB30A142E))))
+                .border(1.5.dp, Color(0x998CB9FF), CircleShape),
             contentAlignment = Alignment.Center
-        ) { LineIcon(Ico.LOCK, 54.dp, Blue) }
-        Text(title, color = TextMain, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 24.dp))
-        Text(lead, color = TextSoft, fontSize = 13.5.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp, start = 16.dp, end = 16.dp))
+        ) { LineIcon(Ico.LOCK, 56.dp, Blue) }
+        Text(if (first) title else "Введите PIN", color = TextMain, fontSize = 27.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(top = 18.dp))
         // неверный PIN — ряд точек трясётся
         val shake = remember { androidx.compose.animation.core.Animatable(0f) }
         LaunchedEffect(msg) {
-            if (msg.isNotEmpty()) for (x in listOf(16f, -13f, 10f, -7f, 4f, 0f)) shake.animateTo(x, androidx.compose.animation.core.tween(45))
+            if (msg.isNotEmpty()) for (x in listOf(14f, -12f, 8f, -4f, 0f)) shake.animateTo(x, androidx.compose.animation.core.tween(70))
         }
         Row(
-            Modifier.padding(top = 28.dp).graphicsLayer { translationX = shake.value * density },
+            Modifier.padding(top = 18.dp).graphicsLayer { translationX = shake.value * density },
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             repeat(PIN_LEN) { i ->
+                val on = i < pin.length
                 // точка «выпрыгивает», когда цифра введена
                 val pop by androidx.compose.animation.core.animateFloatAsState(
-                    if (i < pin.length) 1f else 0.82f,
+                    if (on) 1.12f else 1f,
                     androidx.compose.animation.core.spring(dampingRatio = 0.35f, stiffness = 500f), label = "dot"
                 )
                 Box(
-                    Modifier.size(18.dp).graphicsLayer { scaleX = pop; scaleY = pop }.clip(CircleShape)
-                        .background(if (i < pin.length) Brush.radialGradient(listOf(BlueLight, Color(0xFF3D7BFF)))
-                        else Brush.radialGradient(listOf(Color(0x220E1A36), Color(0x220E1A36))))
-                        .border(1.5.dp, if (i < pin.length) BlueLight else Blue.copy(alpha = 0.45f), CircleShape)
+                    Modifier.size(18.dp).graphicsLayer { scaleX = pop; scaleY = pop }
+                        .then(if (on) Modifier.neon(9.dp, color = Color(0xFF3D7BFF), spread = 6.dp, alpha = 1f) else Modifier)
+                        .clip(CircleShape)
+                        .background(if (on) Brush.radialGradient(listOf(Color(0xFFEAF4FF), Color(0xFF3D7BFF)))
+                        else Brush.radialGradient(listOf(Color(0x990A142E), Color(0x990A142E))))
+                        .border(1.5.dp, if (on) Color(0xFFCFE0FF) else Color(0x998CB9FF), CircleShape)
                 )
             }
         }
-        Text(if (busy) "Проверяю…" else msg, color = if (busy) TextSoft else Red, fontSize = 13.sp,
-            textAlign = TextAlign.Center, modifier = Modifier.padding(top = 14.dp).height(36.dp))
+        Row(Modifier.padding(top = 18.dp).height(40.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (busy || msg.isNotEmpty()) {
+                Text(if (busy) "Проверяю…" else msg, color = if (busy) TextSoft else Color(0xFFFF8A94), fontSize = 13.5.sp,
+                    textAlign = TextAlign.Center, lineHeight = 18.sp)
+            } else {
+                LineIcon(Ico.SHIELD, 20.dp, Blue)
+                Text(lead, color = TextSoft, fontSize = 13.5.sp, lineHeight = 18.sp, modifier = Modifier.padding(start = 10.dp))
+            }
+        }
         val keys = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫")
         val letters = mapOf("2" to "ABC", "3" to "DEF", "4" to "GHI", "5" to "JKL", "6" to "MNO", "7" to "PQRS", "8" to "TUV", "9" to "WXYZ")
+        Spacer(Modifier.height(16.dp))
         for (row in keys.chunked(3)) {
-            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+            Row(Modifier.padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
                 for (k in row) {
-                    val isDigit = k.length == 1 && k[0].isDigit()
+                    if (k.isEmpty()) { Spacer(Modifier.size(76.dp)); continue }
                     Box(
-                        Modifier.size(74.dp).pressable(enabled = k.isNotEmpty() && !busy) {
+                        Modifier.size(76.dp).pressable(enabled = !busy) {
                                 if (k == "⌫") pin = pin.dropLast(1)
                                 else if (pin.length < PIN_LEN) {
                                     pin += k
+                                    msg = ""
                                     if (pin.length == PIN_LEN) done(pin)
                                 }
-                            }.clip(CircleShape)
-                            .background(if (k.isNotEmpty()) Brush.verticalGradient(listOf(Color(0x33223A6E), Color(0x1A0E1A36)))
-                            else Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent)))
-                            .border(1.dp, if (k.isNotEmpty()) Blue.copy(alpha = 0.35f) else Color.Transparent, CircleShape),
+                            }
+                            .neon(38.dp, color = Color(0xFF2864FF), spread = 8.dp, alpha = 0.35f)
+                            .clip(CircleShape)
+                            .background(Brush.radialGradient(listOf(Color(0xB3223C78), Color(0xD9081026)),
+                                center = Offset(38f * LocalDensity.current.density, 23f * LocalDensity.current.density), radius = 60f * LocalDensity.current.density))
+                            .border(1.dp, Color(0x808CB9FF), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(k, color = if (isDigit) TextMain else TextSoft, fontSize = if (isDigit) 28.sp else 22.sp)
-                            letters[k]?.let { Text(it, color = TextSoft, fontSize = 9.5.sp, letterSpacing = 1.sp) }
+                        if (k == "⌫") LineIcon(Ico.BACKSPACE, 30.dp, BlueLight)
+                        else Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(k, color = TextMain, fontSize = 28.sp, fontWeight = FontWeight.Medium, lineHeight = 30.sp)
+                            Text(letters[k] ?: "", color = Color(0xFFB9C9E8), fontSize = 9.5.sp, letterSpacing = 1.sp, lineHeight = 11.sp)
                         }
                     }
                 }
             }
         }
-        if (!first) Text("После ${ChatVault.MAX_FAILS} неверных попыток переписка стирается",
-            color = TextDim, fontSize = 12.sp, modifier = Modifier.padding(top = 22.dp))
         if (orphan && !startNew) Text(
-            "Забыли PIN? Начать новый чат", color = Blue, fontSize = 13.sp,
-            modifier = Modifier.padding(top = 12.dp).clickable { startNew = true; pin = ""; msg = "" }
-        )
+            "Забыли PIN? Начать новый чат →", color = Color(0xFF7FB2FF), fontSize = 14.sp,
+            modifier = Modifier.padding(top = 10.dp).clickable { startNew = true; pin = ""; msg = "" }
+        ) else if (!first) Text("После ${ChatVault.MAX_FAILS} неверных попыток переписка стирается",
+            color = TextDim, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+    }
     }
 }
 
@@ -259,20 +285,20 @@ private fun PinScreen(back: () -> Unit) {
 
 @Composable
 private fun BackBtn(onClick: () -> Unit) {
-    Box(
-        Modifier.size(44.dp).clip(CircleShape).glass(22.dp).clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) { LineIcon(Ico.BACK, 18.dp, BlueLight) }
+    Circ(40.dp, onClick, glow = true) { LineIcon(Ico.BACK, 18.dp, Color(0xFFDBE8FF)) }
 }
 
+/** Аватар с буквой (.ava): синий шар со светлой рамкой и свечением. */
 @Composable
 private fun Avatar(name: String, size: Int = 48) {
     Box(
-        Modifier.size(size.dp).clip(CircleShape)
-            .background(Brush.radialGradient(listOf(Color(0xFF2F6BFF), Color(0xFF0E1A36))))
-            .border(1.5.dp, Blue.copy(alpha = 0.6f), CircleShape),
+        Modifier.size(size.dp).neon((size / 2).dp, color = Color(0xFF2F6BFF), spread = 8.dp, alpha = 0.7f).clip(CircleShape)
+            .background(Brush.radialGradient(listOf(Color(0xFF3D7BFF), Color(0xFF0E1A36)),
+                center = Offset(size * 0.45f * LocalDensity.current.density, size * 0.35f * LocalDensity.current.density),
+                radius = size * 0.75f * LocalDensity.current.density))
+            .border(1.5.dp, Color(0xB396C3FF), CircleShape),
         contentAlignment = Alignment.Center
-    ) { Text(name.trim().take(1).uppercase().ifEmpty { "?" }, color = BlueLight, fontSize = (size * 0.42).sp, fontWeight = FontWeight.Bold) }
+    ) { Text(name.trim().take(1).uppercase().ifEmpty { "?" }, color = Color(0xFFCFE2FF), fontSize = (size * 0.44).sp, fontWeight = FontWeight.Bold) }
 }
 
 @Composable
@@ -306,54 +332,58 @@ private fun ttlText(h: Int) = when (h) {
 private fun ChatList(ui: ChatUi, back: () -> Unit, open: (String) -> Unit, add: () -> Unit, protect: () -> Unit) {
     val ctx = LocalContext.current
     Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        EarthTop()
+        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+            // шапка (.chathead): назад, «Чаты» 30 sp, круглые «＋» и щит 46 dp
+            Row(Modifier.fillMaxWidth().padding(start = 17.dp, end = 17.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 BackBtn(back)
-                Text("Чаты", color = TextMain, fontSize = 30.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 14.dp).weight(1f))
-                Box(
-                    Modifier.size(46.dp).clip(CircleShape).glass(23.dp).clickable(onClick = add),
-                    contentAlignment = Alignment.Center
-                ) { Text("＋", color = BlueLight, fontSize = 24.sp) }
+                Text("Чаты", color = TextMain, fontSize = 30.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 18.dp).weight(1f))
+                Circ(46.dp, add) { Text("＋", color = Color(0xFFCFE0FF), fontSize = 24.sp) }
                 Spacer(Modifier.width(10.dp))
-                Box(
-                    Modifier.size(46.dp).clip(CircleShape).glass(23.dp).clickable(onClick = protect),
-                    contentAlignment = Alignment.Center
-                ) { LineIcon(Ico.SHIELD, 24.dp, BlueLight) }
+                Circ(46.dp, protect) { LineIcon(Ico.SHIELD, 24.dp, BlueLight) }
             }
-            Text("🔒 сквозное шифрование: сервер видит только шифр", color = Blue, fontSize = 12.sp,
-                modifier = Modifier.padding(start = 22.dp, top = 8.dp))
-            // мой код
+            // мой код (.codecard)
             Row(
-                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp).glass(24.dp, glow = true)
-                    .padding(horizontal = 14.dp, vertical = 14.dp),
+                Modifier.fillMaxWidth().padding(start = 17.dp, end = 17.dp, top = 22.dp)
+                    .neon(24.dp, spread = 16.dp, alpha = 0.8f).clip(RoundedCornerShape(24.dp))
+                    .background(Brush.verticalGradient(listOf(Color(0xB8162854), Color(0xC7081026))))
+                    .border(1.dp, Color(0xBF96C3FF), RoundedCornerShape(24.dp))
+                    .height(88.dp).padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
-                    Modifier.size(46.dp).clip(CircleShape)
-                        .background(Brush.radialGradient(listOf(Color(0x662F6BFF), Color(0x220E1A36))))
-                        .border(1.dp, Blue.copy(alpha = 0.5f), CircleShape),
+                    Modifier.size(50.dp).clip(CircleShape)
+                        .background(Brush.radialGradient(listOf(Color(0x803C78FF), Color(0x990A142E))))
+                        .border(1.dp, Color(0x808CB9FF), CircleShape),
                     contentAlignment = Alignment.Center
-                ) { LineIcon(Ico.SHIELD, 26.dp, BlueLight) }
+                ) { LineIcon(Ico.SHIELD, 30.dp, BlueLight) }
                 Column(Modifier.weight(1f).padding(start = 12.dp)) {
                     Text("Мой код:", color = TextSoft, fontSize = 13.sp)
-                    Text(if (ui.code.isEmpty()) "…" else Chat.pretty(ui.code), color = TextMain, fontSize = 20.sp,
-                        fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp)
+                    Text(if (ui.code.isEmpty()) "…" else Chat.pretty(ui.code), color = TextMain, fontSize = 17.sp,
+                        fontWeight = FontWeight.SemiBold, letterSpacing = 0.3.sp, maxLines = 1)
                 }
-                if (ui.code.isNotEmpty()) Text(
-                    "Поделиться", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.clip(RoundedCornerShape(50))
-                        .background(Brush.verticalGradient(listOf(Color(0xFF3D7BFF), Color(0xFF1F4FD6))))
-                        .border(1.dp, Color(0x997AAEFF), RoundedCornerShape(50))
-                        .clickable {
+                if (ui.code.isNotEmpty()) Row(
+                    Modifier.height(34.dp)
+                        .pressable {
                             val text = "Мой код в чате Arise VPN: ${Chat.pretty(ui.code)}"
                             ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
                                 .putExtra(Intent.EXTRA_TEXT, text), "Поделиться кодом").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                        }.padding(horizontal = 14.dp, vertical = 9.dp)
-                )
+                        }
+                        .neon(17.dp, spread = 8.dp, alpha = 0.7f)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(Brush.verticalGradient(listOf(Color(0xFF4A86FF), Color(0xFF1D4FD8))))
+                        .border(1.dp, Color(0xCCBED7FF), RoundedCornerShape(18.dp))
+                        .padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    LineIcon(Ico.SHARE, 18.dp, Color.White)
+                    Text("Поделиться", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(start = 6.dp))
+                }
             }
             if (ui.notice.isNotEmpty()) Text(
                 "📢 " + ui.notice, color = TextMain, fontSize = 13.5.sp,
-                modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp)
+                modifier = Modifier.fillMaxWidth().padding(start = 17.dp, end = 17.dp, top = 12.dp)
                     .clip(RoundedCornerShape(16.dp)).background(Amber.copy(alpha = 0.12f))
                     .border(1.dp, Amber.copy(alpha = 0.35f), RoundedCornerShape(16.dp)).padding(12.dp)
             )
@@ -364,40 +394,60 @@ private fun ChatList(ui: ChatUi, back: () -> Unit, open: (String) -> Unit, add: 
                 Text("Здесь будут ваши чаты.\nНажмите «＋» и введите код собеседника.", color = TextSoft, fontSize = 14.sp,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 60.dp))
             }
-            LazyColumn(Modifier.fillMaxSize().padding(top = 6.dp)) {
+            LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(top = 14.dp)) {
                 items(rows) { code ->
                     val c = ui.contacts.firstOrNull { it.code == code }
                     val name = c?.name ?: Chat.pretty(code)
                     val last = ui.msgs[code]?.lastOrNull()
+                    // строка чата (.crow): 80 dp, аватар 54
                     Row(
-                        Modifier.animateItem().fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp).pressable { open(code) }
-                            .glass(22.dp).padding(horizontal = 12.dp, vertical = 12.dp),
+                        Modifier.animateItem().fillMaxWidth().padding(horizontal = 17.dp, vertical = 6.dp).pressable { open(code) }
+                            .glass(24.dp).height(80.dp).padding(start = 12.dp, end = 14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Avatar(name, 52)
-                        Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                            Text(name, color = TextMain, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Avatar(name, 54)
+                        Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                            Text(name, color = TextMain, fontSize = 16.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
                                 when {
                                     c?.keyChanged == true -> "⚠️ собеседник сменил ключ — сверьте код"
-                                    last == null -> "⏱ сообщений нет"
+                                    last == null -> "сообщений нет"
+                                    last.img.isNotEmpty() -> if (last.out) "Вы: 📷 Фото" else "📷 Фото"
                                     last.out -> "Вы: ${last.text}"
                                     else -> last.text
                                 },
-                                color = if (c?.keyChanged == true) Amber else TextSoft, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
+                                color = if (c?.keyChanged == true) Amber else TextSoft, fontSize = 13.5.sp, maxLines = 1,
+                                overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 1.dp)
                             )
-                            Text("🔒 зашифровано", color = TextDim, fontSize = 11.5.sp)
+                            Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                                LineIcon(Ico.LOCK, 13.dp, TextDim)
+                                Text("зашифровано", color = TextDim, fontSize = 12.sp, modifier = Modifier.padding(start = 6.dp))
+                            }
                         }
-                        Column(horizontalAlignment = Alignment.End) {
-                            if (last != null) Text(hhmm(last.t), color = TextDim, fontSize = 12.sp)
+                        Column(Modifier.align(Alignment.Top).padding(top = 14.dp), horizontalAlignment = Alignment.End) {
+                            if (last != null) Text(hhmm(last.t), color = TextSoft, fontSize = 12.5.sp)
                             val n = ui.unread[code] ?: 0
                             if (n > 0) Box(
-                                Modifier.padding(top = 6.dp).size(24.dp).clip(CircleShape).background(Color(0xFF2F6BFF))
-                                    .border(1.dp, BlueLight.copy(alpha = 0.6f), CircleShape),
+                                Modifier.padding(top = 8.dp).size(24.dp).neon(12.dp, color = Color(0xFF3D7BFF), spread = 6.dp, alpha = 1f)
+                                    .clip(CircleShape).background(Color(0xFF2F6BFF)),
                                 contentAlignment = Alignment.Center
                             ) { Text("$n", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
                         }
                     }
+                }
+            }
+            // нижние вкладки (.tabs): «Чаты» и «Настройки» (= «Защита»)
+            Row(
+                Modifier.fillMaxWidth().padding(start = 17.dp, end = 17.dp, top = 6.dp, bottom = 12.dp).glass(22.dp).height(62.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    LineIcon(Ico.BUBBLE, 26.dp, Color(0xFFCFE2FF))
+                    Text("Чаты", color = Color(0xFFCFE2FF), fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
+                }
+                Column(Modifier.weight(1f).clickable(onClick = protect), horizontalAlignment = Alignment.CenterHorizontally) {
+                    LineIcon(Ico.GEAR, 24.dp, TextDim)
+                    Text("Настройки", color = TextDim, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
                 }
             }
         }
@@ -451,54 +501,70 @@ private fun Talk(ui: ChatUi, code: String, back: () -> Unit, info: () -> Unit) {
         if (msgs.isNotEmpty()) list.animateScrollToItem(msgs.size - 1)
         Chat.read(code)
     }
+    Box(Modifier.fillMaxSize()) {
+    EarthTop()
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        // шапка переписки (.talkhead): полоса 64 dp, аватар 44, «⋮»
+        Row(
+            Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 4.dp).height(64.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .background(Brush.verticalGradient(listOf(Color(0xCC0E1C3E), Color(0x99060C1E))))
+                .padding(horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             BackBtn(back)
             Box(Modifier.padding(start = 10.dp).clickable(onClick = info)) { Avatar(name, 44) }
             Column(Modifier.weight(1f).padding(start = 10.dp).clickable(onClick = info)) {
                 Text(name, color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                    when {
-                        c?.keyChanged == true -> "⚠️ ключ сменился — сверьте код"
-                        c?.verified == true -> "🔒 код безопасности сверен"
-                        else -> "🔒 зашифровано · код не сверен"
-                    },
-                    color = when {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val col = when {
                         c?.keyChanged == true -> Amber
-                        c?.verified == true -> Green
+                        c?.verified == true -> TextSoft
                         else -> TextSoft
-                    },
-                    fontSize = 12.sp
-                )
+                    }
+                    if (c?.keyChanged != true) LineIcon(Ico.LOCK, 12.dp, col)
+                    Text(
+                        when {
+                            c?.keyChanged == true -> "⚠️ ключ сменился — сверьте код"
+                            c?.verified == true -> "код безопасности сверен"
+                            else -> "зашифровано · код не сверен"
+                        },
+                        color = col, fontSize = 12.5.sp, maxLines = 1, modifier = Modifier.padding(start = 5.dp)
+                    )
+                }
             }
-            Box(
-                Modifier.size(44.dp).clip(CircleShape).glass(22.dp).clickable(onClick = info),
-                contentAlignment = Alignment.Center
-            ) { Text("⋮", color = BlueLight, fontSize = 20.sp, fontWeight = FontWeight.Bold) }
+            Circ(36.dp, info) { Text("⋮", color = Color(0xFFCFE0FF), fontSize = 18.sp, fontWeight = FontWeight.Bold) }
         }
+        Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp).height(1.dp).background(Color(0x406EA0FF)))
         Text(
             if (ui.ttlHours > 0) "⏱ Сообщения исчезают через ${ttlText(ui.ttlHours)}" else "⏱ Самоудаление выключено",
-            color = Blue, fontSize = 12.sp,
+            color = Color(0xFF9CC6FF), fontSize = 12.sp,
             modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 10.dp).clip(RoundedCornerShape(12.dp))
-                .background(Blue.copy(alpha = 0.10f)).border(1.dp, Blue.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
-                .padding(horizontal = 12.dp, vertical = 6.dp)
+                .background(Color(0x990A142E)).border(1.dp, Color(0x596EA0FF), RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 5.dp)
         )
         ErrorLine(ui.error)
         LazyColumn(
             Modifier.weight(1f).fillMaxWidth().padding(horizontal = 14.dp), state = list,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 10.dp, bottom = 6.dp)
         ) {
             items(msgs, key = { it.id }) { m ->
-                Box(Modifier.animateItem().fillMaxWidth(), contentAlignment = if (m.out) Alignment.CenterEnd else Alignment.CenterStart) {
+                // пузырь «выпрыгивает» при появлении (.msg pop)
+                val appear = remember { androidx.compose.animation.core.Animatable(0.85f) }
+                LaunchedEffect(Unit) { appear.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.5f, stiffness = 600f)) }
+                BoxWithConstraints(Modifier.animateItem().fillMaxWidth(), contentAlignment = if (m.out) Alignment.CenterEnd else Alignment.CenterStart) {
                     val shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = if (m.out) 20.dp else 6.dp,
                         bottomEnd = if (m.out) 6.dp else 20.dp)
-                    Column(
-                        Modifier.widthIn(max = 300.dp)
+                    val time = hhmm(m.t) + (if (m.exp > 0) " · ⏱" else "") + (if (m.out) " ✓" else "")
+                    Box(
+                        Modifier.widthIn(max = maxWidth * 0.72f)
+                            .graphicsLayer { scaleX = appear.value; scaleY = appear.value; alpha = ((appear.value - 0.85f) / 0.15f).coerceIn(0f, 1f) }
+                            .then(if (m.out) Modifier.neon(20.dp, color = Color(0xFF2F6BFF), spread = 10.dp, alpha = 0.6f) else Modifier)
                             .clip(shape)
-                            .background(if (m.out) Brush.verticalGradient(listOf(Color(0xFF3D7BFF), Color(0xFF1F4FD6)))
-                            else Brush.verticalGradient(listOf(Color(0x33223A6E), Color(0x260E1A36))))
-                            .border(1.dp, if (m.out) Color(0x997AAEFF) else Color(0x3A5B8CFF), shape)
-                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                            .background(if (m.out) Brush.verticalGradient(listOf(Color(0xFF3F7BFF), Color(0xFF1C48C8)))
+                            else Brush.verticalGradient(listOf(Color(0xD91A2C5C), Color(0xD90A142C))))
+                            .border(1.dp, if (m.out) Color(0xB3AACDFF) else Color(0x738CB9FF), shape)
                     ) {
                         if (m.img.isNotEmpty()) {
                             val bmp by produceState<ImageBitmap?>(null, m.img) {
@@ -507,53 +573,68 @@ private fun Talk(ui: ChatUi, code: String, back: () -> Unit, info: () -> Unit) {
                                 }
                             }
                             val b = bmp
-                            if (b != null) Image(
-                                b, contentDescription = "Фото", contentScale = ContentScale.Crop,
-                                modifier = Modifier.size(220.dp, 220.dp * b.height / b.width.coerceAtLeast(1))
-                                    .clip(RoundedCornerShape(12.dp)).clickable { full = b }
-                            ) else Text("📷 Фото удалено", color = TextMain, fontSize = 14.5.sp)
-                        } else Text(m.text, color = TextMain, fontSize = 14.5.sp)
-                        // одна галочка — «доставлено на сервер» (отметок о прочтении нет — двойную не рисуем)
-                        Text(hhmm(m.t) + (if (m.exp > 0) " · ⏱" else "") + (if (m.out) "  ✓" else ""),
-                            color = TextMain.copy(alpha = 0.65f), fontSize = 10.5.sp,
-                            modifier = Modifier.align(Alignment.End).padding(top = 2.dp))
+                            Box(Modifier.padding(6.dp)) {
+                                if (b != null) Image(
+                                    b, contentDescription = "Фото", contentScale = ContentScale.Crop,
+                                    modifier = Modifier.size(200.dp, (200.dp * b.height / b.width.coerceAtLeast(1)).coerceIn(110.dp, 260.dp))
+                                        .clip(RoundedCornerShape(14.dp)).clickable { full = b }
+                                ) else Text("📷 Фото удалено", color = TextMain, fontSize = 15.5.sp, modifier = Modifier.padding(8.dp))
+                                Text(time, color = Color(0xE6E6F0FF), fontSize = 11.sp,
+                                    modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).clip(RoundedCornerShape(9.dp))
+                                        .background(Color(0x8C000000)).padding(horizontal = 7.dp, vertical = 2.dp))
+                            }
+                        } else Row(Modifier.padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.Bottom) {
+                            // одна галочка — «доставлено на сервер» (отметок о прочтении нет — двойную не рисуем)
+                            Text(m.text, color = TextMain, fontSize = 15.5.sp, lineHeight = 20.sp, modifier = Modifier.weight(1f, fill = false))
+                            Text(time, color = Color(0xBFE6F0FF), fontSize = 11.sp, maxLines = 1, modifier = Modifier.padding(start = 10.dp))
+                        }
                     }
                 }
             }
         }
         if (ui.busy) Text("Отправляю фото…", color = TextSoft, fontSize = 12.sp, modifier = Modifier.padding(start = 18.dp))
-        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        // строка ввода (.inputbar): скрепка 46, поле 44, отправка 50
+        Row(
+            Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 14.dp)
+                .clip(RoundedCornerShape(30.dp))
+                .background(Brush.verticalGradient(listOf(Color(0xCC0E1C3E), Color(0xCC060C1E))))
+                .border(1.dp, Color(0x4D6EA0FF), RoundedCornerShape(30.dp))
+                .heightIn(min = 60.dp).padding(horizontal = 5.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Circ(46.dp, onClick = {
+                if (c != null && !ui.busy) {
+                    Chat.keepOpen = true
+                    pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }
+            }) { LineIcon(Ico.CLIP, 24.dp, Color(0xFFCFE0FF)) }
             Box(
-                Modifier.padding(end = 8.dp).size(48.dp).clip(CircleShape).glass(24.dp)
-                    .clickable(enabled = c != null && !ui.busy) {
-                        Chat.keepOpen = true
-                        pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                    },
-                contentAlignment = Alignment.Center
-            ) { LineIcon(Ico.CLIP, 22.dp, BlueLight) }
-            OutlinedTextField(
-                value = text, onValueChange = { text = it.take(4000) },
-                placeholder = { Text("Сообщение", color = TextDim) }, shape = RoundedCornerShape(24.dp),
-                modifier = Modifier.weight(1f), maxLines = 5,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = TextMain, unfocusedTextColor = TextMain,
-                    focusedBorderColor = Blue.copy(alpha = 0.6f), unfocusedBorderColor = Color(0x3A5B8CFF),
-                    focusedContainerColor = Color(0x1A223A6E), unfocusedContainerColor = Color(0x1A223A6E), cursorColor = Blue
+                Modifier.weight(1f).padding(horizontal = 8.dp).heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp))
+                    .background(Color(0x990A142E)).border(1.dp, Color(0x738CB9FF), RoundedCornerShape(22.dp))
+                    .padding(horizontal = 16.dp, vertical = 11.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                if (text.isEmpty()) Text("Сообщение", color = Color(0xFF8FA8D8), fontSize = 15.sp)
+                BasicTextField(
+                    value = text, onValueChange = { text = it.take(4000) }, maxLines = 5,
+                    textStyle = TextStyle(color = TextMain, fontSize = 15.sp, fontFamily = Inter),
+                    cursorBrush = SolidColor(Blue), modifier = Modifier.fillMaxWidth()
                 )
-            )
+            }
             Box(
-                Modifier.padding(start = 10.dp).size(52.dp)
-                    .shadow(12.dp, CircleShape, ambientColor = BlueMid, spotColor = BlueMid)
-                    .clip(CircleShape)
-                    .background(Brush.verticalGradient(listOf(Color(0xFF3D7BFF), Color(0xFF1F4FD6))))
-                    .border(1.dp, Color(0xAA9CC2FF), CircleShape)
-                    .clickable(enabled = text.isNotBlank() && c != null) {
+                Modifier.size(50.dp)
+                    .pressable(enabled = text.isNotBlank() && c != null) {
                         Chat.send(code, text.trim())
                         text = ""
-                    },
+                    }
+                    .neon(25.dp, color = Color(0xFF3C78FF), spread = 12.dp, alpha = 1f)
+                    .clip(CircleShape)
+                    .background(Brush.verticalGradient(listOf(Color(0xFF4A86FF), Color(0xFF1D4FD8))))
+                    .border(1.dp, Color(0xD9BED7FF), CircleShape),
                 contentAlignment = Alignment.Center
-            ) { LineIcon(Ico.SEND, 24.dp, Color(0xFFCFE0FF)) }
+            ) { LineIcon(Ico.SEND, 26.dp, Color.White) }
         }
+    }
     }
     full?.let { b ->
         Dialog(onDismissRequest = { full = null }) {
