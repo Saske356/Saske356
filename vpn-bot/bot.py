@@ -196,12 +196,12 @@ def user_active(user_id: int) -> bool:
 def status_line(user_id: int) -> str:
     act = db.active_subs(user_id)
     if not act:
-        return "◇ Статус: <i>доступ не активирован</i>"
+        return "◇ Подписки пока нет"
     if len(act) == 1:
         s = act[0]
-        return (f"◆ Статус: <b>Premium</b>\n"
+        return (f"◆ Подписка <b>активна</b>\n"
                 f"◆ Действует до <b>{fmt_date(s['expires_at'])}</b> · ещё {plural_days(days_left(s))}")
-    return (f"◆ Статус: <b>Premium</b> · подписок: {len(act)}\n"
+    return (f"◆ Подписок активно: <b>{len(act)}</b>\n"
             f"◆ Самая долгая до <b>{fmt_date(act[0]['expires_at'])}</b>")
 
 
@@ -258,14 +258,27 @@ def main_kb(row) -> InlineKeyboardMarkup:
         rows.append([B(f"✦ {plural_days(config.TRIAL_DAYS).capitalize()} бесплатно", "trial")])
     rows += [
         [B("🗝 Мои подписки", "subs"), B("📲 Подключение", "howto")],
-        *([[B(f"📱 Приложение {config.BRAND} для Android", "apk")]] if android_app else []),
+        *([[B("📱 Приложение для Android", "apk")]] if android_app else []),
         [B("👤 Профиль", "profile"), B(f"🎁 +{plural_days(config.REF_BONUS_DAYS)} за друга", "ref")],
         [B("🎀 Подарить доступ", "gift"), B("🎟 Промокод", "promo")],
     ]
     if config.CHANNEL and not row["channel_bonus"]:
         rows.append([B(f"📣 +{plural_days(config.CHANNEL_BONUS_DAYS)} за подписку на канал", "ch")])
-    rows.append([B("🛎 Консьерж", "support")])
+    rows.append([B("🛟 Поддержка", "support")])
     return InlineKeyboardMarkup(rows)
+
+
+def support_view() -> tuple[str, InlineKeyboardMarkup]:
+    """Экран «Поддержка»: из меню бота и из мини-приложения (?start=support)."""
+    rows = [[B("🛠 VPN не работает?", "fix")], [B("✍️ Написать в поддержку", "tk")]]
+    if config.CHANNEL:
+        rows.append([B("📣 Канал с новостями", url=channel_link())])
+    rows.append([BACK])
+    return ("<b>Поддержка</b>\n<i>Поможем подключиться и ответим на вопросы.</i>\n\n"
+            "<blockquote>Не подключается? Проверьте, что ключ скопирован целиком и "
+            "подписка активна.\n"
+            f"Возврат звёзд в течение {plural_days(config.REFUND_DAYS)}, если VPN не заработал."
+            "</blockquote>\n\nУсловия: /terms", InlineKeyboardMarkup(rows))
 
 
 def plan_discount(days: int, price: int) -> int:
@@ -452,7 +465,7 @@ def fix_text() -> str:
     body = "\n".join(f"{i}. {esc(t)}" for i, t in enumerate(steps, 1))
     return ("<b>VPN не работает?</b>\n<i>Попробуйте по порядку, обычно хватает первых шагов.</i>\n\n"
             f"<blockquote>{body}</blockquote>\n\n"
-            "Не помогло? Напишите консьержу: укажите устройство, оператора и что именно не открывается.")
+            "Не помогло? Напишите в поддержку: укажите устройство, оператора и что именно не открывается.")
 
 
 def sub_line(s) -> str:
@@ -680,6 +693,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     elif arg == "terms":
         await terms(update, context)
         return
+    elif arg == "support":  # «Поддержка» в мини-приложении
+        text, kb = support_view()
+        await show(update, context, text, kb, banner="support")
+        return
     elif arg == "plans":
         await show(update, context, plans_text(uid=u.id), plans_kb(uid=u.id), banner="plans")
         return
@@ -716,7 +733,7 @@ async def terms(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "или в настройках Telegram.\n"
         "3. Запрещено использовать сервис для незаконной деятельности, спама и атак.\n"
         f"4. Если VPN не заработал, мы вернём звёзды в течение {plural_days(config.REFUND_DAYS)} "
-        "после оплаты: напишите консьержу.\n"
+        "после оплаты: напишите в поддержку.\n"
         "5. Мы не храним историю ваших посещений.\n"
         "6. Об изменениях условий мы сообщим в боте.")
 
@@ -724,9 +741,9 @@ async def terms(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def paysupport(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "<b>Вопросы по оплате</b>\n\n"
-        "Напишите консьержу, когда и какой тариф оплатили. Возврат возможен "
+        "Напишите в поддержку, когда и какой тариф оплатили. Возврат возможен "
         f"в течение {plural_days(config.REFUND_DAYS)}, если VPN не заработал.",
-        reply_markup=KB([B("🛎 Написать консьержу", "tk")]))
+        reply_markup=KB([B("✍️ Написать в поддержку", "tk")]))
 
 
 async def do_trial(update: Update, context: ContextTypes.DEFAULT_TYPE, row) -> None:
@@ -1485,24 +1502,15 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     elif data == "chk" and config.CHANNEL:
         await check_channel(update, context, row)
     elif data == "support":
-        rows = [[B("🛠 VPN не работает?", "fix")], [B("✍️ Написать консьержу", "tk")]]
-        if config.CHANNEL:
-            rows.append([B("📣 Канал с новостями", url=channel_link())])
-        rows.append([BACK])
-        await show(update, context,
-                   "<b>Консьерж</b>\n<i>Поможем подключиться и ответим на вопросы.</i>\n\n"
-                   "<blockquote>Не подключается? Проверьте, что ключ скопирован целиком и "
-                   "подписка активна.\n"
-                   f"Возврат звёзд в течение {plural_days(config.REFUND_DAYS)}, если VPN не заработал."
-                   "</blockquote>\n\nУсловия: /terms",
-                   InlineKeyboardMarkup(rows), banner="support")
+        text, kb = support_view()
+        await show(update, context, text, kb, banner="support")
     elif data == "fix":
         await show(update, context, fix_text(),
-                   KB([B("🗝 Мои подписки", "subs"), B("✍️ Консьержу", "tk")], [BACK]), banner="support")
+                   KB([B("🗝 Мои подписки", "subs"), B("✍️ Написать", "tk")], [BACK]), banner="support")
     elif data == "tk":
         context.user_data["await"] = "ticket"
         await show(update, context,
-                   "<b>Сообщение консьержу</b>\n\nОпишите вопрос одним сообщением. Можно приложить скриншот. "
+                   "<b>Сообщение в поддержку</b>\n\nОпишите вопрос одним сообщением. Можно приложить скриншот. "
                    "Ответ придёт сюда, в чат с ботом.",
                    KB([B("‹ Отмена", "support")]), banner="support")
 
@@ -1555,7 +1563,7 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         target = db.ticket_user(msg.chat_id, msg.reply_to_message.message_id)
         if target:
             try:
-                await context.bot.send_message(target, "🛎 <b>Ответ консьержа</b>")
+                await context.bot.send_message(target, "🛟 <b>Ответ поддержки</b>")
                 await context.bot.copy_message(target, msg.chat_id, msg.message_id,
                                                reply_markup=KB([B("✍️ Ответить", "tk")]))
                 await msg.reply_text("✅ Ответ отправлен гостю.")
@@ -1657,7 +1665,7 @@ async def send_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE, row) -
             delivered += 1
         except TelegramError as e:
             log.warning("тикет админу %s: %s", admin_id, e)
-    text = ("<b>Сообщение передано консьержу</b>\n\nОтвет придёт сюда, в чат с ботом." if delivered
+    text = ("<b>Сообщение передано в поддержку</b>\n\nОтвет придёт сюда, в чат с ботом." if delivered
             else "<b>Не получилось передать сообщение</b>\n\nПопробуйте чуть позже.")
     await show(update, context, text, KB([B("✍️ Дописать", "tk"), BACK]), banner="support")
 
@@ -3670,13 +3678,13 @@ async def devices_job(context: ContextTypes.DEFAULT_TYPE) -> None:
                        f"{dev_word(limit)}.\nОтключите лишние устройства или оформите ещё одну подписку. "
                        + ("Если превышение продолжится, подписка отключится на "
                           f"{config.DEVICE_BLOCK_MINUTES} мин." if guard.mode == "block" else ""),
-                       KB([B("➕ Ещё подписка", "plans")], [B("🛎 Консьерж", "tk")]))
+                       KB([B("➕ Ещё подписка", "plans")], [B("🛟 Поддержка", "tk")]))
         else:
             await vpn.suspend(sid, guard.block_seconds)
             await tell(context.bot, sub["user_id"],
                        f"⛔ «{esc(sub['name'])}» отключена на {config.DEVICE_BLOCK_MINUTES} мин: подключено "
                        f"{dev_word(n)} при оплаченных {limit}. Потом она включится сама.",
-                       KB([B("➕ Ещё подписка", "plans")], [B("🛎 Консьерж", "tk")]))
+                       KB([B("➕ Ещё подписка", "plans")], [B("🛟 Поддержка", "tk")]))
             await send_admins(context.bot, f"⛔ Превышение устройств: {who(row) if row else sub['user_id']} · "
                                            f"«{esc(sub['name'])}» · {n} из {limit}. Отключена на "
                                            f"{config.DEVICE_BLOCK_MINUTES} мин.")

@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Arise VPN</title>
+<!-- Мини-приложение Telegram. СОБИРАЕТСЯ: python3 design/miniapp/build.py → docs/index.html (шрифт, Земля и значки внутри файла) -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+/*FONTS*/
+:root{
+  --bg:#02050f; --text:#fff; --soft:#c9d8f5; --dim:#93a6cc; --blue:#4f8dff; --ice:#9cc6ff;
+  --card1:rgba(22,40,84,.72); --card2:rgba(8,16,38,.78); --line:rgba(140,185,255,.55);
+  --green:#3ad15c; --amber:#f5a03b;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;background:var(--bg);color:var(--text)}
+body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:1.45;
+  -webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;min-height:100vh;overflow-x:hidden;
+  background:radial-gradient(70% 40% at 50% 14%,rgba(47,107,255,.16),transparent 70%),
+             radial-gradient(45% 30% at -10% 102%,rgba(47,107,255,.30),transparent 70%),
+             radial-gradient(45% 30% at 110% 102%,rgba(47,107,255,.30),transparent 70%),
+             linear-gradient(180deg,#02040b,#030817 40%,#040a1c 70%,#02050f)}
+#stars{position:fixed;inset:0;pointer-events:none;z-index:0}
+.wrap{position:relative;z-index:1;max-width:480px;margin:0 auto;
+  padding:0 max(16px,env(safe-area-inset-right)) 36px max(16px,env(safe-area-inset-left));display:flex;flex-direction:column;gap:14px}
+.ico{display:inline-block;flex-shrink:0}.ico svg{width:100%;height:100%;display:block}
+
+/* ---------- шапка: знак, название, Земля ---------- */
+.hero{position:relative;height:300px;margin:0 -16px -34px;overflow:hidden}
+.hero .earth{position:absolute;left:50%;top:92px;width:400px;height:400px;margin-left:-200px;background:var(--earth) center/contain no-repeat;
+  -webkit-mask-image:linear-gradient(180deg,#000 40%,transparent 66%);mask-image:linear-gradient(180deg,#000 40%,transparent 66%);
+  animation:breathe 7s ease-in-out infinite}
+@keyframes breathe{50%{transform:scale(1.025);filter:brightness(1.12)}}
+.brand{position:absolute;top:22px;left:0;right:0;display:flex;align-items:center;justify-content:center;gap:12px}
+.brand svg{width:44px;height:44px;filter:drop-shadow(0 0 10px rgba(60,120,255,.95)) drop-shadow(0 0 22px rgba(47,107,255,.6))}
+.brand h1{margin:0;font-size:32px;font-weight:700;letter-spacing:.2px;background:linear-gradient(180deg,#fff,#9fc3ff);
+  -webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 12px rgba(60,120,255,.55))}
+.tag{position:absolute;top:76px;left:0;right:0;text-align:center;font-size:14.5px;color:var(--ice)}
+
+/* ---------- карточки ---------- */
+.card{position:relative;border-radius:24px;padding:16px;background:linear-gradient(180deg,var(--card1),var(--card2));
+  border:1px solid var(--line);box-shadow:0 0 22px rgba(30,90,255,.18),inset 0 1px 0 rgba(255,255,255,.06)}
+.card.glow{border:1.5px solid rgba(150,195,255,.85);box-shadow:0 0 26px rgba(40,100,255,.45),inset 0 0 30px rgba(40,100,255,.12)}
+.label{font-size:13px;font-weight:700;color:#c7d8ff;letter-spacing:.4px;margin:12px 4px -4px;text-transform:uppercase}
+.sub{color:var(--soft);font-size:13px;margin:0}
+
+.btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;height:50px;border-radius:25px;cursor:pointer;
+  font:600 16px Inter,system-ui,sans-serif;color:#fff;text-decoration:none;transition:transform .2s cubic-bezier(.3,1.5,.5,1)}
+.btn:active,.press:active{transform:scale(.965)}
+.btn.main{background:linear-gradient(180deg,#4a86ff,#1d4fd8);border:1.5px solid rgba(200,225,255,.9);
+  box-shadow:0 0 22px rgba(60,120,255,.7),inset 0 1px 0 rgba(255,255,255,.35)}
+.btn.ghost{background:rgba(10,20,46,.6);border:1px solid rgba(140,185,255,.55)}
+.btn.sm{height:40px;border-radius:20px;font-size:14px}
+.row{display:flex;gap:10px}.row>*{flex:1;min-width:0}
+.press{transition:transform .2s cubic-bezier(.3,1.5,.5,1)}
+
+/* статус */
+.status{display:flex;align-items:center;gap:16px}
+.ring{position:relative;flex:0 0 84px;height:84px}
+.ring svg{width:84px;height:84px;transform:rotate(-90deg);overflow:visible}
+.ring .num{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1}
+.ring .num b{font-size:28px;font-weight:700}.ring .num small{font-size:10.5px;color:var(--soft);margin-top:3px}
+.st{flex:1;min-width:0}.st b{display:block;font-size:19px;font-weight:700}.st small{display:block;font-size:13px;color:var(--soft);margin-top:2px}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);margin-right:8px;vertical-align:1px}
+.dot.off{background:#7e8aa8;box-shadow:none}
+
+/* строка с квадратным значком (пробный, приложение, друзья) */
+.line{display:flex;align-items:center;gap:14px}
+.sq{flex:0 0 52px;height:52px;border-radius:16px;display:grid;place-items:center;
+  background:radial-gradient(circle,rgba(60,120,255,.45),rgba(14,26,54,.35));border:1px solid rgba(110,160,255,.45);
+  box-shadow:inset 0 0 14px rgba(60,120,255,.35),0 0 14px rgba(40,100,255,.3)}
+.line .t{flex:1;min-width:0}.line .t b{display:block;font-size:16.5px;font-weight:700}.line .t small{display:block;font-size:12.5px;color:var(--soft);margin-top:1px}
+.line .btn{width:auto;flex:0 0 auto;height:38px;padding:0 16px;font-size:14px}
+.feats{display:flex;justify-content:space-between;margin:14px 0}
+.feat{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;font-size:12px;color:var(--soft);text-align:center;line-height:1.2}
+.feat+.feat{border-left:1px solid rgba(110,160,255,.25)}
+
+/* подписки */
+.subhead{display:flex;align-items:center;gap:10px}
+.subhead b{flex:1;min-width:0;font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;border-radius:13px;white-space:nowrap;
+  color:#9cf0b0;background:rgba(40,160,80,.16);border:1px solid rgba(60,200,100,.35)}
+.meta{font-size:13px;color:var(--soft);margin:4px 0 12px}
+.subs{display:flex;flex-direction:column;gap:12px}
+.demo{font-size:12px;color:#ffc08a;margin-top:10px}
+
+/* тарифы */
+.plans{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.plan{position:relative;text-align:left;color:var(--text);font-family:inherit;cursor:pointer;border-radius:22px;padding:14px;
+  display:flex;flex-direction:column;gap:2px;background:linear-gradient(180deg,var(--card1),var(--card2));border:1px solid var(--line)}
+.plan .nm{font-size:13px;color:var(--soft);font-weight:600}
+.plan .pr{font-size:26px;font-weight:700;line-height:1.15;font-variant-numeric:tabular-nums}
+.plan .pr span{font-size:14px;font-weight:500;color:var(--soft)}
+.plan .rub{font-size:12.5px;color:var(--soft)}
+.plan .pm{font-size:11.5px;color:var(--dim)}
+.plan .save{font-size:11.5px;color:#9cf0b0;font-weight:600;min-height:16px}
+.plan.best{border:2px solid #b3d2ff;box-shadow:0 0 0 1px #3d7bff,0 0 28px 4px rgba(60,130,255,.65),inset 0 0 30px rgba(60,130,255,.22)}
+.badge{position:absolute;top:-10px;right:10px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:11px;color:#cfe0ff;
+  border:1px solid rgba(110,160,255,.7);background:#16306e}
+.methods{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.methods span{font-size:12px;color:var(--soft);border:1px solid rgba(110,160,255,.4);border-radius:13px;padding:3px 10px;background:rgba(10,20,46,.6)}
+.note{color:var(--dim);font-size:12.5px;margin:10px 4px 0}
+
+/* страны */
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.cty{font-size:13.5px;padding:7px 12px;border-radius:19px;white-space:nowrap;
+  background:linear-gradient(180deg,rgba(22,40,84,.75),rgba(8,16,38,.8));border:1px solid rgba(140,185,255,.5)}
+
+/* подключение */
+.seg{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:4px;border-radius:22px;background:rgba(10,20,46,.6);border:1px solid rgba(110,160,255,.35)}
+.seg button{border:0;background:transparent;color:var(--dim);font:600 13px Inter,system-ui,sans-serif;height:36px;border-radius:18px;cursor:pointer}
+.seg button[aria-selected=true]{color:#fff;background:linear-gradient(180deg,#4a86ff,#1d4fd8);box-shadow:0 0 12px rgba(60,120,255,.6)}
+.steps{list-style:none;margin:14px 0 0;padding:0;display:flex;flex-direction:column;gap:12px;counter-reset:s}
+.steps li{display:flex;gap:12px;align-items:flex-start;font-size:14px;color:#e6eeff}
+.steps li::before{counter-increment:s;content:counter(s);flex:0 0 26px;height:26px;border-radius:50%;display:grid;place-items:center;
+  font-size:13px;font-weight:700;background:#2f6bff;border:1px solid #9cc2ff;box-shadow:0 0 10px rgba(60,130,255,.7)}
+
+/* друзья */
+.big{font-size:34px;font-weight:700;line-height:1.1;background:linear-gradient(180deg,#fff,#9fc3ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+footer{display:flex;justify-content:center;align-items:center;gap:14px;color:var(--dim);font-size:12.5px;margin-top:6px}
+footer::before,footer::after{content:'';width:40px;height:1px;background:rgba(110,160,255,.35)}
+footer a{color:var(--soft);text-decoration:none;cursor:pointer}
+
+.toast{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom));transform:translate(-50%,20px);z-index:20;
+  background:#0e1c3e;color:#fff;border:1px solid rgba(140,185,255,.6);padding:10px 16px;border-radius:20px;font-size:13px;
+  opacity:0;transition:.25s;pointer-events:none;box-shadow:0 0 18px rgba(40,100,255,.4)}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+.appear{animation:rise .5s ease both}
+@keyframes rise{from{opacity:.001;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.appear,.hero .earth{animation:none}}
+</style>
+</head>
+<body>
+<canvas id="stars"></canvas>
+<main class="wrap" id="app">
+  <header class="hero">
+    <div class="earth"></div>
+    <div class="brand"><svg viewBox="218 265 820 672" aria-hidden="true"><defs><linearGradient id="mg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eaf5ff"/><stop offset="1" stop-color="#2563ff"/></linearGradient></defs>
+      <polygon fill="url(#mg)" points="628,265 1038,937 713,815 683,704 776,741 628,515 480,741 573,704 543,815 218,937"/></svg><h1 id="brand">Arise VPN</h1></div>
+    <div class="tag" id="tagline">Быстрый и приватный интернет без границ</div>
+  </header>
+
+  <section class="card glow appear" id="statusCard" aria-live="polite"></section>
+
+  <section class="card appear" id="trialCard" hidden>
+    <div class="line"><div class="sq">{{ico:bolt:32}}</div>
+      <div class="t"><b id="trialTitle">1 день бесплатно</b><small>Попробуйте перед покупкой, без оплаты</small></div></div>
+    <a class="btn main" id="trialBtn" style="margin-top:14px">Попробовать бесплатно</a>
+  </section>
+
+  <section class="appear" id="keySec" hidden>
+    <div class="label">Мои подписки</div>
+    <div class="subs" id="subsList" style="margin-top:14px"></div>
+  </section>
+
+  <section class="card appear" id="appCard" hidden>
+    <div class="line"><div class="sq">{{ico:shield:32}}</div>
+      <div class="t"><b>Приложение для Android</b><small>Подключение в одно касание, всё уже настроено</small></div></div>
+    <div class="feats">
+      <div class="feat">{{ico:rocket:30}}Турбо-режим</div>
+      <div class="feat">{{ico:globe:30}}Живой пинг</div>
+      <div class="feat">{{ico:refresh:30}}Само<br>обновляется</div>
+    </div>
+    <a class="btn main" id="appBtn">Скачать приложение</a>
+  </section>
+
+  <section class="appear" id="plansSec">
+    <div class="label">Тарифы</div>
+    <p class="sub" style="margin:10px 4px 14px">Чем дольше срок, тем выгоднее. Продление добавляется к текущему сроку.</p>
+    <div class="plans" id="plans"></div>
+    <p class="note" id="plansNote">Число устройств выбирается на следующем шаге. Оплата звёздами Telegram ⭐</p>
+    <div class="methods" id="methods"></div>
+  </section>
+
+  <section class="appear" id="locSec" hidden>
+    <div class="label">Страны</div>
+    <div class="chips" id="locList" style="margin-top:14px"></div>
+  </section>
+
+  <section class="appear">
+    <div class="label">Как подключить</div>
+    <div class="card" style="margin-top:14px">
+      <div class="seg" role="tablist" id="seg">
+        <button role="tab" data-os="android" aria-selected="true">Android</button>
+        <button role="tab" data-os="ios" aria-selected="false">iPhone</button>
+        <button role="tab" data-os="windows" aria-selected="false">Windows</button>
+        <button role="tab" data-os="mac" aria-selected="false">Mac</button>
+      </div>
+      <ol class="steps" id="steps"></ol>
+    </div>
+  </section>
+
+  <section class="card appear" id="refCard">
+    <div class="line"><div class="sq">{{ico:crown:32}}</div>
+      <div class="t"><div class="big" id="refBonus">+7 дней</div><small id="refText">за каждого друга, который запустит бота по вашей ссылке</small></div></div>
+    <div class="row" style="margin-top:14px">
+      <a class="btn main sm" id="shareRef">Пригласить</a>
+      <a class="btn ghost sm" id="copyRef">Копировать ссылку</a>
+    </div>
+  </section>
+
+  <footer class="appear">
+    <a id="support" role="button" tabindex="0">Поддержка</a>
+    <span>·</span>
+    <a id="terms" role="button" tabindex="0">Условия</a>
+  </footer>
+</main>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(() => {
+  "use strict";
+  const tg = window.Telegram && window.Telegram.WebApp;
+  const $ = id => document.getElementById(id);
+  const haptic = (kind = "light") => { try { tg.HapticFeedback.impactOccurred(kind); } catch {} };
+  const success = () => { try { tg.HapticFeedback.notificationOccurred("success"); } catch {} };
+
+  // ---- звёзды на фоне: тихо мерцают ----
+  (() => {
+    const c = $("stars"), x = c.getContext("2d");
+    let w, h, st = [];
+    const size = () => { const r = devicePixelRatio || 1; w = innerWidth; h = innerHeight; c.width = w * r; c.height = h * r;
+      x.setTransform(r, 0, 0, r, 0, 0);
+      st = Array.from({ length: 70 }, (_, i) => { const s = ((i * 7919 + 13) % 1000) / 1000;
+        return { x: ((i * .618 + s * .37) % 1) * w, y: ((i * .414 + s * .21) % 1) * h, s }; }); };
+    size(); addEventListener("resize", size);
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const draw = t => { x.clearRect(0, 0, w, h);
+      for (const p of st) { const tw = .5 + .5 * Math.sin(t / 1000 * (1 + p.s * 2) + p.s * 10);
+        x.fillStyle = `rgba(191,216,255,${(.08 + .3 * p.s) * (.4 + .6 * tw)})`;
+        x.beginPath(); x.arc(p.x, p.y, .6 + p.s * 1.1, 0, 6.283); x.fill(); }
+      if (!still) requestAnimationFrame(draw); };
+    requestAnimationFrame(draw);
+  })();
+
+  // ---- данные от бота приходят в адресе после #d= ----
+  function readData() {
+    const m = location.hash.match(/d=([A-Za-z0-9_-]+)/);
+    if (!m) return null;
+    try {
+      let b = m[1].replace(/-/g, "+").replace(/_/g, "/");
+      while (b.length % 4) b += "=";
+      const bytes = Uint8Array.from(atob(b), c => c.charCodeAt(0));
+      return JSON.parse(new TextDecoder().decode(bytes));
+    } catch { return null; }
+  }
+  const D = readData() || { b: "Arise VPN", tg: "Быстрый и приватный интернет без границ", p: [], e: 0 };
+  // Данные приходят из ссылки (#d=…), а её можно подделать и прислать кому угодно. Всё, что дальше
+  // вставляется в страницу как HTML, должно быть числом — иначе в «цену» можно подсунуть код.
+  {
+    const N = x => (Number.isFinite(+x) ? +x : 0);
+    for (const k of ["e", "td", "rb", "rc"]) D[k] = N(D[k]);
+    D.p = (Array.isArray(D.p) ? D.p : []).map(p => ({ ...p, price: N(p.price), rub: N(p.rub), days: N(p.days) || 30,
+                                                     disc: N(p.disc) }));
+    D.subs = (Array.isArray(D.subs) ? D.subs : []).map(s => ({ ...s, d: N(s.d), e: N(s.e),
+                                                             al: /^https?:\/\//.test(String(s.al || "")) ? s.al : "" }));
+    D.pm = String(D.pm || "s").replace(/[^syc]/g, "");
+    D.bu = String(D.bu || "").replace(/[^A-Za-z0-9_]/g, "");
+  }
+
+  const plural = n => {
+    const a = n % 10, b = n % 100;
+    if (a === 1 && b !== 11) return n + " день";
+    if (a >= 2 && a <= 4 && (b < 12 || b > 14)) return n + " дня";
+    return n + " дней";
+  };
+  const devWord = n => {
+    const a = n % 10, b = n % 100;
+    if (a === 1 && b !== 11) return n + " устройство";
+    if (a >= 2 && a <= 4 && (b < 12 || b > 14)) return n + " устройства";
+    return n + " устройств";
+  };
+  const fmtDate = ts => new Date(ts * 1000).toLocaleDateString("ru-RU");
+
+  function toast(msg) {
+    const t = $("toast"); t.textContent = msg; t.classList.add("show");
+    clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 1800);
+  }
+  async function copy(text, okMsg) {
+    try { await navigator.clipboard.writeText(text); toast(okMsg); success(); }
+    catch { try { prompt("Скопируйте:", text); } catch { toast("Не удалось скопировать"); } }
+  }
+  const openTg = url => { if (tg && tg.openTelegramLink) tg.openTelegramLink(url); else window.open(url, "_blank"); };
+  const closeApp = () => { try { tg.close(); } catch {} };
+  const toBot = arg => () => { haptic(); if (D.bu) { openTg(`https://t.me/${D.bu}?start=${arg}`); closeApp(); } else toast("Откройте приложение из чата с ботом"); };
+
+  // ---- шапка ----
+  $("brand").textContent = D.b || "Arise VPN";
+  $("tagline").textContent = D.tg || "";
+  document.title = D.b || "Arise VPN";
+
+  // ---- статус ----
+  const now = Date.now() / 1000;
+  const active = D.e && D.e > now;
+  const left = active ? Math.ceil((D.e - now) / 86400) : 0;
+  const card = $("statusCard");
+  if (!readData()) {
+    card.classList.remove("glow");
+    card.innerHTML = `<div class="st"><b><span class="dot off"></span>Откройте через бота</b>
+      <small>Нажмите «Приложение» в чате с ботом, чтобы увидеть свою подписку.</small></div>`;
+  } else if (active) {
+    const frac = Math.max(.04, Math.min(1, left / 30));
+    const C = 2 * Math.PI * 36;
+    card.innerHTML = `<div class="status">
+      <div class="ring"><svg viewBox="0 0 84 84"><defs><linearGradient id="rg" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#1f4fd6"/><stop offset="1" stop-color="#8cc0ff"/></linearGradient></defs>
+        <circle cx="42" cy="42" r="36" fill="none" stroke="rgba(110,160,255,.18)" stroke-width="7"/>
+        <circle cx="42" cy="42" r="36" fill="none" stroke="url(#rg)" stroke-width="7" stroke-linecap="round" style="filter:drop-shadow(0 0 6px #3d7bff)"
+          stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - frac)}"/></svg>
+        <div class="num"><b>${left}</b><small>${plural(left).split(" ")[1]}</small></div></div>
+      <div class="st"><b><span class="dot"></span>Защищено</b><small>Подписка до ${fmtDate(D.e)}</small></div></div>
+      <a class="btn ghost sm" id="extendBtn" style="margin-top:14px">Продлить</a>`;
+    $("extendBtn").onclick = toBot("renew");
+  } else {
+    card.classList.remove("glow");
+    card.innerHTML = `<div class="st"><b><span class="dot off"></span>Здравствуйте${D.n ? ", " + D.n.replace(/[<>&"']/g, "") : ""}</b>
+      <small>Подписки пока нет. Выберите тариф ниже — ключ сразу придёт в чат.</small></div>`;
+  }
+  if (D.loc && D.loc.length) {
+    $("locSec").hidden = false;
+    D.loc.forEach(n => { const c = document.createElement("span"); c.className = "cty"; c.textContent = n; $("locList").appendChild(c); });
+  }
+
+  // ---- своё приложение (Android) ----
+  const isApple = /iPhone|iPad|Macintosh/.test(navigator.userAgent);
+  if (D.app && D.bu && !isApple) {
+    $("appCard").hidden = false;
+    $("appBtn").onclick = () => { haptic("medium"); openTg(`https://t.me/${D.bu}?start=app`); closeApp(); };
+  }
+
+  // ---- пробный период ----
+  if (D.tr && D.bu) {
+    $("trialCard").hidden = false;
+    $("trialTitle").textContent = plural(D.td || 1).replace(/^./, c => c.toUpperCase()) + " бесплатно";
+    $("trialBtn").onclick = () => { haptic("medium"); openTg(`https://t.me/${D.bu}?start=trial`); closeApp(); };
+  }
+
+  // ---- тарифы ----
+  const plansEl = $("plans");
+  const plans = D.p || [];
+  plans.forEach((p, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    const best = i === plans.length - 1 && plans.length > 1;
+    b.className = "plan press" + (best ? " best" : "");
+    const perMonth = Math.round(p.price / (p.days / 30));
+    const badge = best ? `<span class="badge">★ Выгоднее всего</span>`
+                : (i === 1 && plans.length > 2 ? `<span class="badge">Популярный</span>` : "");
+    b.innerHTML = `${badge}<span class="nm"></span><span class="pr"><span>от</span> ${p.price} <span>⭐</span></span>
+      ${p.rub ? `<span class="rub">или от ${p.rub} ₽</span>` : ""}
+      <span class="pm">${perMonth} ⭐ в месяц</span><span class="save">${p.disc >= 3 ? "выгода " + p.disc + "%" : ""}</span>`;
+    b.querySelector(".nm").textContent = p.name;
+    b.onclick = () => buy(p);
+    plansEl.appendChild(b);
+  });
+  const pm = D.pm || "s";
+  const names = { s: "⭐ Звёзды Telegram", y: "💳 Карта или СБП", c: "🪙 Крипта: USDT, TON, BTC" };
+  if (pm.length > 1) {
+    $("plansNote").textContent = "Число устройств и способ оплаты выбираются на следующем шаге.";
+    [...pm].forEach(k => { if (names[k]) { const m = document.createElement("span"); m.textContent = names[k]; $("methods").appendChild(m); } });
+  }
+  if (!plans.length) plansEl.innerHTML = `<p class="sub" style="grid-column:1/-1">Тарифы появятся, когда вы откроете приложение из чата с ботом.</p>`;
+
+  // Покупка идёт в боте: там выбираются устройства, продление и автопродление
+  function buy(p) {
+    haptic("medium");
+    if (!D.bu) { toast("Откройте приложение из чата с ботом"); return; }
+    openTg(`https://t.me/${D.bu}?start=buy_${p.id}`);
+    closeApp();
+  }
+
+  // ---- подписки ----
+  const subs = (D.subs || []).filter(s => s.e && s.k);
+  if (subs.length) {
+    $("keySec").hidden = false;
+    const list = $("subsList");
+    subs.forEach(s => {
+      const c = document.createElement("div");
+      c.className = "card";
+      const l = Math.ceil((s.e - now) / 86400);
+      c.innerHTML = `<div class="subhead"><b data-f="name"></b><span class="chip">${s.a ? "🔁 автопродление" : "● активна"}</span></div>
+        <div class="meta">${devWord(s.d)} · до ${fmtDate(s.e)} · ещё ${plural(l)}</div>
+        <div style="display:flex;flex-direction:column;gap:10px" data-f="more"></div>
+        ${D.dm ? '<div class="demo">Демо-режим: сервер ещё не подключён, ключ пока не работает.</div>' : ""}`;
+      const f = n => c.querySelector(`[data-f="${n}"]`);
+      f("name").textContent = s.n;
+      const more = f("more");
+      const btn = (label, fn, cls) => { const b = document.createElement("a"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; return b; };
+      if (s.al && !isApple) more.appendChild(btn("⚡ Подключить в один клик", () => { haptic("medium"); try { tg.openLink(s.al); } catch { window.open(s.al, "_blank"); } }, "main"));
+      const r = document.createElement("div"); r.className = "row";
+      r.appendChild(btn("Скопировать ключ", () => { haptic(); copy(s.k, "Ключ скопирован"); }, s.al && !isApple ? "ghost sm" : "main sm"));
+      r.appendChild(btn(s.up ? "➕ Устройства" : "Продлить", toBot("renew"), "ghost sm"));
+      more.appendChild(r);
+      list.appendChild(c);
+    });
+  }
+
+  // ---- инструкции ----
+  const OS = {
+    android: D.app
+      ? ["Скачайте приложение Arise VPN кнопкой выше и установите его.",
+         "В карточке подписки нажмите «⚡ Подключить в один клик» — всё добавится само.",
+         "Нажмите большую кнопку в центре — VPN включится.",
+         "Можно и через Happ или v2rayNG: «+» → «Импорт из буфера обмена» со скопированным ключом."]
+      : ["Установите Happ или v2rayNG из Google Play.", "Скопируйте ключ в карточке подписки.",
+         "В приложении нажмите «+», затем «Импорт из буфера обмена».", "Нажмите кнопку подключения ▶"],
+    ios: ["Установите Happ или Streisand из App Store.", "Скопируйте ключ в карточке подписки.",
+          "В приложении нажмите «+» и добавьте ключ из буфера.", "Включите подключение и разрешите VPN."],
+    windows: ["Установите Hiddify или Happ с официального сайта.", "Скопируйте ключ в карточке подписки.",
+              "Нажмите «+» и выберите импорт из буфера обмена.", "Нажмите «Подключить»."],
+    mac: ["Установите Happ или Hiddify из App Store.", "Скопируйте ключ в карточке подписки.",
+          "Добавьте профиль из буфера обмена.", "Включите подключение."],
+  };
+  function showOS(os) {
+    document.querySelectorAll("#seg button").forEach(b => b.setAttribute("aria-selected", b.dataset.os === os));
+    $("steps").innerHTML = "";
+    OS[os].forEach(s => { const li = document.createElement("li"); li.textContent = s; $("steps").appendChild(li); });
+  }
+  document.querySelectorAll("#seg button").forEach(b => b.onclick = () => { haptic(); showOS(b.dataset.os); });
+  const ua = navigator.userAgent;
+  showOS(/iPhone|iPad/.test(ua) ? "ios" : /Mac/.test(ua) ? "mac" : /Windows/.test(ua) ? "windows" : "android");
+
+  // ---- друзья ----
+  if (D.rf) {
+    $("refBonus").textContent = "+" + plural(D.rb || 7);
+    const cond = D.rj ? "запустит бота по вашей ссылке" : "оформит доступ";
+    $("refText").textContent = `за каждого друга, который ${cond}. Приглашено: ${D.rc || 0}`;
+    const text = `Приглашаю в ${D.b}: быстрый приватный VPN`;
+    $("shareRef").onclick = () => { haptic(); openTg(`https://t.me/share/url?url=${encodeURIComponent(D.rf)}&text=${encodeURIComponent(text)}`); };
+    $("copyRef").onclick = () => copy(D.rf, "Ссылка скопирована");
+  } else {
+    $("refCard").hidden = true;
+  }
+
+  // ---- подвал ----
+  $("support").onclick = () => { if (D.s) openTg(`https://t.me/${D.s}`); else if (D.bu) toBot("support")(); else toast("Напишите в чат бота"); };
+  $("terms").onclick = toBot("terms");
+
+  // ---- интеграция с Telegram ----
+  if (tg) {
+    try {
+      tg.ready(); tg.expand();
+      tg.setHeaderColor("#02040b"); tg.setBackgroundColor("#02050f");
+      if (tg.setBottomBarColor) tg.setBottomBarColor("#02050f");
+    } catch {}
+    if (!active && plans.length && tg.MainButton) {
+      tg.MainButton.setParams({ text: "Оформить доступ", color: "#2f6bff", text_color: "#ffffff" });
+      tg.MainButton.onClick(() => { haptic(); $("plansSec").scrollIntoView({ behavior: "smooth" }); });
+      tg.MainButton.show();
+    }
+  }
+})();
+</script>
+</body>
+</html>
