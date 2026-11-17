@@ -45,13 +45,16 @@ body{display:flex;justify-content:center;align-items:flex-start;font-family:Inte
   background:linear-gradient(180deg,#4a86ff,#1d4fd8);border:1px solid rgba(170,205,255,.7);box-shadow:0 0 16px rgba(60,120,255,.6),inset 0 1px 0 rgba(255,255,255,.35)}
 
 /* глобус и кнопка */
-.globe{position:absolute;left:50%;top:162px;width:424px;height:424px;transform:translateX(-50%);z-index:1;
-  -webkit-mask-image:linear-gradient(180deg,#000 0,#000 58%,transparent 86%);mask-image:linear-gradient(180deg,#000 0,#000 58%,transparent 86%)}
-.globe img{position:absolute;inset:-9.1%;width:118.2%;height:118.2%;animation:breathe 6s ease-in-out infinite}
-@keyframes breathe{0%,100%{filter:brightness(1)}50%{filter:brightness(1.18)}}
+/* глобус — картинка ChatGPT (сфера r=0.351 картинки), центр сферы под кнопкой */
+.globe{position:absolute;left:50%;top:72px;width:604px;height:604px;margin-left:-302px;z-index:1;pointer-events:none;
+  -webkit-mask-image:linear-gradient(180deg,#000 0,#000 50%,rgba(0,0,0,.35) 64%,transparent 80%);mask-image:linear-gradient(180deg,#000 0,#000 50%,rgba(0,0,0,.35) 64%,transparent 80%);transition:filter .6s}
+.globe img{position:absolute;inset:0;width:100%;height:100%;animation:breathe 6s ease-in-out infinite}
+.globe::after{content:'';position:absolute;inset:0;background:radial-gradient(circle at 50% 50%,rgba(2,6,18,.25) 0,rgba(2,6,18,.1) 30%,transparent 60%)}
+.off .globe{filter:brightness(.6) saturate(.75)}
+@keyframes breathe{0%,100%{filter:brightness(.72) saturate(.9)}50%{filter:brightness(.86) saturate(.95)}}
 .globe svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
-.orbit{fill:none;stroke:rgba(140,190,255,.35);stroke-width:1}
-.spark{fill:#fff;filter:drop-shadow(0 0 4px #7fb2ff) drop-shadow(0 0 8px #3d7bff)}
+.tw{position:absolute;width:6px;height:6px;margin:-3px;border-radius:50%;background:#fff;box-shadow:0 0 8px 3px #6fa8ff,0 0 18px 6px rgba(47,107,255,.6);animation:twk 3s ease-in-out infinite}
+@keyframes twk{0%,100%{opacity:.25;transform:scale(.6)}50%{opacity:1;transform:scale(1.1)}}
 
 .hero{position:absolute;left:50%;top:235px;width:144px;height:144px;transform:translateX(-50%);z-index:3}
 .halo{position:absolute;inset:-70px;border-radius:50%;background:radial-gradient(circle,rgba(90,150,255,.95) 0,rgba(47,107,255,.55) 34%,rgba(47,107,255,.12) 55%,transparent 70%);transition:opacity .5s}.off .halo{opacity:.35}
@@ -60,12 +63,15 @@ body{display:flex;justify-content:center;align-items:flex-start;font-family:Inte
 .wave{position:absolute;inset:0;border-radius:50%;border:2px solid rgba(150,195,255,.55);opacity:0}
 .on .wave{animation:wave 2.6s ease-out infinite}.on .wave.w2{animation-delay:.87s}.on .wave.w3{animation-delay:1.74s}
 @keyframes wave{0%{transform:scale(1);opacity:.7}100%{transform:scale(1.75);opacity:0}}
-.btn{position:absolute;inset:0;border-radius:50%;cursor:pointer;display:grid;place-items:center;
+.ringimg{position:absolute;inset:-26px;width:calc(100% + 52px);height:calc(100% + 52px);pointer-events:none;z-index:2;transition:opacity .5s,filter .5s;animation:ringb 4s ease-in-out infinite}
+@keyframes ringb{0%,100%{filter:brightness(1)}50%{filter:brightness(1.2)}}
+.off .ringimg{opacity:.45;filter:saturate(.6)}
+.btn{position:absolute;inset:6px;border-radius:50%;cursor:pointer;display:grid;place-items:center;z-index:1;
   background:radial-gradient(circle at 50% 40%,#16284f 0,#0a1430 60%,#060c1f 100%);
-  border:4px solid #b8d6ff;box-shadow:0 0 0 3px #3a78ff,0 0 14px 6px rgba(80,140,255,.95),0 0 46px 16px rgba(47,107,255,.6),inset 0 0 0 9px rgba(12,26,62,.85),inset 0 0 0 11px rgba(90,150,255,.35),inset 0 0 34px rgba(47,107,255,.6);
+  box-shadow:inset 0 0 30px rgba(47,107,255,.55),0 0 40px 10px rgba(47,107,255,.45);
   transition:transform .25s cubic-bezier(.3,1.6,.5,1),box-shadow .5s,border-color .5s}
-.btn:active{transform:scale(.93)}
-.off .btn{border-color:rgba(160,195,255,.55);box-shadow:0 0 0 2px rgba(60,120,255,.35),0 0 18px 4px rgba(47,107,255,.35),inset 0 0 18px rgba(47,107,255,.25)}
+.hero{transition:transform .25s cubic-bezier(.3,1.6,.5,1)}.hero:has(.btn:active){transform:translateX(-50%) scale(.93)}
+.off .btn{box-shadow:inset 0 0 18px rgba(47,107,255,.25)}
 .btn svg{width:52px;height:52px;filter:drop-shadow(0 0 8px rgba(160,200,255,1)) drop-shadow(0 0 16px rgba(80,140,255,.8))}
 .spin{position:absolute;inset:-6px;border-radius:50%;border:4px solid transparent;border-top-color:#e6f1ff;opacity:0;filter:drop-shadow(0 0 6px #7fb2ff)}
 .connecting .spin{opacity:1;animation:spin .9s linear infinite}
@@ -74,7 +80,7 @@ body{display:flex;justify-content:center;align-items:flex-start;font-family:Inte
 .flash.go{animation:flash .9s ease-out}
 @keyframes flash{0%{opacity:.8;transform:scale(1)}100%{opacity:0;transform:scale(1.9)}}
 
-.status{position:absolute;top:392px;left:0;right:0;text-align:center;z-index:3}
+.status{position:absolute;top:392px;left:0;right:0;text-align:center;z-index:3;text-shadow:0 2px 12px rgba(0,0,0,.9),0 0 2px rgba(0,0,0,.8)}
 .status b{display:block;font-size:31px;font-weight:700;letter-spacing:.2px;transition:opacity .3s}
 .timer{font-size:27px;font-weight:600;color:#86bcff;letter-spacing:.5px;margin-top:2px;font-variant-numeric:tabular-nums;text-shadow:0 0 14px rgba(70,130,255,.55)}
 .off .timer{font-size:14px;font-weight:400;color:var(--dim);text-shadow:none;margin-top:8px}
@@ -145,20 +151,16 @@ body{display:flex;justify-content:center;align-items:flex-start;font-family:Inte
 
     <div class="globe" id="globe">
       <img src="GLOBE_DATA" alt="">
-      <svg viewBox="0 0 424 424" id="orbits">
-        <ellipse class="orbit" cx="212" cy="212" rx="230" ry="70" transform="rotate(-18 212 212)"/>
-        <ellipse class="orbit" cx="212" cy="212" rx="250" ry="120" transform="rotate(14 212 212)"/>
-        <ellipse class="orbit" cx="212" cy="230" rx="215" ry="40" transform="rotate(4 212 212)"/>
-        <circle class="spark" r="3" id="s1"/><circle class="spark" r="2.5" id="s2"/><circle class="spark" r="2.5" id="s3"/>
-        <circle class="spark" cx="300" cy="138" r="2.2"/><circle class="spark" cx="70" cy="226" r="2"/><circle class="spark" cx="372" cy="244" r="2"/>
-      </svg>
+      <i class="tw" style="left:74%;top:7%"></i><i class="tw" style="left:9%;top:41%;animation-delay:-1s"></i>
+      <i class="tw" style="left:91%;top:55%;animation-delay:-2s"></i><i class="tw" style="left:47%;top:91%;animation-delay:-.5s"></i>
+      <i class="tw" style="left:15%;top:60%;animation-delay:-1.6s"></i><i class="tw" style="left:79%;top:74%;animation-delay:-2.4s"></i>
     </div>
 
     <div class="hero" id="hero">
       <div class="halo"></div><div class="ring r2"></div><div class="ring"></div>
       <div class="wave"></div><div class="wave w2"></div><div class="wave w3"></div>
       <div class="spin"></div><div class="flash" id="flash"></div>
-      <div class="btn" id="btn"><svg viewBox="0 0 24 24" fill="none" stroke="#dcebff" stroke-width="2.2" stroke-linecap="round"><path d="M7.4 6.1a8 8 0 1 0 9.2 0"/><path d="M12 2.8v8.4"/></svg></div>
+      <img class="ringimg" src="RING_DATA" alt=""><div class="btn" id="btn"><svg viewBox="0 0 24 24" fill="none" stroke="#dcebff" stroke-width="2.2" stroke-linecap="round"><path d="M7.4 6.1a8 8 0 1 0 9.2 0"/><path d="M12 2.8v8.4"/></svg></div>
     </div>
 
     <div class="status"><b id="st">Защищено</b><div class="timer" id="timer">00:12:45</div></div>
@@ -196,11 +198,6 @@ body{display:flex;justify-content:center;align-items:flex-start;font-family:Inte
 const st=document.getElementById('stars');
 for(let i=0;i<70;i++){const s=document.createElement('i');const k=(i*0.618)%1,q=(i*0.4142+0.13)%1;s.style.left=(k*100)+'%';s.style.top=(q*100)+'%';
   const z=0.6+((i*7919)%10)/10;s.style.width=s.style.height=z+'px';s.style.animationDelay=(-(i*0.37)%4)+'s';st.appendChild(s)}
-// огоньки бегут по орбитам вокруг глобуса
-const orbits=[...document.querySelectorAll('.orbit')],sparks=['s1','s2','s3'].map(id=>document.getElementById(id));
-function frame(t){sparks.forEach((s,i)=>{const o=orbits[i],L=o.getTotalLength(),p=o.getPointAtLength(((t/(9000+i*2500))+i*.3)%1*L);
-  const m=o.getCTM(),sv=o.ownerSVGElement.getCTM().inverse(),pt=new DOMPoint(p.x,p.y).matrixTransform(m).matrixTransform(sv);s.setAttribute('cx',pt.x);s.setAttribute('cy',pt.y)});requestAnimationFrame(frame)}
-requestAnimationFrame(frame);
 // график скорости
 const pts=[];for(let i=0;i<=48;i++){const x=i/48*330;const y=48-(Math.sin(i/3.2)*4+Math.sin(i/7)*3+i*0.78)+((i*37)%7-3)*0.5;pts.push([x,Math.max(4,Math.min(52,y))])}
 const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');

@@ -18,7 +18,9 @@ fonts = "".join(
     for n, w in (("regular", 400), ("medium", 500), ("semibold", 600), ("bold", 700))
 )
 html = open(os.path.join(HERE, "mock.template.html"), encoding="utf-8").read()
-html = html.replace("/*FONTS*/", fonts).replace("GLOBE_DATA", "data:image/webp;base64," + b64(os.path.join(HERE, "globe.webp")))
+html = (html.replace("/*FONTS*/", fonts)
+        .replace("GLOBE_DATA", "data:image/webp;base64," + b64(os.path.join(HERE, "globe_gpt.webp")))
+        .replace("RING_DATA", "data:image/webp;base64," + b64(os.path.join(HERE, "ring_gpt.webp"))))
 with open(os.path.join(HERE, "arise-mock.html"), "w", encoding="utf-8") as f:
     f.write(html)
 print("ok", len(html) // 1024, "KB")
