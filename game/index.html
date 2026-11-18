@@ -784,7 +784,7 @@ const EN = {
     endFinish:'End the run', unlockDef:'NEW SKIN',
     shopTitle:'UPGRADES', tabUp:'Boosts', tabChars:'Sparks', tabSkins:'Skins', tabTal:'Talents', bestT:'BESTIARY', bestL:'Bestiary', bestInfo:(n,m)=>'Creatures met: '+n+' / '+m, bestLocked:'Not met yet — dive deeper.', talOwn:'Learned', dailyB:'DAILY CHALLENGE', dailyT:'DAILY CHALLENGE', dailyX2:'×2 pearls', dailyWin:'DAILY CHALLENGE COMPLETE', best:'best', back:'Back',
     achTitle:'AWARDS', setTitle:'SETTINGS',
-    sound:'Sound', music:'Music', vibro:'Vibration', graphics:'Graphics', nums:'Damage numbers', shake:'Screen shake', fxL:'Glow (GPU)', fxNo:'unavailable', fxHi:'on high graphics',
+    sound:'Sound', music:'Music', vibro:'Vibration', graphics:'Graphics', nums:'Damage numbers', shake:'Screen shake', fxL:'Glow (GPU)', fxNo:'unavailable', fxHi:'on high graphics', fxSlow:'off (too heavy)',
     lang:'Language', track:'Melody', ost:'SOUNDTRACK', ostNo:'no files', on:'ON', off:'OFF', gHigh:'HIGH', gLow:'SAVER', gAuto:'AUTO',
     depth:'DEPTH', time:'TIME', foes:'FOES', maxCombo:'MAX COMBO', level:'LEVEL', pearlsL:'PEARLS', score:'SCORE', syn:'SYNERGIES',
     crabT:'SHIELD CRAB', crabS:'Hit from the side or dash — the shield cracks', crabBreak:'SHIELD BROKEN', lord:'LORD OF THE ABYSS', flareB:'FLARE!', comboX:'COMBO ×', synergy:'SYNERGY', pack:'Ambush!',
@@ -834,7 +834,7 @@ const RU = {ui:{
   endFinish:'Завершить заплыв', unlockDef:'НОВЫЙ ОБЛИК',
   shopTitle:'УЛУЧШЕНИЯ', tabUp:'Усиления', tabChars:'Искры', tabSkins:'Облики', tabTal:'Таланты', bestT:'БЕСТИАРИЙ', bestL:'Бестиарий', bestInfo:(n,m)=>'Встречено существ: '+n+' / '+m, bestLocked:'Ещё не встречено — ныряй глубже.', talOwn:'Изучено', dailyB:'ИСПЫТАНИЕ ДНЯ', dailyT:'ИСПЫТАНИЕ ДНЯ', dailyX2:'жемчуг ×2', dailyWin:'ИСПЫТАНИЕ ДНЯ ПРОЙДЕНО', best:'лучшее', back:'Назад',
   achTitle:'НАГРАДЫ', setTitle:'НАСТРОЙКИ',
-  sound:'Звуки', music:'Музыка', vibro:'Вибрация', graphics:'Графика', nums:'Цифры урона', shake:'Тряска экрана', fxL:'Свечение', fxNo:'недоступно', fxHi:'на высокой графике',
+  sound:'Звуки', music:'Музыка', vibro:'Вибрация', graphics:'Графика', nums:'Цифры урона', shake:'Тряска экрана', fxL:'Свечение', fxNo:'недоступно', fxHi:'на высокой графике', fxSlow:'выкл (тяжело для телефона)',
   lang:'Язык', track:'Мелодия', ost:'САУНДТРЕК', ostNo:'нет файлов', on:'ВКЛ', off:'ВЫКЛ', gHigh:'ВЫСОКАЯ', gLow:'ЭКОНОМ', gAuto:'АВТО',
   depth:'ГЛУБИНА', time:'ВРЕМЯ', foes:'ВРАГОВ', maxCombo:'МАКС. КОМБО', level:'УРОВЕНЬ', pearlsL:'ЖЕМЧУГ', score:'ОЧКИ', syn:'СИНЕРГИЙ',
   crabT:'КРАБ СО ЩИТОМ', crabS:'Бей сбоку или рывком — щит треснет', crabBreak:'ЩИТ РАСКОЛОТ', lord:'ВЛАДЫКА БЕЗДНЫ', flareB:'ВСПЫШКА!', comboX:'КОМБО ×', synergy:'СИНЕРГИЯ', pack:'Окружение!',
@@ -961,7 +961,7 @@ const numStr = n => { n = n | 0; if (n < 3000) return NUMS[n] || (NUMS[n] = Stri
 const SAVE_KEY = 'svet_bezdny_save_v1';
 function defaultLang() { try { return /^ru\b/i.test(navigator.language || '') ? 'ru' : (/^(uk|be|kk)\b/i.test(navigator.language||'') ? 'ru' : 'en'); } catch (e) { return 'ru'; } }
 function defaultSave() {
-  return {pearls:0, best:0, bestDepth:0, totalKills:0, totalPearls:0, runs:0, flares:0, qAuto:2,
+  return {pearls:0, best:0, bestDepth:0, totalKills:0, totalPearls:0, runs:0, flares:0, qAuto:1, /* первый запуск — средняя графика; высокая включится, если телефон стабильно тянет */
     shop:{}, tal:{}, chars:{lumen:1}, char:'lumen', skins:{azure:1}, skin:'azure', ach:{}, seenHow:0,
     seenIntro:0, foeSeen:{}, tut:0, wins:0, daily:{day:'', quests:[], streak:0, last:''}, bestKills:0, bestCombo:0, bestLevel:0, bestSyn:0,
     set:{sound:1, music:1, vibro:1, quality:'auto', nums:1, shake:1, qv:1, lang:defaultLang(), track:3, ost:1, fps:120}};
@@ -1676,7 +1676,8 @@ const FX = (() => {
     if (bw !== w1 || bh !== h1) { for (const f of F) { gl.deleteFramebuffer(f.f); gl.deleteTexture(f.t); } F = [mkFb(w1, h1), mkFb(w1, h1), mkFb(w2, h2), mkFb(w2, h2)]; bw = w1; bh = h1; }
   }
   function show(on) { if (on === shown) return; shown = on; gc.style.display = on ? 'block' : 'none'; hc.style.display = on ? 'block' : 'none'; if (!on) hctx.clearRect(0, 0, hc.width, hc.height); }
-  const active = () => { const on = ok && QL >= 2 && S.set.fx !== 0; show(on); return on; };
+  const active = () => { const on = ok && QL >= 2 && S.set.fx !== 0 && !S.fxSlow; show(on); return on; };
+  let costSum = 0, costN = 0;
   const TINT = [0, 0, 0];
   function hexRgb(h, o) { const n = parseInt(h.slice(1), 16); o[0] = (n >> 16 & 255) / 255; o[1] = (n >> 8 & 255) / 255; o[2] = (n & 255) / 255; }
   function pass(pr, fb, tex, w, h) { gl.bindFramebuffer(gl.FRAMEBUFFER, fb ? fb.f : null); gl.viewport(0, 0, w, h); gl.useProgram(pr.p);
@@ -1686,6 +1687,11 @@ const FX = (() => {
     pass(PB, a, b.t, a.w, a.h); gl.uniform2f(PB.d, 0, 1 / a.h); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
   function draw() {
+    const t0 = performance.now(); drawGL();
+    // копирование кадра в видеокарту на части телефонов очень дорогое — меряем и при необходимости выключаемся
+    if (!document.hidden) { costSum += performance.now() - t0; if (++costN >= 90) { if (costSum / costN > 6) { S.fxSlow = 1; persist(); setTimeout(() => window.dispatchEvent(new Event('resize')), 0); G.redraw = 2; } costSum = costN = 0; } }
+  }
+  function drawGL() {
     gl.bindTexture(gl.TEXTURE_2D, sceneT);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv);
     const [A, B, A2, B2] = F;
@@ -4395,7 +4401,7 @@ function renderSet() {
   $('setQuality').textContent = uiT('graphics') + ': ' + (S.set.quality === 'high' ? uiT('gHigh') : S.set.quality === 'low' ? uiT('gLow') : uiT('gAuto'));
   $('setNums').textContent = uiT('nums') + ': ' + on(S.set.nums);
   $('setShake').textContent = uiT('shake') + ': ' + on(S.set.shake);
-  $('setFx').textContent = uiT('fxL') + ': ' + (!FX.ok ? uiT('fxNo') : S.set.fx === 0 ? on(0) : QL >= 2 ? on(1) : uiT('fxHi'));
+  $('setFx').textContent = uiT('fxL') + ': ' + (!FX.ok ? uiT('fxNo') : S.set.fx === 0 ? on(0) : S.fxSlow ? uiT('fxSlow') : QL >= 2 ? on(1) : uiT('fxHi'));
   $('setLang').textContent = uiT('lang') + ': ' + (S.set.lang === 'en' ? 'English' : 'Русский');
   $('setTrack').textContent = uiT('track') + ': ' + (S.set.track === 3 ? uiT('ost') + (Mus.failed ? ' (' + uiT('ostNo') + ')' : '') : Snd.trackName(S.set.track));
   $('setFps').textContent = uiT('fps') + ': ' + S.set.fps;
@@ -4433,21 +4439,23 @@ const Ads = {
   ready() { try { return !!(window.AndroidAds && window.AndroidAds.isReady()); } catch (e) { return false; } },
   show(place, cb) {
     if (this.cb || !this.ready()) { cb(false); return; }
-    this.cb = cb;
+    this.cb = cb; this.wait(70000);
     try { window.AndroidAds.show(place); } catch (e) { this.cb = null; cb(false); }
   },
+  /** Страховка: если реклама не сообщила, что закрылась (сбой показа, приложение свернули), игра не должна висеть. */
+  wait(ms) { const cb = this.cb; this.cbT = Date.now(); clearTimeout(this.wd); this.wd = setTimeout(() => { if (this.cb === cb) window.__adResult('timeout', false); }, ms); },
   interReady() { try { return !!(window.AndroidInter && window.AndroidInter.isReady()); } catch (e) { return false; } },
   /** Межстраничная реклама между забегами — бережно: не новичкам, не чаще раза в 2,5 мин
       и не сразу после рекламы за награду. Затем в любом случае выполняется next(). */
   between(next) {
     const now = Date.now();
     if (this.cb || S.runs < 3 || now - this.last < CFG.INTER_GAP || now - this.t0 < 90000 || !this.interReady()) { next(); return; }
-    this.cb = () => next();
+    this.cb = () => next(); this.wait(35000);
     try { window.AndroidInter.show(); } catch (e) { this.cb = null; next(); }
   }
 };
 window.__adResult = function (place, ok) {
-  const cb = Ads.cb; Ads.cb = null;
+  const cb = Ads.cb; Ads.cb = null; clearTimeout(Ads.wd);
   if (ok) Ads.last = Date.now();
   if (cb) setTimeout(() => cb(!!ok), 0);
 };
@@ -4571,7 +4579,7 @@ click('btnAdRevive', adRevive);
 click('btnNoRevive', declineRevive);
 click('btnAdDouble', adDouble);
 for (const [id, k] of [['setSound', 'sound'], ['setMusic', 'music'], ['setVibro', 'vibro'], ['setQuality', 'quality'], ['setNums', 'nums'], ['setShake', 'shake']]) click(id, () => toggleSet(k));
-click('setFx', () => { S.set.fx = S.set.fx === 0 ? 1 : 0; persist(); G.redraw = 2; renderSet(); });
+click('setFx', () => { S.set.fx = S.set.fx === 0 ? 1 : 0; if (S.set.fx) S.fxSlow = 0; persist(); resize(); G.redraw = 2; renderSet(); }); // включил вручную — даём ещё попытку
 click('setLang', toggleLang); click('setTrack', toggleTrack);
 click('setFps', () => { S.set.fps = S.set.fps === 120 ? 60 : 120; persist(); renderSet(); });
 
@@ -4582,6 +4590,7 @@ function resize() {
   if (wasLand !== (W > H) && G.state === 'play') pauseGame(); // QA: поворот экрана посреди забега — пауза, чтобы не умереть вслепую
 
   DPR = Math.min(window.devicePixelRatio || 1, QDPR[QL]);
+  if (QL >= 2 && FX.ok && S.set.fx !== 0 && !S.fxSlow) DPR = Math.min(DPR, 2); // свечение: кадр ×2, иначе копирование в видеокарту слишком дорого
   cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
   VS = clamp(Math.min(W, H) / 450, 0.8, 1.8); VW = W / 2 / VS; VH = H / 2 / VS;
   try { const cs = getComputedStyle($('safeProbe')); SAFE.t = parseFloat(cs.paddingTop) || 0; SAFE.r = parseFloat(cs.paddingRight) || 0; SAFE.b = parseFloat(cs.paddingBottom) || 0; SAFE.l = parseFloat(cs.paddingLeft) || 0; } catch (e) {}
@@ -4590,6 +4599,8 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 200));
+// вернулись в игру, а реклама так и не ответила — через 3 с продолжаем без неё
+document.addEventListener('visibilitychange', () => { if (!document.hidden && Ads.cb) { const cb = Ads.cb; setTimeout(() => { if (Ads.cb === cb && !document.hidden) window.__adResult('back', false); }, 3000); } });
 document.addEventListener('visibilitychange', () => { if (document.hidden) { if (G.state === 'play') pauseGame(); Snd.suspend(); } else if (G.state !== 'title' || Snd.ready) Snd.resume(); });
 
 const PERF = {frames: 0, sum: 0, max: 0, cpuSum: 0, cpuMax: 0, slow: 0, reset() { this.frames = this.sum = this.max = this.cpuSum = this.cpuMax = this.slow = 0; }};

@@ -66,7 +66,8 @@ public class InterstitialAds {
                 @Override public void onAdClicked() {}
                 @Override public void onAdImpression(ImpressionData data) {}
             });
-            current.show(activity);
+            try { current.show(activity); }
+            catch (Throwable t) { Log.w(TAG, "show failed", t); showing = false; result(false); } // сбой показа — игра не должна ждать вечно
         });
     }
 

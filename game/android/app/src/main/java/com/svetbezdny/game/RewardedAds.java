@@ -70,7 +70,8 @@ public class RewardedAds {
                 @Override public void onAdImpression(ImpressionData data) {}
                 @Override public void onRewarded(Reward reward) { rewarded = true; }
             });
-            current.show(activity);
+            try { current.show(activity); }
+            catch (Throwable t) { Log.w(TAG, "show failed", t); showing = false; result(where, false); } // сбой показа — игра не должна ждать вечно
         });
     }
 
