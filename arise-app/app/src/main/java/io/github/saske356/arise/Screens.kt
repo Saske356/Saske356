@@ -246,7 +246,9 @@ internal fun CountrySheet(open: Boolean, vpn: VpnUi, data: Data, close: () -> Un
                     data.pings.isNotEmpty() && data.pings.values.none { it > 0 } && data.measuring.isEmpty()
                 ) Text("Замер без VPN: ${data.pingError}", color = TextDim, fontSize = 11.5.sp,
                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp))
-                val list = data.servers.filter { query.isBlank() || it.name.contains(query.trim(), ignoreCase = true) }
+                // одинаковые названия (например, страна и её копия через мост) роняли список: ключи должны быть разными
+                val list = data.servers.distinctBy { it.name }
+                    .filter { query.isBlank() || it.name.contains(query.trim(), ignoreCase = true) }
                 val special = list.filter { it.name.startsWith("🚀") || it.name.startsWith("🎮") }
                 var rest = list - special.toSet()
                 if (byPing) {
@@ -274,7 +276,7 @@ internal fun CountrySheet(open: Boolean, vpn: VpnUi, data: Data, close: () -> Un
                             )
                         }
                     }
-                    items(rest, key = { it.name }) { s ->
+                    items(rest, key = { "c:" + it.name }) { s ->
                         Box(Modifier.animateItem().padding(vertical = 3.dp)) { CountryRow(s, vpn, data, onPick) }
                     }
                     item { Spacer(Modifier.height(20.dp)) }

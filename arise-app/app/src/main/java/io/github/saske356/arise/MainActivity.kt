@@ -251,6 +251,34 @@ class MainActivity : ComponentActivity() {
         // Любая настройка, которая меняет конфиг, применяется сразу, если VPN включён
         val apply = { if (VpnState.flow.value.status != Status.STOPPED) AriseVpnService.start(ctx) }
 
+        // Прошлый запуск упал — показываем причину, чтобы её можно было прислать
+        var crash by remember {
+            mutableStateOf(ctx.getSharedPreferences(AriseApp.CRASH_PREFS, Context.MODE_PRIVATE).getString("text", "") ?: "")
+        }
+        if (crash.isNotEmpty()) {
+            val clear = {
+                ctx.getSharedPreferences(AriseApp.CRASH_PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+                crash = ""
+            }
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = clear,
+                containerColor = Color(0xFF0E1C3E),
+                title = { Text("Приложение упало", color = TextMain) },
+                text = {
+                    Text("Скопируйте текст и пришлите разработчику:\n\n" + crash.take(900), color = TextSoft, fontSize = 11.sp,
+                        modifier = Modifier.verticalScroll(rememberScrollState()))
+                },
+                confirmButton = {
+                    androidx.compose.material3.TextButton(onClick = {
+                        val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        cm.setPrimaryClip(android.content.ClipData.newPlainText("Ошибка Arise", crash))
+                        Toast.makeText(ctx, "Скопировано", Toast.LENGTH_SHORT).show()
+                        clear()
+                    }) { Text("Скопировать", color = Blue) }
+                },
+                dismissButton = { androidx.compose.material3.TextButton(onClick = clear) { Text("Закрыть", color = TextSoft) } }
+            )
+        }
         Box(Modifier.fillMaxSize()) {
             Backdrop(vpn.status == Status.RUNNING)
             // экраны сменяются плавно: вперёд — сдвиг влево, назад — вправо

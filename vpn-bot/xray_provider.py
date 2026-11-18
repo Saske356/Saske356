@@ -982,6 +982,14 @@ class XrayProvider(VpnProvider):
                     if port and not loc.get("down"):
                         out.append({**e(b["host"], port, self.bridge_site, f"{loc['name']} · {b['name']}"),
                                     "tg": tg(b["host"], b["port"], self.bridge_site)})
+        # Названия должны быть разными: приложения выбирают подключение по имени, а одинаковые
+        # (две страны с одним флагом, страна и её копия через мост) путают выбор и роняли список стран
+        seen: dict[str, int] = {}
+        for x in out:
+            n = seen.get(x["name"], 0) + 1
+            seen[x["name"]] = n
+            if n > 1:
+                x["name"] = f"{x['name']} {n}"
         return out
 
     def hy2_links(self, user_id: int) -> list[str]:

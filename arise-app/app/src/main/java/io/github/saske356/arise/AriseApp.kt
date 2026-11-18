@@ -8,8 +8,23 @@ import android.provider.Settings
 import java.security.MessageDigest
 
 class AriseApp : Application() {
+    companion object {
+        const val CRASH_PREFS = "crash"
+    }
+
     override fun onCreate() {
         super.onCreate()
+        // Падение приложения: запоминаем причину, при следующем запуске она показывается (её можно скопировать)
+        val prev = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            try {
+                val text = android.util.Log.getStackTraceString(e).take(4000)
+                getSharedPreferences(CRASH_PREFS, MODE_PRIVATE).edit()
+                    .putString("text", "${BuildConfig.VERSION_NAME}\n$text").commit()
+            } catch (_: Throwable) {
+            }
+            prev?.uncaughtException(t, e)
+        }
         Store.init(this)
         ChatVault.init(this)
         // Номер устройства для лимита устройств: ANDROID_ID не меняется при переустановке приложения.
