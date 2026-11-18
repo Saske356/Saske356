@@ -325,7 +325,8 @@ private fun CountryRow(s: Server, vpn: VpnUi, data: Data, onPick: (String) -> Un
     val ping = if (vpn.status == Status.RUNNING && vpn.server == s.name && vpn.ping != 0L) vpn.ping else data.pings[s.name] ?: 0L
     val busy = s.name in data.measuring
     val shown = if (busy && ping < 0) 0L else ping
-    val note = if (s.name.contains("🇷🇺") || s.name.contains("Обход", true)) " · белые списки" else ""
+    // «Обход» в названии уже говорит сам за себя — приписка «· белые списки» не нужна
+    val note = if (s.name.contains("🇷🇺") && !s.name.contains("Обход", true)) " · белые списки" else ""
     val shape = RoundedCornerShape(if (selected) 21.5.dp else 19.dp)
     Row(
         Modifier
