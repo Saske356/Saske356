@@ -350,6 +350,7 @@ button{ -webkit-appearance:none; appearance:none; }
     </div>
     <button class="linkBtn" id="btnHard" hidden></button>
     <button class="linkBtn" id="tHint">Как играть?</button>
+    <button class="linkBtn" id="btnBest">Бестиарий</button>
   </div>
 </div>
 
@@ -437,6 +438,13 @@ button{ -webkit-appearance:none; appearance:none; }
 </div>
 
 <!-- Достижения -->
+<div class="screen" id="scrBest">
+  <h2 id="bestTitle">БЕСТИАРИЙ</h2>
+  <div class="sub" id="bestInfo"></div>
+  <div class="scroll" id="bestList" style="flex:1"></div>
+  <button class="btn" id="btnBestBack">Назад</button>
+</div>
+
 <div class="screen" id="scrAch">
   <h2>НАГРАДЫ</h2>
   <div class="sub" id="achInfo"></div>
@@ -764,7 +772,7 @@ const EN = {
     overShop:'Upgrades', overMenu:'Menu', adDouble:'▶ ×2 pearls for an ad', again:'PLAY AGAIN',
     endTitle:'THE LIGHT RETURNED', endless:'ENDLESS DESCENT', endlessSub:'deeper · stronger · bosses return',
     endFinish:'End the run', unlockDef:'NEW SKIN',
-    shopTitle:'UPGRADES', tabUp:'Boosts', tabChars:'Sparks', tabSkins:'Skins', tabTal:'Talents', talOwn:'Learned', dailyB:'DAILY CHALLENGE', dailyT:'DAILY CHALLENGE', dailyX2:'×2 pearls', dailyWin:'DAILY CHALLENGE COMPLETE', best:'best', back:'Back',
+    shopTitle:'UPGRADES', tabUp:'Boosts', tabChars:'Sparks', tabSkins:'Skins', tabTal:'Talents', bestT:'BESTIARY', bestL:'Bestiary', bestInfo:(n,m)=>'Creatures met: '+n+' / '+m, bestLocked:'Not met yet — dive deeper.', talOwn:'Learned', dailyB:'DAILY CHALLENGE', dailyT:'DAILY CHALLENGE', dailyX2:'×2 pearls', dailyWin:'DAILY CHALLENGE COMPLETE', best:'best', back:'Back',
     achTitle:'AWARDS', setTitle:'SETTINGS',
     sound:'Sound', music:'Music', vibro:'Vibration', graphics:'Graphics', nums:'Damage numbers', shake:'Screen shake', fxL:'Glow (GPU)', fxNo:'unavailable', fxHi:'on high graphics',
     lang:'Language', track:'Melody', on:'ON', off:'OFF', gHigh:'HIGH', gLow:'SAVER', gAuto:'AUTO',
@@ -814,7 +822,7 @@ const RU = {ui:{
   overShop:'Улучшения', overMenu:'В меню', adDouble:'▶ ×2 жемчуга за рекламу', again:'ЕЩЁ РАЗ',
   endTitle:'СВЕТ ВЕРНУЛСЯ', endless:'БЕСКОНЕЧНЫЙ СПУСК', endlessSub:'глубже · сильнее · боссы возвращаются',
   endFinish:'Завершить заплыв', unlockDef:'НОВЫЙ ОБЛИК',
-  shopTitle:'УЛУЧШЕНИЯ', tabUp:'Усиления', tabChars:'Искры', tabSkins:'Облики', tabTal:'Таланты', talOwn:'Изучено', dailyB:'ИСПЫТАНИЕ ДНЯ', dailyT:'ИСПЫТАНИЕ ДНЯ', dailyX2:'жемчуг ×2', dailyWin:'ИСПЫТАНИЕ ДНЯ ПРОЙДЕНО', best:'лучшее', back:'Назад',
+  shopTitle:'УЛУЧШЕНИЯ', tabUp:'Усиления', tabChars:'Искры', tabSkins:'Облики', tabTal:'Таланты', bestT:'БЕСТИАРИЙ', bestL:'Бестиарий', bestInfo:(n,m)=>'Встречено существ: '+n+' / '+m, bestLocked:'Ещё не встречено — ныряй глубже.', talOwn:'Изучено', dailyB:'ИСПЫТАНИЕ ДНЯ', dailyT:'ИСПЫТАНИЕ ДНЯ', dailyX2:'жемчуг ×2', dailyWin:'ИСПЫТАНИЕ ДНЯ ПРОЙДЕНО', best:'лучшее', back:'Назад',
   achTitle:'НАГРАДЫ', setTitle:'НАСТРОЙКИ',
   sound:'Звуки', music:'Музыка', vibro:'Вибрация', graphics:'Графика', nums:'Цифры урона', shake:'Тряска экрана', fxL:'Свечение', fxNo:'недоступно', fxHi:'на высокой графике',
   lang:'Язык', track:'Мелодия', on:'ВКЛ', off:'ВЫКЛ', gHigh:'ВЫСОКАЯ', gLow:'ЭКОНОМ', gAuto:'АВТО',
@@ -896,7 +904,7 @@ function applyLangUI() {
   setText('btnEndFinish',T.endFinish);
   const sh=document.querySelector('#scrShop h2'); if(sh)sh.textContent=T.shopTitle;
   const tb=document.querySelectorAll('#scrShop .tabs .btn'); if(tb.length>=3){tb[0].textContent=T.tabUp;tb[1].textContent=T.tabChars;tb[2].textContent=T.tabSkins;} if(tb[3])tb[3].textContent=T.tabTal;
-  setText('btnShopBack',T.back); setText('btnAchBack',T.back); setText('btnSetBack',T.back);
+  setText('btnShopBack',T.back); setText('btnAchBack',T.back); setText('btnSetBack',T.back); setText('btnBestBack',T.back); setText('btnBest',T.bestL); setText('bestTitle',T.bestT);
   const ah=document.querySelector('#scrAch h2'); if(ah)ah.textContent=T.achTitle;
   const stt=document.querySelector('#scrSet h2'); if(stt)stt.textContent=T.setTitle;
   const qt=document.querySelector('#scrQuest h2'); if(qt)qt.textContent=T.questsTitle; setText('btnQuestBack',T.back);
@@ -1818,6 +1826,7 @@ function spawnEnemy(type, x, y, elite) {
   if (elite) { e.maxHp = e.hp = e.hp * 3.5; e.scale = 1.4; e.xp *= 4; e.score *= 5; e.dmg *= 1.3; }
   e.sh = type === 'crab' ? e.maxHp * CFG.CRAB_SHIELD : 0; // щит краба держит урон, потом ломается
   if (G.mut && !d.boss) { if (mut('swift')) e.spd *= 1.3; if (mut('swarm')) { e.maxHp *= 0.7; e.hp = e.maxHp; } if (mut('giant')) { e.scale *= 1.25; e.r *= 1.2; e.maxHp *= 1.4; e.hp = e.maxHp; } }
+  if (!(S.seen || (S.seen = {}))[type]) S.seen[type] = 1; // бестиарий: встреченные существа
   if (type === 'crab' && !S.crabHint) { S.crabHint = 1; persist(); setTimeout(() => banner(uiT('crabT'), uiT('crabS'), '#ff8a9a', 3), 600); }
   return e;
 }
@@ -3399,7 +3408,7 @@ function render(dt) {
 }
 
 /* ============================ 10. UI ============================ */
-const SCREENS = ['scrTitle', 'scrHow', 'scrLevel', 'scrPause', 'scrRevive', 'scrOver', 'scrShop', 'scrAch', 'scrSet', 'scrEnd', 'scrQuest'];
+const SCREENS = ['scrTitle', 'scrHow', 'scrLevel', 'scrPause', 'scrRevive', 'scrOver', 'scrShop', 'scrAch', 'scrSet', 'scrEnd', 'scrQuest', 'scrBest'];
 let backTo = 'scrTitle';
 function show(id) { if (id !== 'scrTitle') $('scrTitle').classList.remove('reveal'); for (const s of SCREENS) $(s).classList.toggle('on', s === id); document.body.classList.toggle('menu', !!id); }
 function click(id, fn) { $(id).addEventListener('click', e => { Snd.init(); Snd.resume(); Snd.mStart(); sfx.click(); fn(e); }); }
@@ -3887,6 +3896,46 @@ document.querySelectorAll('.tabs .btn').forEach(b => b.addEventListener('click',
   shopTab = b.dataset.tab; sfx.click(); document.querySelectorAll('.tabs .btn').forEach(x => x.classList.toggle('act', x === b)); renderShop(); $('shopList').scrollTop = 0; }));
 function openShop(from) { backTo = from; renderShop(); show('scrShop'); }
 
+/* ---------- бестиарий: коллекция встреченных существ ---------- */
+const BEST = {
+  drifter: ['Мелкий планктон. Плывёт прямо на свет стаями.', 'Tiny plankton. Drifts straight at the light in swarms.'],
+  dart: ['Целится и бросается иглой по прямой — уходи с линии.', 'Aims, then lunges in a straight line — step aside.'],
+  jelly: ['Медленная, но выпускает кольца жалящих искр.', 'Slow, but releases rings of stinging sparks.'],
+  urchin: ['Колючий шар. Погибая, разбрасывает шипы.', 'A spiny ball. Scatters spikelets when it dies.'],
+  spikelet: ['Осколок ежа: быстрый и злой.', 'An urchin shard: fast and mean.'],
+  eel: ['Длинный хищник. Заходит по дуге и хлещет телом.', 'A long predator. Circles in and lashes with its body.'],
+  squid: ['Держит дистанцию и стреляет чернильными сгустками.', 'Keeps its distance and spits ink.'],
+  crab: ['Щит спереди держит удар, пока не треснет. Бей сбоку.', 'Its front shield blocks hits until it cracks. Flank it.'],
+  mender: ['Лечит соседей. Убивай первым.', 'Heals nearby foes. Kill it first.'],
+  bomber: ['Раздувается и взрывается веером пуль.', 'Swells up and bursts into a fan of bullets.'],
+  chest: ['Жемчужница. Разбей — получишь жемчуг и улучшение.', 'A pearl oyster. Crack it for pearls and an upgrade.'],
+  crystal: ['Кристалл-щит Сердца Бездны. Пока цел, сердце неуязвимо.', 'A shield crystal of the Heart. While it stands, the Heart is guarded.'],
+  boss1: ['Владыка 500 м. Слепит приманкой и рвётся вперёд.', 'Lord of 500 m. Dazzles with its lure, then charges.'],
+  boss2: ['Владыка 1000 м. Хлещет щупальцами и рожает медуз.', 'Lord of 1000 m. Lashes with tentacles and births jellies.'],
+  boss3: ['Владыка 1500 м. Бьётся как сердце всей бездны.', 'Lord of 1500 m. Beats like the heart of the abyss.'],
+  boss4: ['Страж бесконечной глубины. Быстр, как течение.', 'Warden of the endless deep. Fast as the current.'],
+};
+function bestName(k) { const d = ET[k]; if (!d) return k; if (d.boss) return d.name; const n = (LANG === 'en' ? EN.enemies : null); return (n && n[k]) || BEST_N[k][LANG === 'en' ? 1 : 0]; }
+const BEST_N = {drifter: ['Плавунец', 'Drifter'], dart: ['Игла', 'Needlefish'], jelly: ['Медуза', 'Jelly'], urchin: ['Ёж', 'Urchin'], spikelet: ['Шип', 'Spikelet'],
+  eel: ['Угорь', 'Eel'], squid: ['Кальмар', 'Squid'], crab: ['Краб со щитом', 'Shield Crab'], mender: ['Целитель', 'Mender'], bomber: ['Бомбер', 'Bomber'],
+  chest: ['Жемчужница', 'Pearl Oyster'], crystal: ['Кристалл', 'Crystal']};
+function renderBest() {
+  const keys = Object.keys(ET).filter(k => SPR[k] && (BEST[k] || ET[k].boss)), seen = S.seen || {};
+  let n = 0; for (const k of keys) if (seen[k]) n++;
+  $('bestInfo').textContent = uiT('bestInfo')(n, keys.length);
+  const list = $('bestList'); list.innerHTML = '';
+  for (const k of keys) {
+    const ok = !!seen[k], d = document.createElement('div'); d.className = 'item' + (ET[k].boss ? ' done' : '');
+    const c = mkCanvas(72, 72), g = c.getContext('2d'), sp = SPR[k], sc = 64 / (sp.img.width);
+    g.translate(36, 36); g.drawImage(sp.img, -sp.img.width * sc / 2, -sp.img.height * sc / 2, sp.img.width * sc, sp.img.height * sc);
+    if (!ok) { g.globalCompositeOperation = 'source-atop'; g.fillStyle = '#1d4466'; g.fillRect(-36, -36, 72, 72); }
+    c.style.cssText = 'width:56px;height:56px;flex:none;margin-right:10px';
+    const info = document.createElement('div'); info.className = 'info';
+    const txt = BEST[k] ? BEST[k][LANG === 'en' ? 1 : 0] : '';
+    info.innerHTML = '<div class="nm">' + (ok ? bestName(k) : '???') + '</div><div class="ds">' + (ok ? txt : uiT('bestLocked')) + '</div>';
+    d.appendChild(c); d.appendChild(info); list.appendChild(d);
+  }
+}
 /* ---------- достижения ---------- */
 function unlock(id) {
   if (S.ach[id]) return; const a = ACH.find(x => x.id === id); if (!a) return;
@@ -4077,6 +4126,8 @@ click('btnShop', () => openShop('scrTitle'));
 click('btnAch', () => { renderAch(); show('scrAch'); });
 click('btnSet', () => openSet('scrTitle'));
 click('btnAchBack', () => show('scrTitle'));
+click('btnBest', () => { renderBest(); show('scrBest'); });
+click('btnBestBack', () => show('scrTitle'));
 click('btnQuest', () => { renderQuests(); show('scrQuest'); });
 click('btnQuestBack', () => { show('scrTitle'); updateTitle(); });
 click('btnShopBack', () => { show(backTo); if (backTo === 'scrTitle') updateTitle(); });
