@@ -481,6 +481,9 @@ button{ -webkit-appearance:none; appearance:none; }
 const CFG = {
   ARENA_R: 1250,          // радиус круглой арены (мировые единицы)
   MAX_ENEMIES: 170,
+  CRAB_MAX: 6,            // крабов со щитом одновременно
+  CRAB_SHIELD: 0.6,       // щит выдерживает урон = 60% здоровья краба
+  CRAB_BLOCK: 0.65,       // и срезает 65% урона спереди
   INTER_GAP: 150000,      // межстраничная реклама — не чаще раза в 2,5 мин
   MAX_EBUL: 520,
   MAX_PBUL: 380,
@@ -520,7 +523,7 @@ const ET = {
   spikelet:{r:8,  hp:6,   spd:140, dmg:6,  xp:1,  score:5,   col:C.URCH},
   eel:     {r:13, hp:55,  spd:118, dmg:12, xp:5,  score:50,  col:C.EEL},
   squid:   {r:15, hp:26,  spd:95,  dmg:8,  xp:3,  score:30,  col:C.SQUID},
-  crab:    {r:22, hp:120, spd:44,  dmg:18, xp:6,  score:60,  col:C.CRAB},
+  crab:    {r:22, hp:100, spd:44,  dmg:18, xp:6,  score:60,  col:C.CRAB},
   mender:  {r:16, hp:60,  spd:48,  dmg:8,  xp:5,  score:70,  col:C.EMER},
   bomber:  {r:16, hp:30,  spd:88,  dmg:18, xp:4,  score:45,  col:C.CORAL},
   chest:   {r:20, hp:90,  spd:0,   dmg:0,  xp:4,  score:300, col:C.GOLD},
@@ -729,7 +732,7 @@ const EN = {
     sound:'Sound', music:'Music', vibro:'Vibration', graphics:'Graphics', nums:'Damage numbers', shake:'Screen shake',
     lang:'Language', track:'Melody', on:'ON', off:'OFF', gHigh:'HIGH', gLow:'SAVER', gAuto:'AUTO',
     depth:'DEPTH', time:'TIME', foes:'FOES', maxCombo:'MAX COMBO', level:'LEVEL', pearlsL:'PEARLS', score:'SCORE', syn:'SYNERGIES',
-    lord:'LORD OF THE ABYSS', flareB:'FLARE!', comboX:'COMBO ×', synergy:'SYNERGY', pack:'Ambush!',
+    crabT:'SHIELD CRAB', crabS:'Hit from the side or dash — the shield cracks', crabBreak:'SHIELD BROKEN', lord:'LORD OF THE ABYSS', flareB:'FLARE!', comboX:'COMBO ×', synergy:'SYNERGY', pack:'Ambush!',
     comboLost:'combo lost', pearl1:'+1 pearl', magnetB:'ATTRACTION!',
     bossDie:[['THE HAZE DISPERSED','Light returns to the column'],['THE MOTHER IS FELLED','Somewhere below the Heart of the Abyss beats'],['THE HEART WENT OUT','Darkness retreats once more…']],
     heartOut:'THE HEART WENT OUT', revive:'SECOND BREATH', reviveS:'The spark flared again', secondChance:'SECOND CHANCE', secondChanceS:'Light is with you again',
@@ -779,7 +782,7 @@ const RU = {ui:{
   sound:'Звуки', music:'Музыка', vibro:'Вибрация', graphics:'Графика', nums:'Цифры урона', shake:'Тряска экрана',
   lang:'Язык', track:'Мелодия', on:'ВКЛ', off:'ВЫКЛ', gHigh:'ВЫСОКАЯ', gLow:'ЭКОНОМ', gAuto:'АВТО',
   depth:'ГЛУБИНА', time:'ВРЕМЯ', foes:'ВРАГОВ', maxCombo:'МАКС. КОМБО', level:'УРОВЕНЬ', pearlsL:'ЖЕМЧУГ', score:'ОЧКИ', syn:'СИНЕРГИЙ',
-  lord:'ВЛАДЫКА БЕЗДНЫ', flareB:'ВСПЫШКА!', comboX:'КОМБО ×', synergy:'СИНЕРГИЯ', pack:'Окружение!',
+  crabT:'КРАБ СО ЩИТОМ', crabS:'Бей сбоку или рывком — щит треснет', crabBreak:'ЩИТ РАСКОЛОТ', lord:'ВЛАДЫКА БЕЗДНЫ', flareB:'ВСПЫШКА!', comboX:'КОМБО ×', synergy:'СИНЕРГИЯ', pack:'Окружение!',
   comboLost:'комбо потеряно', pearl1:'+1 жемчуг', magnetB:'ПРИТЯЖЕНИЕ!',
   bossDie:[['МОРОК РАССЕЯН','Свет возвращается в толщу'],['МАТЕРЬ ПОВЕРЖЕНА','Где-то внизу бьётся Сердце Бездны'],['СЕРДЦЕ ПОГАСЛО','Тьма снова отступает…']],
   heartOut:'СЕРДЦЕ ПОГАСЛО', revive:'ВТОРОЕ ДЫХАНИЕ', reviveS:'Искра вспыхнула снова', secondChance:'ВТОРОЙ ШАНС', secondChanceS:'Свет снова с тобой',
@@ -1230,7 +1233,7 @@ function buildSprites() {
     spec(g, r * 0.95, -r * 0.3, r * 0.4, r * 0.13, 0.55);
   });
   // Краб — панцирь с рёбрами, суставчатые ноги, клешни, металлический щит спереди
-  makeSprite('crab', 22, 12, (g, r) => {
+  const crabSprite = (key, shield) => makeSprite(key, 22, 12, (g, r) => {
     const col = PAL[C.CRAB];
     g.shadowColor = col; g.shadowBlur = 12; g.strokeStyle = col; g.lineWidth = 3;
     for (let s = -1; s <= 1; s += 2) for (let i = 0; i < 3; i++) { const x0 = -r * 0.2 - i * r * 0.3; g.beginPath(); g.moveTo(x0, s * r * 0.5); g.lineTo(x0 - r * 0.12, s * r * 0.85); g.lineTo(x0 - r * 0.32, s * r * 1.08); g.stroke();
@@ -1242,12 +1245,20 @@ function buildSprites() {
     g.shadowBlur = 0; g.strokeStyle = hexA('#5a0010', 0.5); g.lineWidth = 1.2;
     for (let i = 0; i < 3; i++) { g.beginPath(); g.ellipse(-r * 0.05, 0, r * (0.25 + i * 0.2), r * (0.2 + i * 0.17), 0, Math.PI * 0.55, Math.PI * 1.45); g.stroke(); }
     dots(g, [[-r * 0.3, -r * 0.3], [-r * 0.45, r * 0.12], [-r * 0.1, r * 0.4]], r * 0.05, '#ffe0e4');
-    g.strokeStyle = lin(g, 0, -r, 0, r, [[0, '#ffffff'], [0.5, '#ffb0ba'], [1, '#ffffff']]); g.lineWidth = 5; g.shadowColor = '#fff'; g.shadowBlur = 16;
-    g.beginPath(); g.arc(0, 0, r * 1.05, -0.95, 0.95); g.stroke();
-    g.shadowBlur = 0; g.strokeStyle = hexA('#ffffff', 0.9); g.lineWidth = 1; g.beginPath(); g.arc(0, 0, r * 1.12, -0.8, 0.8); g.stroke();
+    if (shield) {
+      g.strokeStyle = lin(g, 0, -r, 0, r, [[0, '#ffffff'], [0.5, '#ffb0ba'], [1, '#ffffff']]); g.lineWidth = 5; g.shadowColor = '#fff'; g.shadowBlur = 16;
+      g.beginPath(); g.arc(0, 0, r * 1.05, -0.95, 0.95); g.stroke();
+      g.shadowBlur = 0; g.strokeStyle = hexA('#ffffff', 0.9); g.lineWidth = 1; g.beginPath(); g.arc(0, 0, r * 1.12, -0.8, 0.8); g.stroke();
+    } else { // щит сломан: обломки по краям и трещины на панцире
+      g.shadowBlur = 0; g.strokeStyle = hexA('#ffd6dc', 0.75); g.lineWidth = 2.4;
+      g.beginPath(); g.arc(0, 0, r * 1.05, -0.95, -0.62); g.stroke(); g.beginPath(); g.arc(0, 0, r * 1.05, 0.7, 0.95); g.stroke();
+      g.strokeStyle = hexA('#2a0006', 0.8); g.lineWidth = 1.3;
+      g.beginPath(); g.moveTo(r * 0.7, -r * 0.1); g.lineTo(r * 0.35, r * 0.05); g.lineTo(r * 0.15, -r * 0.2); g.moveTo(r * 0.35, r * 0.05); g.lineTo(r * 0.2, r * 0.3); g.stroke();
+    }
     eye(g, r * 0.5, -r * 0.22, r * 0.11, '#ffe14f', 0.35); eye(g, r * 0.5, r * 0.22, r * 0.11, '#ffe14f', 0.35);
     spec(g, -r * 0.15, -r * 0.35, r * 0.45, r * 0.16, 0.5);
   });
+  crabSprite('crab', true); crabSprite('crab_bare', false);
   // Целитель — анемон с тентаклями-огоньками и знаком исцеления
   makeSprite('mender', 16, 14, (g, r) => {
     const col = PAL[C.EMER];
@@ -1371,9 +1382,11 @@ function buildSprites() {
       g.shadowColor = pc; g.shadowBlur = 20;
       // Внешняя оболочка отличается у каждого облика, а не только оттенком.
       const shape = {
-        void: 'spokes', aurora: 'ribbons', solar: 'crown', venom: 'spikes',
-        royal: 'crown', nebula: 'orbits', cyber: 'hex', lunar: 'crescent',
-        inferno: 'flames', abyss: 'shards', jade: 'leaves', prism: 'prism'
+        azure:'fins', amber:'crown', amethyst:'orbits', emerald:'leaves', coral:'petals',
+        ghost:'halo', ember:'flames', frost:'prism', dawn:'comet',
+        void:'spokes', aurora:'ribbons', solar:'crown', venom:'spikes',
+        royal:'crown', nebula:'orbits', cyber:'hex', lunar:'crescent',
+        inferno:'flames', abyss:'shards', jade:'leaves', prism:'prism'
       }[k] || 'fins';
       g.save(); g.globalAlpha = 0.92; g.lineWidth = 1.5;
       g.strokeStyle = hexA(pc, 0.92); g.fillStyle = hexA(pc, 0.28);
@@ -1396,6 +1409,13 @@ function buildSprites() {
         for(let j=0;j<3;j++){g.save();g.rotate(j*TAU/3);g.beginPath();g.ellipse(0,0,r*1.75,r*.48,0,0,TAU);g.stroke();g.restore();}
       } else if (shape === 'ribbons' || shape === 'leaves') {
         for(let j=-1;j<=1;j++){g.beginPath();g.moveTo(-r*.35,j*r*.35);g.bezierCurveTo(-r*1.5,j*r*1.6-r*.4,r*1.25,j*r*1.45,r*1.15,j*r*.2);g.quadraticCurveTo(r*.15,j*r*.5,-r*.35,j*r*.35);g.fill();g.stroke();}
+      } else if (shape === 'petals') {
+        for(let j=0;j<6;j++){const a=j*TAU/6;g.save();g.rotate(a);g.beginPath();g.ellipse(0,-r*1.25,r*.34,r*.82,0,0,TAU);g.fill();g.stroke();g.restore();}
+      } else if (shape === 'halo') {
+        for(let j=0;j<3;j++){g.save();g.rotate(j*Math.PI/3);g.beginPath();g.ellipse(0,0,r*(1.25+j*.18),r*(.62+j*.08),0,0,TAU);g.stroke();g.restore();}
+      } else if (shape === 'comet') {
+        for(let j=0;j<4;j++){g.globalAlpha=.72-j*.14;g.beginPath();g.moveTo(-r*.65,-r*.45+j*r*.3);g.quadraticCurveTo(-r*(1.6+j*.2),j*r*.35,-r*(2.05+j*.2),j*r*.5);g.stroke();}
+        g.globalAlpha=.92;g.beginPath();g.moveTo(0,-r*1.55);g.lineTo(r*.82,0);g.lineTo(0,r*1.55);g.lineTo(-r*.82,0);g.closePath();g.fill();g.stroke();
       } else if (shape === 'flames') {
         for(let j=0;j<5;j++){const a=-1.15+j*.57;g.beginPath();g.moveTo(Math.cos(a)*r*.9,Math.sin(a)*r*.9);g.quadraticCurveTo(Math.cos(a)*r*2.1,Math.sin(a)*r*2.1,Math.cos(a+.18)*r*1.15,Math.sin(a+.18)*r*1.15);g.fill();g.stroke();}
       } else {
@@ -1615,6 +1635,8 @@ function spawnEnemy(type, x, y, elite) {
   e.elite = elite ? 1 : 0; e.dead = false; e.uid = G.uid++; e.orbCd = 0; e.dashHit = 0; e.chainMark = 0; e.scale = 1;
   e.hh = 0; e.hn = 0; e.phase = Math.random() * TAU; e.p1 = 0; e.p2 = 0; e.p3 = Math.random() < 0.5 ? 1 : -1; e.spawnT = 0.4;
   if (elite) { e.maxHp = e.hp = e.hp * 3.5; e.scale = 1.4; e.xp *= 4; e.score *= 5; e.dmg *= 1.3; }
+  e.sh = type === 'crab' ? e.maxHp * CFG.CRAB_SHIELD : 0; // щит краба держит урон, потом ломается
+  if (type === 'crab' && !S.crabHint) { S.crabHint = 1; persist(); setTimeout(() => banner(uiT('crabT'), uiT('crabS'), '#ff8a9a', 3), 600); }
   return e;
 }
 /** Точка за краем экрана внутри арены */
@@ -1636,6 +1658,7 @@ function pickType() {
   w[0] = 10; w[1] = 2 + z * 0.8; w[2] = z >= 2 ? 2 + z * 0.4 : 0; w[3] = z >= 3 ? 2 : 0;
   w[4] = z >= 3 ? 1.5 + z * 0.3 : 0; w[5] = z >= 4 ? 1.4 + z * 0.15 : 0; w[6] = z >= 6 ? 1.2 + z * 0.2 : 0;
   w[7] = z >= 4 ? 0.9 + z * 0.12 : 0; w[8] = z >= 5 ? 1.2 + z * 0.18 : 0;
+  if (w[6] > 0) { let n = 0; const it = enemies.items; for (let i = 0; i < enemies.n; i++) if (!it[i].dead && it[i].type === 'crab') n++; if (n >= CFG.CRAB_MAX) w[6] = 0; }
   let tot = 0; for (let i = 0; i < 9; i++) tot += w[i];
   let r = Math.random() * tot; for (let i = 0; i < 9; i++) { r -= w[i]; if (r <= 0) return PT_N[i]; }
   return 'drifter';
@@ -1859,8 +1882,13 @@ function doFlare(free) {
 /* ---------- урон ---------- */
 function damageEnemy(e, dmg, crit, fromAng, kx, ky, src) {
   if (e.dead) return;
-  if (e.type === 'crab' && fromAng === fromAng && Math.abs(angDiff(e.ang, fromAng)) < 1.0) { // щит спереди
-    dmg *= 0.15; sfx.clink(); part(e.x + Math.cos(e.ang) * e.r, e.y + Math.sin(e.ang) * e.r, rand(-80, 80), rand(-80, 80), 0.25, 7, C.WHITE, 2);
+  if (e.type === 'crab' && e.sh > 0 && fromAng === fromAng && Math.abs(angDiff(e.ang, fromAng)) < 1.0) { // щит спереди
+    e.sh -= dmg; dmg *= 1 - CFG.CRAB_BLOCK; part(e.x + Math.cos(e.ang) * e.r, e.y + Math.sin(e.ang) * e.r, rand(-80, 80), rand(-80, 80), 0.25, 7, C.WHITE, 2);
+    if (e.sh <= 0) { // щит раскололся
+      const fx = e.x + Math.cos(e.ang) * e.r, fy = e.y + Math.sin(e.ang) * e.r;
+      burst(fx, fy, 14, C.WHITE, 200, 6, 0.45); ring(fx, fy, 4, 46, 0.3, C.WHITE, 3); sfx.clink(); shake(2.5);
+      if (QL > 0) text(e.x, e.y - e.r - 14, uiT('crabBreak'), '#ffd6dc', false, false);
+    } else if (Math.random() < 0.5) sfx.clink();
   }
   if (e.type === 'boss3' && G.crystals > 0) { dmg *= 0.25; if (Math.random() < 0.3) sfx.clink(); } // кристаллы-щиты
   e.hp -= dmg; e.flash = 0.07;
@@ -1898,6 +1926,19 @@ function igniteNear(x, y) {
   const n = gridQuery(x, y, 110, QB);
   for (let i = 0; i < n; i++) { const e = enemies.items[QB[i]]; if (e.dead || ET[e.type].boss) continue; e.burn = Math.max(e.burn, ST.burn || 1); e.burnT = Math.max(e.burnT, 2.4); }
 }
+/* ---------- гибель врага: белый силуэт вспыхивает, раздувается и тает ---------- */
+const GHOSTS = []; for (let i = 0; i < 48; i++) GHOSTS.push({on: false, k: '', x: 0, y: 0, a: 0, s: 1, t: 0}); let ghostI = 0;
+function addGhost(e) {
+  const g = GHOSTS[ghostI]; ghostI = (ghostI + 1) % GHOSTS.length;
+  g.on = true; g.k = e.type === 'crab' && e.sh <= 0 ? 'crab_bare' : e.type; g.x = e.x; g.y = e.y; g.a = e.ang; g.s = e.scale; g.t = 0;
+}
+function renderGhosts(rdt) {
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < GHOSTS.length; i++) { const g = GHOSTS[i]; if (!g.on) continue;
+    g.t += rdt; const k = g.t / 0.24; if (k >= 1 || !SPR[g.k]) { g.on = false; continue; }
+    ctx.globalAlpha = (1 - k) * 0.85; setXf(g.x, g.y, g.a, g.s * (1 + k * 0.6)); drawSpr(SPR[g.k], true); }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; setWorld();
+}
 function killEnemy(e, src) {
   e.dead = true; G.kills++;
   const isBoss = !!ET[e.type].boss;
@@ -1907,6 +1948,7 @@ function killEnemy(e, src) {
   P.flare = Math.min(100, P.flare + (isBoss ? 50 : e.elite ? 6 : 0.9) * ST.flareMul);
   if ((ST.siphonCh && Math.random() < ST.siphonCh) || ST.leech) { if (P.hp < P.maxHp) { const h = P.maxHp * (ST.leech ? 0.03 : 0.02) * (isBoss ? 4 : 1); P.hp = Math.min(P.maxHp, P.hp + h); if (Math.random() < 0.3) text(P.x, P.y - 24, '+' + Math.round(h), '#8affc0', false, false); } }
   const sz = e.r * e.scale;
+  if (!isBoss && src !== 'cleanup') addGhost(e);
   burst(e.x, e.y, Math.min(26, 8 + sz * 0.6), e.col, 90 + sz * 6, 6 + sz * 0.3, 0.55);
   burst(e.x, e.y, 4, C.WHITE, 60, 5, 0.3);
   ring(e.x, e.y, sz * 0.5, sz * 2.4, 0.35, e.col, 2.5);
@@ -2382,7 +2424,16 @@ let BGGRAD = null, VIGN = null, RAYGRAD = null, HURTV = null;
 // одним проходом — вместо 3–4 полноэкранных заливок за кадр.
 let BGS = null, BGX = null, BG_K = 3;
 const RAYS = [[0.1, 70, 0], [0.32, 110, 1.3], [0.55, 60, 2.1], [0.74, 130, 3.7], [0.92, 80, 5.2]];
-const ZONE_COLS = ['#04203a', '#051a36', '#071733', '#08122e', '#0a0d2a', '#0c0a26', '#0f0822', '#0a0a24', '#0c061c', '#090416'];
+const ZONE_COLS = [
+  '#031b38', '#06264b', '#032d45', '#071a42', '#160f3d',
+  '#25103e', '#101b50', '#062c50', '#190b3d', '#280b42',
+  '#0c1748', '#080d2e', '#052f35', '#25103a', '#070821'
+];
+const ZONE_ACCENTS = [
+  '#42eaff','#ff55df','#42ffe0','#4c9dff','#b36cff',
+  '#ffb45e','#777bff','#42dfff','#ff4fae','#e95cff',
+  '#8a9dff','#6aaeff','#48ffbd','#ff6f9e','#d77aff'
+];
 const DEMO = [];
 const XPC = [C.ICE, C.EMER, C.GOLD], XPS = [3.6, 5, 6.8]; // цвет и размер искр опыта по тирам // декоративные существа титульного экрана
 
@@ -2536,6 +2587,7 @@ function buildDecorSprites() {
   });
 }
 function buildDecor(zi) {
+  buildFar(zi);
   const th = DECOR_THEMES[zi % DECOR_THEMES.length]; DECOR.length = 0;
   const R = CFG.ARENA_R - 40, n = 165;
   for (let i = 0; i < n; i++) {
@@ -2560,6 +2612,46 @@ function renderDecor(g, rdt) {
     g.globalAlpha = 0.9 * d.a; g.drawImage(sp.img, -sp.h, -sp.h, sp.h * 2, sp.h * 2);
     if (d.k === 'd_vent' && hi && G.state === 'play' && G.t - d.lt > 0.22) { d.lt = G.t; part(d.x + rand(-6, 6), d.y + rand(-6, 6), rand(-15, 15), rand(-70, -40), rand(0.8, 1.4), rand(4, 8), C.ICE, 0.5); }
   }
+  g.globalAlpha = 1; g.setTransform(k, 0, 0, k, 0, 0);
+}
+
+/* ---------- дальнее дно: тёмные впадины и скалы глубоко внизу (параллакс) ----------
+   Спрайты строятся один раз на зону в цвете зоны; в кадре — только drawImage в фоновый слой. */
+const FAR = [], FAR_SPR = [], FAR_PF = 0.42;
+function buildFar(zi) {
+  const acc = ZONE_ACCENTS[zi % ZONE_ACCENTS.length] || '#42eaff';
+  FAR_SPR.length = 0;
+  for (let v = 0; v < 3; v++) {
+    const S2 = 256, c = mkCanvas(S2, S2), g = c.getContext('2d'), R = S2 * 0.42;
+    g.translate(S2 / 2, S2 / 2);
+    const pts = [], n = 16, ax = v === 1 ? 1.6 : 1, ay = v === 1 ? 0.55 : 1;
+    for (let i = 0; i < n; i++) { const a = i / n * TAU, rr = R * (v === 2 ? 0.95 : 0.62 + Math.random() * 0.38); pts.push([Math.cos(a) * rr * ax * (v === 1 ? 0.6 : 1), Math.sin(a) * rr * ay]); }
+    const path = () => { g.beginPath(); for (let i = 0; i <= n; i++) { const p0 = pts[i % n], p1 = pts[(i + 1) % n], mx = (p0[0] + p1[0]) / 2, my = (p0[1] + p1[1]) / 2; if (!i) g.moveTo(mx, my); else g.quadraticCurveTo(p0[0], p0[1], mx, my); } g.closePath(); };
+    // тень-впадина с мягким краем
+    const sh = g.createRadialGradient(0, 0, R * 0.15, 0, 0, R * 1.05); sh.addColorStop(0, 'rgba(0,2,8,0.75)'); sh.addColorStop(0.7, 'rgba(0,3,10,0.5)'); sh.addColorStop(1, 'rgba(0,3,10,0)');
+    path(); g.fillStyle = sh; g.fill();
+    if (v === 2) { g.globalCompositeOperation = 'destination-out'; g.beginPath(); g.arc(0, 0, R * 0.45, 0, TAU); g.fillStyle = 'rgba(0,0,0,0.55)'; g.fill(); g.globalCompositeOperation = 'source-over'; }
+    // кромка, подсвеченная цветом зоны
+    path(); g.strokeStyle = hexA(acc, 0.11); g.lineWidth = 3; g.stroke(); g.strokeStyle = hexA(acc, 0.05); g.lineWidth = 9; g.stroke();
+    // светящиеся колонии на склонах
+    g.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 9; i++) { const p0 = pts[(Math.random() * n) | 0], f = 0.55 + Math.random() * 0.4, x = p0[0] * f, y = p0[1] * f, rr = 3 + Math.random() * 7;
+      const gl = g.createRadialGradient(x, y, 0, x, y, rr * 3); gl.addColorStop(0, hexA(i % 3 ? acc : '#ffffff', 0.36)); gl.addColorStop(1, hexA(acc, 0)); g.fillStyle = gl; g.fillRect(x - rr * 3, y - rr * 3, rr * 6, rr * 6); }
+    FAR_SPR.push(c);
+  }
+  FAR.length = 0;
+  for (let i = 0; i < 26; i++) { const a = Math.random() * TAU, rr = Math.sqrt(Math.random()) * 950;
+    FAR.push({v: i % 3, x: Math.cos(a) * rr, y: Math.sin(a) * rr, s: rand(0.9, 1.9), r: Math.random() * TAU}); }
+}
+function renderFar(g) {
+  if (!FAR_SPR.length) return;
+  const k = 1 / BG_K, sc = VS * 0.72, cx = G.camX * FAR_PF, cy = G.camY * FAR_PF;
+  g.globalAlpha = 0.9;
+  for (let i = 0; i < FAR.length; i++) { const f = FAR[i], img = FAR_SPR[f.v], half = 128 * f.s * sc;
+    const sx = W / 2 + (f.x - cx) * sc, sy = H / 2 + (f.y - cy) * sc;
+    if (sx + half < 0 || sx - half > W || sy + half < 0 || sy - half > H) continue;
+    const cs = Math.cos(f.r) * f.s * sc * k, sn = Math.sin(f.r) * f.s * sc * k;
+    g.setTransform(cs, sn, -sn, cs, sx * k, sy * k); g.drawImage(img, -128, -128, 256, 256); }
   g.globalAlpha = 1; g.setTransform(k, 0, 0, k, 0, 0);
 }
 
@@ -2593,7 +2685,7 @@ function renderBackground(dt) {
     else { g.beginPath(); g.moveTo(x - w * 0.3, 0); g.lineTo(x + w * 0.3, 0); g.lineTo(x + w + sw + 60, H * 0.9); g.lineTo(x - w + sw + 60, H * 0.9); g.fill(); }
   }
   g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
-  if (G.state !== 'title' && G.state !== 'intro') renderDecor(g, dt || 0.016);
+  if (G.state !== 'title' && G.state !== 'intro') { renderFar(g); renderDecor(g, dt || 0.016); }
   if (QL < 2) g.drawImage(VIGN, 0, 0, W, H);
   // мало здоровья: на эконом/среднем красная пульсация запекается в фон (без лишнего полноэкранного прохода)
   if (QL < 2 && lowHp()) { g.globalAlpha = 0.45 + 0.3 * Math.sin(G.t * 6); g.drawImage(HURTV, 0, 0, W, H); g.globalAlpha = 1; }
@@ -2694,11 +2786,12 @@ function renderWorld(rdt) {
       case 'boss1': drawBoss1(e, sc, wht); break;
       case 'boss2': drawBoss2(e, sc, wht); break;
       case 'boss3': drawBoss3(e, sc, wht); break;
+      case 'boss4': drawBoss4(e, sc, wht); break;
       case 'crystal': setXf(e.x, e.y, G.t * 2, sc); drawSpr(SPR.crystal, wht); break;
       default: {
         const breathe = 1 + Math.sin(G.t * (e.elite ? 3.1 : 2.35) + e.phase) * (e.elite ? 0.045 : 0.025);
         const drift = Math.sin(G.t * 1.7 + e.phase) * 1.4;
-        setXf(e.x, e.y + drift, e.ang, sc * breathe); drawSpr(SPR[e.type], wht);
+        setXf(e.x, e.y + drift, e.ang, sc * breathe); drawSpr(SPR[e.type === 'crab' && e.sh <= 0 ? 'crab_bare' : e.type], wht);
         break;
       }
     }
@@ -2716,6 +2809,7 @@ function renderWorld(rdt) {
     ctx.globalAlpha = 1;
   }
   setWorld();
+  renderGhosts(rdt);
   // игрок
   if (!P.dead) {
     ctx.globalCompositeOperation = 'lighter';
@@ -2810,6 +2904,35 @@ function renderWorld(rdt) {
         ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillText(t.str, t.x + 1.5, t.y + 1.5); ctx.fillStyle = t.col; ctx.fillText(t.str, t.x, t.y); } }
     ctx.globalAlpha = 1; }
 }
+function drawBoss4(e, sc, wht) {
+  // The Leviathan is a fast serpent: a wake and pulsing flank light make its movement readable.
+  setWorld();
+  const a = e.ang, nx = -Math.sin(a), ny = Math.cos(a);
+  ctx.globalCompositeOperation = 'lighter';
+  for (let k = 0; k < 4; k++) {
+    const phase = G.t * 4.2 - k * 0.72;
+    const bx = e.x - Math.cos(a) * (e.r * (0.85 + k * 0.5));
+    const by = e.y - Math.sin(a) * (e.r * (0.85 + k * 0.5));
+    const sway = Math.sin(phase) * (12 + k * 5);
+    ctx.globalAlpha = (1 - k / 4) * 0.23;
+    glowAt(SOFT[C.EEL], bx + nx * sway, by + ny * sway, e.r * (0.95 - k * 0.12));
+  }
+  ctx.globalAlpha = 0.48 + 0.18 * Math.sin(G.t * 7);
+  glowAt(SOFT[C.EEL], e.x, e.y, e.r * 2.2);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  const lunge = e.state === 1 && (e.p3 % 1.7) > 1.0;
+  const pulse = 1 + Math.sin(G.t * 5.2) * 0.025 + (lunge ? 0.045 : 0);
+  setXf(e.x, e.y, e.ang + Math.sin(G.t * 2.4) * 0.035, sc * pulse);
+  drawSpr(SPR.boss4, wht);
+  // Luminous gill slits on the near side pulse in time with the creature's breathing.
+  ctx.globalCompositeOperation = 'lighter';
+  for (let k = 0; k < 4; k++) {
+    ctx.globalAlpha = 0.38 + 0.22 * Math.sin(G.t * 6 + k * 0.8);
+    glowAt(GLOW[C.ICE], -e.r * (0.52 + k * 0.12), e.r * (0.22 + k * 0.08), 4.5);
+  }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+}
+
 function drawBoss1(e, sc, wht) {
   setXf(e.x, e.y, e.ang, sc);
   // удочка и приманка
@@ -2898,6 +3021,10 @@ function renderHUD() {
   if (G.endless) { ctx.fillStyle = PAL[C.GOLD]; ctx.fillText('∞', L + 104, top + 38); }
   // прогресс зоны
   if (!G.boss) { ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(L, top + 49, hw, 3); ctx.fillStyle = '#8fd8ff'; ctx.fillRect(L, top + 49, hw * Math.min(1, G.zoneT / CFG.ZONE_TIME), 3); }
+  if (!G.boss) {
+  // Название текущего биома помогает ориентироваться в длинном погружении.
+  ctx.textAlign = 'left'; ctx.font = '700 9px ' + FONT; ctx.fillStyle = 'rgba(190,225,238,0.66)';
+  ctx.fillText((ZONES[Math.max(0, Math.min(ZONES.length - 1, G.zone - 1))] || '').toLocaleUpperCase(), L, top + 63, hw + 30); }
   // счёт и комбо
   ctx.textAlign = 'center'; ctx.font = '900 26px ' + FONT;
   const cx = W / 2 + 20;
@@ -3660,7 +3787,7 @@ applyLang(); dailyCheck(); applyQuality(); updMute(); startIntro();
 requestAnimationFrame(t => { lastT = t; frame(t); });
 
 // Хук для автотестов и отладки (QA): window.__SB
-window.__SB = {G, P, S, ST, Ads, adGift, updGift, PERF, SPR, DECOR, enemies, ebul, pbul, parts, picks, startRun, pauseGame, resumeGame, gameOver,
+window.__SB = {G, P, S, ST, Ads, adGift, updGift, spawnEnemy, damageEnemy, pickType, PERF, SPR, DECOR, enemies, ebul, pbul, parts, picks, startRun, pauseGame, resumeGame, gameOver,
   jumpZone(z) { G.zone = z - 1; G.zoneT = CFG.ZONE_TIME; }, giveXP(n) { addXP(n); }, god(on) { G.god = !!on; },
   up(id, n) { P.up[id] = (P.up[id] || 0) + (n || 1); computeStats(); }, killBoss() { if (G.boss) killEnemy(G.boss, null); },
   intro: startIntro, ending() { G.zone = 15; G.victory = true; startEnding(); }, TUT, END, INTRO, renderAch,
