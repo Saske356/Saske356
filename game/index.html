@@ -775,7 +775,7 @@ const EN = {
     shopTitle:'UPGRADES', tabUp:'Boosts', tabChars:'Sparks', tabSkins:'Skins', tabTal:'Talents', bestT:'BESTIARY', bestL:'Bestiary', bestInfo:(n,m)=>'Creatures met: '+n+' / '+m, bestLocked:'Not met yet — dive deeper.', talOwn:'Learned', dailyB:'DAILY CHALLENGE', dailyT:'DAILY CHALLENGE', dailyX2:'×2 pearls', dailyWin:'DAILY CHALLENGE COMPLETE', best:'best', back:'Back',
     achTitle:'AWARDS', setTitle:'SETTINGS',
     sound:'Sound', music:'Music', vibro:'Vibration', graphics:'Graphics', nums:'Damage numbers', shake:'Screen shake', fxL:'Glow (GPU)', fxNo:'unavailable', fxHi:'on high graphics',
-    lang:'Language', track:'Melody', on:'ON', off:'OFF', gHigh:'HIGH', gLow:'SAVER', gAuto:'AUTO',
+    lang:'Language', track:'Melody', ost:'SOUNDTRACK', ostNo:'no files', on:'ON', off:'OFF', gHigh:'HIGH', gLow:'SAVER', gAuto:'AUTO',
     depth:'DEPTH', time:'TIME', foes:'FOES', maxCombo:'MAX COMBO', level:'LEVEL', pearlsL:'PEARLS', score:'SCORE', syn:'SYNERGIES',
     crabT:'SHIELD CRAB', crabS:'Hit from the side or dash — the shield cracks', crabBreak:'SHIELD BROKEN', lord:'LORD OF THE ABYSS', flareB:'FLARE!', comboX:'COMBO ×', synergy:'SYNERGY', pack:'Ambush!',
     comboLost:'combo lost', pearl1:'+1 pearl', magnetB:'ATTRACTION!',
@@ -825,7 +825,7 @@ const RU = {ui:{
   shopTitle:'УЛУЧШЕНИЯ', tabUp:'Усиления', tabChars:'Искры', tabSkins:'Облики', tabTal:'Таланты', bestT:'БЕСТИАРИЙ', bestL:'Бестиарий', bestInfo:(n,m)=>'Встречено существ: '+n+' / '+m, bestLocked:'Ещё не встречено — ныряй глубже.', talOwn:'Изучено', dailyB:'ИСПЫТАНИЕ ДНЯ', dailyT:'ИСПЫТАНИЕ ДНЯ', dailyX2:'жемчуг ×2', dailyWin:'ИСПЫТАНИЕ ДНЯ ПРОЙДЕНО', best:'лучшее', back:'Назад',
   achTitle:'НАГРАДЫ', setTitle:'НАСТРОЙКИ',
   sound:'Звуки', music:'Музыка', vibro:'Вибрация', graphics:'Графика', nums:'Цифры урона', shake:'Тряска экрана', fxL:'Свечение', fxNo:'недоступно', fxHi:'на высокой графике',
-  lang:'Язык', track:'Мелодия', on:'ВКЛ', off:'ВЫКЛ', gHigh:'ВЫСОКАЯ', gLow:'ЭКОНОМ', gAuto:'АВТО',
+  lang:'Язык', track:'Мелодия', ost:'САУНДТРЕК', ostNo:'нет файлов', on:'ВКЛ', off:'ВЫКЛ', gHigh:'ВЫСОКАЯ', gLow:'ЭКОНОМ', gAuto:'АВТО',
   depth:'ГЛУБИНА', time:'ВРЕМЯ', foes:'ВРАГОВ', maxCombo:'МАКС. КОМБО', level:'УРОВЕНЬ', pearlsL:'ЖЕМЧУГ', score:'ОЧКИ', syn:'СИНЕРГИЙ',
   crabT:'КРАБ СО ЩИТОМ', crabS:'Бей сбоку или рывком — щит треснет', crabBreak:'ЩИТ РАСКОЛОТ', lord:'ВЛАДЫКА БЕЗДНЫ', flareB:'ВСПЫШКА!', comboX:'КОМБО ×', synergy:'СИНЕРГИЯ', pack:'Окружение!',
   comboLost:'комбо потеряно', pearl1:'+1 жемчуг', magnetB:'ПРИТЯЖЕНИЕ!',
@@ -943,7 +943,7 @@ function defaultSave() {
   return {pearls:0, best:0, bestDepth:0, totalKills:0, totalPearls:0, runs:0, flares:0, qAuto:2,
     shop:{}, tal:{}, chars:{lumen:1}, char:'lumen', skins:{azure:1}, skin:'azure', ach:{}, seenHow:0,
     seenIntro:0, tut:0, wins:0, daily:{day:'', quests:[], streak:0, last:''}, bestKills:0, bestCombo:0, bestLevel:0, bestSyn:0,
-    set:{sound:1, music:1, vibro:1, quality:'auto', nums:1, shake:1, qv:1, lang:defaultLang(), track:0, fps:120}};
+    set:{sound:1, music:1, vibro:1, quality:'auto', nums:1, shake:1, qv:1, lang:defaultLang(), track:3, ost:1, fps:120}};
 }
 function loadSave() {
   const d = defaultSave();
@@ -967,7 +967,7 @@ function loadSave() {
   if (!SKINS[d.skin] || (SKINS[d.skin].win && !d.skins[d.skin])) d.skin = 'azure';
   if (!['auto', 'high', 'low'].includes(d.set.quality)) d.set.quality = 'auto';
   if (d.set.lang !== 'ru' && d.set.lang !== 'en') d.set.lang = defaultLang();
-  d.set.track = [0,1,2].includes(+d.set.track) ? +d.set.track : 0;
+  d.set.track = [0,1,2,3].includes(+d.set.track) ? +d.set.track : 3; // 3 — саундтрек
   d.set.fps = +d.set.fps === 60 ? 60 : 120;
   for (const k in d.shop) { const it = SHOP.find(s => s.id === k), v = +d.shop[k]; d.shop[k] = it && isFinite(v) && v > 0 ? Math.min(it.max, Math.floor(v)) : 0; }
   for (const k of ['sound', 'music', 'vibro', 'nums', 'shake']) d.set[k] = d.set[k] === 0 || d.set[k] === '0' || d.set[k] === false ? 0 : 1;
@@ -976,6 +976,7 @@ function loadSave() {
   return d;
 }
 const S = loadSave();
+if (!S.set.ost) { S.set.ost = 1; S.set.track = 3; } // один раз: включить саундтрек по умолчанию
 LANG = S.set.lang;
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) {} }
 function vibrate(ms) { if (!S.set.vibro) return; try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
@@ -1004,7 +1005,7 @@ const Snd = (() => {
       noiseBuf = ctx.createBuffer(1, ctx.sampleRate | 0, ctx.sampleRate);
       const ch = noiseBuf.getChannelData(0);
       for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
-      apply(); setTrack(S.set.track);
+      apply(); setTrack(Math.min(2, S.set.track));
     } catch (e) { ctx = null; }
   }
   function apply() { if (!ctx) return; sfxG.gain.value = S.set.sound ? 0.9 : 0; musG.gain.value = S.set.music ? 0.42 : 0; }
@@ -1103,7 +1104,7 @@ const Snd = (() => {
   function hat(t, v) { noise(0.04, v, 'highpass', 7000, 0, 1, t, musG); }
   function snare(t) { noise(0.16, 0.12, 'bandpass', 1800, 900, 0.8, t, musG); tone('triangle', 220, 140, 0.08, 0.06, t, musG); }
   function playStep(s, t) {
-    if (!S.set.music) return;
+    if (!S.set.music || Mus.on()) return; // играет записанный саундтрек
     const bar = (s / 16) | 0, st = s % 16, I = M.intensity;
     const ch = TH.prog[((bar / 2) | 0) % 4];
     if (st === 0 && bar % 2 === 0) pad(ch, t, STEP * 32);
@@ -1119,6 +1120,65 @@ const Snd = (() => {
     }
   }
   return {init, apply, resume, suspend, sfx, mStart, setTrack, trackName(i) { return THEMES[i].name[LANG === 'en' ? 1 : 0]; }, setIntensity(i) { M.intensity = i; }, get ready() { return !!ctx; }};
+})();
+/* ============ ЗАПИСАННЫЙ САУНДТРЕК: OGG-треки по состоянию игры, кроссфейд ============ */
+const Mus = (() => {
+  const VOL = 0.6, FADE = 1.5, ONCE = {victory: 1, gameover: 1};
+  const els = {};            // имя -> HTMLAudioElement
+  let cur = '', want = '', failed = false, unlocked = false, timer = 0, lastTick = 0;
+  const doneOnce = {};       // одноразовый трек уже доиграл в текущем состоянии
+  const enabled = () => S.set.track === 3 && !failed && typeof Audio !== 'undefined'; // 3 = «Саундтрек», 0–2 — процедурные мелодии
+  function el(name) {
+    if (els[name]) return els[name];
+    const a = new Audio(); a.preload = 'auto'; a.loop = !ONCE[name]; a.volume = 0; a.src = 'audio/' + name + '.ogg';
+    a._v = 0; // текущая громкость кроссфейда 0..1
+    a.addEventListener('error', () => { if (!failed) { failed = true; stopAll(); Snd.mStart(); if (typeof renderSet === 'function' && G.state === 'title') try { renderSet(); } catch (e) {} } });
+    a.addEventListener('ended', () => { if (ONCE[name]) doneOnce[name] = 1; });
+    els[name] = a; return a;
+  }
+  function stopAll() { for (const k in els) { try { els[k].pause(); } catch (e) {} els[k]._v = 0; } cur = ''; }
+  function zoneTrack(z) { return z <= 5 ? 'zone1' : z <= 10 ? 'zone2' : z <= 15 ? 'zone3' : 'zone4'; }
+  function bossTrack(t) { return t === 'boss1' ? 'boss1' : t === 'boss2' ? 'boss2' : 'boss3'; } // Левиафан и новые боссы — эпичный boss3
+  /** Какой трек должен звучать сейчас. '' — тишина. */
+  function pick() {
+    if (!S.set.music || !enabled()) return '';
+    const st = G.state;
+    if (st !== 'over') doneOnce.gameover = 0;
+    if (st !== 'ending' && !G.victory) doneOnce.victory = 0;
+    if (st === 'title' || st === 'intro') return 'menu';
+    if (st === 'ending' || (G.victory && G.endingT > 0)) return doneOnce.victory ? 'menu' : 'victory';
+    if (st === 'over') return G.victory ? 'menu' : doneOnce.gameover ? '' : 'gameover'; // после победы — спокойное меню
+    if (G.boss && !G.boss.dead) return bossTrack(G.boss.type);
+    return zoneTrack(G.zone || 1);
+  }
+  function tick() {
+    const now = performance.now(), dt = Math.min(0.5, (now - (lastTick || now)) / 1000); lastTick = now;
+    if (document.hidden) { for (const k in els) if (!els[k].paused) { try { els[k].pause(); } catch (e) {} els[k]._res = 1; } return; }
+    const w = pick();
+    if (w !== want) {
+      want = w;
+      if (w) { const a = el(w); if (ONCE[w] || a._v <= 0.01) { try { a.currentTime = 0; } catch (e) {} } }
+      cur = w;
+    }
+    const step = dt / FADE;
+    for (const k in els) {
+      const a = els[k], target = k === cur && unlocked ? 1 : 0;
+      a._v = target > a._v ? Math.min(target, a._v + step) : Math.max(target, a._v - step);
+      try { a.volume = Math.max(0, Math.min(1, a._v * a._v * VOL)); } catch (e) {}
+      if (a._v > 0 && (a.paused || a._res) && !(ONCE[k] && doneOnce[k])) { a._res = 0; const p = a.play(); if (p && p.catch) p.catch(() => {}); }
+      else if (a._v <= 0 && !a.paused) a.pause();
+    }
+  }
+  /** Первый жест пользователя: браузер разрешает воспроизведение. */
+  function unlock() {
+    if (!unlocked) { unlocked = true; if (!timer) timer = setInterval(tick, 250); }
+    if (cur && els[cur] && els[cur].paused && !document.hidden) { const p = els[cur].play(); if (p && p.catch) p.catch(() => {}); }
+  }
+  for (const ev of ['pointerdown', 'click', 'keydown', 'touchend']) document.addEventListener(ev, unlock, {capture: true, passive: true});
+  return {
+    on() { return enabled(); },            // саундтрек активен — процедурную музыку не играть
+    get failed() { return failed; }, get track() { return cur; }, tick, unlock, els,
+  };
 })();
 const sfx = Snd.sfx;
 
@@ -3971,12 +4031,12 @@ function renderSet() {
   $('setShake').textContent = uiT('shake') + ': ' + on(S.set.shake);
   $('setFx').textContent = uiT('fxL') + ': ' + (!FX.ok ? uiT('fxNo') : S.set.fx === 0 ? on(0) : QL >= 2 ? on(1) : uiT('fxHi'));
   $('setLang').textContent = uiT('lang') + ': ' + (S.set.lang === 'en' ? 'English' : 'Русский');
-  $('setTrack').textContent = uiT('track') + ': ' + Snd.trackName(S.set.track);
+  $('setTrack').textContent = uiT('track') + ': ' + (S.set.track === 3 ? uiT('ost') + (Mus.failed ? ' (' + uiT('ostNo') + ')' : '') : Snd.trackName(S.set.track));
   $('setFps').textContent = uiT('fps') + ': ' + S.set.fps;
   updMute();
 }
 function toggleLang() { S.set.lang = S.set.lang === 'en' ? 'ru' : 'en'; LANG = S.set.lang; persist(); applyLang(); renderSet(); }
-function toggleTrack() { S.set.track = (S.set.track + 1) % 3; persist(); Snd.init(); Snd.setTrack(S.set.track); renderSet(); }
+function toggleTrack() { S.set.track = (S.set.track + 1) % 4; persist(); Snd.init(); Snd.setTrack(Math.min(2, S.set.track)); if (S.set.track !== 3) Snd.mStart(); Mus.tick(); renderSet(); }
 function toggleSet(k) { if (k === 'quality') S.set.quality = S.set.quality === 'auto' ? 'high' : S.set.quality === 'high' ? 'low' : 'auto'; else S.set[k] = S.set[k] ? 0 : 1;
   persist(); Snd.apply(); if (k === 'quality') applyQuality(); if (k === 'vibro' && S.set.vibro) vibrate(30); renderSet(); }
 function openSet(from) { backTo = from; renderSet(); show('scrSet'); }
@@ -4216,7 +4276,7 @@ applyLang(); dailyCheck(); applyQuality(); updMute(); startIntro();
 requestAnimationFrame(t => { lastT = t; frame(t); });
 
 // Хук для автотестов и отладки (QA): window.__SB
-window.__SB = {G, P, S, ST, DECOR, buildDecor, hurtPlayer, drawIcon, UPG, Ads, adGift, updGift, spawnEnemy, damageEnemy, pickType, updateRun, rollChoices, takeUpgrade, computeStats, SHOP, CFG, ET, PERF, SPR, DECOR, enemies, ebul, pbul, parts, picks, startRun, pauseGame, resumeGame, gameOver,
+window.__SB = {G, P, S, ST, Mus, DECOR, buildDecor, hurtPlayer, drawIcon, UPG, Ads, adGift, updGift, spawnEnemy, damageEnemy, pickType, updateRun, rollChoices, takeUpgrade, computeStats, SHOP, CFG, ET, PERF, SPR, DECOR, enemies, ebul, pbul, parts, picks, startRun, pauseGame, resumeGame, gameOver,
   jumpZone(z) { G.zone = z - 1; G.zoneT = CFG.ZONE_TIME; }, giveXP(n) { addXP(n); }, god(on) { G.god = !!on; },
   up(id, n) { P.up[id] = (P.up[id] || 0) + (n || 1); computeStats(); }, killBoss() { if (G.boss) killEnemy(G.boss, null); },
   intro: startIntro, ending() { G.zone = 15; G.victory = true; startEnding(); }, TUT, END, INTRO, renderAch,

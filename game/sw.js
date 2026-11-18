@@ -28,6 +28,8 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+  // Саундтрек (audio/*.ogg) не кэшируем: медиа грузится Range-запросами (206), их Cache API не принимает.
+  if (url.pathname.includes('/audio/') || req.headers.has('range')) return;
   e.respondWith(caches.open(VERSION).then(async cache => {
     const hit = await cache.match(req, {ignoreSearch: true}) ||
       (req.mode === 'navigate' ? await cache.match('./index.html') : undefined);

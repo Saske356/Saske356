@@ -47,6 +47,7 @@ android {
 
 def copyGame = tasks.register('copyGame', Copy) {
     from('../../index.html')
+    from('../../audio') { into('audio') }  // записанный саундтрек (OGG Vorbis)
     into('build/gameAssets')
 }
 preBuild.dependsOn(copyGame)
