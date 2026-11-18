@@ -29,7 +29,8 @@ PER_COUNTRY = 12         # и сколько из них на одну стра�
 PARALLEL = 4             # сколько стран ищется одновременно (по 6 проверок у каждой)
 SPARE_TTL = 3600         # сколько помнить рабочий прокси, найденный «не в своей» стране
 HIDE_LIMIT = 6 * 3600    # при подборе страна без прокси столько ждёт, потом уступает место другой
-SLOW_MS = 1500           # рабочий прокси медленнее этого и вдвое медленнее запасного уступает ему
+SLOW_MS = 900            # рабочий прокси медленнее этого и в 1,5 раза медленнее запасного уступает ему
+FAST_KBPS = 400          # прокси быстрее этого считаются «достаточно быстрыми»: среди них решает пинг
 REP_LIMIT = 5000         # сколько прокси помнить в репутации
 MISSES_TO_HIDE = 2       # страна прячется после стольких проверок подряд без живых прокси
 
@@ -39,6 +40,12 @@ PREFERRED = ["nl", "de", "us", "gb", "fr", "fi", "se", "ch", "jp", "sg", "ca", "
              "it", "es", "at", "no", "dk", "cz", "pl", "kz", "ae", "hk", "kr", "au",
              "be", "ie", "pt", "ro", "hu", "lv", "lt", "ee", "bg", "rs", "ge", "am", "il", "tw", "br"]
 UNKNOWN_BUDGET = 60      # сколько прокси без страны проверять за цикл: страна узнаётся по выходу
+
+
+def flag_code(name: str) -> str:
+    """«🇵🇱 Польша» → «pl»: код страны из флага в начале названия (пусто, если флага нет)."""
+    letters = [chr(ord(ch) - 0x1F1E6 + ord("a")) for ch in name[:2] if 0x1F1E6 <= ord(ch) <= 0x1F1FF]
+    return "".join(letters) if len(letters) == 2 else ""
 
 
 class AutoProxy:
@@ -219,6 +226,11 @@ class AutoProxy:
         """Какие страны держать: заданный список или подбор. Второе значение — режим подбора."""
         cfg, manual = self.vpn.auto, self.vpn.manual_codes()
         skip = manual | set(cfg.get("exclude") or [])
+        # Страна самого сервера через прокси не нужна: она уже есть напрямую и быстрее
+        # (была «Польша 2» с пингом 6 секунд рядом с настоящей Польшей).
+        home = flag_code(self.vpn.direct_location().get("name", ""))
+        if home:
+            skip.add(home)
         wanted = [c for c in cfg.get("countries") or [] if c not in skip]
         if wanted:
             return wanted, False
@@ -288,11 +300,11 @@ class AutoProxy:
                 best = min(alive, key=lambda x: x[1])
                 kb = lambda u: pp.SPEEDS.get(u, 0)
                 fastest = max(alive, key=lambda x: kb(x[0]))
-                slow = (alive[0][1] > SLOW_MS and alive[0][1] > 2 * best[1]) or \
-                       (kb(alive[0][0]) and kb(fastest[0]) > 2 * kb(alive[0][0]))
+                slow = (alive[0][1] > SLOW_MS and alive[0][1] > 1.5 * best[1]) or \
+                       (kb(alive[0][0]) and kb(alive[0][0]) < FAST_KBPS and kb(fastest[0]) > 2 * kb(alive[0][0]))
                 if alive[0][0] != was_active or slow:
-                    # рабочий умер или тормозит: берём самый быстрый по скорости, при равной — по задержке
-                    alive.sort(key=lambda x: (-(kb(x[0]) // 200), x[1]))
+                    # рабочий умер или тормозит: среди достаточно быстрых — с наименьшим пингом
+                    alive.sort(key=lambda x: (0 if kb(x[0]) >= FAST_KBPS or not kb(x[0]) else 1, x[1]))
                 res = vpn.set_auto_location(cc, nm(cc), [u for u, _ in alive], ms=alive[0][1])
                 if was_down:
                     back.append(cc)

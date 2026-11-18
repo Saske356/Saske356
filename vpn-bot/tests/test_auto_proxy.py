@@ -796,3 +796,11 @@ class ManagerTests(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FlagCodeTests(unittest.TestCase):
+    def test_flag_code(self):
+        import auto_proxy
+        self.assertEqual(auto_proxy.flag_code("🇵🇱 Польша"), "pl")
+        self.assertEqual(auto_proxy.flag_code("🌍 Основной"), "")
+        self.assertEqual(auto_proxy.flag_code(""), "")
