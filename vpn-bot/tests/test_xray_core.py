@@ -265,7 +265,7 @@ class XrayProvider(unittest.IsolatedAsyncioTestCase):
         v.add_bridge("ru1", "🇷🇺 Обход", "198.51.100.40", ru=True)
         v.set_bridge_site("vk.com")
         hy = [l for l in v.links(5) if l.startswith("hysteria2://")]
-        assert len(hy) == 3 and "198.51.100.40:443" in hy[2] and "sni=vk.com" in hy[2]
+        assert len(hy) == 6 and all("198.51.100.40:443" in x for x in hy[2:]) and "sni=vk.com" in hy[2]
 
         # проверка пароля так, как её делает Hysteria
         assert await v.start_hy2_auth()

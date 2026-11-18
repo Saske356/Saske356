@@ -228,9 +228,16 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         self.v.add_bridge("ru1", "🇷🇺 Обход", "198.51.100.9", ru=True)
         self.v.state["bridge_site"] = "ya.ru"
         via = [(l.split("@")[1].split("/")[0], unquote(l.rsplit("#", 1)[1])) for l in self.v.links(1)[3:]]
-        self.assertEqual(via, [("198.51.100.9:443", "🇷🇺 Обход"), ("198.51.100.9:30000", "🇩🇪 Германия · 🇷🇺 Обход"),
-                               ("198.51.100.9:30001", "🇳🇱 Нидерланды · 🇷🇺 Обход")])
-        self.assertTrue(all("sni=ya.ru" in l for l in self.v.links(1)[3:]))
+        # ровно 4 пункта обхода, без копий стран; на одном мосте они различаются сайтом маскировки
+        self.assertEqual(via, [("198.51.100.9:443", f"🇷🇺 Обход {i}") for i in range(1, 5)])
+        sites = [l.split("sni=")[1].split("&")[0].split("#")[0] for l in self.v.links(1)[3:]]
+        self.assertEqual(sites[0], "ya.ru")
+        self.assertEqual(len(set(sites)), 4)
+        # второй мост: пункты раскладываются по двум мостам
+        self.v.add_bridge("ru2", "🇷🇺 Обход", "198.51.100.10", ru=True)
+        hosts = [l.split("@")[1].split(":")[0] for l in self.v.links(1)[3:]]
+        self.assertEqual(hosts, ["198.51.100.9", "198.51.100.10", "198.51.100.9", "198.51.100.10"])
+        self.v.remove_bridge("ru2")
         self.v.remove_bridge("ru1")
         await self.v._pending
 
