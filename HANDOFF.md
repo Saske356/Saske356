@@ -17,7 +17,7 @@
   - `game/index.html` — вся игра в одном файле (canvas 2D + Web Audio), ~единый файл.
   - `game/android/` — Android-обёртка (Gradle-проект, WebView во весь экран,
     реклама Яндекса, запрос максимальной частоты экрана).
-  - `game/dist/SvetBezdny.apk` — собранный подписанный APK (сейчас версия 2.3).
+  - `game/dist/SvetBezdny.apk` — собранный подписанный APK (сейчас версия 2.4).
   - `game/store/` — материалы для RuStore: `RUSTORE.md` (тексты карточки),
     `screenshots/` (1080×1920), `icon-512.png`, `video/trailer.mp4`.
   - `game/ADS.md`, `game/INSTALL.md`, `game/README.md` — инструкции.
@@ -123,6 +123,13 @@
 - Новые враги (ray, lantern+wisp, spawner+fry) и стражи `kingcrab` (300/1300 м) и `queen` (800 м),
   код в блоках «НОВЫЕ ВРАГИ И СТРАЖИ», `tryGuardian()` в `nextZone()`.
 - Агентам worktree создаётся от main (там старая версия!) — сразу `git reset --hard claude/termux-setup-0ulp7o`.
+
+### Версия 2.4 — зависания и анимация
+- Реклама: страховка `Ads.wait()` (таймаут 70/35 с) и продолжение через 3 с после возврата в игру,
+  если SDK не прислал `__adResult`; в Java `show()` в try/catch.
+- Свечение: самоконтроль стоимости (`S.fxSlow`), кадр со свечением ≤×2, первый запуск — средняя графика (`qAuto:1`).
+- Анимация существ: `warpDraw` (полоски спрайта по волне), виды `ANIM` (swim/fin/tent/jelly/crab/pulse),
+  обычные враги — 8 запечённых кадров (постепенно, `BAKE_LEFT`), боссы и Люмен — вживую (`ANIM_LIVE`).
 
 ## КЛЮЧ ПОДПИСИ — ВАЖНО
 

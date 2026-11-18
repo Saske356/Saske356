@@ -1269,12 +1269,13 @@ function applyArt(key, img, tint) {
     g.globalCompositeOperation = 'source-atop'; g.fillStyle = 'rgba(3,10,28,0.5)'; g.fillRect(0, 0, c.width, c.height); g.globalCompositeOperation = 'source-over'; }
   const w = mkCanvas(c.width, c.height), wg = w.getContext('2d');
   wg.drawImage(c, 0, 0); wg.globalCompositeOperation = 'source-atop'; wg.fillStyle = '#fff'; wg.fillRect(0, 0, w.width, w.height);
-  SPR[key] = {img: c, white: w, h: size / 2, r, dw, art: 1, fl: !!(ART_SIDE[key] || key.startsWith('pl_'))};
+  SPR[key] = {img: c, white: w, h: size / 2, r, dw, art: 1, _a: 0, fl: !!(ART_SIDE[key] || key.startsWith('pl_'))};
 }
+function animAll() { for (const k in SPR) if (animOf(k)) setAnim(k); }
 function loadArt() {
   const A = window.ART_DATA; if (!A) return;
   let left = Object.keys(A).length;
-  const done = () => { if (--left === 0 && G.state !== 'play') buildDecor(Math.max(0, G.zone - 1) % DECOR_THEMES.length); }; // размеры рисованных известны — расставить заново
+  const done = () => { if (--left === 0) animAll(); if (left === 0 && G.state !== 'play') buildDecor(Math.max(0, G.zone - 1) % DECOR_THEMES.length); }; // размеры рисованных известны — расставить заново
   for (const key in A) { const img = new Image(); img.onerror = done;
     img.onload = () => { if (key !== 'lumen') { applyArt(key, img); if (ART_ALIAS[key]) for (const [k2, tn] of ART_ALIAS[key]) applyArt(k2, img, tn); return; } // + перекрашенные стражи
       for (const sk in SKINS) applyArt('pl_' + sk, img, sk === 'azure' ? null : PAL[SKINS[sk].pal]); };
@@ -3132,7 +3133,54 @@ function setXf(x, y, ang, sc, fl) { const cs = Math.cos(ang) * sc * WS, sn = Mat
   // fl: рисованный «вид сбоку» — плывя влево, рыба зеркалится, а не переворачивается брюхом вверх
   if (fl && cs < 0) ctx.setTransform(cs, sn, sn, -cs, OX + x * WS, OY + y * WS); else ctx.setTransform(cs, sn, -sn, cs, OX + x * WS, OY + y * WS); }
 function setWorld() { ctx.setTransform(WS, 0, 0, WS, OX, OY); }
-function drawSpr(s, white) { ctx.drawImage(white ? s.white : s.img, -s.h, -s.h, s.h * 2, s.h * 2); }
+/* ============ АНИМАЦИЯ СУЩЕСТВ: волна по полоскам спрайта ============
+   Спрайт режется на тонкие полоски, каждая сдвигается по своей фазе — изгибается хвост,
+   волнуются щупальца, сокращается купол медузы, перебирают ножки краба.
+   Обычные враги — 8 заранее запечённых кадров (запекаются постепенно, по 2 за кадр игры),
+   боссы и Люмен — «вживую» (на экране по одному, это дёшево). */
+const ANIM = {drifter: 'swim', dart: 'swim', fry: 'swim', jelly: 'jelly', squid: 'tent', crab: 'crab', crab_bare: 'crab', urchin: 'pulse', spikelet: 'pulse',
+  mender: 'pulse', crystal: 'pulse', spawner: 'pulse', bomber: 'fin', lantern: 'fin', eel: 'fin',
+  boss1: 'fin', boss2: 'pulse', boss4: 'swim', kingcrab: 'crab', kingcrab_bare: 'crab', queen: 'jelly'};
+const ANIM_LIVE = {boss1: 1, boss2: 1, boss4: 1, kingcrab: 1, kingcrab_bare: 1, queen: 1};
+const ANIM_F = {swim: 1.7, fin: 1.1, tent: 1.15, jelly: 0.7, crab: 2.6, pulse: 0.8}; // циклов в секунду
+const ANIM_N = 8; let SPR_PH = 0, BAKE_LEFT = 2;
+function animOf(key) { return ANIM[key] || (key.startsWith('pl_') ? 'swim' : null); }
+/** Рисует src полосками в g (x0,y0 — левый верх, sc — масштаб пикселя), ph — фаза в радианах */
+function warpDraw(g, src, kind, ph, step, x0, y0, sc) {
+  const W = src.width, H = src.height;
+  if (kind === 'pulse') { const k = 1 + 0.055 * Math.sin(ph), k2 = 1 + 0.055 * Math.sin(ph + 1.1);
+    g.save(); g.translate(x0 + W * sc / 2, y0 + H * sc / 2); g.rotate(Math.sin(ph * 0.5) * 0.06); g.scale(k, k2); g.drawImage(src, -W * sc / 2, -H * sc / 2, W * sc, H * sc); g.restore(); return; }
+  if (kind === 'crab') { // ножки (верх и низ спрайта) перебирают навстречу друг другу
+    for (let y = 0; y < H; y += step) { const v = (y + step / 2) / H, leg = Math.min(1, Math.max(0, (Math.abs(v - 0.5) - 0.12) * 4));
+      const dx = leg * Math.sin(ph + (v < 0.5 ? 0 : Math.PI) + v * 5) * W * 0.032;
+      g.drawImage(src, 0, y, W, step, x0 + dx * sc, y0 + y * sc, W * sc, step * sc + 0.6); }
+    return; }
+  for (let x = 0; x < W; x += step) {
+    const u = (x + step / 2) / W; let dy = 0, sy = 1, dx = 0; // u: 0 — хвост (слева), 1 — голова (справа)
+    if (kind === 'swim') { const t = Math.pow(1 - u, 1.7); dy = Math.sin(ph - u * 5.2) * H * 0.095 * t; }
+    else if (kind === 'fin') { const t = Math.pow(1 - u, 2.2); dy = Math.sin(ph - u * 4) * H * 0.065 * t; }
+    else if (kind === 'tent') { const t = Math.max(0, (0.58 - u) / 0.58); dy = Math.sin(ph - u * 9) * H * 0.13 * t * t; sy = 1 - 0.03 * Math.sin(ph) * (1 - t); }
+    else if (kind === 'jelly') { const bell = u > 0.5 ? (u - 0.5) / 0.5 : 0, t = Math.max(0, (0.62 - u) / 0.62);
+      sy = 1 + 0.11 * Math.sin(ph) * bell - 0.06 * Math.sin(ph - 1.3) * t; dx = (u - 0.75) * W * 0.06 * Math.sin(ph) * bell;
+      dy = Math.sin(ph - u * 10) * H * 0.1 * t; }
+    const h = H * sy;
+    g.drawImage(src, x, 0, step, H, x0 + (x + dx) * sc, y0 + ((H - h) / 2 + dy) * sc, step * sc + 0.6, h * sc);
+  }
+}
+function bakeFrame(s, i) {
+  const c = mkCanvas(s.img.width, s.img.height); warpDraw(c.getContext('2d'), s.img, s.anim, i / ANIM_N * TAU, 2, 0, 0, 1); s.frames[i] = c;
+}
+function setAnim(key) { const s = SPR[key], k = animOf(key); if (!s || !k) return; s.anim = k; s.live = !!ANIM_LIVE[key] || key.startsWith('pl_'); s.frames = []; }
+function drawSpr(s, white) {
+  if (!white && s.anim) {
+    const f = ANIM_F[s.anim];
+    if (s.live) { const W = s.img.width, sc = s.h * 2 / W; warpDraw(ctx, s.img, s.anim, (G.t * f + SPR_PH) * TAU, Math.max(3, W / 70 | 0), -s.h, -s.h, sc); return; }
+    const i = ((((G.t * f + SPR_PH) * ANIM_N) % ANIM_N) + ANIM_N) % ANIM_N | 0;
+    if (!s.frames[i] && BAKE_LEFT > 0) { BAKE_LEFT--; bakeFrame(s, i); }
+    if (s.frames[i]) { ctx.drawImage(s.frames[i], -s.h, -s.h, s.h * 2, s.h * 2); return; }
+  }
+  ctx.drawImage(white ? s.white : s.img, -s.h, -s.h, s.h * 2, s.h * 2);
+}
 function glowAt(img, x, y, r) { ctx.drawImage(img, x - r, y - r, r * 2, r * 2); }
 
 function buildScreenCaches() {
@@ -3490,7 +3538,7 @@ function renderWorld(rdt) {
   ctx.globalAlpha = 1;
   // враги: тела
   for (let i = 0; i < enemies.n; i++) {
-    const e = it[i]; if (e.dead || !inView(e.x, e.y, e.r * 3 + (e.type === 'boss2' ? 260 : e.type === 'eel' ? 140 : 0))) continue;
+    const e = it[i]; SPR_PH = e.phase / TAU; if (e.dead || !inView(e.x, e.y, e.r * 3 + (e.type === 'boss2' ? 260 : e.type === 'eel' ? 140 : 0))) continue;
     let sc = e.scale; if (e.spawnT > 0) { sc *= 1 - e.spawnT / 0.4; ctx.globalAlpha = 1 - e.spawnT / 0.4; }
     const wht = e.flash > 0;
     switch (e.type) {
@@ -3544,7 +3592,7 @@ function renderWorld(rdt) {
     ctx.globalAlpha = 0.55 + 0.15 * Math.sin(G.t * 5); glowAt(SOFT[P.pal], P.x, P.y, P.dashT > 0 ? 70 : 46);
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     if (!(P.inv > 0 && (G.t * 16 | 0) % 2)) {
-      setXf(P.x, P.y, P.ang, 1, SPR['pl_' + P.skin].fl);
+      SPR_PH = 0; setXf(P.x, P.y, P.ang, 1, SPR['pl_' + P.skin].fl);
       drawSpr(SPR['pl_' + P.skin], false);
       if (!SPR['pl_' + P.skin].art) {
       // Подвижные боковые плавники и многослойное энергетическое ядро.
@@ -3715,7 +3763,7 @@ function renderTitleDemo(dt, am) {
   ctx.globalAlpha = 0.72 * am;
   for (const d of DEMO) {
     d.y -= d.sp * dt / H; if (d.y < -0.1) { d.y = 1.1; d.x = Math.random(); }
-    const s = SPR[d.k], x = d.x * W + Math.sin(G.t * 0.4 + d.p) * 30, y = d.y * H;
+    SPR_PH = d.p / TAU; const s = SPR[d.k], x = d.x * W + Math.sin(G.t * 0.4 + d.p) * 30, y = d.y * H;
     const a = -Math.PI / 2 + Math.sin(G.t * 0.7 + d.p) * 0.4; // плывут вверх; рисованные смотрят по ходу движения
     const cs = Math.cos(a) * d.s * DPR, sn = Math.sin(a) * d.s * DPR; ctx.setTransform(cs, sn, -sn, cs, x * DPR, y * DPR);
     drawSpr(s, false);
@@ -3814,6 +3862,7 @@ function renderHUD() {
   if (TUT.on && !G.boss) renderTut();
 }
 function render(dt) {
+  BAKE_LEFT = 2; // бюджет запекания кадров анимации на кадр игры
   // тряска
   const sh = G.shake, shx = sh > 0.3 ? (Math.random() * 2 - 1) * sh : 0, shy = sh > 0.3 ? (Math.random() * 2 - 1) * sh : 0;
   WS = VS * DPR; OX = DPR * W / 2 - (G.camX + shx) * WS; OY = DPR * H / 2 - (G.camY + shy) * WS;
@@ -4647,13 +4696,13 @@ function frame(now) {
 }
 
 /* ---- запуск ---- */
-buildGlows(); buildSprites(); buildDecorSprites(); loadArt(); initBackground(); buildDecor(0);
+buildGlows(); buildSprites(); buildDecorSprites(); animAll(); loadArt(); initBackground(); buildDecor(0);
 QAUTO.lvl = Math.min(2, S.qAuto); // начинаем с уровня, который подошёл этому телефону в прошлый раз
 applyLang(); dailyCheck(); applyQuality(); updMute(); startIntro();
 requestAnimationFrame(t => { lastT = t; frame(t); });
 
 // Хук для автотестов и отладки (QA): window.__SB
-window.__SB = {G, P, S, ST, Mus, DECOR, buildDecor, hurtPlayer, drawIcon, UPG, Ads, adGift, updGift, spawnEnemy, damageEnemy, pickType, updateRun, rollChoices, takeUpgrade, computeStats, SHOP, CFG, ET, PERF, SPR, DECOR, enemies, ebul, pbul, parts, picks, startRun, pauseGame, resumeGame, gameOver,
+window.__SB = {G, P, S, ST, Mus, warpDraw, DECOR, buildDecor, hurtPlayer, drawIcon, UPG, Ads, adGift, updGift, spawnEnemy, damageEnemy, pickType, updateRun, rollChoices, takeUpgrade, computeStats, SHOP, CFG, ET, PERF, SPR, DECOR, enemies, ebul, pbul, parts, picks, startRun, pauseGame, resumeGame, gameOver,
   jumpZone(z) { G.zone = z - 1; G.zoneT = CFG.ZONE_TIME; }, giveXP(n) { addXP(n); }, god(on) { G.god = !!on; },
   up(id, n) { P.up[id] = (P.up[id] || 0) + (n || 1); computeStats(); }, killBoss() { if (G.boss) killEnemy(G.boss, null); },
   intro: startIntro, ending() { G.zone = 15; G.victory = true; startEnding(); }, TUT, END, INTRO, renderAch,
