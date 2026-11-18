@@ -29,6 +29,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
   touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;
   overscroll-behavior:none;position:fixed;inset:0;}
 #cv{position:fixed;left:0;top:0;width:100%;height:100%;display:block;touch-action:none;}
+#gl,#hudcv{position:fixed;left:0;top:0;width:100%;height:100%;display:none;pointer-events:none;}
 #safeProbe{position:fixed;visibility:hidden;pointer-events:none;
   padding:var(--sat) var(--sar) var(--sab) var(--sal);}
 
@@ -312,6 +313,8 @@ button{ -webkit-appearance:none; appearance:none; }
 </head>
 <body>
 <canvas id="cv"></canvas>
+<canvas id="gl"></canvas>
+<canvas id="hudcv"></canvas>
 <div id="safeProbe"></div>
 
 <!-- Игровые кнопки -->
@@ -451,6 +454,7 @@ button{ -webkit-appearance:none; appearance:none; }
   <button class="btn" id="setQuality"></button>
   <button class="btn" id="setNums"></button>
   <button class="btn" id="setShake"></button>
+  <button class="btn" id="setFx"></button>
   <button class="btn" id="setLang"></button>
   <button class="btn" id="setTrack"></button>
   <button class="btn" id="setFps"></button>
@@ -458,6 +462,7 @@ button{ -webkit-appearance:none; appearance:none; }
 </div>
 
 <div id="toasts"></div>
+<!--ART--><!--/ART-->
 <script>
 (function(){
 'use strict';
@@ -729,7 +734,7 @@ const EN = {
     endFinish:'End the run', unlockDef:'NEW SKIN',
     shopTitle:'UPGRADES', tabUp:'Boosts', tabChars:'Sparks', tabSkins:'Skins', back:'Back',
     achTitle:'AWARDS', setTitle:'SETTINGS',
-    sound:'Sound', music:'Music', vibro:'Vibration', graphics:'Graphics', nums:'Damage numbers', shake:'Screen shake',
+    sound:'Sound', music:'Music', vibro:'Vibration', graphics:'Graphics', nums:'Damage numbers', shake:'Screen shake', fxL:'Glow (GPU)', fxNo:'unavailable', fxHi:'on high graphics',
     lang:'Language', track:'Melody', on:'ON', off:'OFF', gHigh:'HIGH', gLow:'SAVER', gAuto:'AUTO',
     depth:'DEPTH', time:'TIME', foes:'FOES', maxCombo:'MAX COMBO', level:'LEVEL', pearlsL:'PEARLS', score:'SCORE', syn:'SYNERGIES',
     crabT:'SHIELD CRAB', crabS:'Hit from the side or dash — the shield cracks', crabBreak:'SHIELD BROKEN', lord:'LORD OF THE ABYSS', flareB:'FLARE!', comboX:'COMBO ×', synergy:'SYNERGY', pack:'Ambush!',
@@ -779,7 +784,7 @@ const RU = {ui:{
   endFinish:'Завершить заплыв', unlockDef:'НОВЫЙ ОБЛИК',
   shopTitle:'УЛУЧШЕНИЯ', tabUp:'Усиления', tabChars:'Искры', tabSkins:'Облики', back:'Назад',
   achTitle:'НАГРАДЫ', setTitle:'НАСТРОЙКИ',
-  sound:'Звуки', music:'Музыка', vibro:'Вибрация', graphics:'Графика', nums:'Цифры урона', shake:'Тряска экрана',
+  sound:'Звуки', music:'Музыка', vibro:'Вибрация', graphics:'Графика', nums:'Цифры урона', shake:'Тряска экрана', fxL:'Свечение', fxNo:'недоступно', fxHi:'на высокой графике',
   lang:'Язык', track:'Мелодия', on:'ВКЛ', off:'ВЫКЛ', gHigh:'ВЫСОКАЯ', gLow:'ЭКОНОМ', gAuto:'АВТО',
   depth:'ГЛУБИНА', time:'ВРЕМЯ', foes:'ВРАГОВ', maxCombo:'МАКС. КОМБО', level:'УРОВЕНЬ', pearlsL:'ЖЕМЧУГ', score:'ОЧКИ', syn:'СИНЕРГИЙ',
   crabT:'КРАБ СО ЩИТОМ', crabS:'Бей сбоку или рывком — щит треснет', crabBreak:'ЩИТ РАСКОЛОТ', lord:'ВЛАДЫКА БЕЗДНЫ', flareB:'ВСПЫШКА!', comboX:'КОМБО ×', synergy:'СИНЕРГИЯ', pack:'Окружение!',
@@ -1110,7 +1115,26 @@ function makeSprite(key, r, pad, fn) {
   fn(g, r);
   const w = mkCanvas(c.width, c.height), wg = w.getContext('2d');
   wg.drawImage(c, 0, 0); wg.globalCompositeOperation = 'source-atop'; wg.fillStyle = '#fff'; wg.fillRect(0, 0, w.width, w.height);
-  SPR[key] = {img: c, white: w, h: size / 2};
+  SPR[key] = {img: c, white: w, h: size / 2, r};
+}
+/* ---------- рисованные спрайты (PNG/WebP) вместо кодовых ----------
+   Картинки лежат прямо в HTML (window.ART_DATA = {ключ: 'data:image/webp;base64,...'}):
+   data:-адреса не «пачкают» холст, поэтому WebGL может читать кадр и в APK, и в браузере.
+   Нет картинки — остаётся кодовый спрайт. */
+const ART_FIT = 3.0; // ширина картинки = r·ART_FIT (на картинке существо занимает ~80% кадра)
+function applyArt(key, img) {
+  const s0 = SPR[key]; if (!s0 || !img.width) return;
+  const r = s0.r || s0.h * 0.7, dw = r * ART_FIT, size = Math.max(s0.h * 2, dw);
+  const c = mkCanvas(size * SC, size * SC), g = c.getContext('2d');
+  const k = dw * SC / Math.max(img.width, img.height);
+  g.drawImage(img, (c.width - img.width * k) / 2, (c.height - img.height * k) / 2, img.width * k, img.height * k);
+  const w = mkCanvas(c.width, c.height), wg = w.getContext('2d');
+  wg.drawImage(c, 0, 0); wg.globalCompositeOperation = 'source-atop'; wg.fillStyle = '#fff'; wg.fillRect(0, 0, w.width, w.height);
+  SPR[key] = {img: c, white: w, h: size / 2, r, art: 1};
+}
+function loadArt() {
+  const A = window.ART_DATA; if (!A) return;
+  for (const key in A) { const img = new Image(); img.onload = () => applyArt(key, img); img.src = A[key]; }
 }
 function radial(g, r, c0, c1, c2) {
   const gr = g.createRadialGradient(r * 0.25, -r * 0.2, 0, 0, 0, r);
@@ -1443,7 +1467,7 @@ function buildSprites() {
 
 /* ============================ 6. STATE ============================ */
 const cv = $('cv');
-const ctx = cv.getContext('2d', {alpha: false});
+let ctx = cv.getContext('2d', {alpha: false}); const ctx0 = ctx;
 let W = 390, H = 844, DPR = 1, VS = 1, VW = 200, VH = 400; // экран (css px), масштаб мира, полуразмеры видимой области
 const SAFE = {t: 0, b: 0, l: 0, r: 0};
 let MAX_PART = CFG.MAX_PART_HI;
@@ -1452,6 +1476,95 @@ let MAX_PART = CFG.MAX_PART_HI;
 const QDPR = [1, 2, 3]; // эконом / средне / высоко (до родного разрешения экрана — без «мыла»)
 const QAUTO = {lvl: 2, acc: 0, n: 0, bad: 0, good: 0, fail: [0, 0, 0], cool: 0};
 let QL = 2, FRAME_CAP = false;
+/* ============================ WebGL-постобработка ============================
+   Кадр рисуется как раньше (Canvas 2D), затем на видеокарте накладываются:
+   настоящее свечение (bloom в два радиуса), подводная каустика в координатах мира,
+   свет вокруг Люмена, виньетка, тон зоны и цветовой сдвиг при ударах.
+   HUD рисуется отдельным слоем поверх — цифры не расплываются.
+   Работает только на «высоком» качестве; автонастройка сама снизит качество на слабом телефоне. */
+const FX = (() => {
+  const gc = $('gl'), hc = $('hudcv'), hctx = hc.getContext('2d');
+  let gl = null, ok = false, shown = false, P0, PB, PC, sceneT, quad, F = [], bw = 0, bh = 0;
+  const VSRC = 'attribute vec2 p;varying vec2 v;void main(){v=p*.5+.5;gl_Position=vec4(p,0.,1.);}';
+  const PRE = 'precision mediump float;varying vec2 v;';
+  const BRIGHT = PRE + 'uniform sampler2D t;uniform vec2 px;uniform float thr;void main(){vec3 c=(texture2D(t,v+px*vec2(-1.,-1.)).rgb+texture2D(t,v+px*vec2(1.,-1.)).rgb+texture2D(t,v+px*vec2(-1.,1.)).rgb+texture2D(t,v+px).rgb)*.25;float l=max(max(c.r,c.g),c.b);gl_FragColor=vec4(c*smoothstep(thr,thr+.3,l),1.);}';
+  const BLUR = PRE + 'uniform sampler2D t;uniform vec2 d;void main(){vec3 c=texture2D(t,v).rgb*.227027;c+=(texture2D(t,v+d*1.3846).rgb+texture2D(t,v-d*1.3846).rgb)*.316216;c+=(texture2D(t,v+d*3.2308).rgb+texture2D(t,v-d*3.2308).rgb)*.07027;gl_FragColor=vec4(c,1.);}';
+  const COMP = PRE + 'uniform sampler2D s,b1,b2;uniform vec2 res,lp,cam;uniform vec3 tint;uniform float bi,tm,ca,caus,vig,asp;' +
+    'void main(){vec3 c;if(ca>0.){vec2 o=(v-.5)*ca;c=vec3(texture2D(s,v+o).r,texture2D(s,v).g,texture2D(s,v-o).b);}else c=texture2D(s,v).rgb;' +
+    'vec3 bl=texture2D(b1,v).rgb*.85+texture2D(b2,v).rgb*.75;' +
+    'vec2 q=(v*res+cam)*.011;float k=sin(q.x+sin(q.y*1.3+tm*.7)*1.7)*sin(q.y*.9+sin(q.x*1.1-tm*.55)*1.7);k=k*k*k*k*caus;' +
+    'vec2 dd=(v-lp)*vec2(asp,1.);float L=exp(-dot(dd,dd)*7.);' +
+    'float vg=1.-vig*smoothstep(.3,1.,length((v-.5)*vec2(asp,1.)*1.3));' +
+    'c=c*vg*(.93+.12*L)+bl*bi+(vec3(.5,.88,1.)*k)*(.4+.6*vg)+tint*(.012+.05*L);gl_FragColor=vec4(c,1.);}';
+  function prog(fs, names) {
+    const sh = (t, src) => { const o = gl.createShader(t); gl.shaderSource(o, src); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; };
+    const p = gl.createProgram(); gl.attachShader(p, sh(gl.VERTEX_SHADER, VSRC)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
+    gl.bindAttribLocation(p, 0, 'p'); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    const u = {p}; for (const n of names) u[n] = gl.getUniformLocation(p, n); return u;
+  }
+  function mkTex() { const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return t; }
+  function mkFb(w, h) { const t = mkTex(); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+    return {f, t, w, h}; }
+  function init() {
+    try {
+      gl = gc.getContext('webgl', {alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, preserveDrawingBuffer: false, powerPreference: 'high-performance'});
+      if (!gl) return;
+      P0 = prog(BRIGHT, ['t', 'px', 'thr']); PB = prog(BLUR, ['t', 'd']);
+      PC = prog(COMP, ['s', 'b1', 'b2', 'res', 'lp', 'cam', 'tint', 'bi', 'tm', 'ca', 'caus', 'vig', 'asp']);
+      quad = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, quad); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      sceneT = mkTex(); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      ok = true;
+    } catch (e) { ok = false; console.warn('FX off:', e && e.message); }
+    gc.addEventListener('webglcontextlost', e => { e.preventDefault(); ok = false; show(false); }, false);
+  }
+  function resize() {
+    hc.width = cv.width; hc.height = cv.height;
+    if (!ok) return;
+    gc.width = cv.width; gc.height = cv.height;
+    const w1 = Math.max(8, Math.round(W / 2)), h1 = Math.max(8, Math.round(H / 2)), w2 = Math.max(4, w1 >> 1), h2 = Math.max(4, h1 >> 1);
+    if (bw !== w1 || bh !== h1) { for (const f of F) { gl.deleteFramebuffer(f.f); gl.deleteTexture(f.t); } F = [mkFb(w1, h1), mkFb(w1, h1), mkFb(w2, h2), mkFb(w2, h2)]; bw = w1; bh = h1; }
+  }
+  function show(on) { if (on === shown) return; shown = on; gc.style.display = on ? 'block' : 'none'; hc.style.display = on ? 'block' : 'none'; if (!on) hctx.clearRect(0, 0, hc.width, hc.height); }
+  const active = () => { const on = ok && QL >= 2 && S.set.fx !== 0; show(on); return on; };
+  const TINT = [0, 0, 0];
+  function hexRgb(h, o) { const n = parseInt(h.slice(1), 16); o[0] = (n >> 16 & 255) / 255; o[1] = (n >> 8 & 255) / 255; o[2] = (n & 255) / 255; }
+  function pass(pr, fb, tex, w, h) { gl.bindFramebuffer(gl.FRAMEBUFFER, fb ? fb.f : null); gl.viewport(0, 0, w, h); gl.useProgram(pr.p);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1i(pr.t || pr.s, 0); }
+  function blur(a, b) {
+    pass(PB, b, a.t, b.w, b.h); gl.uniform2f(PB.d, 1 / a.w, 0); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    pass(PB, a, b.t, a.w, a.h); gl.uniform2f(PB.d, 0, 1 / a.h); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+  function draw() {
+    gl.bindTexture(gl.TEXTURE_2D, sceneT);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv);
+    const [A, B, A2, B2] = F;
+    pass(P0, A, sceneT, A.w, A.h); gl.uniform2f(P0.px, 0.5 / A.w, 0.5 / A.h); gl.uniform1f(P0.thr, 0.62); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    blur(A, B);
+    pass(P0, A2, A.t, A2.w, A2.h); gl.uniform2f(P0.px, 0.5 / A2.w, 0.5 / A2.h); gl.uniform1f(P0.thr, -1); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    blur(A2, B2);
+    pass(PC, null, sceneT, gc.width, gc.height);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, A.t); gl.uniform1i(PC.b1, 1);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, A2.t); gl.uniform1i(PC.b2, 2);
+    const title = G.state === 'title' || G.state === 'intro', zi = title ? 0 : Math.max(0, G.zone - 1);
+    hexRgb(G.boss ? '#ff4f8f' : ZONE_ACCENTS[zi % ZONE_ACCENTS.length], TINT);
+    const lx = title ? 0.5 : (W / 2 + (P.x - G.camX) * VS) / W, ly = title ? 0.5 : 1 - (H / 2 + (P.y - G.camY) * VS) / H;
+    gl.uniform2f(PC.res, W, H); gl.uniform2f(PC.lp, lx, ly); gl.uniform2f(PC.cam, G.camX * VS, -G.camY * VS);
+    gl.uniform3f(PC.tint, TINT[0], TINT[1], TINT[2]); gl.uniform1f(PC.asp, W / H);
+    gl.uniform1f(PC.bi, 0.42); gl.uniform1f(PC.tm, G.t);
+    gl.uniform1f(PC.ca, S.set.shake === 0 ? 0 : Math.min(0.012, G.shake * 0.0007 + (G.hurtFlash || 0) * 0.006));
+    gl.uniform1f(PC.caus, G.boss ? 0.05 : Math.max(0.04, 0.14 - zi * 0.009)); gl.uniform1f(PC.vig, 0.5);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.activeTexture(gl.TEXTURE0);
+  }
+  function beginHud() { hctx.setTransform(1, 0, 0, 1, 0, 0); hctx.globalAlpha = 1; hctx.globalCompositeOperation = 'source-over'; hctx.clearRect(0, 0, hc.width, hc.height); ctx = hctx; }
+  function endHud() { ctx = ctx0; }
+  init();
+  return {active, draw, beginHud, endHud, resize, get ok() { return ok; }};
+})();
 function qLevel() { return S.set.quality === 'low' ? 0 : S.set.quality === 'high' ? 2 : QAUTO.lvl; }
 
 const G = {
@@ -3093,9 +3206,11 @@ function render(dt) {
   else if (G.state === 'title' || G.state === 'intro') renderTitleDemo(dt);
   else renderWorld(dt || 0.016);
   if (G.state === 'ending') renderEnding(dt);
+  const fx = FX.active(); if (fx) { FX.draw(); FX.beginHud(); }
   if (!introDark) renderHUD();
   if (G.state === 'intro') renderIntro();
   if (G.flash > 0) { ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(1, G.flash) * 0.7; ctx.fillStyle = '#fff6d8'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; }
+  if (fx) FX.endHud();
 }
 
 /* ============================ 10. UI ============================ */
@@ -3548,6 +3663,7 @@ function renderSet() {
   $('setQuality').textContent = uiT('graphics') + ': ' + (S.set.quality === 'high' ? uiT('gHigh') : S.set.quality === 'low' ? uiT('gLow') : uiT('gAuto'));
   $('setNums').textContent = uiT('nums') + ': ' + on(S.set.nums);
   $('setShake').textContent = uiT('shake') + ': ' + on(S.set.shake);
+  $('setFx').textContent = uiT('fxL') + ': ' + (!FX.ok ? uiT('fxNo') : S.set.fx === 0 ? on(0) : QL >= 2 ? on(1) : uiT('fxHi'));
   $('setLang').textContent = uiT('lang') + ': ' + (S.set.lang === 'en' ? 'English' : 'Русский');
   $('setTrack').textContent = uiT('track') + ': ' + Snd.trackName(S.set.track);
   $('setFps').textContent = uiT('fps') + ': ' + S.set.fps;
@@ -3717,6 +3833,7 @@ click('btnAdRevive', adRevive);
 click('btnNoRevive', declineRevive);
 click('btnAdDouble', adDouble);
 for (const [id, k] of [['setSound', 'sound'], ['setMusic', 'music'], ['setVibro', 'vibro'], ['setQuality', 'quality'], ['setNums', 'nums'], ['setShake', 'shake']]) click(id, () => toggleSet(k));
+click('setFx', () => { S.set.fx = S.set.fx === 0 ? 1 : 0; persist(); G.redraw = 2; renderSet(); });
 click('setLang', toggleLang); click('setTrack', toggleTrack);
 click('setFps', () => { S.set.fps = S.set.fps === 120 ? 60 : 120; persist(); renderSet(); });
 
@@ -3730,7 +3847,7 @@ function resize() {
   cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
   VS = clamp(Math.min(W, H) / 450, 0.8, 1.8); VW = W / 2 / VS; VH = H / 2 / VS;
   try { const cs = getComputedStyle($('safeProbe')); SAFE.t = parseFloat(cs.paddingTop) || 0; SAFE.r = parseFloat(cs.paddingRight) || 0; SAFE.b = parseFloat(cs.paddingBottom) || 0; SAFE.l = parseFloat(cs.paddingLeft) || 0; } catch (e) {}
-  buildScreenCaches();
+  buildScreenCaches(); FX.resize();
   G.redraw = 2;
 }
 window.addEventListener('resize', resize);
@@ -3781,7 +3898,7 @@ function frame(now) {
 }
 
 /* ---- запуск ---- */
-buildGlows(); buildSprites(); buildDecorSprites(); initBackground(); buildDecor(0);
+buildGlows(); buildSprites(); buildDecorSprites(); loadArt(); initBackground(); buildDecor(0);
 QAUTO.lvl = Math.min(2, S.qAuto); // начинаем с уровня, который подошёл этому телефону в прошлый раз
 applyLang(); dailyCheck(); applyQuality(); updMute(); startIntro();
 requestAnimationFrame(t => { lastT = t; frame(t); });
