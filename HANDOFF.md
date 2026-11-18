@@ -17,7 +17,7 @@
   - `game/index.html` — вся игра в одном файле (canvas 2D + Web Audio), ~единый файл.
   - `game/android/` — Android-обёртка (Gradle-проект, WebView во весь экран,
     реклама Яндекса, запрос максимальной частоты экрана).
-  - `game/dist/SvetBezdny.apk` — собранный подписанный APK (сейчас версия 2.0).
+  - `game/dist/SvetBezdny.apk` — собранный подписанный APK (сейчас версия 2.1).
   - `game/store/` — материалы для RuStore: `RUSTORE.md` (тексты карточки),
     `screenshots/` (1080×1920), `icon-512.png`, `video/trailer.mp4`.
   - `game/ADS.md`, `game/INSTALL.md`, `game/README.md` — инструкции.
@@ -89,6 +89,15 @@
   (`window.ART_DATA` между `<!--ART-->`). Встраивание, а не файлы: файлы с file:// «пачкают»
   холст и WebGL не сможет его читать. Имена файлов = ключи SPR (lumen→pl_azure, eel_head→eel,
   eel_seg→eelseg). Масштаб — `ART_FIT`. Промпт для генерации картинок дан пользователю (31 шт).
+
+### Версия 2.1 — рисованная графика
+- 31 спрайт от генератора ChatGPT (листы нарезаны `tools/slice_sheets.py`), исходники —
+  `game/art/*.webp`; встраивание: `python3 tools/embed_art.py art`.
+- `lumen` перекрашивается под все 21 облик (hue / для бледных — saturation+soft-light).
+- Нарисованные сбоку (`ART_SIDE`) зеркалятся при движении влево (`setXf(..., fl)`),
+  сегменты угря поворачиваются вдоль тела, рисованные декорации не вращаются и затемнены.
+- Размеры — `ART_FIT` и `ART_SIZE`. Новая иконка (APK, PWA, store/icon-512.png).
+- Скриншоты в `game/store/screenshots` ещё старые — переснять.
 
 ## КЛЮЧ ПОДПИСИ — ВАЖНО
 

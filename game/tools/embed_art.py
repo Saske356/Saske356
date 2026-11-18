@@ -11,7 +11,7 @@ from PIL import Image
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HTML = os.path.join(ROOT, 'index.html')
-ALIAS = {'lumen': 'pl_azure', 'eel_head': 'eel', 'eel_seg': 'eelseg'}  # имя файла -> ключ спрайта
+ALIAS = {'eel_head': 'eel', 'eel_seg': 'eelseg'}  # имя файла -> ключ спрайта
 BIG = ('boss1', 'boss2', 'boss3', 'boss4')
 
 def encode(path, key):
