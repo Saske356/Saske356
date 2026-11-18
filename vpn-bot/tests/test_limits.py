@@ -238,6 +238,15 @@ class CountryHysteria(unittest.IsolatedAsyncioTestCase):
         hosts = [l.split("@")[1].split(":")[0] for l in self.v.links(1)[3:]]
         self.assertEqual(hosts, ["198.51.100.9", "198.51.100.10", "198.51.100.9", "198.51.100.10"])
         self.v.remove_bridge("ru2")
+        # четыре входа на одном мосте (разные порты): у каждого пункта свой порт и свой сайт
+        for n, port in ((2, 8443), (3, 2083), (4, 5443)):
+            self.v.add_bridge(f"ru{n}", "🇷🇺 Обход", f"198.51.100.9:{port}", ru=True)
+        ends = [l.split("@")[1].split("/")[0].split("?")[0] for l in self.v.links(1)[3:]]
+        self.assertEqual(ends, ["198.51.100.9:443", "198.51.100.9:8443", "198.51.100.9:2083", "198.51.100.9:5443"])
+        sites = [l.split("sni=")[1].split("&")[0].split("#")[0] for l in self.v.links(1)[3:]]
+        self.assertEqual(len(set(sites)), 4)
+        for n in (2, 3, 4):
+            self.v.remove_bridge(f"ru{n}")
         self.v.remove_bridge("ru1")
         await self.v._pending
 

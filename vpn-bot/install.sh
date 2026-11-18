@@ -393,7 +393,10 @@ if [ "${1:-}" = "bridge" ]; then
   # Порты Hysteria стран на основном сервере (HY2_LOC_PORTS там же): мост пересылает и их.
   LOCR=$(ask "UDP-порты стран Hysteria на основном сервере" "30000-30049")
   printf '%s' "$LOCR" | grep -Eq '^[0-9]{1,5}-[0-9]{1,5}$' || fail "порты: вида 30000-30049"
-  say "Ставлю пересылку 443 → $MAIN:$TARGET, UDP 443 и $LOCR → $MAIN"
+  # Запасные UDP-порты на том же мосте (тоже на Hysteria основного сервера): в боте их добавляют
+  # как отдельные мосты — /addbridge ru2 … | IP:8443 | ru. Свой порт и свой сайт маскировки у каждого.
+  EXTRA_UDP="${BRIDGE_EXTRA_UDP:-8443, 2083, 5443}"
+  say "Ставлю пересылку 443 → $MAIN:$TARGET, UDP 443 и $EXTRA_UDP и $LOCR → $MAIN"
   retry apt-get update -qq || fail "не удалось обновить список пакетов"
   retry apt-get install -y -qq nftables >/dev/null || fail "не удалось поставить nftables"
   echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/99-aurora-bridge.conf
@@ -406,6 +409,7 @@ table ip aurora {
     type nat hook prerouting priority dstnat; policy accept;
     tcp dport 443 dnat to $MAIN:$TARGET
     udp dport 443 dnat to $MAIN:443
+    udp dport { $EXTRA_UDP } dnat to $MAIN:443
     udp dport $LOCR dnat to $MAIN
   }
   chain postrouting {
@@ -429,6 +433,7 @@ EOF2
   if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
     ufw allow 443/tcp >/dev/null
     ufw allow 443/udp >/dev/null
+    for p in ${EXTRA_UDP//,/ }; do ufw allow "$p"/udp >/dev/null; done
     ufw allow "${LOCR/-/:}/udp" >/dev/null
     ufw route allow proto tcp to "$MAIN" port "$TARGET" >/dev/null 2>&1 || true
     ufw route allow proto udp to "$MAIN" port 443 >/dev/null 2>&1 || true
@@ -445,6 +450,8 @@ EOF2
   say "Мост готов"
   echo "Теперь в боте отправьте:"
   echo "  /addbridge ru1 🇷🇺 Обход | $BRIDGE_IP | ru"
+  echo "Ещё входы на этом же мосте (другие порты) — отдельными командами:"
+  n=2; for p in ${EXTRA_UDP//,/ }; do echo "  /addbridge ru$n 🇷🇺 Обход | $BRIDGE_IP:$p | ru"; n=$((n + 1)); done
   echo "Бот сам подберёт российский сайт для маскировки моста."
   exit 0
 fi

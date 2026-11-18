@@ -973,14 +973,15 @@ class XrayProvider(VpnProvider):
                 out.append({**e(self.host, port, sni, f"{loc['name']}{tag}"), "tg": tg(self.host, h.get("port"), sni)})
         # Обход белых списков: ровно BYPASS_SLOTS пунктов через российские мосты (UDP 443 моста →
         # Hysteria основного сервера, имя сайта — российское из белого списка). Пункты по очереди
-        # раскладываются по мостам; если мостов меньше, на одном мосте пункты различаются сайтом
-        # маскировки. Копий стран через мост нет (пользователь: «не нужен дубляж»).
+        # раскладываются по мостам (мостом считается и другой порт того же сервера: IP:8443), у
+        # каждого пункта свой сайт маскировки. Копий стран через мост нет (пользователь: «не нужен дубляж»).
         ru = [b for b in self.visible_bridges() if b.get("ru")]
         if h.get("port") and self.bridge_site and ru:
             sites = list(dict.fromkeys([self.bridge_site, self.BS_DEFAULT, *self.BS_EXTRA, *self.BYPASS_SITES]))
             for i in range(self.BYPASS_SLOTS):
                 b = ru[i % len(ru)]
-                site = sites[(i // len(ru)) % len(sites)] if len(ru) < self.BYPASS_SLOTS else self.bridge_site
+                # у каждого пункта свой сайт маскировки (у мостов на одном сервере — разные порты)
+                site = sites[i % len(sites)]
                 out.append(e(b["host"], b["port"], site, f"{b['name']} {i + 1}", server_port=h["port"]))
         # Названия должны быть разными: приложения выбирают подключение по имени, а одинаковые
         # (две страны с одним флагом, страна и её копия через мост) путают выбор и роняли список стран
