@@ -3793,7 +3793,8 @@ function renderHUD() {
     ctx.save(); ctx.translate(W / 2, H * 0.3); ctx.scale(s, s); ctx.globalAlpha = a; ctx.textAlign = 'center';
     if (bn.text) { const fs = bn.text.length > 12 ? Math.min(34, W / bn.text.length * 1.55) : 44; ctx.font = '900 ' + Math.round(fs) + 'px ' + FONT;
       ctx.shadowColor = bn.col; ctx.shadowBlur = 24; ctx.fillStyle = '#fff'; ctx.fillText(bn.text, 0, 0); ctx.shadowBlur = 0; }
-    if (bn.sub) { ctx.font = '700 16px ' + FONT; ctx.fillStyle = bn.col; ctx.fillText(bn.sub, 0, bn.text ? 34 : 0); }
+    if (bn.sub) { let fs = 16; ctx.font = '700 16px ' + FONT; const mw = W - 28, tw = ctx.measureText(bn.sub).width; if (tw > mw) { fs = Math.max(11, Math.floor(16 * mw / tw)); ctx.font = '700 ' + fs + 'px ' + FONT; } // длинная подсказка ужимается под экран
+      ctx.fillStyle = bn.col; ctx.fillText(bn.sub, 0, bn.text ? 34 : 0, mw); }
     ctx.restore(); ctx.globalAlpha = 1;
   }
   // джойстик

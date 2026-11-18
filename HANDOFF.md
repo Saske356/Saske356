@@ -17,7 +17,7 @@
   - `game/index.html` — вся игра в одном файле (canvas 2D + Web Audio), ~единый файл.
   - `game/android/` — Android-обёртка (Gradle-проект, WebView во весь экран,
     реклама Яндекса, запрос максимальной частоты экрана).
-  - `game/dist/SvetBezdny.apk` — собранный подписанный APK (сейчас версия 2.2).
+  - `game/dist/SvetBezdny.apk` — собранный подписанный APK (сейчас версия 2.3).
   - `game/store/` — материалы для RuStore: `RUSTORE.md` (тексты карточки),
     `screenshots/` (1080×1920), `icon-512.png`, `video/trailer.mp4`.
   - `game/ADS.md`, `game/INSTALL.md`, `game/README.md` — инструкции.
@@ -113,6 +113,16 @@
 - Вражеские пули с тёмным контуром (читаемость). Голова угря обрезана (art/eel_head.webp).
 - Бот-симулятор баланса: `node game/tools/balance_bot.js ФАЙЛ ЗАБЕГОВ 0|max НАВЫК` (HARD=1 — «Кошмар»), играет на перемотке через `__SB.updateRun`
   логика: уклон от врагов/пуль, сбор опыта, случайные улучшения).
+
+### Версия 2.3 — контент
+- «Испытание дня» (`RUN_MODE`, `dailyMuts`, `MUTS`, хуки `mut(id)`), жемчуг ×2, бонус за 500 м.
+- «Таланты» (`TALENTS`, `S.tal`, `tl(id)`) — 4-я вкладка магазина, 3 ветки по 4.
+- «Бестиарий» (`renderBest`, `BEST`, `S.seen`).
+- Записанный саундтрек `game/audio/*.ogg` (~21 МБ), генератор `game/tools/music/compose.py`,
+  проигрыватель `Mus` (S.set.track: 0–2 процедурные, 3 — саундтрек). Gradle копирует `audio/` в assets.
+- Новые враги (ray, lantern+wisp, spawner+fry) и стражи `kingcrab` (300/1300 м) и `queen` (800 м),
+  код в блоках «НОВЫЕ ВРАГИ И СТРАЖИ», `tryGuardian()` в `nextZone()`.
+- Агентам worktree создаётся от main (там старая версия!) — сразу `git reset --hard claude/termux-setup-0ulp7o`.
 
 ## КЛЮЧ ПОДПИСИ — ВАЖНО
 

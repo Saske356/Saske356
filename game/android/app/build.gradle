@@ -9,8 +9,8 @@ android {
         applicationId 'com.svetbezdny.game'
         minSdk 24
         targetSdk 35
-        versionCode 14
-        versionName '2.2'
+        versionCode 15
+        versionName '2.3'
         buildConfigField 'String', 'YANDEX_REWARDED_ID', "\"${project.findProperty('yandexRewardedId') ?: 'demo-rewarded-yandex'}\""
         buildConfigField 'String', 'YANDEX_INTERSTITIAL_ID', "\"${project.findProperty('yandexInterstitialId') ?: 'demo-interstitial-yandex'}\""
     }
