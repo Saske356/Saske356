@@ -309,6 +309,9 @@ button{ -webkit-appearance:none; appearance:none; }
 }
 
 .skinPreview{position:relative;overflow:hidden;background-blend-mode:screen;transform:rotate(45deg);border-radius:10px!important;box-shadow:0 0 18px currentColor,inset 0 0 10px rgba(255,255,255,.45)!important}.skinPreview:after{content:'';position:absolute;inset:22%;border:1px solid rgba(255,255,255,.9);border-radius:50%;box-shadow:0 0 8px rgba(255,255,255,.9)}
+#scrShop .talHead{width:100%;max-width:520px;margin:10px auto 4px;text-align:left;font-weight:800;letter-spacing:.12em;font-size:13px;color:#ffd54f;opacity:.9}
+#scrShop .item.lockT{opacity:.55}
+#scrShop .tabs .btn{font-size:clamp(11px,3.3vw,15px);padding-left:4px;padding-right:4px}
 #tStats,.hook{text-shadow:0 1px 3px #000,0 0 10px rgba(0,4,12,.95),0 0 18px rgba(0,4,12,.8);}
 </style>
 </head>
@@ -337,6 +340,7 @@ button{ -webkit-appearance:none; appearance:none; }
   <div class="titleBtns">
     <div class="tStats" id="tStats"></div>
     <button class="btn big" id="btnPlay">ИГРАТЬ</button>
+    <button class="btn gold" id="btnDaily" style="min-height:50px;font-size:15px;margin:2px auto 6px;line-height:1.25"></button>
     <button class="btn" id="btnQuest" style="min-height:46px;font-size:16px;margin:2px auto 6px">Задания</button>
     <button class="btn gold" id="btnAdGift" style="min-height:42px;font-size:14px;margin:0 auto 6px" hidden>▶ +30 жемчуга за рекламу</button>
     <div class="row">
@@ -426,6 +430,7 @@ button{ -webkit-appearance:none; appearance:none; }
     <button class="btn act" data-tab="up">Усиления</button>
     <button class="btn" data-tab="chars">Искры</button>
     <button class="btn" data-tab="skins">Облики</button>
+    <button class="btn" data-tab="tal">Таланты</button>
   </div>
   <div class="scroll" id="shopList" style="flex:1"></div>
   <button class="btn" id="btnShopBack">Назад</button>
@@ -759,7 +764,7 @@ const EN = {
     overShop:'Upgrades', overMenu:'Menu', adDouble:'▶ ×2 pearls for an ad', again:'PLAY AGAIN',
     endTitle:'THE LIGHT RETURNED', endless:'ENDLESS DESCENT', endlessSub:'deeper · stronger · bosses return',
     endFinish:'End the run', unlockDef:'NEW SKIN',
-    shopTitle:'UPGRADES', tabUp:'Boosts', tabChars:'Sparks', tabSkins:'Skins', back:'Back',
+    shopTitle:'UPGRADES', tabUp:'Boosts', tabChars:'Sparks', tabSkins:'Skins', tabTal:'Talents', talOwn:'Learned', dailyB:'DAILY CHALLENGE', dailyT:'DAILY CHALLENGE', dailyX2:'×2 pearls', dailyWin:'DAILY CHALLENGE COMPLETE', best:'best', back:'Back',
     achTitle:'AWARDS', setTitle:'SETTINGS',
     sound:'Sound', music:'Music', vibro:'Vibration', graphics:'Graphics', nums:'Damage numbers', shake:'Screen shake', fxL:'Glow (GPU)', fxNo:'unavailable', fxHi:'on high graphics',
     lang:'Language', track:'Melody', on:'ON', off:'OFF', gHigh:'HIGH', gLow:'SAVER', gAuto:'AUTO',
@@ -809,7 +814,7 @@ const RU = {ui:{
   overShop:'Улучшения', overMenu:'В меню', adDouble:'▶ ×2 жемчуга за рекламу', again:'ЕЩЁ РАЗ',
   endTitle:'СВЕТ ВЕРНУЛСЯ', endless:'БЕСКОНЕЧНЫЙ СПУСК', endlessSub:'глубже · сильнее · боссы возвращаются',
   endFinish:'Завершить заплыв', unlockDef:'НОВЫЙ ОБЛИК',
-  shopTitle:'УЛУЧШЕНИЯ', tabUp:'Усиления', tabChars:'Искры', tabSkins:'Облики', back:'Назад',
+  shopTitle:'УЛУЧШЕНИЯ', tabUp:'Усиления', tabChars:'Искры', tabSkins:'Облики', tabTal:'Таланты', talOwn:'Изучено', dailyB:'ИСПЫТАНИЕ ДНЯ', dailyT:'ИСПЫТАНИЕ ДНЯ', dailyX2:'жемчуг ×2', dailyWin:'ИСПЫТАНИЕ ДНЯ ПРОЙДЕНО', best:'лучшее', back:'Назад',
   achTitle:'НАГРАДЫ', setTitle:'НАСТРОЙКИ',
   sound:'Звуки', music:'Музыка', vibro:'Вибрация', graphics:'Графика', nums:'Цифры урона', shake:'Тряска экрана', fxL:'Свечение', fxNo:'недоступно', fxHi:'на высокой графике',
   lang:'Язык', track:'Мелодия', on:'ВКЛ', off:'ВЫКЛ', gHigh:'ВЫСОКАЯ', gLow:'ЭКОНОМ', gAuto:'АВТО',
@@ -890,7 +895,7 @@ function applyLangUI() {
   const eb=$('btnEndless'); if(eb)eb.innerHTML=T.endless+'<span class="sub2">'+T.endlessSub+'</span>';
   setText('btnEndFinish',T.endFinish);
   const sh=document.querySelector('#scrShop h2'); if(sh)sh.textContent=T.shopTitle;
-  const tb=document.querySelectorAll('#scrShop .tabs .btn'); if(tb.length>=3){tb[0].textContent=T.tabUp;tb[1].textContent=T.tabChars;tb[2].textContent=T.tabSkins;}
+  const tb=document.querySelectorAll('#scrShop .tabs .btn'); if(tb.length>=3){tb[0].textContent=T.tabUp;tb[1].textContent=T.tabChars;tb[2].textContent=T.tabSkins;} if(tb[3])tb[3].textContent=T.tabTal;
   setText('btnShopBack',T.back); setText('btnAchBack',T.back); setText('btnSetBack',T.back);
   const ah=document.querySelector('#scrAch h2'); if(ah)ah.textContent=T.achTitle;
   const stt=document.querySelector('#scrSet h2'); if(stt)stt.textContent=T.setTitle;
@@ -928,7 +933,7 @@ const SAVE_KEY = 'svet_bezdny_save_v1';
 function defaultLang() { try { return /^ru\b/i.test(navigator.language || '') ? 'ru' : (/^(uk|be|kk)\b/i.test(navigator.language||'') ? 'ru' : 'en'); } catch (e) { return 'ru'; } }
 function defaultSave() {
   return {pearls:0, best:0, bestDepth:0, totalKills:0, totalPearls:0, runs:0, flares:0, qAuto:2,
-    shop:{}, chars:{lumen:1}, char:'lumen', skins:{azure:1}, skin:'azure', ach:{}, seenHow:0,
+    shop:{}, tal:{}, chars:{lumen:1}, char:'lumen', skins:{azure:1}, skin:'azure', ach:{}, seenHow:0,
     seenIntro:0, tut:0, wins:0, daily:{day:'', quests:[], streak:0, last:''}, bestKills:0, bestCombo:0, bestLevel:0, bestSyn:0,
     set:{sound:1, music:1, vibro:1, quality:'auto', nums:1, shake:1, qv:1, lang:defaultLang(), track:0, fps:120}};
 }
@@ -1765,7 +1770,11 @@ function computeStats() {
   ST.xpMul = (1 + 0.08 * (sh.xp || 0)) * (1 + 0.1 * lv('greed'));
   ST.bspd = 640 * (lv('hunter') ? 1.15 : 1); ST.range = 540;
   const oldMax = P.maxHp;
-  P.maxHp = ch.hp + 10 * (sh.hp || 0) + 25 * lv('hp');
+  // таланты и модификаторы испытания
+  ST.dmg *= (1 + 0.05 * tl('t_dmg')) * (mut('glass') ? 1.5 : 1); ST.rate *= 1 + 0.06 * tl('t_rate'); ST.crit += 0.05 * tl('t_crit');
+  ST.armorPct += 0.05 * tl('t_arm'); ST.regen += 0.3 * tl('t_regen'); ST.magnet *= 1 + 0.2 * tl('t_mag'); ST.xpMul *= (1 + 0.08 * tl('t_xp')) * (mut('giant') ? 2 : 1);
+  if (mut('dim')) ST.flareMul *= 0.5;
+  P.maxHp = Math.round((ch.hp + 10 * (sh.hp || 0) + 25 * lv('hp') + 15 * tl('t_hp')) * (mut('glass') ? 0.5 : 1));
   if (P.maxHp > oldMax && G.state !== 'title') P.hp += P.maxHp - oldMax;
   P.hp = Math.min(P.hp, P.maxHp);
 }
@@ -1808,6 +1817,7 @@ function spawnEnemy(type, x, y, elite) {
   e.hh = 0; e.hn = 0; e.phase = Math.random() * TAU; e.p1 = 0; e.p2 = 0; e.p3 = Math.random() < 0.5 ? 1 : -1; e.spawnT = 0.4;
   if (elite) { e.maxHp = e.hp = e.hp * 3.5; e.scale = 1.4; e.xp *= 4; e.score *= 5; e.dmg *= 1.3; }
   e.sh = type === 'crab' ? e.maxHp * CFG.CRAB_SHIELD : 0; // щит краба держит урон, потом ломается
+  if (G.mut && !d.boss) { if (mut('swift')) e.spd *= 1.3; if (mut('swarm')) { e.maxHp *= 0.7; e.hp = e.maxHp; } if (mut('giant')) { e.scale *= 1.25; e.r *= 1.2; e.maxHp *= 1.4; e.hp = e.maxHp; } }
   if (type === 'crab' && !S.crabHint) { S.crabHint = 1; persist(); setTimeout(() => banner(uiT('crabT'), uiT('crabS'), '#ff8a9a', 3), 600); }
   return e;
 }
@@ -1859,10 +1869,10 @@ function updateDirector(dt) {
     G.bossClearT -= dt; if (G.bossClearT <= 0) nextZone();
     return;
   } else {
-    G.zoneT += dt; if (G.zoneT >= CFG.ZONE_TIME) nextZone();
+    G.zoneT += dt; if (G.zoneT >= CFG.ZONE_TIME * (mut('rush') ? 0.5 : 1)) nextZone();
   }
   const z = G.zone;
-  let rate = (2.3 + 0.55 * (z - 1) + 0.35 * Math.max(0, z - 7)) * (G.hard ? 1.2 : 1) * (1 + G.zoneT / CFG.ZONE_TIME * 0.4); // живее с первых секунд // QA: рост внутри зоны мягче (зоны стали длиннее)
+  let rate = (2.3 + 0.55 * (z - 1) + 0.35 * Math.max(0, z - 7)) * (G.hard ? 1.2 : 1) * (mut('swarm') ? 1.5 : 1) * (1 + G.zoneT / CFG.ZONE_TIME * 0.4); // живее с первых секунд // QA: рост внутри зоны мягче (зоны стали длиннее)
   if (G.boss) rate *= 0.22;
   const maxAlive = Math.min(CFG.MAX_ENEMIES - 20, 48 + z * 9); // QA: меньше «каши» на 300–400 м
  // QA: сложность больше не зависит от графики
@@ -1870,7 +1880,7 @@ function updateDirector(dt) {
   while (G.spawnAcc >= 1) {
     G.spawnAcc -= 1; if (enemies.n >= maxAlive) continue;
     offscreenPoint(TMP);
-    spawnEnemy(pickType(), TMP.x, TMP.y, z >= 3 && Math.random() < 0.03 + z * 0.004);
+    spawnEnemy(pickType(), TMP.x, TMP.y, z >= 3 && Math.random() < (0.03 + z * 0.004) * (mut('elite') ? 3 : 1));
   }
   if (!G.boss) { G.packT -= dt; if (G.packT <= 0) { G.packT = rand(13, 18); spawnPack(); } }
   // события забега: золотой косяк, сундук, испытание на скорость
@@ -1934,7 +1944,7 @@ function firePB(x, y, a, dmg, split) {
   return b;
 }
 function eShoot(x, y, a, spd, r, dmg, col, spin) {
-  const b = ebul.spawn(); if (!b) return null;
+  const b = ebul.spawn(); if (!b) return null; if (mut('hail')) spd *= 1.3;
   b.x = x; b.y = y; b.vx = Math.cos(a) * spd; b.vy = Math.sin(a) * spd; b.r = r; b.dmg = dmg; b.life = 7; b.col = col; b.spin = spin || 0; b.grazed = false; b.acc = 0;
   return b;
 }
@@ -3312,7 +3322,7 @@ function renderHUD() {
   if (!G.boss) {
   // Название текущего биома помогает ориентироваться в длинном погружении.
   ctx.textAlign = 'left'; ctx.font = '700 9px ' + FONT; ctx.fillStyle = 'rgba(190,225,238,0.66)';
-  ctx.fillText((G.hard ? '☠ ' : '') + (ZONES[Math.max(0, Math.min(ZONES.length - 1, G.zone - 1))] || '').toLocaleUpperCase(), L, top + 63, hw + 30); }
+  ctx.fillText((G.hard ? '☠ ' : G.daily ? '☀ ' : '') + (ZONES[Math.max(0, Math.min(ZONES.length - 1, G.zone - 1))] || '').toLocaleUpperCase(), L, top + 63, hw + 30); }
   // счёт и комбо
   ctx.textAlign = 'center'; ctx.font = '900 26px ' + FONT;
   const cx = W / 2 + 20;
@@ -3396,10 +3406,12 @@ function click(id, fn) { $(id).addEventListener('click', e => { Snd.init(); Snd.
 
 function updateTitle() {
   { const Q = S.daily.quests || [], d = Q.filter(q => q.done).length, rd = questsReady(); const b = $('btnQuest'); if (b) { b.innerHTML = uiT('quests') + ' · ' + d + '/' + Q.length + (rd ? ' <span style="color:#ffd54f">● ' + uiT('claim') + '</span>' : ''); b.classList.toggle('gold', rd > 0); } }
-  updHard();
+  updHard(); updDaily();
   $('tStats').innerHTML = uiT('record') + ': <b>' + fmt(S.best) + '</b> · ' + uiT('depthW') + ': <b>' + S.bestDepth + ' ' + uiT('m') + '</b><br><span class="pearl"></span><b>' + S.pearls +
     '</b> ' + uiT('pearlsW') + ' · ' + uiT('spark') + ': <b>' + CHARS[S.char].name + '</b>' + (S.wins ? '<br>' + uiT('winsLine') + '<b>' + S.wins + '</b>' : '');
 }
+function updDaily() { const b = $('btnDaily'); if (!b) return; const m = dailyMuts(), D = S.daily;
+  b.innerHTML = '☀ ' + uiT('dailyB') + (D.chDone ? ' <span style="color:#7dff9a">✓</span>' : '') + '<br><span style="font-size:11.5px;font-weight:600;opacity:.85">' + m.map(tName).join(' + ') + (D.chBest ? ' · ' + uiT('best') + ' ' + D.chBest + ' ' + uiT('m') : ' · ' + uiT('dailyX2')) + '</span>'; }
 function updHard() { const b = $('btnHard'); if (!b) return; b.hidden = !S.wins; b.textContent = S.set.hard ? uiT('hardOn') : uiT('hardOff'); b.style.color = S.set.hard ? '#ff8a9a' : ''; }
 function toTitle() { G.state = 'title'; $('hud').classList.remove('on'); show('scrTitle'); updateTitle(); updGift(); Snd.setIntensity(0); }
 /* ---------- интро: искра загорается во тьме ---------- */
@@ -3593,14 +3605,17 @@ function startRun() {
   Object.assign(G, {t: 0, runT: 0, zone: 1, zoneT: 0, score: 0, combo: 0, comboT: 0, maxCombo: 0, mult: 1, kills: 0, runPearls: 0, boss: null,
     bossClearT: 0, bossesKilled: 0, shake: 0, hitStop: 0, flash: 0, hurtFlash: 0, levelPending: 0, levelDelay: 0, dying: 0, noHit: true,
     synergies: 0, revived: false, camX: 0, camY: 0, spawnAcc: 0, packT: 9, dmgScale: 1, hpScale: 1, pullT: 0, comboMilestone: 0, victory: false,
-    hard: !!(S.set.hard && S.wins), endless: false, endingT: 0, adRevived: false, adDoubled: false, adRerolls: 0, lastEarned: 0, evT: 20, chal: null, lastEv: '', chests: 0});
+    hard: !!(S.set.hard && S.wins) && RUN_MODE !== 'daily', daily: RUN_MODE === 'daily', mut: RUN_MODE === 'daily' ? Object.fromEntries(dailyMuts().map(m => [m.id, 1])) : {}, endless: false, endingT: 0, adRevived: false, adDoubled: false, adRerolls: 0, lastEarned: 0, evT: 20, chal: null, lastEv: '', chests: 0});
   if (G.hard) G.dmgScale = 1.35; // «Кошмар»: враги больнее, крепче и чаще
+  if (G.daily) setTimeout(() => { const m = dailyMuts(); banner(uiT('dailyT'), m.map(tName).join(' + '), '#ffd54f', 3); }, 400);
   G.rerolls = S.shop.reroll || 0; buildDecor(0); G.startBest = S.bestDepth; G.recShown = false;
   Object.assign(P, {x: 0, y: 0, vx: 0, vy: 0, ang: -Math.PI / 2, inv: 1.5, dashT: 0, dashCd: 0, fireT: 0.3, flare: S.shop.flare ? 50 : 0, level: 1, xp: 0,
     xpNext: xpNeed(1), up: {}, novaT: 2, mineT: 1.5, harpT: 2, beamT: 0, auraT: 0, twT: 1, twX: 0, twY: 0, vortT: 20, staticC: 0, hb: 0, beamTg: null, beamTg2: null, inkT: 0, inkX: 0, inkY: 0, trailT: 0, skin: S.skin, pal: SKINS[S.skin].pal, dead: false, maxHp: 0});
   for (let i = 0; i < 12; i++) { TRAIL[i * 2] = 0; TRAIL[i * 2 + 1] = 0; }
   G.state = 'play';
   computeStats(); P.hp = P.maxHp;
+  if (tl('t_first')) { const pool = ['dmg', 'rate', 'multi', 'pierce', 'crit']; P.up[pool[(Math.random() * pool.length) | 0]] = 1; computeStats(); P.hp = P.maxHp; }
+  if (tl('t_ward')) P.shield = Math.max(P.shield || 0, 1);
   show(null); $('hud').classList.add('on'); resetJoy();
   banner('100 ' + uiT('m'), ZONES[0], '#8fd8ff', 2.6); tutStart(); updMute();
   for (let i = 0; i < 6; i++) { offscreenPoint(TMP); spawnEnemy('drifter', TMP.x, TMP.y, false); }
@@ -3616,6 +3631,45 @@ function pauseGame() {
 function resumeGame() { G.state = 'play'; show(null); resetJoy(); }
 
 /* ---------- выбор улучшений ---------- */
+/* ============ ТАЛАНТЫ: постоянное дерево за жемчуг (3 ветки по 4 ступени) ============ */
+const TALENTS = [
+  {id:'t_dmg',  br:0, cost:150,  name:'Острота',          d:'+5% к урону',                          en:['Keen Edge','+5% damage']},
+  {id:'t_rate', br:0, cost:350,  name:'Скорый залп',      d:'+6% к скорострельности',               en:['Quick Volley','+6% fire rate']},
+  {id:'t_crit', br:0, cost:700,  name:'Глаз хищника',     d:'+5% шанс крита',                       en:['Predator Eye','+5% crit chance']},
+  {id:'t_first',br:0, cost:1300, name:'Первый удар',      d:'Забег начинается с одним улучшением атаки', en:['First Strike','Start each run with an attack upgrade']},
+  {id:'t_hp',   br:1, cost:150,  name:'Плотное ядро',     d:'+15 к здоровью',                       en:['Dense Core','+15 health']},
+  {id:'t_arm',  br:1, cost:350,  name:'Чешуя',            d:'−5% получаемого урона',                en:['Scales','−5% damage taken']},
+  {id:'t_regen',br:1, cost:700,  name:'Тихий свет',       d:'+0.3 здоровья в секунду',              en:['Quiet Light','+0.3 health per second']},
+  {id:'t_ward', br:1, cost:1300, name:'Врождённый оберег',d:'Забег начинается с зарядом щита',       en:['Innate Ward','Start each run with a shield charge']},
+  {id:'t_pearl',br:2, cost:150,  name:'Ловец жемчуга',    d:'+10% жемчуга за забег',                en:['Pearl Diver','+10% pearls per run']},
+  {id:'t_xp',   br:2, cost:350,  name:'Чуткость',         d:'+8% опыта',                            en:['Insight','+8% experience']},
+  {id:'t_mag',  br:2, cost:700,  name:'Течение к тебе',   d:'+20% к радиусу сбора',                 en:['Inflow','+20% pickup radius']},
+  {id:'t_four', br:2, cost:1300, name:'Широкий выбор',    d:'4 карты при повышении уровня',          en:['Wide Choice','4 cards on level up']},
+];
+const TAL_BR = [['Атака', 'Attack'], ['Защита', 'Defense'], ['Удача', 'Fortune']];
+const tl = id => (S.tal && S.tal[id]) ? 1 : 0;
+const tName = o => LANG === 'en' && o.en ? o.en[0] : o.name, tDesc = o => LANG === 'en' && o.en ? o.en[1] : o.d;
+function talOpen(t) { const br = TALENTS.filter(x => x.br === t.br), i = br.indexOf(t); return i === 0 || tl(br[i - 1].id); }
+
+/* ============ ИСПЫТАНИЕ ДНЯ: одинаковые для всех правила на сутки ============ */
+const MUTS = [
+  {id:'swift', name:'Стремительные',    d:'враги на 30% быстрее',                        en:['Swift','foes are 30% faster']},
+  {id:'glass', name:'Стеклянная искра', d:'вдвое меньше здоровья, но урон ×1.5',         en:['Glass Spark','half health, but ×1.5 damage']},
+  {id:'swarm', name:'Рой',              d:'врагов в 1.5 раза больше, но они слабее',     en:['Swarm','1.5× more foes, but weaker']},
+  {id:'elite', name:'Элита',            d:'элитные враги втрое чаще',                    en:['Elite','elites appear 3× as often']},
+  {id:'hail',  name:'Град',             d:'вражеские пули на 30% быстрее',               en:['Hail','enemy bullets are 30% faster']},
+  {id:'dim',   name:'Тусклый свет',     d:'Вспышка копится вдвое медленнее',             en:['Dim Light','Flare charges half as fast']},
+  {id:'giant', name:'Гиганты',          d:'враги крупнее и крепче, но опыта вдвое больше',en:['Giants','foes are bigger and tougher, double XP']},
+  {id:'rush',  name:'Спешка',           d:'зоны вдвое короче',                           en:['Rush','zones are twice as short']},
+];
+let RUN_MODE = 'normal'; // 'normal' | 'daily'
+function dailyMuts() {
+  const day = dayStr(new Date()); let seed = 7; for (const ch of day) seed = (seed * 131 + ch.charCodeAt(0)) >>> 0;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) >>> 0; return seed / 4294967296; };
+  const a = (rnd() * MUTS.length) | 0; let b = (rnd() * (MUTS.length - 1)) | 0; if (b >= a) b++;
+  return [MUTS[a], MUTS[b]];
+}
+const mut = id => !!(G.mut && G.mut[id]);
 function rollChoices() {
   const pool = [];
   for (const u of UPG) {
@@ -3624,7 +3678,7 @@ function rollChoices() {
     else pool.push({u, w: l > 0 ? 1.3 : 1});
   }
   const out = [];
-  while (out.length < 3 && pool.length) {
+  while (out.length < (tl('t_four') ? 4 : 3) && pool.length) {
     let tot = 0; for (const p of pool) tot += p.w;
     let r = Math.random() * tot, k = 0; for (; k < pool.length - 1; k++) { r -= pool[k].w; if (r <= 0) break; }
     out.push(pool[k].u); pool.splice(k, 1);
@@ -3752,7 +3806,7 @@ function dailyCheck() {
     const ids = Object.keys(QDEF), pick = [];
     while (pick.length < 3) { const id = ids[(rnd() * ids.length) | 0]; if (!pick.includes(id)) pick.push(id); }
     D.quests = pick.map(id => { const t = (rnd() * 3) | 0; return {id, need: QDEF[id].need[t], r: QDEF[id].r[t], p: 0, done: 0, got: 0}; });
-    D.day = today; D.gift = 0;
+    D.day = today; D.gift = 0; D.chBest = 0; D.chDone = 0;
   }
   if (D.last !== today) {
     D.streak = D.last === dayStr(y) ? (D.streak || 0) + 1 : 1; D.last = today;
@@ -3798,6 +3852,13 @@ function renderShop() {
         (sel ? '<button class="btn small" disabled>' + uiT('chosen') + '</button>' : own ? '<button class="btn small" data-char="' + k + '">' + uiT('choose') + '</button>' :
           '<button class="btn small" data-char="' + k + '"' + (S.pearls < c.cost ? ' disabled' : '') + '>' + pearlHTML(c.cost) + '</button>') + '</div>';
     }
+  } else if (shopTab === 'tal') {
+    for (let br = 0; br < 3; br++) {
+      h += '<div class="talHead">' + TAL_BR[br][LANG === 'en' ? 1 : 0] + '</div>';
+      for (const t of TALENTS) { if (t.br !== br) continue; const own = tl(t.id), open = talOpen(t);
+        h += '<div class="item' + (own ? ' done' : '') + (!open && !own ? ' lockT' : '') + '"><div class="info"><div class="nm">' + (open || own ? '' : '🔒 ') + tName(t) + '</div><div class="ds">' + tDesc(t) + '</div></div>' +
+          (own ? '<button class="btn small" disabled>' + uiT('talOwn') + '</button>' : '<button class="btn small" data-tal="' + t.id + '"' + (!open || S.pearls < t.cost ? ' disabled' : '') + '>' + pearlHTML(t.cost) + '</button>') + '</div>'; }
+    }
   } else {
     for (const k in SKINS) {
       const c = SKINS[k], own = S.skins[k], sel = S.skin === k;
@@ -3816,6 +3877,8 @@ $('shopList').addEventListener('click', e => {
     if (l < it.max && S.pearls >= cost) { S.pearls -= cost; S.shop[it.id] = l + 1; sfx.pearl(); } }
   else if (b.dataset.char) { const k = b.dataset.char, c = CHARS[k];
     if (!S.chars[k]) { if (S.pearls < c.cost) return; S.pearls -= c.cost; S.chars[k] = 1; sfx.ach(); } else sfx.click(); S.char = k; }
+  else if (b.dataset.tal) { const t = TALENTS.find(x => x.id === b.dataset.tal);
+    if (t && !tl(t.id) && talOpen(t) && S.pearls >= t.cost) { S.pearls -= t.cost; (S.tal = S.tal || {})[t.id] = 1; sfx.ach(); } }
   else if (b.dataset.skin) { const k = b.dataset.skin, c = SKINS[k];
     if (!S.skins[k]) { if (c.win || S.pearls < c.cost) return; S.pearls -= c.cost; S.skins[k] = 1; sfx.ach(); } else sfx.click(); S.skin = k; }
   persist(); renderShop();
@@ -3973,8 +4036,10 @@ function adReroll() {
 function gameOver() {
   questAdd('runs', 1);
   G.state = 'over'; $('hud').classList.remove('on'); Snd.setIntensity(0); resetJoy();
-  const earned = Math.round((G.runPearls + Math.floor(G.score / 1500) + (G.zone - 1) * 2 + G.bossesKilled * 15) * (1 + 0.25 * lv('greed')) * (G.hard ? 1.5 : 1));
+  const earned = Math.round((G.runPearls + Math.floor(G.score / 1500) + (G.zone - 1) * 2 + G.bossesKilled * 15) * (1 + 0.25 * lv('greed')) * (G.hard ? 1.5 : 1) * (1 + 0.1 * tl('t_pearl')) * (G.daily ? 2 : 1));
   G.lastEarned = earned; clearInterval(offerRevive.tm);
+  if (G.daily) { const D = S.daily; D.chBest = Math.max(D.chBest || 0, G.zone * 100);
+    if (G.zone >= 5 && !D.chDone) { D.chDone = 1; S.pearls += 150; setTimeout(() => toastMsg(uiT('dailyWin'), '+150 ' + uiT('pearlsGen')), 700); } }
   S.pearls += earned; S.totalPearls = (S.totalPearls || 0) + earned; S.runs++; S.totalKills += G.kills;
   const rec = G.score > S.best; if (rec) S.best = G.score;
   S.bestDepth = Math.max(S.bestDepth, G.zone * 100);
@@ -4001,7 +4066,8 @@ function gameOver() {
 }
 
 /* ---------- кнопки ---------- */
-click('btnPlay', () => { if (!S.seenHow) { S.seenHow = 1; persist(); } startRun(); }); // первый заплыв учит сам — без экрана правил
+click('btnPlay', () => { if (!S.seenHow) { S.seenHow = 1; persist(); } RUN_MODE = 'normal'; startRun(); });
+click('btnDaily', () => { const m = dailyMuts(); RUN_MODE = 'daily'; startRun(); }); // первый заплыв учит сам — без экрана правил
 click('tHint', () => show('scrHow'));
 click('btnHard', () => { S.set.hard = S.set.hard ? 0 : 1; persist(); updHard(); });
 click('btnEndless', continueEndless);
