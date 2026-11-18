@@ -489,6 +489,7 @@ const CFG = {
   ARENA_R: 1250,          // радиус круглой арены (мировые единицы)
   MAX_ENEMIES: 170,
   CRAB_MAX: 6,            // крабов со щитом одновременно
+  RAY_MAX: 5, SPAWNER_MAX: 3, LANTERN_MAX: 4, WISP_MAX: 8, // новые враги: одновременно не больше
   CRAB_SHIELD: 0.6,       // щит выдерживает урон = 60% здоровья краба
   CRAB_BLOCK: 0.65,       // и срезает 65% урона спереди
   INTER_GAP: 150000,      // межстраничная реклама — не чаще раза в 2,5 мин
@@ -540,6 +541,14 @@ const ET = {
   boss3:   {r:58, hp:17000,spd:60,  dmg:24, xp:200,score:20000,col:C.CRAB, boss:1, name:'СЕРДЦЕ БЕЗДНЫ'},
   boss4:   {r:60, hp:15000,spd:135, dmg:26, xp:260,score:26000,col:C.EEL,  boss:1, name:'ЛЕВИАФАН'},
   crystal: {r:12, hp:70,  spd:0,   dmg:12, xp:2,  score:100,  col:C.GOLD},
+  // --- новые враги и стражи (блок «НОВЫЕ ВРАГИ И СТРАЖИ») ---
+  ray:     {r:15, hp:34,  spd:100, dmg:16, xp:3,  score:35,  col:C.ICE,   nf:1},
+  lantern: {r:16, hp:46,  spd:60,  dmg:10, xp:5,  score:60,  col:C.AMBER, nf:1},
+  wisp:    {r:7,  hp:8,   spd:125, dmg:13, xp:0,  score:5,   col:C.AMBER, nf:1},
+  spawner: {r:21, hp:85,  spd:30,  dmg:12, xp:6,  score:70,  col:C.EEL,   nf:1},
+  fry:     {r:7,  hp:5,   spd:150, dmg:6,  xp:1,  score:5,   col:C.EEL,   nf:1},
+  kingcrab:{r:46, hp:1500,spd:72,  dmg:20, xp:60, score:3000, col:C.GOLD, boss:1, guard:1, name:'КОРОЛЬ КРАБОВ'},
+  queen:   {r:50, hp:4300,spd:55,  dmg:18, xp:100,score:7000, col:C.ICE,  boss:1, guard:1, name:'КОРОЛЕВА РОЯ'},
 };
 
 // Названия зон (каждые 100 м)
@@ -659,6 +668,7 @@ const ACH = [
   {id:'boss1',   name:'Рассеять Морок',    d:'Победить Морока-Удильщика',        r:50},
   {id:'boss2',   name:'Сердце Матери',     d:'Победить Матерь Глубин',           r:100},
   {id:'boss3',   name:'Свет вернулся',     d:'Погасить Сердце Бездны на 1500 м', r:150},
+  {id:'guard',   name:'Сразить стража',    d:'Победить стража глубин',           r:40},
   {id:'syn',     name:'Алхимия света',     d:'Получить синергию',                r:20},
   {id:'syn3',    name:'Созвездие',         d:'3 синергии за один заплыв',        r:60},
   {id:'lvl20',   name:'Сияние',            d:'Достичь 20-го уровня в заплыве',   r:40},
@@ -849,13 +859,24 @@ function tutTxt(i){ return (LANG==='en'?EN.tut:RUTUT)[i]; }
 let LANG = 'ru';
 function uiT(k){ return (LANG==='en'?EN.ui:RU.ui)[k]; }
 // снимок русских данных по id (структуры уже содержат РУ)
+/* ===================== НОВЫЕ ВРАГИ И СТРАЖИ: тексты RU/EN ===================== */
+const GUARD_TYPES = ['kingcrab', 'queen']; // стражи глубин — мини-боссы на 300/800/1300 м
+Object.assign(EN.boss, {kingcrab: 'THE CRAB KING', queen: 'THE SWARM QUEEN'});
+EN.ach.guard = ['Slay a Guardian', 'Defeat a guardian of the deep'];
+Object.assign(EN.ui, {guard: 'GUARDIAN OF THE DEEP', guardDie: [['THE KING IS CRACKED', 'The reef is free — dive on'], ['THE SWARM FALLS SILENT', 'The current calms down']],
+  kingShield: 'THE KING\'S SHIELD BROKE', guardRage: 'FURY!',
+  foe: {ray: ['STINGRAY', 'Glides in arcs and rams along the glowing line — sidestep'], lantern: ['LANTERN-BEARER', 'Its slow homing light can be shot down'], spawner: ['BUBBLER', 'Releases fry — and more when it bursts']}});
+Object.assign(RU.ui, {guard: 'СТРАЖ ГЛУБИН', guardDie: [['КОРОЛЬ РАСКОЛОТ', 'Риф свободен — плыви дальше'], ['РОЙ УМОЛК', 'Течение успокаивается']],
+  kingShield: 'ЩИТ КОРОЛЯ РАСКОЛОТ', guardRage: 'ЯРОСТЬ!',
+  foe: {ray: ['СКАТ', 'Скользит по дуге и таранит по светящейся линии — уходи вбок'], lantern: ['ФОНАРЩИК', 'Его медленный огонёк летит за тобой — сбей его'], spawner: ['ПУЗЫРНИК', 'Выпускает мальков, а лопнув — ещё больше']}});
+/* ===================== /НОВЫЕ ВРАГИ И СТРАЖИ: тексты ===================== */
 const RU_DATA = {upg:{},shop:{},ach:{},chars:{},skins:{},boss:{},zones:ZONES.slice()};
 for (const u of UPG) RU_DATA.upg[u.id]=[u.name,u.d];
 for (const s of SHOP) RU_DATA.shop[s.id]=[s.name,s.d];
 for (const a of ACH) RU_DATA.ach[a.id]=[a.name,a.d];
 for (const k in CHARS) RU_DATA.chars[k]=[CHARS[k].name,CHARS[k].d];
 for (const k in SKINS) RU_DATA.skins[k]=SKINS[k].name;
-for (const k of ['boss1','boss2','boss3','boss4']) RU_DATA.boss[k]=ET[k].name;
+for (const k of ['boss1','boss2','boss3','boss4'].concat(GUARD_TYPES)) RU_DATA.boss[k]=ET[k].name;
 function applyLang() {
   const en = LANG==='en';
   for (const u of UPG){ const t=en?EN.upg[u.id]:RU_DATA.upg[u.id]; if(t){u.name=t[0];u.d=t[1];} }
@@ -863,7 +884,7 @@ function applyLang() {
   for (const a of ACH){ const t=en?EN.ach[a.id]:RU_DATA.ach[a.id]; if(t){a.name=t[0];a.d=t[1];} }
   for (const k in CHARS){ const t=en?EN.chars[k]:RU_DATA.chars[k]; if(t){CHARS[k].name=t[0];CHARS[k].d=t[1];} }
   for (const k in SKINS){ const t=en?EN.skins[k]:RU_DATA.skins[k]; if(t)SKINS[k].name=t; }
-  for (const k of ['boss1','boss2','boss3','boss4']){ const t=en?EN.boss[k]:RU_DATA.boss[k]; if(t)ET[k].name=t; }
+  for (const k of ['boss1','boss2','boss3','boss4'].concat(GUARD_TYPES)){ const t=en?EN.boss[k]:RU_DATA.boss[k]; if(t)ET[k].name=t; }
   ZONES = en?EN.zones.slice():RU_DATA.zones.slice();
   applyLangUI();
 }
@@ -929,7 +950,7 @@ function defaultLang() { try { return /^ru\b/i.test(navigator.language || '') ? 
 function defaultSave() {
   return {pearls:0, best:0, bestDepth:0, totalKills:0, totalPearls:0, runs:0, flares:0, qAuto:2,
     shop:{}, chars:{lumen:1}, char:'lumen', skins:{azure:1}, skin:'azure', ach:{}, seenHow:0,
-    seenIntro:0, tut:0, wins:0, daily:{day:'', quests:[], streak:0, last:''}, bestKills:0, bestCombo:0, bestLevel:0, bestSyn:0,
+    seenIntro:0, foeSeen:{}, tut:0, wins:0, daily:{day:'', quests:[], streak:0, last:''}, bestKills:0, bestCombo:0, bestLevel:0, bestSyn:0,
     set:{sound:1, music:1, vibro:1, quality:'auto', nums:1, shake:1, qv:1, lang:defaultLang(), track:0, fps:120}};
 }
 function loadSave() {
@@ -1155,13 +1176,13 @@ function makeSprite(key, r, pad, fn) {
 const ART_FIT = 3.4; // ширина картинки = r·ART_FIT (на картинке существо занимает ~80% кадра)
 const ART_SIZE = {d_kelp: 0.6, d_anemone: 0.6, d_coral: 0.6, d_coral2: 0.6, d_rock: 0.6, d_shell: 0.55, d_vent: 0.6, d_pillar: 0.6, d_ribs: 0.6, d_skull: 0.6, d_ice: 0.6, d_shroom: 0.6,
   dart: 1.35, eel: 1.0, eelseg: 0.95, crab: 1.15, crab_bare: 1.15, squid: 1.2, jelly: 1.15, drifter: 1.25, lumen: 1.45,
-  boss1: 1.2, boss2: 1.15, boss3: 1.1, boss4: 1.3, bomber: 1.1, mender: 1.05, chest: 1.05, crystal: 1.0, spikelet: 1.1}; // подгонка под хитбокс
-const ART_SIDE = {drifter: 1, dart: 1, jelly: 1, eel: 1, eelseg: 1, squid: 1, crab: 1, crab_bare: 1, bomber: 1, boss1: 1, boss4: 1}; // нарисованы сбоку
+  boss1: 1.2, boss2: 1.15, boss3: 1.1, boss4: 1.3, bomber: 1.1, mender: 1.05, chest: 1.05, crystal: 1.0, spikelet: 1.1, kingcrab: 1.15, kingcrab_bare: 1.15, queen: 1.2}; // подгонка под хитбокс
+const ART_SIDE = {drifter: 1, dart: 1, jelly: 1, eel: 1, eelseg: 1, squid: 1, crab: 1, crab_bare: 1, bomber: 1, boss1: 1, boss4: 1, kingcrab: 1, kingcrab_bare: 1, queen: 1}; // нарисованы сбоку
 function applyArt(key, img, tint) {
   const s0 = SPR[key]; if (!s0 || !img.width) return;
   const r = s0.r || s0.h * 0.7, role = key.startsWith('d_') ? DECOR_ROLE[key] : null;
   // декорации — единые размеры по роли (крупные/средние/мелочь), существа — по своему хитбоксу
-  const dw = role ? (role === 'big' ? 150 : role === 'mid' ? 105 : 55) : r * ART_FIT * (ART_SIZE[tint ? 'lumen' : key] || 1), size = role ? dw : Math.max(s0.h * 2, dw);
+  const dw = role ? (role === 'big' ? 150 : role === 'mid' ? 105 : 55) : r * ART_FIT * (ART_SIZE[tint && key.startsWith('pl_') ? 'lumen' : key] || 1), size = role ? dw : Math.max(s0.h * 2, dw);
   const c = mkCanvas(size * SC, size * SC), g = c.getContext('2d');
   const k = dw * SC / Math.max(img.width, img.height), x = (c.width - img.width * k) / 2, y = (c.height - img.height * k) / 2;
   g.drawImage(img, x, y, img.width * k, img.height * k);
@@ -1182,7 +1203,7 @@ function loadArt() {
   let left = Object.keys(A).length;
   const done = () => { if (--left === 0 && G.state !== 'play') buildDecor(Math.max(0, G.zone - 1) % DECOR_THEMES.length); }; // размеры рисованных известны — расставить заново
   for (const key in A) { const img = new Image(); img.onerror = done;
-    img.onload = () => { if (key !== 'lumen') { applyArt(key, img); return; }
+    img.onload = () => { if (key !== 'lumen') { applyArt(key, img); if (ART_ALIAS[key]) for (const [k2, tn] of ART_ALIAS[key]) applyArt(k2, img, tn); return; } // + перекрашенные стражи
       for (const sk in SKINS) applyArt('pl_' + sk, img, sk === 'azure' ? null : PAL[SKINS[sk].pal]); };
     const ol = img.onload; img.onload = () => { ol(); done(); };
     img.src = A[key]; }
@@ -1450,6 +1471,7 @@ function buildSprites() {
     g.beginPath(); g.moveTo(0, -r * 1.4); g.lineTo(-r * 0.2, r * 0.1); g.lineTo(0, r * 1.4); g.moveTo(-r * 0.85, -r * 0.2); g.lineTo(-r * 0.2, r * 0.1); g.lineTo(r * 0.85, -r * 0.2); g.moveTo(-r * 0.2, r * 0.1); g.lineTo(r * 0.5, r * 1.0); g.stroke();
     spec(g, -r * 0.3, -r * 0.5, r * 0.25, r * 0.4, 0.8);
   });
+  buildFoeSprites(spec, eye, lin, dots); // НОВЫЕ ВРАГИ И СТРАЖИ
   // Игрок для каждого облика — ядро-звезда, кольцо света, плавник направления
   for (const k in SKINS) {
     const pc = PAL[SKINS[k].pal];
@@ -1640,7 +1662,7 @@ const TENT = new Float32Array(6 * 11 * 2); // узлы щупалец Матер
 function mkEnemy() {
   return {type: '', x: 0, y: 0, vx: 0, vy: 0, r: 10, hp: 1, maxHp: 1, spd: 0, dmg: 0, xp: 0, score: 0, col: 0, ang: 0,
     t: 0, st: 0, state: 0, flash: 0, slow: 0, freeze: 0, elite: 0, dead: false, uid: 0, orbCd: 0, dashHit: 0, chainMark: 0,
-    scale: 1, next: -1, hist: new Float32Array(64), hh: 0, hn: 0, phase: 0, p1: 0, p2: 0, p3: 0, spawnT: 0, cx: 0, cy: 0};
+    scale: 1, next: -1, hist: new Float32Array(64), hh: 0, hn: 0, phase: 0, p1: 0, p2: 0, p3: 0, spawnT: 0, cx: 0, cy: 0, lvl: 0, tx: 0, ty: 0, sh: 0};
 }
 const enemies = new Pool(CFG.MAX_ENEMIES, mkEnemy);
 const pbul = new Pool(CFG.MAX_PBUL, () => ({x: 0, y: 0, vx: 0, vy: 0, dmg: 0, pierce: 0, bounce: 0, life: 0, crit: false, lastUid: 0, homT: 0, tgt: -1, tgtUid: 0, split: false, r: 4}));
@@ -1809,6 +1831,7 @@ function spawnEnemy(type, x, y, elite) {
   if (elite) { e.maxHp = e.hp = e.hp * 3.5; e.scale = 1.4; e.xp *= 4; e.score *= 5; e.dmg *= 1.3; }
   e.sh = type === 'crab' ? e.maxHp * CFG.CRAB_SHIELD : 0; // щит краба держит урон, потом ломается
   if (type === 'crab' && !S.crabHint) { S.crabHint = 1; persist(); setTimeout(() => banner(uiT('crabT'), uiT('crabS'), '#ff8a9a', 3), 600); }
+  if (d.nf) initNewFoe(e, type); // НОВЫЕ ВРАГИ
   return e;
 }
 /** Точка за краем экрана внутри арены */
@@ -1824,15 +1847,19 @@ function offscreenPoint(out) {
   const a = Math.random() * TAU, rr = CFG.ARENA_R - 60; out.x = Math.cos(a) * rr; out.y = Math.sin(a) * rr;
 }
 const TMP = {x: 0, y: 0};
-const PT_N = ['drifter', 'dart', 'jelly', 'urchin', 'squid', 'eel', 'crab', 'mender', 'bomber'], PT_W = new Float32Array(9);
+const PT_N = ['drifter', 'dart', 'jelly', 'urchin', 'squid', 'eel', 'crab', 'mender', 'bomber', 'ray', 'spawner', 'lantern'], PT_W = new Float32Array(12);
 function pickType() {
   const z = G.zone, w = PT_W; // веса без аллокаций
   w[0] = 10; w[1] = 2 + z * 0.8; w[2] = z >= 2 ? 2 + z * 0.4 : 0; w[3] = z >= 3 ? 2 : 0;
   w[4] = z >= 3 ? 1.5 + z * 0.3 : 0; w[5] = z >= 4 ? 1.4 + z * 0.15 : 0; w[6] = z >= 6 ? 1.2 + z * 0.2 : 0;
   w[7] = z >= 4 ? 0.9 + z * 0.12 : 0; w[8] = z >= 5 ? 1.2 + z * 0.18 : 0;
-  if (w[6] > 0) { let n = 0; const it = enemies.items; for (let i = 0; i < enemies.n; i++) if (!it[i].dead && it[i].type === 'crab') n++; if (n >= CFG.CRAB_MAX) w[6] = 0; }
-  let tot = 0; for (let i = 0; i < 9; i++) tot += w[i];
-  let r = Math.random() * tot; for (let i = 0; i < 9; i++) { r -= w[i]; if (r <= 0) return PT_N[i]; }
+  // новые враги: скат с 200 м, пузырник с 300 м, фонарщик с 400 м
+  w[9] = z >= 2 ? 1.0 + z * 0.15 : 0; w[10] = z >= 3 ? 0.8 + z * 0.1 : 0; w[11] = z >= 4 ? 0.9 + z * 0.12 : 0;
+  if (z >= 2) { let nc = 0, nr = 0, ns = 0, nl = 0; const it = enemies.items; for (let i = 0; i < enemies.n; i++) { const t = it[i].type; if (it[i].dead) continue;
+      if (t === 'crab') nc++; else if (t === 'ray') nr++; else if (t === 'spawner') ns++; else if (t === 'lantern') nl++; }
+    if (nc >= CFG.CRAB_MAX) w[6] = 0; if (nr >= CFG.RAY_MAX) w[9] = 0; if (ns >= CFG.SPAWNER_MAX) w[10] = 0; if (nl >= CFG.LANTERN_MAX) w[11] = 0; }
+  let tot = 0; for (let i = 0; i < PT_N.length; i++) tot += w[i];
+  let r = Math.random() * tot; for (let i = 0; i < PT_N.length; i++) { r -= w[i]; if (r <= 0) return PT_N[i]; }
   return 'drifter';
 }
 function spawnPack() {
@@ -1902,7 +1929,7 @@ function nextZone() {
   S.bestDepth = Math.max(S.bestDepth, depth);
   if (G.zone % 5 === 0) { const n = G.zone / 5; const type = n <= 3 ? ['boss1', 'boss2', 'boss3'][n - 1] : ['boss4', 'boss1', 'boss2', 'boss3'][(n - 4) % 4];
     startBoss(type, Math.floor((G.zone - 5) / 20)); }
-  else { banner(depth + ' ' + uiT('m'), ZONES[(G.zone - 1) % ZONES.length], '#8fd8ff', 2.6); sfx.nova(); Snd.setIntensity(G.zone >= 3 ? 2 : 1); }
+  else if (!tryGuardian()) { banner(depth + ' ' + uiT('m'), ZONES[(G.zone - 1) % ZONES.length], '#8fd8ff', 2.6); sfx.nova(); Snd.setIntensity(G.zone >= 3 ? 2 : 1); }
 }
 function startBoss(type, cyc) {
   G.hpScale = 1 + cyc * 1.3;
@@ -2136,6 +2163,7 @@ function damageEnemy(e, dmg, crit, fromAng, kx, ky, src) {
       if (QL > 0) text(e.x, e.y - e.r - 14, uiT('crabBreak'), '#ffd6dc', false, false);
     } else if (Math.random() < 0.5) sfx.clink();
   }
+  if (e.type === 'kingcrab' && e.sh > 0 && fromAng === fromAng && Math.abs(angDiff(e.ang, fromAng)) < 1.1) dmg = kingShield(e, dmg); // щит Короля
   if (ST.rage) dmg *= 1 + ST.rage * (P.hp < P.maxHp * 0.4 ? 2 : 1); // ярость
   if (e.type === 'boss3' && G.crystals > 0) { dmg *= 0.25; if (Math.random() < 0.3) sfx.clink(); } // кристаллы-щиты
   e.hp -= dmg; e.flash = 0.07;
@@ -2213,6 +2241,7 @@ function killEnemy(e, src) {
     if (s) { s.spawnT = 0; s.vx = Math.cos(a) * 260; s.vy = Math.sin(a) * 260; } }
   if (e.type === 'bomber' && src !== 'cleanup') { const n = 10 + G.zone; for (let k = 0; k < n; k++) eShoot(e.x, e.y, k * TAU / n + rand(-0.1, 0.1), 150 + G.zone * 4, 5, 10 * G.dmgScale, C.CORAL, 0);
     ring(e.x, e.y, 6, 70, 0.4, C.CORAL, 4); burst(e.x, e.y, 16, C.CORAL, 220, 8, 0.5); sfx.boom(false); shake(6); }
+  if (e.type === 'spawner' && src !== 'cleanup') spawnFry(e, 4); // пузырник лопается мальками
   if (src === 'nova' && lv('supernova')) queueBlast(e.x, e.y, 60, ST.dmg * 1.5);
   if (e.type === 'chest') { const n = 6 + Math.min(8, G.zone); for (let i = 0; i < n; i++) dropPick(e.x + rand(-26, 26), e.y + rand(-26, 26), 3, 1);
     G.levelPending++; G.levelDelay = Math.max(G.levelDelay, 0.5); G.chests = (G.chests || 0) + 1; questAdd('chest', 1);
@@ -2240,6 +2269,7 @@ function bossDeath(e) {
   ebul.clear();
   if (e.type === 'boss1') { unlock('boss1'); banner(uiT('bossDie')[0][0], uiT('bossDie')[0][1], '#3ff0ff', 3); }
   else if (e.type === 'boss2') { unlock('boss2'); banner(uiT('bossDie')[1][0], uiT('bossDie')[1][1], '#ff4fd8', 3.5); }
+  else if (ET[e.type].guard) guardianDeath(e); // стражи глубин
   else if (e.type === 'boss4') { banner(uiT('leviathanDie'), uiT('leviathanDieS'), '#49e0c0', 3); }
   else { unlock('boss3');
     for (let i = 0; i < enemies.n; i++) { const o = enemies.items[i]; if (!o.dead && o.type === 'crystal') killEnemy(o, null); }
@@ -2423,6 +2453,9 @@ function updateEnemies(dt) {
       case 'boss2': updateBoss2(e, dt, d, ux, uy); break;
       case 'boss3': updateBoss3(e, dt, d, ux, uy); break;
       case 'boss4': updateBoss4(e, dt, d, ux, uy); break;
+      case 'ray': case 'lantern': case 'wisp': case 'spawner': case 'fry': if (updateNewFoe(e, dt, d, ux, uy, sp, fz)) continue; break;
+      case 'kingcrab': updateKingCrab(e, dt, d, ux, uy); break;
+      case 'queen': updateQueen(e, dt, d, ux, uy); break;
       case 'crystal': { const b = G.boss; if (!b || b.dead || b.type !== 'boss3') { e.dead = true; burst(e.x, e.y, 10, C.GOLD, 150, 7, 0.4); break; }
         G.crystals++; e.ang += dt * (b.hp < b.maxHp * 0.5 ? 1.6 : 1.1);
         e.vx = 0; e.vy = 0; e.x = b.x + Math.cos(e.ang) * 115; e.y = b.y + Math.sin(e.ang) * 115; break; }
@@ -2558,6 +2591,326 @@ function updateBoss4(e, dt, d, ux, uy) {
   }
   if (e.st <= 0) { e.state = (e.state + 1) % 4; e.st = [4.2, 3.4, 3.4, 1.4][e.state]; e.p1 = e.state === 1 ? 0 : 0.3; e.p3 = 0; }
 }
+/* =====================================================================
+   НОВЫЕ ВРАГИ И СТРАЖИ ГЛУБИН
+   Скат (ray) — дуги и таран по линии-телеграфу; Фонарщик (lantern) — держит дистанцию
+   и пускает медленный самонаводящийся огонёк (wisp), который можно сбить; Пузырник (spawner) —
+   выпускает мальков (fry) и лопается ими. Стражи: Король Крабов (kingcrab) на 300 и 1300 м,
+   Королева Роя (queen) на 800 м; в бесконечном спуске — по очереди за 200 м до каждого босса.
+   ===================================================================== */
+const ART_ALIAS = {crab: [['kingcrab', '#ffc94f']], crab_bare: [['kingcrab_bare', '#ffc94f']], jelly: [['queen', '#58b6ff']]}; // перекраска рисованных спрайтов
+const QZ = {n: 0, t: 0, left: 0, xs: new Float32Array(12), ys: new Float32Array(12), rn: 0, ra: 0, rt: 0}; // разряды и лучи Королевы
+const QZ_R = 68, RAY_SPD = 700, RAY_T = 0.55, KING_SPD = 640, KING_T = 0.6, KING_SLAM = 150;
+function countType(t) { let n = 0; const it = enemies.items; for (let i = 0; i < enemies.n; i++) if (!it[i].dead && it[i].type === t) n++; return n; }
+/** Перекрашенная копия кодового спрайта — запасной вид, пока не загружены рисованные */
+function tintedSprite(key, src, r, sr, tint) {
+  const s = SPR[src]; if (!s) return; const k = r / sr, pad = Math.ceil(s.h * k - r) + 2;
+  makeSprite(key, r, pad, (g) => {
+    const dr = () => { g.save(); g.scale(k, k); g.drawImage(s.img, -s.h, -s.h, s.h * 2, s.h * 2); g.restore(); };
+    dr(); g.globalCompositeOperation = 'hue'; g.fillStyle = tint; g.fillRect(-r - pad, -r - pad, (r + pad) * 2, (r + pad) * 2);
+    g.globalCompositeOperation = 'destination-in'; dr(); g.globalCompositeOperation = 'source-over'; });
+  SPR[key].r = r;
+}
+function buildFoeSprites(spec, eye, lin, dots) {
+  // Скат — широкие крылья-ромб, хвост-игла, пятна-огоньки
+  makeSprite('ray', 15, 18, (g, r) => { const col = PAL[C.ICE];
+    g.shadowColor = col; g.shadowBlur = 12;
+    g.strokeStyle = lin(g, -r * 0.4, 0, -r * 2.0, 0, [[0, hexA(col, 0.95)], [1, hexA(col, 0.05)]]); g.lineWidth = 2.2;
+    g.beginPath(); g.moveTo(-r * 0.4, 0); g.quadraticCurveTo(-r * 1.3, r * 0.18, -r * 2.05, -r * 0.05); g.stroke();
+    g.fillStyle = radial(g, r * 1.25, '#f2fbff', col, '#0b2c55');
+    g.beginPath(); g.moveTo(r * 1.05, 0); g.quadraticCurveTo(r * 0.6, -r * 0.5, r * 0.1, -r * 1.3); g.quadraticCurveTo(-r * 0.35, -r * 0.7, -r * 0.62, -r * 0.12);
+    g.lineTo(-r * 0.62, r * 0.12); g.quadraticCurveTo(-r * 0.35, r * 0.7, r * 0.1, r * 1.3); g.quadraticCurveTo(r * 0.6, r * 0.5, r * 1.05, 0); g.fill();
+    g.shadowBlur = 0; g.strokeStyle = hexA('#ffffff', 0.6); g.lineWidth = 1.2;
+    g.beginPath(); g.moveTo(r * 0.1, -r * 1.3); g.quadraticCurveTo(-r * 0.35, -r * 0.7, -r * 0.62, -r * 0.12); g.moveTo(r * 0.1, r * 1.3); g.quadraticCurveTo(-r * 0.35, r * 0.7, -r * 0.62, r * 0.12); g.stroke();
+    g.strokeStyle = hexA('#0b2c55', 0.55); g.lineWidth = 1.4; g.beginPath(); g.moveTo(r * 0.85, 0); g.lineTo(-r * 0.55, 0); g.stroke();
+    dots(g, [[0, -r * 0.62], [-r * 0.15, -r * 0.9, 0.8], [0, r * 0.62], [-r * 0.15, r * 0.9, 0.8], [r * 0.35, -r * 0.36, 0.7], [r * 0.35, r * 0.36, 0.7]], r * 0.07, '#e8fbff');
+    eye(g, r * 0.6, -r * 0.2, r * 0.12, '#ffe14f', 0.35); eye(g, r * 0.6, r * 0.2, r * 0.12, '#ffe14f', 0.35);
+    spec(g, r * 0.1, -r * 0.5, r * 0.42, r * 0.14, 0.5); });
+  // Фонарщик — пузатая рыбка с плавниками и фонарём на стебле
+  makeSprite('lantern', 16, 20, (g, r) => { const col = PAL[C.AMBER];
+    g.shadowColor = col; g.shadowBlur = 12;
+    for (const s of [-1, 1]) { g.fillStyle = hexA(col, 0.55); g.beginPath(); g.moveTo(-r * 0.2, s * r * 0.5); g.quadraticCurveTo(-r * 0.6, s * r * 1.35, -r * 1.1, s * r * 1.0); g.quadraticCurveTo(-r * 0.7, s * r * 0.55, -r * 0.6, s * r * 0.2); g.fill(); }
+    g.fillStyle = hexA(col, 0.7); g.beginPath(); g.moveTo(-r * 0.8, 0); g.lineTo(-r * 1.55, -r * 0.5); g.lineTo(-r * 1.3, 0); g.lineTo(-r * 1.55, r * 0.5); g.closePath(); g.fill();
+    g.fillStyle = radial(g, r * 0.9, '#fff1d6', col, '#4a2200'); g.beginPath(); g.ellipse(-r * 0.1, 0, r * 0.88, r * 0.72, 0, 0, TAU); g.fill();
+    g.shadowBlur = 0; g.strokeStyle = hexA('#3a1800', 0.55); g.lineWidth = 1.2;
+    for (let i = 0; i < 3; i++) { const x = -r * 0.6 + i * r * 0.28; g.beginPath(); g.arc(x, 0, r * 0.5, -0.9, 0.9); g.stroke(); }
+    g.strokeStyle = '#ffd9a0'; g.lineWidth = 1.8; g.beginPath(); g.moveTo(r * 0.45, -r * 0.25); g.quadraticCurveTo(r * 0.95, -r * 0.9, r * 1.25, -r * 0.1); g.stroke();
+    const lg = g.createRadialGradient(r * 1.25, -r * 0.05, 0, r * 1.25, -r * 0.05, r * 0.34);
+    lg.addColorStop(0, '#ffffff'); lg.addColorStop(0.5, '#ffe9a8'); lg.addColorStop(1, hexA(col, 0.6));
+    g.shadowColor = '#fff3c0'; g.shadowBlur = 16; g.fillStyle = lg; g.beginPath(); g.arc(r * 1.25, -r * 0.05, r * 0.34, 0, TAU); g.fill(); g.shadowBlur = 0;
+    g.strokeStyle = hexA('#4a2200', 0.8); g.lineWidth = 1.4; g.beginPath(); g.arc(r * 0.55, 0, r * 0.22, -1.0, 1.0); g.stroke();
+    eye(g, r * 0.4, -r * 0.33, r * 0.14, '#ff6a3d', 0.32); eye(g, r * 0.4, r * 0.33, r * 0.14, '#ff6a3d', 0.32);
+    spec(g, -r * 0.35, -r * 0.4, r * 0.4, r * 0.15, 0.55); });
+  // Огонёк фонарщика — капля света с хвостом
+  makeSprite('wisp', 7, 12, (g, r) => { const col = PAL[C.AMBER];
+    g.shadowColor = col; g.shadowBlur = 14;
+    g.fillStyle = lin(g, r, 0, -r * 2.2, 0, [[0, hexA('#fff4d0', 0.95)], [0.4, hexA(col, 0.8)], [1, hexA(col, 0)]]);
+    g.beginPath(); g.moveTo(r * 0.2, -r * 0.85); g.quadraticCurveTo(-r * 1.3, -r * 0.4, -r * 2.2, 0); g.quadraticCurveTo(-r * 1.3, r * 0.4, r * 0.2, r * 0.85); g.fill();
+    const cg = g.createRadialGradient(r * 0.1, 0, 0, r * 0.1, 0, r); cg.addColorStop(0, '#ffffff'); cg.addColorStop(0.45, '#fff0b0'); cg.addColorStop(1, col);
+    g.fillStyle = cg; g.beginPath(); g.arc(r * 0.1, 0, r, 0, TAU); g.fill(); });
+  // Пузырник — полупрозрачный пузырь-кладка, внутри шевелятся мальки
+  makeSprite('spawner', 21, 12, (g, r) => { const col = PAL[C.EEL];
+    g.shadowColor = col; g.shadowBlur = 16;
+    const mg = g.createRadialGradient(-r * 0.3, -r * 0.3, r * 0.1, 0, 0, r);
+    mg.addColorStop(0, hexA('#f0ffe6', 0.55)); mg.addColorStop(0.55, hexA(col, 0.28)); mg.addColorStop(0.9, hexA(col, 0.55)); mg.addColorStop(1, hexA('#eaffd8', 0.9));
+    g.fillStyle = mg; g.beginPath(); g.arc(0, 0, r, 0, TAU); g.fill();
+    g.shadowBlur = 0;
+    for (let i = 0; i < 4; i++) { const a = i / 4 * TAU + 0.5, x = Math.cos(a) * r * 0.45, y = Math.sin(a) * r * 0.45;
+      g.save(); g.translate(x, y); g.rotate(a + 1.9); g.fillStyle = hexA(col, 0.95);
+      g.beginPath(); g.ellipse(0, 0, r * 0.2, r * 0.11, 0, 0, TAU); g.fill(); g.beginPath(); g.moveTo(-r * 0.15, 0); g.lineTo(-r * 0.32, -r * 0.1); g.lineTo(-r * 0.32, r * 0.1); g.fill();
+      g.fillStyle = '#0a2200'; g.beginPath(); g.arc(r * 0.09, -r * 0.02, r * 0.04, 0, TAU); g.fill(); g.restore(); }
+    g.strokeStyle = hexA('#ffffff', 0.55); g.lineWidth = 1.4; g.beginPath(); g.arc(0, 0, r * 0.86, Math.PI * 1.1, Math.PI * 1.55); g.stroke();
+    g.fillStyle = hexA('#d8ffc0', 0.9); for (const [x, y, k] of [[r * 0.7, -r * 0.55, 0.12], [r * 0.85, r * 0.35, 0.09], [-r * 0.8, r * 0.5, 0.1]]) { g.beginPath(); g.arc(x, y, r * k, 0, TAU); g.fill(); }
+    g.fillStyle = hexA('#1a3a00', 0.85); g.beginPath(); g.ellipse(r * 0.88, 0, r * 0.12, r * 0.22, 0, 0, TAU); g.fill(); // пора-рот
+    eye(g, r * 0.55, -r * 0.28, r * 0.13, '#ffe14f', 0.3); eye(g, r * 0.55, r * 0.28, r * 0.13, '#ffe14f', 0.3);
+    spec(g, -r * 0.4, -r * 0.5, r * 0.4, r * 0.16, 0.75); });
+  // Малёк — крошечная зелёная рыбка
+  makeSprite('fry', 7, 8, (g, r) => { const col = PAL[C.EEL];
+    g.shadowColor = col; g.shadowBlur = 10;
+    g.fillStyle = hexA(col, 0.8); g.beginPath(); g.moveTo(-r * 0.6, 0); g.lineTo(-r * 1.45, -r * 0.6); g.lineTo(-r * 1.2, 0); g.lineTo(-r * 1.45, r * 0.6); g.closePath(); g.fill();
+    g.fillStyle = radial(g, r, '#f4ffe8', col, '#1f5000'); g.beginPath(); g.ellipse(0, 0, r, r * 0.6, 0, 0, TAU); g.fill();
+    eye(g, r * 0.45, -r * 0.18, r * 0.22, null, 0.35); });
+  // Стражи: запасной вид — перекрашенные кодовые краб и медуза (рисованные заменят их при загрузке)
+  tintedSprite('kingcrab', 'crab', ET.kingcrab.r, ET.crab.r, '#ffc94f');
+  tintedSprite('kingcrab_bare', 'crab_bare', ET.kingcrab.r, ET.crab.r, '#ffc94f');
+  tintedSprite('queen', 'jelly', ET.queen.r, ET.jelly.r, '#58b6ff');
+}
+/** Инициализация новых врагов при спавне (поля пула переиспользуются) */
+function initNewFoe(e, type) {
+  e.lvl = 0; e.tx = 0; e.ty = 0;
+  if (type === 'ray' || type === 'lantern') e.p1 = rand(1.6, 3);
+  else if (type === 'spawner') e.p1 = rand(3, 5);
+  else if (type === 'wisp') { e.st = 6.5; e.maxHp = e.hp = Math.max(6, ST.dmg * 1.6); e.spawnT = 0.15; } // сбивается двумя выстрелами на любой глубине
+  else if (type === 'fry') e.spawnT = 0.2;
+  const h = uiT('foe')[type];
+  if (h && S.foeSeen && !S.foeSeen[type] && !G.boss) { S.foeSeen[type] = 1; persist(); setTimeout(() => { if (!G.boss) banner(h[0], h[1], PAL[ET[type].col], 3); }, 500); }
+}
+function fizzle(e) { e.dead = true; burst(e.x, e.y, 8, C.AMBER, 120, 6, 0.35); ring(e.x, e.y, 3, 26, 0.25, C.AMBER, 2); }
+function spawnFry(e, n) {
+  for (let k = 0; k < n; k++) { if (enemies.n >= CFG.MAX_ENEMIES - 12) break;
+    const a = e.ang + (k - (n - 1) / 2) * 0.9 + rand(-0.2, 0.2), f = spawnEnemy('fry', e.x + Math.cos(a) * e.r * e.scale * 0.6, e.y + Math.sin(a) * e.r * e.scale * 0.6, false);
+    if (f) { f.vx = Math.cos(a) * 230; f.vy = Math.sin(a) * 230; f.ang = a; } }
+  ring(e.x, e.y, e.r * 0.6, e.r * 2, 0.35, C.EEL, 3); sfx.shot2();
+}
+/** Поведение обычных новых врагов. Возвращает true, если враг исчез (огонёк) */
+function updateNewFoe(e, dt, d, ux, uy, sp, fz) {
+  switch (e.type) {
+    case 'ray': {
+      if (e.state === 0) { // скольжение по дуге вокруг игрока
+        const rad = d < 200 ? -0.6 : d > 300 ? 0.8 : 0.1, tx = ux * rad - uy * e.p3, ty = uy * rad + ux * e.p3, l = Math.hypot(tx, ty) || 1;
+        steer(e, tx / l * sp, ty / l * sp, 1.6, dt); if (!fz) e.ang = Math.atan2(e.vy, e.vx);
+        e.p1 -= dt; e.p2 += dt; if (e.p2 > 4) { e.p2 = 0; e.p3 = -e.p3; }
+        if (e.p1 <= 0 && d < 520 && !fz) { e.state = 1; e.st = 0.8; }
+      } else if (e.state === 1) { // телеграф 0.8 с: замирает и целится, последние 0.3 с направление зафиксировано
+        steer(e, 0, 0, 5, dt); if (e.st > 0.3) e.ang += angDiff(e.ang, Math.atan2(uy, ux)) * Math.min(1, dt * 9);
+        e.st -= dt; if (e.st <= 0) { e.state = 2; e.st = RAY_T; }
+      } else if (e.state === 2) { // таран
+        e.st -= dt; if (!fz) { e.vx = Math.cos(e.ang) * RAY_SPD; e.vy = Math.sin(e.ang) * RAY_SPD; }
+        if (QL > 0 && Math.random() < 0.5) part(e.x, e.y, 0, 0, 0.3, 8, C.ICE, 0);
+        if (e.st <= 0) { e.state = 3; e.st = 0.9; }
+      } else { steer(e, 0, 0, 2.5, dt); e.st -= dt; if (e.st <= 0) { e.state = 0; e.p1 = rand(2.8, 4.2); } }
+      break;
+    }
+    case 'lantern': {
+      const rad = d < 280 ? -1 : d > 380 ? 0.8 : 0;
+      steer(e, (ux * rad - uy * e.p3 * 0.5) * sp, (uy * rad + ux * e.p3 * 0.5) * sp, 1.5, dt);
+      if (!fz) e.ang += angDiff(e.ang, Math.atan2(uy, ux)) * Math.min(1, dt * 4);
+      if (e.state === 0) { e.p1 -= dt; if (e.p1 <= 0 && d < 620 && !fz) { e.state = 1; e.st = 0.8; } }
+      else { e.st -= dt; if (e.st <= 0) { e.state = 0; e.p1 = rand(3.8, 4.8);
+        if (countType('wisp') < CFG.WISP_MAX) { const L = e.r * 1.3 * e.scale, fx = e.x + Math.cos(e.ang) * L, fy = e.y + Math.sin(e.ang) * L, w = spawnEnemy('wisp', fx, fy, false);
+          if (w) { w.ang = e.ang; w.vx = Math.cos(e.ang) * 60; w.vy = Math.sin(e.ang) * 60; if (e.elite) w.dmg *= 1.3; }
+          ring(fx, fy, 4, 34, 0.3, C.AMBER, 2); sfx.shot2(); } } }
+      break;
+    }
+    case 'wisp': { // медленный самонаводящийся огонёк: можно сбить, гаснет сам через 6.5 с
+      e.st -= dt;
+      const s = fz ? 0 : (e.slow > 0 ? 0.6 : 1) * e.spd * Math.min(1, 0.45 + (6.5 - e.st));
+      e.ang += clamp(angDiff(e.ang, Math.atan2(uy, ux)), -1.7 * dt, 1.7 * dt);
+      e.vx = Math.cos(e.ang) * s; e.vy = Math.sin(e.ang) * s;
+      if (QL > 0 && Math.random() < 0.4) part(e.x, e.y, -e.vx * 0.2, -e.vy * 0.2, 0.35, 6, C.AMBER, 1);
+      if (!P.dead && e.spawnT <= 0 && d < e.r + P.r) { hurtPlayer(e.dmg); fizzle(e); return true; }
+      if (e.st <= 0) { fizzle(e); return true; }
+      break;
+    }
+    case 'spawner': {
+      steer(e, ux * sp, uy * sp, 1, dt); if (!fz) e.ang += angDiff(e.ang, Math.atan2(uy, ux)) * Math.min(1, dt * 1.5);
+      if (e.state === 0) { e.p1 -= dt; if (e.p1 <= 0 && d < 650 && !fz) { e.state = 1; e.st = 0.9; } } // телеграф: пузырь раздувается
+      else { e.st -= dt; if (e.st <= 0) { e.state = 0; e.p1 = rand(5.5, 7); spawnFry(e, 3); } }
+      break;
+    }
+    case 'fry': { const w = Math.sin(G.t * 5 + e.phase) * 0.6; steer(e, (ux - uy * w) * sp, (uy + ux * w) * sp, 2.2, dt); e.ang = Math.atan2(e.vy, e.vx); break; }
+  }
+  return false;
+}
+
+/* ---------- стражи ---------- */
+function bossAt(z) { const n = z / 5; return n <= 3 ? ['boss1', 'boss2', 'boss3'][n - 1] : ['boss4', 'boss1', 'boss2', 'boss3'][(n - 4) % 4]; }
+/** [тип, уровень] стража для зоны или null: 300 м — Король, 800 м — Королева, 1300 м — усиленный Король, дальше по очереди */
+function guardianFor(z) {
+  if (z === 3) return ['kingcrab', 0]; if (z === 8) return ['queen', 0]; if (z === 13) return ['kingcrab', 1];
+  if (z > 15 && z % 5 === 3) { const k = (z - 18) / 5; return [k % 2 ? 'kingcrab' : 'queen', 1 + Math.floor(k / 2)]; }
+  return null;
+}
+function tryGuardian() {
+  const gd = guardianFor(G.zone); if (!gd) return false;
+  const type = gd[0], nz = G.zone + 2, cyc = Math.floor((nz - 5) / 20);
+  G.hpScale = 0.42 * ET[bossAt(nz)].hp * (1 + cyc * 1.3) / ET[type].hp; // ~42% здоровья ближайшего босса
+  const e = spawnEnemy(type, P.x, P.y - VH * 0.7, false); if (!e) return false; // сразу в кадре: страж медленнее боссов
+  e.spawnT = 0; e.state = 0; e.st = 2.4; e.lvl = gd[1]; e.p1 = 0.8; e.phase = 0; e.ty = 0;
+  if (type === 'kingcrab') { e.sh = e.tx = e.maxHp * 0.2; e.ang = Math.PI / 2; } else e.ang = 0;
+  QZ.n = 0; QZ.t = 0; QZ.left = 0; QZ.rn = 0; QZ.rt = 0;
+  G.boss = e;
+  dropPick(P.x + rand(-40, 40), P.y + 60, 4, 30);
+  banner(ET[type].name, uiT('guard') + ' · ' + (G.zone * 100) + ' ' + uiT('m'), type === 'kingcrab' ? '#ffd54f' : '#8fd8ff', 3.2);
+  sfx.warn(); vibrate([60, 40, 60]); shake(8);
+  Snd.setIntensity(3);
+  return true;
+}
+function guardianDeath(e) {
+  unlock('guard');
+  const i = e.type === 'kingcrab' ? 0 : 1; banner(uiT('guardDie')[i][0], uiT('guardDie')[i][1], i ? '#8fd8ff' : '#ffd54f', 3);
+  spawnChest(e.x, e.y); // награда — сундук с улучшением и жемчугом
+  G.bossClearT = 0; G.zoneT = Math.max(G.zoneT, CFG.ZONE_TIME * 0.45); // зона продолжается, но короче
+}
+/** Удар по щиту Короля спереди: щит срезает 65%, после поломки — оглушение и ярость */
+function kingShield(e, dmg) {
+  e.sh -= dmg; part(e.x + Math.cos(e.ang) * e.r, e.y + Math.sin(e.ang) * e.r, rand(-90, 90), rand(-90, 90), 0.3, 8, C.WHITE, 2);
+  if (Math.random() < 0.35) sfx.clink();
+  if (e.sh <= 0) { const fx = e.x + Math.cos(e.ang) * e.r, fy = e.y + Math.sin(e.ang) * e.r;
+    burst(fx, fy, 26, C.GOLD, 260, 9, 0.6); burst(fx, fy, 10, C.WHITE, 200, 7, 0.4); ring(fx, fy, 6, 110, 0.4, C.GOLD, 5); shake(9); sfx.boom(false);
+    text(e.x, e.y - e.r - 22, uiT('kingShield'), '#ffe9a0', true, false); e.state = 6; e.st = 1.4; e.vx = e.vy = 0; }
+  return dmg * 0.35;
+}
+function kingWave(e, n, spd, off) { for (let k = 0; k < n; k++) { if (k % 7 === 0) continue; eShoot(e.x, e.y, off + k * TAU / n, spd, 7, 11 * G.dmgScale, C.GOLD, 0); } }
+/** Король Крабов: шаг со щитом → рывки с линией-телеграфом → удар клешнями (круг-телеграф + волна) → призыв крабов */
+function updateKingCrab(e, dt, d, ux, uy) {
+  const enr = e.hp < e.maxHp * 0.5 || e.sh <= 0, L = e.lvl, face = Math.atan2(uy, ux); e.st -= dt;
+  if (e.state === 0) {
+    e.ang += clamp(angDiff(e.ang, face), -1.1 * dt, 1.1 * dt);
+    const s = e.spd * (enr ? 1.25 : 1); steer(e, Math.cos(e.ang) * s, Math.sin(e.ang) * s, 2, dt);
+    if (e.st <= 0) { e.phase = (e.phase | 0) + 1; const ph = e.phase % 3;
+      if (ph === 1) { e.state = 1; e.st = 0.9; e.p2 = enr || L ? 2 : 1; }
+      else if (ph === 2) { e.state = 3; e.st = 0.9; }
+      else { e.state = 5; e.st = 1.2; e.p1 = 0; } }
+  } else if (e.state === 1) { // прицеливание: последние 0.3 с направление зафиксировано
+    steer(e, 0, 0, 5, dt); if (e.st > 0.3) e.ang += angDiff(e.ang, face) * Math.min(1, dt * 8);
+    if (e.st <= 0) { e.state = 2; e.st = KING_T; shake(5); sfx.dash(); }
+  } else if (e.state === 2) { // таран, в конце — ударная волна
+    e.vx = Math.cos(e.ang) * KING_SPD; e.vy = Math.sin(e.ang) * KING_SPD;
+    if (Math.random() < 0.6) part(e.x, e.y, 0, 0, 0.4, 18, C.GOLD, 0);
+    const R = CFG.ARENA_R - 70;
+    if (e.st <= 0 || e.x * e.x + e.y * e.y > R * R) { kingWave(e, 14 + 2 * L, 150, rand(0, TAU)); ring(e.x, e.y, 10, 120, 0.4, C.GOLD, 5); shake(6); sfx.boom(false);
+      e.vx *= 0.2; e.vy *= 0.2; e.p2--; if (e.p2 > 0) { e.state = 1; e.st = 0.75; } else { e.state = 0; e.st = enr ? 2.2 : 3; } }
+  } else if (e.state === 3) { // замах клешнями: круг-телеграф 0.9 с
+    steer(e, 0, 0, 4, dt);
+    if (e.st <= 0) { const o = rand(0, TAU); kingWave(e, 22, 165, o); ring(e.x, e.y, 20, KING_SLAM + 40, 0.5, C.GOLD, 8); shake(10); sfx.boom(false);
+      if (!P.dead && d < KING_SLAM + P.r) hurtPlayer(e.dmg);
+      if (enr || L) { e.state = 4; e.st = 0.45; e.p1 = o; } else { e.state = 0; e.st = 3; } }
+  } else if (e.state === 4) { steer(e, 0, 0, 4, dt); if (e.st <= 0) { kingWave(e, 20, 120, e.p1 + TAU / 40); ring(e.x, e.y, 20, 160, 0.4, C.GOLD, 5); e.state = 0; e.st = 2.6; } }
+  else if (e.state === 5) { // призыв крабов из песка
+    steer(e, 0, 0, 4, dt);
+    if (e.p1 === 0 && e.st < 0.7) { e.p1 = 1; const n = Math.min((enr ? 2 : 1) + L, CFG.CRAB_MAX - countType('crab'));
+      for (let k = 0; k < n; k++) { const a = e.ang + Math.PI + (k - (n - 1) / 2) * 0.9, c = spawnEnemy('crab', e.x + Math.cos(a) * 110, e.y + Math.sin(a) * 110, false); if (c) { c.spawnT = 0.4; c.ang = a; } }
+      ring(e.x, e.y, 20, 170, 0.5, C.CRAB, 5); sfx.shot2(); }
+    if (e.st <= 0) { e.state = 0; e.st = 3; }
+  } else { steer(e, 0, 0, 3, dt); if (e.st <= 0) { e.state = 0; e.st = 1.5; } } // оглушён — окно для урона
+}
+function queenZaps(e) { // разряды по отмеченным кругам
+  for (let k = 0; k < QZ.n; k++) { const x = QZ.xs[k], y = QZ.ys[k];
+    bolt(e.x, e.y, x, y, C.ICE); ring(x, y, 10, QZ_R + 10, 0.3, C.ICE, 5); burst(x, y, 10, C.ICE, 200, 7, 0.4);
+    if (!P.dead && Math.hypot(P.x - x, P.y - y) < QZ_R + P.r * 0.5) hurtPlayer(e.dmg * 1.1); }
+  QZ.n = 0; shake(5); sfx.boom(false);
+}
+/** Королева Роя: кольца пуль → электрические разряды по кругам-телеграфам → лучи-копья → призыв медуз */
+function updateQueen(e, dt, d, ux, uy) {
+  const enr = e.hp < e.maxHp * 0.5, L = e.lvl; e.st -= dt;
+  if (enr && !e.ty) { e.ty = 1; text(e.x, e.y - e.r - 24, uiT('guardRage'), '#bfe6ff', true, false); ring(e.x, e.y, 20, 240, 0.6, C.ICE, 7); G.flash = Math.max(G.flash, 0.3); }
+  const keep = 290, rad = d < keep - 40 ? -1 : d > keep + 40 ? 1 : 0;
+  steer(e, (ux * rad - uy * 0.4 * e.p3) * e.spd, (uy * rad + ux * 0.4 * e.p3) * e.spd, 1.1, dt); e.ang = 0;
+  if (Math.random() < dt * 0.12) e.p3 = -e.p3;
+  if (e.state === 0) { // кольца с просветами
+    e.p1 -= dt;
+    if (e.p1 <= 0) { e.p1 = enr ? 0.85 : 1.05; e.p2 += 0.37; const n = enr ? 20 : 18;
+      for (let k = 0; k < n; k++) { if (k % 6 === 0) continue; eShoot(e.x, e.y, e.p2 + k * TAU / n, 120, 7, 11 * G.dmgScale, C.ICE, enr ? 0.12 : 0); }
+      ring(e.x, e.y, 30, 110, 0.4, C.ICE, 4); sfx.shot2(); }
+  } else if (e.state === 1) { // электрические импульсы: круги на дне, разряд через 1 с
+    if (QZ.t <= 0 && QZ.left > 0) { QZ.left--; QZ.n = Math.min(12, (enr ? 5 : 3) + L); QZ.t = 1.0;
+      QZ.xs[0] = P.x + P.vx * 0.25; QZ.ys[0] = P.y + P.vy * 0.25;
+      for (let k = 1; k < QZ.n; k++) { const a = rand(0, TAU), rr = rand(110, 240); QZ.xs[k] = P.x + Math.cos(a) * rr; QZ.ys[k] = P.y + Math.sin(a) * rr; }
+      sfx.nova(); }
+    if (QZ.t > 0) { QZ.t -= dt; if (QZ.t <= 0) queenZaps(e); }
+  } else if (e.state === 2) { // призыв медуз
+    if (e.p1 === 0) { e.p1 = 1; const n = Math.min((enr ? 3 : 2) + L, 7 - countType('jelly'));
+      for (let k = 0; k < n; k++) { const a = rand(0, TAU), s = spawnEnemy('jelly', e.x + Math.cos(a) * 120, e.y + Math.sin(a) * 120, false); if (s) s.spawnT = 0.3; }
+      ring(e.x, e.y, 30, 200, 0.6, C.JELLY, 5); }
+  } else { // лучи-копья: тонкие линии 0.8 с, затем пули вдоль них
+    if (QZ.rn === 0) { QZ.rn = enr ? 10 : 8; QZ.ra = rand(0, TAU); QZ.rt = 0.8; }
+    if (QZ.rt > 0) { QZ.rt -= dt; if (QZ.rt <= 0) { for (let k = 0; k < QZ.rn; k++) { const a = QZ.ra + k * TAU / QZ.rn;
+        for (let j = 0; j < 3; j++) eShoot(e.x + Math.cos(a) * e.r * 0.6, e.y + Math.sin(a) * e.r * 0.6, a, 200 + j * 55, 6, 11 * G.dmgScale, C.CYAN, 0); }
+      ring(e.x, e.y, 20, 140, 0.4, C.CYAN, 5); sfx.shot2(); } }
+  }
+  if (e.st <= 0 && QZ.t <= 0 && QZ.rt <= 0) { e.phase = (e.phase | 0) + 1; const ord = [0, 1, 0, 3, 0, 2], s = ord[e.phase % 6];
+    e.state = s; e.st = [3.6, enr || L ? 2.6 : 1.4, 1.4, 1.6][s]; e.p1 = s === 0 ? 0.4 : 0; QZ.left = s === 1 ? (enr || L ? 2 : 1) : 0; QZ.rn = 0; QZ.rt = 0; }
+}
+
+/* ---------- отрисовка ---------- */
+function drawFoeTelegraph(e) {
+  if (e.type === 'ray' && e.state === 1) { const k = 1 - e.st / 0.8, Ld = RAY_SPD * RAY_T + 20;
+    setXf(e.x, e.y, e.ang, 1); ctx.globalAlpha = 0.1 + 0.3 * k; ctx.fillStyle = PAL[C.ICE]; ctx.fillRect(e.r * 0.6, -e.r * 0.75, Ld, e.r * 1.5);
+    ctx.globalAlpha = 0.35 + 0.5 * k; ctx.strokeStyle = e.st < 0.3 ? '#ffffff' : PAL[C.ICE]; ctx.lineWidth = 2; ctx.setLineDash && ctx.setLineDash([10, 8]);
+    ctx.beginPath(); ctx.moveTo(e.r, 0); ctx.lineTo(Ld, 0); ctx.stroke(); ctx.setLineDash && ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(Ld + 14, 0); ctx.lineTo(Ld - 4, -10); ctx.lineTo(Ld - 4, 10); ctx.closePath(); ctx.fillStyle = PAL[C.ICE]; ctx.fill(); }
+  else if (e.type === 'lantern' && e.state === 1) { const k = 1 - e.st / 0.8; setWorld(); ctx.globalAlpha = 0.25 + 0.5 * k; ctx.strokeStyle = PAL[C.AMBER]; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(e.x, e.y, e.r * e.scale * (2.6 - 1.4 * k), 0, TAU); ctx.stroke(); }
+  else if (e.type === 'spawner' && e.state === 1) { const k = 1 - e.st / 0.9; setWorld(); ctx.globalAlpha = 0.25 + 0.5 * k; ctx.strokeStyle = PAL[C.EEL]; ctx.lineWidth = 2;
+    ctx.setLineDash && ctx.setLineDash([5, 6]); ctx.beginPath(); ctx.arc(e.x, e.y, e.r * e.scale * (1.3 + 0.5 * k), G.t * 2, G.t * 2 + TAU); ctx.stroke(); ctx.setLineDash && ctx.setLineDash([]); }
+}
+function drawNewFoe(e, sc, wht) {
+  const s = SPR[e.type];
+  if (e.type === 'wisp') { setWorld(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.7 + 0.3 * Math.sin(G.t * 14 + e.phase); glowAt(SOFT[C.AMBER], e.x, e.y, 30);
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = e.st < 1 ? Math.max(0.2, e.st) : 1; setXf(e.x, e.y, e.ang, sc); drawSpr(s, wht); return; }
+  if (e.type === 'spawner') { const ch = e.state === 1 ? 1 - e.st / 0.9 : 0, pul = 1 + Math.sin(G.t * 3 + e.phase) * 0.04 + ch * 0.16;
+    setXf(e.x, e.y + Math.sin(G.t * 1.7 + e.phase) * 1.4, e.ang, sc * pul); drawSpr(s, wht);
+    if (ch > 0) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = ch * 0.7; glowAt(GLOW[C.EEL], 0, 0, e.r * (0.8 + ch * 0.6)); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; }
+    return; }
+  // фонарщик: фонарь разгорается перед выстрелом
+  const ch = e.state === 1 ? 1 - e.st / 0.8 : 0;
+  setXf(e.x, e.y + Math.sin(G.t * 1.7 + e.phase) * 1.4, e.ang, sc); drawSpr(s, wht);
+  ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.55 + 0.45 * ch; glowAt(GLOW[C.AMBER], e.r * 1.25, -e.r * 0.05, 8 + ch * 16 + Math.sin(G.t * 7) * 1.5);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+}
+function drawKingCrab(e, sc, wht) {
+  if (e.state === 1) { const k = 1 - e.st / 0.9, Ld = KING_SPD * KING_T + 40; setXf(e.x, e.y, e.ang, 1);
+    ctx.globalAlpha = 0.12 + 0.3 * k; ctx.fillStyle = '#ffb340'; ctx.fillRect(e.r * 0.5, -e.r * 0.8, Ld, e.r * 1.6);
+    ctx.globalAlpha = 0.5 + 0.4 * k; ctx.strokeStyle = e.st < 0.3 ? '#ffffff' : '#ffd54f'; ctx.lineWidth = 2.5; ctx.strokeRect(e.r * 0.5, -e.r * 0.8, Ld, e.r * 1.6); }
+  else if (e.state === 3) { const k = 1 - e.st / 0.9; setWorld();
+    ctx.globalAlpha = 0.1 + 0.25 * k; ctx.fillStyle = '#ffb340'; ctx.beginPath(); ctx.arc(e.x, e.y, KING_SLAM * k, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 0.5 + 0.4 * k; ctx.strokeStyle = '#ffd54f'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(e.x, e.y, KING_SLAM, 0, TAU); ctx.stroke(); }
+  ctx.globalAlpha = 1;
+  const key = e.sh <= 0 ? 'kingcrab_bare' : 'kingcrab', s = SPR[key];
+  const pul = 1 + Math.sin(G.t * 2.2) * 0.02 + (e.state === 3 ? (1 - e.st / 0.9) * 0.08 : 0) + (e.state === 6 ? Math.sin(G.t * 30) * 0.02 : 0);
+  setXf(e.x, e.y, e.ang, sc * pul, s.fl); drawSpr(s, wht);
+  if (e.sh > 0 && e.tx > 0) { setXf(e.x, e.y, e.ang, 1); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.25 + 0.6 * (e.sh / e.tx);
+    ctx.strokeStyle = '#fff0b0'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0, 0, e.r * 1.15, -0.95, 0.95); ctx.stroke();
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; }
+}
+function drawQueen(e, sc, wht) {
+  setWorld();
+  if (QZ.n > 0 && QZ.t > 0) { const k = 1 - QZ.t; // круги будущих разрядов
+    for (let i = 0; i < QZ.n; i++) { const x = QZ.xs[i], y = QZ.ys[i];
+      ctx.globalAlpha = 0.16 + 0.3 * k; ctx.fillStyle = PAL[C.ICE]; ctx.beginPath(); ctx.arc(x, y, QZ_R * (0.3 + 0.7 * k), 0, TAU); ctx.fill();
+      ctx.globalAlpha = 0.12; ctx.beginPath(); ctx.arc(x, y, QZ_R, 0, TAU); ctx.fill();
+      ctx.globalAlpha = 0.7 + 0.3 * k; ctx.strokeStyle = QZ.t < 0.3 ? '#ffffff' : PAL[C.ICE]; ctx.lineWidth = 4; ctx.setLineDash && ctx.setLineDash([8, 6]);
+      ctx.beginPath(); ctx.arc(x, y, QZ_R, G.t * 3, G.t * 3 + TAU); ctx.stroke(); ctx.setLineDash && ctx.setLineDash([]); } }
+  if (QZ.rt > 0) { const k = 1 - QZ.rt / 0.8; ctx.globalAlpha = 0.25 + 0.55 * k; ctx.strokeStyle = QZ.rt < 0.25 ? '#ffffff' : PAL[C.CYAN]; ctx.lineWidth = 1.5 + 2 * k;
+    ctx.beginPath(); for (let i = 0; i < QZ.rn; i++) { const a = QZ.ra + i * TAU / QZ.rn; ctx.moveTo(e.x + Math.cos(a) * e.r, e.y + Math.sin(a) * e.r); ctx.lineTo(e.x + Math.cos(a) * 620, e.y + Math.sin(a) * 620); } ctx.stroke(); }
+  ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.4 + 0.2 * Math.sin(G.t * 5); glowAt(SOFT[C.ICE], e.x, e.y, e.r * 2.6);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  const s = SPR.queen, pul = 1 + Math.sin(G.t * 2.6) * 0.05;
+  setXf(e.x, e.y, 0, sc * pul, s.fl); drawSpr(s, wht);
+  if (QL > 0 && Math.random() < 0.06) { const a = rand(0, TAU); bolt(e.x, e.y, e.x + Math.cos(a) * e.r * 1.4, e.y + Math.sin(a) * e.r * 1.4, C.ICE); }
+}
+/* ===================== /НОВЫЕ ВРАГИ И СТРАЖИ ===================== */
 /** Раздвигаем врагов, чтобы не слипались в одну точку */
 function separate() {
   const it = enemies.items;
@@ -3047,6 +3400,7 @@ function renderWorld(rdt) {
       ctx.strokeStyle = PAL[C.DART]; ctx.lineWidth = 2; ctx.setLineDash && ctx.setLineDash([10, 8]); ctx.beginPath(); ctx.moveTo(e.r, 0); ctx.lineTo(330, 0); ctx.stroke(); ctx.setLineDash && ctx.setLineDash([]); }
     else if (e.type === 'boss1' && e.state === 2 && (e.p3 % 1.6) < 0.95) { setXf(e.x, e.y, e.ang, 1); ctx.globalAlpha = 0.12 + 0.3 * ((e.p3 % 1.6) / 0.95);
       ctx.fillStyle = '#ff3b6b'; ctx.fillRect(e.r * 0.5, -e.r * 0.8, 560, e.r * 1.6); }
+    else if (ET[e.type].nf) drawFoeTelegraph(e); // НОВЫЕ ВРАГИ
   }
   ctx.globalAlpha = 1;
   // враги: тела
@@ -3071,6 +3425,9 @@ function renderWorld(rdt) {
       case 'boss2': drawBoss2(e, sc, wht); break;
       case 'boss3': drawBoss3(e, sc, wht); break;
       case 'boss4': drawBoss4(e, sc, wht); break;
+      case 'kingcrab': drawKingCrab(e, sc, wht); break;
+      case 'queen': drawQueen(e, sc, wht); break;
+      case 'lantern': case 'spawner': case 'wisp': drawNewFoe(e, sc, wht); break;
       case 'crystal': setXf(e.x, e.y, G.t * 2, sc); drawSpr(SPR.crystal, wht); break;
       default: {
         const breathe = 1 + Math.sin(G.t * (e.elite ? 3.1 : 2.35) + e.phase) * (e.elite ? 0.045 : 0.025);
