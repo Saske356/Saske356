@@ -2,10 +2,15 @@
  "name": "compact_sedan",
  "title": "Компакт-седан «Волжанка С»",
  "liveries": {
-  "paint": 2913972
+  "paint": 2913972,
+  "police": 2913972,
+  "taxi": 2913972,
+  "vinyl_stripes": 2913972,
+  "vinyl_tribal": 2913972,
+  "vinyl_camo": 2913972
  },
- "dff_bytes": 3337852,
- "triangles": 65826,
+ "dff_bytes": 3339836,
+ "triangles": 65866,
  "frames": [
   "compact_sedan",
   "chassis_dummy",
@@ -56,5 +61,5 @@
   "hookup",
   "ped_arm"
  ],
- "glb_bytes": 2240944
+ "glb_bytes": 2241892
 }

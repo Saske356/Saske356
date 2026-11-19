@@ -141,7 +141,7 @@ def lamp(bvh, body_parts, where, side, x0, x1, lo, hi, mats, depth=0.05, lens=Tr
             return False
         return (c[1] * sgn) > 0
     for k in list(body_parts):
-        body_parts[k] = cut_hole(body_parts[k], inside, np.array([0, sgn, 0]), 0.05)
+        body_parts[k] = cut_hole(body_parts[k], inside, np.array([0, sgn, 0]), 0.45)
     out.extend(pa.surface(-depth, mats["housing"]))
     out.extend(pa.ring(0.002, -depth, "lamp_wall"))
     if lens:
@@ -580,7 +580,7 @@ def build_car(p, low=False):
         if h is None:
             return Mesh()
         c = h + np.array([0, sgn * 0.012, 0])
-        right = np.array([sgn, 0, 0.0])
+        right = np.array([-sgn, 0, 0.0])
         m = flat_quad(c, right, (0, 0, 1), 0.52, 0.113, "plate")
         m.extend(box(c - (0.27, 0.008 if sgn > 0 else -0.002, 0.065) - (0, 0.004, 0), c + (0.27, -0.002 if sgn > 0 else 0.008, 0.065), "plastic_dark"))
         return m
@@ -605,9 +605,9 @@ def build_car(p, low=False):
     door_parts = {}
     for side, sx in (("r", 1), ("l", -1)):
         mm = Mesh()
-        c = np.array([sx * (wsh + 0.10), ty_m, zb + 0.10])
+        c = np.array([sx * (wsh + 0.075), ty_m, zb + 0.09])
         mm.extend(superellipsoid((0.17, 0.10, 0.11), c, "paint", (16, 8), 3.0, 1))
-        mm.extend(superellipsoid((0.08, 0.06, 0.03), c + (-sx * 0.07, 0.0, -0.06), "paint", (10, 6), 3.0, 1))
+        mm.extend(superellipsoid((0.12, 0.07, 0.035), c + (-sx * 0.07, 0.01, -0.065), "paint", (10, 6), 3.0, 1))
         mm.extend(flat_quad(c + (0, -0.051, 0), (-sx, 0, 0), (0, 0, 1), 0.15, 0.09, "mirror"))
         mm.extend(superellipsoid((0.10, 0.012, 0.012), c + (sx * 0.01, 0.045, -0.042), "turn_fr" if sx > 0 else "turn_fl", (8, 4), 3.0))
         door_parts["door_%sf" % side] = mm

@@ -157,6 +157,13 @@ HYPER.update(
     gauges=dict(max=500, red=6.5), mass=1950, handling="hyper",
 )
 
+COMPACT["paint"] = (150, 20, 24)
+CLASSIC["paint"] = (230, 228, 220)
+EXEC["paint"] = (10, 70, 55)
+SUV["paint"] = (120, 122, 118)
+SUPER["paint"] = (245, 190, 0)
+HYPER["paint"] = (20, 40, 110)
+
 CARS = [COMPACT, CLASSIC, EXEC, SUV, SUPER, HYPER]
 for _p in CARS:
     _p["cuts"] = cuts(_p)

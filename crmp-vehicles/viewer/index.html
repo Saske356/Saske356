@@ -1,0 +1,305 @@
+<title>Автопарк CRMP</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Golos+Text:wght@400;500;600&display=swap">
+<style>
+/* Layout: full-bleed 3D stage with a garage control rail (right on desktop, below on phones) */
+:root {
+  --bg: #0f1114; --panel: #171a1f; --line: #2a2f37; --fg: #e9ecf1; --muted: #8d96a3;
+  --accent: #ffb21a; --signal: #ff9a00; --ok: #4ad37a;
+  --display: "Unbounded", "Segoe UI", system-ui, sans-serif;
+  --body: "Golos Text", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 14px; }
+.app { display: grid; grid-template-columns: minmax(0, 1fr) 340px; height: 100%; }
+.stage { position: relative; min-width: 0; min-height: 320px; background: radial-gradient(ellipse at 50% 35%, #2a3038 0%, #121417 70%); }
+#cv { display: block; width: 100%; height: 100%; touch-action: none; }
+.hud { position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); top: 14px; display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
+.hud h1 { font-family: var(--display); font-weight: 700; font-size: 20px; margin: 0; letter-spacing: .01em; text-wrap: balance; }
+.hud .sub { color: var(--muted); font-size: 12px; }
+.gauge { position: absolute; right: 16px; bottom: 14px; font-family: var(--display); text-align: right; pointer-events: none; }
+.gauge b { font-size: 34px; font-variant-numeric: tabular-nums; }
+.gauge span { color: var(--muted); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
+.blink { position: absolute; top: 16px; right: 16px; display: flex; gap: 10px; }
+.arrow { width: 26px; height: 22px; opacity: .15; transition: opacity .05s; }
+.arrow.on { opacity: 1; }
+.loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 13px; pointer-events: none; }
+.rail { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding-block: 16px 24px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 18px; }
+.grp { display: flex; flex-direction: column; gap: 8px; }
+.grp > label, .lbl { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.cars { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+button { font: inherit; color: var(--fg); background: #1f242b; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; cursor: pointer; text-align: left; }
+button:hover { border-color: #46505d; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button[aria-pressed="true"] { border-color: var(--accent); background: #2b2415; }
+.cars button small { display: block; color: var(--muted); font-size: 11px; }
+.row { display: flex; flex-wrap: wrap; gap: 6px; }
+.row button { flex: 1 1 auto; text-align: center; }
+.sw { width: 28px; height: 28px; border-radius: 50%; padding: 0; border: 2px solid var(--line); }
+.sw[aria-pressed="true"] { border-color: var(--fg); }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+.spec { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 12px; }
+.spec dt { color: var(--muted); }
+.spec dd { margin: 0; font-variant-numeric: tabular-nums; }
+.note { color: var(--muted); font-size: 12px; line-height: 1.5; }
+@media (max-width: 760px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: 58vh auto; height: auto; }
+  .rail { border-left: 0; border-top: 1px solid var(--line); }
+}
+</style>
+
+<div class="app">
+  <div class="stage">
+    <canvas id="cv" aria-label="3D модель автомобиля"></canvas>
+    <div class="hud"><h1 id="title">Загрузка…</h1><div class="sub" id="sub"></div></div>
+    <div class="blink" aria-hidden="true">
+      <svg class="arrow" id="arL" viewBox="0 0 26 22"><path d="M0 11 12 0v6h14v10H12v6z" fill="var(--ok)"/></svg>
+      <svg class="arrow" id="arR" viewBox="0 0 26 22"><path d="M26 11 14 0v6H0v10h14v6z" fill="var(--ok)"/></svg>
+    </div>
+    <div class="gauge"><b id="kmh">0</b> <span>км/ч</span></div>
+    <div class="loading" id="loading">Загружаю модель…</div>
+  </div>
+  <aside class="rail">
+    <div class="grp"><label>Машина</label><div class="cars" id="cars"></div></div>
+    <div class="grp"><label>Скин</label><div class="row" id="liv"></div></div>
+    <div class="grp"><label>Цвет краски</label><div class="row" id="cols"></div></div>
+    <div class="grp"><label>Свет</label>
+      <div class="row">
+        <button id="bHead" aria-pressed="false">Фары</button>
+        <button id="bL" aria-pressed="false">◀ Левый</button>
+        <button id="bHaz" aria-pressed="false">Аварийка</button>
+        <button id="bR" aria-pressed="false">Правый ▶</button>
+        <button id="bBrake" aria-pressed="false">Тормоз</button>
+      </div>
+    </div>
+    <div class="grp"><label for="steer">Руль</label><input id="steer" type="range" min="-1" max="1" step="0.01" value="0"></div>
+    <div class="grp"><label for="speed">Скорость</label><input id="speed" type="range" min="0" max="1" step="0.001" value="0"></div>
+    <div class="grp"><label>Кузов</label>
+      <div class="row">
+        <button id="bDoors" aria-pressed="false">Двери</button>
+        <button id="bHood" aria-pressed="false">Капот</button>
+        <button id="bBoot" aria-pressed="false">Багажник</button>
+      </div>
+    </div>
+    <div class="grp"><label>Камера</label>
+      <div class="row">
+        <button id="cOut">Снаружи</button>
+        <button id="cIn">Салон</button>
+        <button id="bNight" aria-pressed="false">Ночь</button>
+      </div>
+    </div>
+    <div class="grp"><span class="lbl">Модель для CRMP</span><dl class="spec" id="spec"></dl></div>
+    <p class="note">Это превью тех же моделей, что лежат в .dff. Руль, стрелки спидометра и тахометра, поворотники и двери — отдельные узлы модели. В игре они двигаются, только если клиент поддерживает такие узлы.</p>
+  </aside>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+const CARS = [
+  {id:"compact_sedan", name:"Волжанка С", cls:"компакт-седан", max:220, red:6.5, color:"#961418"},
+  {id:"classic_sedan", name:"Семёрка", cls:"классика", max:180, red:6.0, color:"#e6e4dc"},
+  {id:"exec_sedan", name:"Сенатор 7", cls:"бизнес-седан", max:280, red:6.5, color:"#0a4637"},
+  {id:"suv", name:"Тайга 4×4", cls:"внедорожник", max:240, red:5.0, color:"#7a7a76"},
+  {id:"supercar", name:"Торо V12", cls:"суперкар", max:360, red:8.5, color:"#f5be00", scissor:true},
+  {id:"hypercar", name:"Аврора W16", cls:"гиперкар", max:500, red:6.5, color:"#14286e", scissor:true},
+];
+const LIVS = [["paint","Краска"],["police","ДПС"],["taxi","Такси"],["vinyl_stripes","Полосы"],["vinyl_tribal","Винил"],["vinyl_camo","Камуфляж"]];
+const COLS = ["#f2f2f0","#111214","#7b8087","#961418","#f5be00","#0a4637","#14286e","#e85d12","#5b2c83"];
+let INFO = {};
+
+const cv = document.getElementById("cv");
+const renderer = new THREE.WebGLRenderer({canvas: cv, antialias: true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+function studioEnv() {
+  const s = new THREE.Scene();
+  const room = new THREE.Mesh(new THREE.BoxGeometry(30, 14, 30), new THREE.MeshBasicMaterial({color: 0x30343a, side: THREE.BackSide}));
+  room.position.y = 6; s.add(room);
+  const lamp = (w, h, x, y, z, k, rx, ry) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({color: new THREE.Color(k, k, k), side: THREE.DoubleSide})); m.position.set(x, y, z); m.rotation.set(rx || 0, ry || 0, 0); s.add(m); };
+  lamp(16, 4, 0, 12.9, 0, 6, Math.PI / 2);
+  lamp(10, 3, -14.5, 5, 0, 4, 0, Math.PI / 2);
+  lamp(10, 3, 14.5, 5, 0, 3, 0, -Math.PI / 2);
+  lamp(8, 2, 0, 4, -14.5, 2.5);
+  const g = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), new THREE.MeshBasicMaterial({color: 0x15171a}));
+  g.rotation.x = -Math.PI / 2; g.position.y = -0.9; s.add(g);
+  return s;
+}
+const envTex = pmrem.fromScene(studioEnv(), 0.02).texture;
+scene.environment = envTex;
+const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 200);
+camera.position.set(5.2, 1.9, 5.6);
+const controls = new THREE.OrbitControls(camera, cv);
+controls.target.set(0, 0.6, 0);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.495;
+const hemi = new THREE.HemisphereLight(0xdfe8ff, 0x202020, 0.6);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+sun.position.set(4, 8, 3);
+scene.add(sun);
+const floor = new THREE.Mesh(new THREE.CircleGeometry(12, 64), new THREE.MeshStandardMaterial({color: 0x1a1d21, roughness: .55, metalness: 0}));
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+const headL = [new THREE.SpotLight(0xfff4e0, 0, 30, 0.45, 0.5), new THREE.SpotLight(0xfff4e0, 0, 30, 0.45, 0.5)];
+headL.forEach(l => { scene.add(l); scene.add(l.target); });
+
+const loader = new THREE.GLTFLoader();
+const texLoader = new THREE.TextureLoader();
+let car = null, N = {}, M = {}, cur = CARS[0];
+const state = {head:false, L:false, R:false, haz:false, brake:false, doors:false, hood:false, boot:false, night:false, steer:0, speed:0, livery:"paint", color:null};
+const anim = {doors:0, hood:0, boot:0, wheelRot:0};
+const cache = {};
+
+function resize() {
+  const r = cv.parentElement.getBoundingClientRect();
+  renderer.setSize(r.width, r.height, false);
+  camera.aspect = r.width / Math.max(r.height, 1);
+  camera.updateProjectionMatrix();
+}
+addEventListener("resize", resize);
+
+function loadCar(c) {
+  cur = c;
+  document.getElementById("loading").hidden = false;
+  document.getElementById("title").textContent = "«" + c.name + "»";
+  document.getElementById("sub").textContent = c.cls;
+  [...document.querySelectorAll("#cars button")].forEach(b => b.setAttribute("aria-pressed", b.dataset.id === c.id));
+  loader.load("models/" + c.id + ".json", g => {
+    if (car) scene.remove(car);
+    car = g.scene;
+    N = {}; M = {};
+    car.traverse(o => {
+      N[o.name] = o;
+      if (o.isMesh) {
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach(m => { (M[m.name] = M[m.name] || []).push(m); if (m.name === "glass" || m.name.startsWith("lens")) { m.transparent = true; m.depthWrite = false; } });
+      }
+    });
+    (M.paint || []).forEach(m => { m.metalness = 0.5; m.roughness = 0.25; });
+    ["f_steer", "f_spdo", "f_tach"].forEach(k => { const n = N[k]; if (n) n.userData.q0 = n.quaternion.clone(); });
+    scene.add(car);
+    state.color = c.color;
+    setLivery(state.livery);
+    paintColor(c.color);
+    renderSpec();
+    document.getElementById("loading").hidden = true;
+  }, undefined, () => { document.getElementById("loading").textContent = "Не удалось загрузить модель"; });
+}
+
+function paintColor(hex) {
+  state.color = hex;
+  (M.paint || []).forEach(m => m.color.set(hex));
+  [...document.querySelectorAll("#cols button")].forEach(b => b.setAttribute("aria-pressed", b.dataset.c === hex));
+}
+function setLivery(l) {
+  state.livery = l;
+  [...document.querySelectorAll("#liv button")].forEach(b => b.setAttribute("aria-pressed", b.dataset.l === l));
+  const key = cur.id + "/" + l;
+  const apply = t => (M.paint || []).forEach(m => { m.map = t; m.needsUpdate = true; });
+  if (cache[key]) return apply(cache[key]);
+  texLoader.load("liveries/" + cur.id + "_" + l + ".jpg", t => { t.flipY = false; t.encoding = THREE.sRGBEncoding; t.anisotropy = 8; cache[key] = t; apply(t); });
+  if (l === "police" || l === "taxi") paintColor("#f2f2f0");
+}
+function renderSpec() {
+  const i = INFO[cur.id] || {};
+  const rows = [["Файлы", cur.id + ".dff / .txd"], ["Треугольники", i.triangles ? i.triangles.toLocaleString("ru-RU") : "—"], ["Размер .dff", i.dff_bytes ? (i.dff_bytes / 1048576).toFixed(1) + " МБ" : "—"], ["Скинов (.txd)", "6"], ["Шкала", cur.max + " км/ч"]];
+  document.getElementById("spec").innerHTML = rows.map(r => "<dt>" + r[0] + "</dt><dd>" + r[1] + "</dd>").join("");
+}
+
+function emit(name, on, color, k) {
+  (M[name] || []).forEach(m => { m.emissive = new THREE.Color(color); m.emissiveIntensity = on ? k : 0; });
+}
+function toggle(id, key, after) {
+  const b = document.getElementById(id);
+  b.addEventListener("click", () => { state[key] = !state[key]; b.setAttribute("aria-pressed", state[key]); after && after(); });
+}
+
+// UI
+const carsEl = document.getElementById("cars");
+CARS.forEach(c => { const b = document.createElement("button"); b.dataset.id = c.id; b.innerHTML = "«" + c.name + "»<small>" + c.cls + "</small>"; b.onclick = () => loadCar(c); carsEl.appendChild(b); });
+const livEl = document.getElementById("liv");
+LIVS.forEach(([l, n]) => { const b = document.createElement("button"); b.dataset.l = l; b.textContent = n; b.onclick = () => setLivery(l); livEl.appendChild(b); });
+const colEl = document.getElementById("cols");
+COLS.forEach(c => { const b = document.createElement("button"); b.className = "sw"; b.dataset.c = c; b.style.background = c; b.setAttribute("aria-label", "Цвет " + c); b.onclick = () => paintColor(c); colEl.appendChild(b); });
+toggle("bHead", "head"); toggle("bBrake", "brake");
+toggle("bL", "L", () => { if (state.L) { state.R = false; document.getElementById("bR").setAttribute("aria-pressed", false); } });
+toggle("bR", "R", () => { if (state.R) { state.L = false; document.getElementById("bL").setAttribute("aria-pressed", false); } });
+toggle("bHaz", "haz"); toggle("bDoors", "doors"); toggle("bHood", "hood"); toggle("bBoot", "boot");
+toggle("bNight", "night");
+document.getElementById("steer").oninput = e => state.steer = +e.target.value;
+document.getElementById("speed").oninput = e => state.speed = +e.target.value;
+document.getElementById("cOut").onclick = () => { camera.position.set(5.2, 1.9, 5.6); controls.target.set(0, 0.6, 0); camera.fov = 38; camera.updateProjectionMatrix(); };
+document.getElementById("cIn").onclick = () => {
+  const s = N.f_steer; if (!s) return;
+  const p = new THREE.Vector3(); s.getWorldPosition(p);
+  camera.position.set(p.x + 0.02, p.y + 0.36, p.z + 0.62);
+  controls.target.set(p.x + 0.0, p.y + 0.02, p.z - 1.0);
+  camera.fov = 62; camera.updateProjectionMatrix();
+  state.doors = false; document.getElementById("bDoors").setAttribute("aria-pressed", false);
+};
+
+const clock = new THREE.Clock();
+function tick() {
+  const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
+  controls.update();
+  if (car) {
+    const blink = (t % 0.7) < 0.38;
+    const L = (state.L || state.haz) && blink, R = (state.R || state.haz) && blink;
+    document.getElementById("arL").classList.toggle("on", L);
+    document.getElementById("arR").classList.toggle("on", R);
+    emit("light_head_l", state.head, 0xfff6ea, 3); emit("light_head_r", state.head, 0xfff6ea, 3); emit("fog", state.head, 0xfff6ea, 2);
+    const tail = state.brake ? 4 : (state.head ? 1.2 : 0);
+    emit("light_tail_l", tail > 0, 0xff1a10, tail); emit("light_tail_r", tail > 0, 0xff1a10, tail);
+    emit("turn_fl", L, 0xff8c00, 4); emit("turn_rl", L, 0xff8c00, 4);
+    emit("turn_fr", R, 0xff8c00, 4); emit("turn_rr", R, 0xff8c00, 4);
+    emit("gauges", true, 0xffffff, state.head || state.night ? 0.9 : 0.25); emit("screen", true, 0xffffff, 0.8); emit("needle", true, 0xff4614, 1.5);
+    // headlight beams
+    const hd = N.headlights;
+    if (hd) {
+      const p = new THREE.Vector3(); hd.getWorldPosition(p);
+      [1, -1].forEach((sx, i) => { headL[i].position.set(p.x * sx, p.y, p.z); headL[i].target.position.set(p.x * sx * 1.2, 0, p.z - 12); headL[i].intensity = state.head ? 6 : 0; });
+    }
+    // speed -> wheels + needles
+    const kmh = state.speed * cur.max;
+    document.getElementById("kmh").textContent = Math.round(kmh);
+    const rpm = Math.min(cur.red + 1, 0.9 + (kmh % 60) / 60 * (cur.red - 1.5) + (kmh > 0 ? 1 : 0));
+    anim.wheelRot -= kmh / 3.6 / 0.32 * dt;
+    ["wheel_rf", "wheel_lf", "wheel_rb", "wheel_lb"].forEach(k => { const w = N[k]; if (w) w.rotation.x = k.includes("_l") ? -anim.wheelRot : anim.wheelRot; });
+    const sa = state.steer * 0.55;
+    ["wheel_rf_dummy", "wheel_lf_dummy"].forEach(k => { const w = N[k]; if (w) w.rotation.y = sa; });
+    const rot = (name, ang) => { const n = N[name]; if (!n || !n.userData.q0) return; n.quaternion.copy(n.userData.q0).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), ang)); };
+    rot("f_steer", -state.steer * Math.PI * 1.25);
+    const sweep = Math.PI * 1.5;
+    rot("f_spdo", -sweep * Math.min(kmh / cur.max, 1));
+    rot("f_tach", -sweep * Math.min(rpm / (cur.red + 1), 1));
+    // panels
+    const ease = (k, on) => anim[k] += ((on ? 1 : 0) - anim[k]) * Math.min(1, dt * 4);
+    ease("doors", state.doors); ease("hood", state.hood); ease("boot", state.boot);
+    [["door_lf_dummy", -1], ["door_lr_dummy", -1], ["door_rf_dummy", 1], ["door_rr_dummy", 1]].forEach(([k, s]) => {
+      const d = N[k]; if (!d) return;
+      if (cur.scissor && k.includes("f_")) { d.rotation.set(-anim.doors * 1.25, 0, 0); }
+      else d.rotation.set(0, s * anim.doors * 1.05, 0);
+    });
+    if (N.bonnet_dummy) N.bonnet_dummy.rotation.x = anim.hood * 0.95;
+    if (N.boot_dummy) N.boot_dummy.rotation.x = -anim.boot * 1.1;
+  }
+  const night = state.night;
+  hemi.intensity = night ? 0.03 : 0.6; sun.intensity = night ? 0.0 : 1.4;
+  scene.environmentIntensity = night ? 0.1 : 1;
+  renderer.toneMappingExposure = night ? 0.8 : 1.0;
+  scene.environment = night ? null : envTex;
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+fetch("models/info.json").then(r => r.json()).then(j => { INFO = j; renderSpec(); }).catch(() => {});
+resize();
+loadCar(CARS[4]);
+tick();
+</script>
