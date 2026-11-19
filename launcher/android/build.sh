@@ -27,12 +27,19 @@ cp "$GAME/public/js/city.js" "$GAME/public/js/models.js" "$GAME/public/js/traffi
 THREE_JS="$GAME/node_modules/three/build/three.module.js"
 [ -f "$THREE_JS" ] || { echo "Нет $THREE_JS — выполните npm install в папке игры"; exit 1; }
 cp "$THREE_JS" "$SC/vendor/"
+ADDONS="$GAME/node_modules/three/examples/jsm"
+mkdir -p "$SC/addons/loaders" "$SC/addons/utils"
+cp "$ADDONS/loaders/GLTFLoader.js" "$SC/addons/loaders/"
+cp "$ADDONS/utils/BufferGeometryUtils.js" "$SC/addons/utils/"
 
 echo "▸ Игра для одиночного режима (assets/game)"
 rm -rf assets/game && mkdir -p assets/game/vendor
 cp -r "$GAME/public/." assets/game/
 cp -r "$GAME/shared" assets/game/
 cp "$THREE_JS" assets/game/vendor/
+cp -r "$SC/addons" assets/game/
+# модели машин (если сконвертированы в game/cache/cars) — для одиночной игры без интернета
+if [ -f "$GAME/cache/cars/cars.json" ]; then mkdir -p assets/game/cache && cp -r "$GAME/cache/cars" assets/game/cache/; fi
 
 echo "▸ Ресурсы"
 "$BT/aapt2" compile --dir res -o "$OUT/res/res.zip"

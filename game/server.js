@@ -28,6 +28,7 @@ const THREE_DIR = path.join(ROOT, 'node_modules', 'three', 'build');
 const MOUNTS = [
   ['/shared/', path.join(ROOT, 'shared')],
   ['/vendor/', THREE_DIR],
+  ['/addons/', path.join(ROOT, 'node_modules', 'three', 'examples', 'jsm')],
   ['/cache/', path.join(ROOT, 'cache')],   // модели, текстуры, звуки — кладите сюда
   ['/', path.join(ROOT, 'public')],
 ];
@@ -37,7 +38,12 @@ const CACHE_SOURCES = [
   ['/shared/', path.join(ROOT, 'shared')],
   ['/cache/', path.join(ROOT, 'cache')],
 ];
-const CACHE_EXTRA = [['/vendor/three.module.js', path.join(THREE_DIR, 'three.module.js')]];
+const ADDONS = path.join(ROOT, 'node_modules', 'three', 'examples', 'jsm');
+const CACHE_EXTRA = [
+  ['/vendor/three.module.js', path.join(THREE_DIR, 'three.module.js')],
+  ['/addons/loaders/GLTFLoader.js', path.join(ADDONS, 'loaders', 'GLTFLoader.js')],
+  ['/addons/utils/BufferGeometryUtils.js', path.join(ADDONS, 'utils', 'BufferGeometryUtils.js')],
+];
 
 function walk(dir, prefix, out) {
   let list = [];

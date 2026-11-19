@@ -235,6 +235,8 @@ fn build_manifest(app: &App) -> String {
     walk(&gd.join("shared"), "/shared/", &mut files);
     walk(&gd.join("cache"), "/cache/", &mut files);
     files.push(("/vendor/three.module.js".into(), gd.join("node_modules/three/build/three.module.js")));
+    files.push(("/addons/loaders/GLTFLoader.js".into(), gd.join("node_modules/three/examples/jsm/loaders/GLTFLoader.js")));
+    files.push(("/addons/utils/BufferGeometryUtils.js".into(), gd.join("node_modules/three/examples/jsm/utils/BufferGeometryUtils.js")));
     files.sort();
     let version = app.game.lock().unwrap().cfg.version.clone();
     let mut out = format!("version {version}\n");
@@ -329,6 +331,7 @@ pub async fn serve(opts: Options, listener: tokio::net::TcpListener, shutdown: i
         router = router
             .nest_service("/shared", ServeDir::new(gd.join("shared")))
             .nest_service("/vendor", ServeDir::new(gd.join("node_modules/three/build")))
+            .nest_service("/addons", ServeDir::new(gd.join("node_modules/three/examples/jsm")))
             .nest_service("/cache", ServeDir::new(gd.join("cache")))
             .fallback_service(ServeDir::new(gd.join("public")));
     }

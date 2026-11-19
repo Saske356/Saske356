@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { CARS } from '/shared/world.js';
 
 const matCache = new Map();
@@ -20,7 +21,109 @@ function wheelGeo(r) {
 }
 
 // Машина собирается из коробок; перед смотрит в +Z.
-export function makeCar(model, color) {
+// ---------- 3D-модели машин из кэша (cache/cars/*.glb) ----------
+// Если моделей нет, makeCar рисует машину из коробок.
+// Какие модели показывать для каждого класса машины (первая — основная, остальные — для трафика).
+export const SKINS = {
+  kroha: ['granta', 'logan', 'kiar'],
+  vektor: ['vesta', 'focus'],
+  taiga: ['patriota', 'lexuslx', 'mercesg'],
+  bars: ['bmwmkf'],
+  bus: ['bus'],
+};
+const protos = new Map(); // имя модели → { scene, info }
+const paintCache = new Map();
+const lodCars = new Set();
+const LOD_DIST = 70; // дальше — простая коробка вместо детальной модели
+
+export async function loadCarModels(base = '/cache/cars') {
+  let index;
+  try {
+    const r = await fetch(`${base}/cars.json`, { cache: 'no-cache' });
+    if (!r.ok) return 0;
+    index = await r.json();
+  } catch { return 0; }
+  const loader = new GLTFLoader();
+  const wanted = [...new Set(Object.values(SKINS).flat())].filter((n) => index[n]);
+  await Promise.all(wanted.map(async (name) => {
+    try {
+      const g = await loader.loadAsync(`${base}/${name}.glb`);
+      g.scene.traverse((o) => {
+        if (!o.isMesh) return;
+        o.castShadow = true;
+        const m = o.material;
+        if (m.name === 'light_front') o.material = lightMats.head;
+        else if (m.name === 'light_rear') o.material = lightMats.tail;
+        else if (/^paint/.test(m.name)) o.userData.paint = true;
+      });
+      protos.set(name, { scene: g.scene, info: index[name] });
+    } catch (e) { console.warn('Модель не загрузилась:', name, e); }
+  }));
+  return protos.size;
+}
+
+function paintMaterial(base, color) {
+  const key = base.uuid + '|' + color;
+  if (!paintCache.has(key)) {
+    const m = base.clone();
+    m.color.setHex(color);
+    paintCache.set(key, m);
+  }
+  return paintCache.get(key);
+}
+
+function makeModelCar(model, color, skin) {
+  const s = CARS[model] || CARS.kroha;
+  const proto = protos.get(skin);
+  const g = new THREE.Group();
+  const hi = proto.scene.clone(true);
+  const k = s.len / proto.info.len;
+  hi.scale.setScalar(k);
+  hi.position.y = -proto.info.bottom * k;
+  const wheels = [];
+  for (const node of [...hi.children]) {
+    if (!/^wheel_/.test(node.name)) continue;
+    // колесо крутим через отдельный узел — так ось одна и та же для левых и правых колёс
+    const pivot = new THREE.Object3D();
+    pivot.position.copy(node.position);
+    node.position.set(0, 0, 0);
+    hi.add(pivot);
+    pivot.add(node);
+    wheels.push(pivot);
+  }
+  hi.traverse((o) => { if (o.isMesh && o.userData.paint) o.material = paintMaterial(o.material, color); });
+  // дальний план: одна коробка цвета кузова
+  const lo = new THREE.Mesh(boxGeo, mat(color));
+  lo.scale.set(s.wid * 0.92, s.hgt * 0.8, s.len * 0.97);
+  lo.position.y = 0.25 + s.hgt * 0.4;
+  lo.visible = false;
+  g.add(hi, lo);
+  g.userData = { wheels, wr: proto.info.wheel * k, hi, lo };
+  lodCars.add(g);
+  return g;
+}
+const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+
+/** Детальная модель рядом с камерой, коробка вдали. Вызывать раз в несколько кадров. */
+export function updateCarLod(camera) {
+  const p = camera.position, d2 = LOD_DIST * LOD_DIST, v = new THREE.Vector3();
+  for (const g of lodCars) {
+    if (!g.parent) { lodCars.delete(g); continue; }
+    g.getWorldPosition(v);
+    const far = v.distanceToSquared(p) > d2;
+    g.userData.hi.visible = !far;
+    g.userData.lo.visible = far;
+  }
+}
+
+export function makeCar(model, color, skin) {
+  const list = SKINS[model] || [];
+  const name = skin && protos.has(skin) ? skin : list.find((n) => protos.has(n));
+  if (name) return makeModelCar(model, color, name);
+  return makeBoxCar(model, color);
+}
+
+function makeBoxCar(model, color) {
   const s = CARS[model] || CARS.kroha, g = new THREE.Group();
   const L = s.len, Wd = s.wid, H = s.hgt, paint = mat(color), glass = mat(0x1d2733), dark = mat(0x151515);
   let lightY;
@@ -57,6 +160,11 @@ export function makeCar(model, color) {
   g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   g.userData = { wheels, wr };
   return g;
+}
+
+export function randomSkin(model) {
+  const list = (SKINS[model] || []).filter((n) => protos.has(n));
+  return list.length ? list[Math.floor(Math.random() * list.length)] : undefined;
 }
 
 export function spinWheels(car, spd, dt) {

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import * as W from '/shared/world.js';
 import { buildCity, makeBeam } from './city.js';
-import { makeCar, makePed, animatePed, textSprite, disposeSprite, lightMats, colorFromString, spinWheels } from './models.js';
+import { makeCar, loadCarModels, updateCarLod, makePed, animatePed, textSprite, disposeSprite, lightMats, colorFromString, spinWheels } from './models.js';
 import { Traffic } from './traffic.js';
 import * as UI from './ui.js';
 import { offlineSocket } from './offline.js';
@@ -29,6 +29,8 @@ sun.shadow.mapSize.set(2048, 2048);
 Object.assign(sun.shadow.camera, { left: -90, right: 90, top: 90, bottom: -90, near: 1, far: 500 });
 sun.shadow.bias = -0.0006;
 scene.add(hemi, sun, sun.target);
+// 3D-модели машин (если есть в кэше); без них — машины из коробок
+const carModels = await loadCarModels();
 const world3d = buildCity(scene, city);
 const traffic = new Traffic(scene, { low: 12, mid: 20, high: 28 }[QUALITY]);
 const jobBeam = makeBeam(0xff4040), gpsBeam = makeBeam(0x3f9bff);
@@ -496,6 +498,7 @@ function updateCamera(dt) {
 
 // ---------- Цикл ----------
 let last = performance.now(), sendT = 0, uiT = 0, cpT = 0;
+let lodFrame = 0;
 
 function frame(now) {
   requestAnimationFrame(frame);
@@ -580,6 +583,7 @@ function frame(now) {
   }
   updateSky();
   updateCamera(dt);
+  if (++lodFrame % 8 === 0) updateCarLod(camera);
   UI.drawMinimap({
     x: S.x, z: S.z, yaw: S.camYaw, ry: S.ry, waypoint: S.waypoint, target,
     others: [...players.values()].map((p) => ({ x: p.mesh.position.x, z: p.mesh.position.z })),

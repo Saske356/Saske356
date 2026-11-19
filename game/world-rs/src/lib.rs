@@ -56,10 +56,10 @@ pub struct Car {
 }
 
 pub const CARS: &[Car] = &[
-    Car { id: "kroha", name: "Кроха", price: 3000, len: 3.6, wid: 1.7, hgt: 1.45, max_speed: 30.0, accel: 8.0, job: false },
-    Car { id: "vektor", name: "Вектор", price: 9000, len: 4.5, wid: 1.85, hgt: 1.45, max_speed: 40.0, accel: 10.0, job: false },
-    Car { id: "taiga", name: "Тайга", price: 22000, len: 4.8, wid: 2.0, hgt: 1.95, max_speed: 42.0, accel: 11.0, job: false },
-    Car { id: "bars", name: "Барс", price: 45000, len: 4.4, wid: 1.9, hgt: 1.2, max_speed: 58.0, accel: 16.0, job: false },
+    Car { id: "kroha", name: "Кроха", price: 3000, len: 4.3, wid: 1.75, hgt: 1.5, max_speed: 30.0, accel: 8.0, job: false },
+    Car { id: "vektor", name: "Вектор", price: 9000, len: 4.45, wid: 1.8, hgt: 1.5, max_speed: 40.0, accel: 10.0, job: false },
+    Car { id: "taiga", name: "Тайга", price: 22000, len: 4.6, wid: 1.95, hgt: 1.95, max_speed: 42.0, accel: 11.0, job: false },
+    Car { id: "bars", name: "Барс", price: 45000, len: 4.9, wid: 1.95, hgt: 1.35, max_speed: 58.0, accel: 16.0, job: false },
     Car { id: "bus", name: "Автобус", price: 0, len: 11.0, wid: 2.5, hgt: 3.1, max_speed: 22.0, accel: 5.0, job: true },
 ];
 

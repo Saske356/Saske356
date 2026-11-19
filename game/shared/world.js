@@ -38,10 +38,10 @@ export function groundHeight(x, z) {
 // ---------- Транспорт ----------
 // maxSpeed в м/с, accel в м/с²
 export const CARS = {
-  kroha:  { name: 'Кроха',   price: 3000,  len: 3.6, wid: 1.7,  hgt: 1.45, maxSpeed: 30, accel: 8 },
-  vektor: { name: 'Вектор',  price: 9000,  len: 4.5, wid: 1.85, hgt: 1.45, maxSpeed: 40, accel: 10 },
-  taiga:  { name: 'Тайга',   price: 22000, len: 4.8, wid: 2.0,  hgt: 1.95, maxSpeed: 42, accel: 11 },
-  bars:   { name: 'Барс',    price: 45000, len: 4.4, wid: 1.9,  hgt: 1.2,  maxSpeed: 58, accel: 16 },
+  kroha:  { name: 'Кроха',   price: 3000,  len: 4.3, wid: 1.75, hgt: 1.5, maxSpeed: 30, accel: 8 },
+  vektor: { name: 'Вектор',  price: 9000,  len: 4.45, wid: 1.8, hgt: 1.5, maxSpeed: 40, accel: 10 },
+  taiga:  { name: 'Тайга',   price: 22000, len: 4.6, wid: 1.95, hgt: 1.95, maxSpeed: 42, accel: 11 },
+  bars:   { name: 'Барс',    price: 45000, len: 4.9, wid: 1.95, hgt: 1.35,  maxSpeed: 58, accel: 16 },
   bus:    { name: 'Автобус', price: 0,     len: 11,  wid: 2.5,  hgt: 3.1,  maxSpeed: 22, accel: 5, job: true },
 };
 export const CAR_COLORS = [0xd94f3d, 0x2f6fd6, 0xf2f2f2, 0x1d1d1f, 0x3aa65b, 0xf0b429, 0x8e8e93, 0x7a3fd1];

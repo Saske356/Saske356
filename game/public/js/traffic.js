@@ -1,5 +1,5 @@
 import * as W from '/shared/world.js';
-import { makeCar, spinWheels } from './models.js';
+import { makeCar, spinWheels, randomSkin } from './models.js';
 
 // Направления: 0:+x 1:+z 2:-x 3:-z. Правостороннее движение.
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
@@ -29,7 +29,7 @@ export class Traffic {
       const c = {
         d, road, model, spd: 0, max: 9 + Math.random() * 5, skip: -1, stuck: 0, ghost: 0,
         x: alongX(d) ? along : laneCoord(d, road), z: alongX(d) ? laneCoord(d, road) : along,
-        mesh: makeCar(model, W.CAR_COLORS[Math.floor(Math.random() * W.CAR_COLORS.length)]),
+        mesh: makeCar(model, W.CAR_COLORS[Math.floor(Math.random() * W.CAR_COLORS.length)], randomSkin(model)),
       };
       c.ry = YAW[d];
       this.plan(c);
