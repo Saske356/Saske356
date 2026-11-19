@@ -40,7 +40,7 @@ def cr_segments(ctrl, counts):
 class Body:
     def __init__(self, p, low=False):
         self.p = p
-        self.seg = [max(1, (c + 1) // 2) for c in SEG] if low else SEG
+        self.seg = [max(1, (c + 1) // 2) for c in SEG] if low else [max(1, int(round(c * p.get("seg_scale", 1.0)))) for c in SEG]
         if low:
             p = dict(p, stations=28)
             self.p = p

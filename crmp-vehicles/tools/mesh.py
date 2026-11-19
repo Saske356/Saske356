@@ -6,6 +6,13 @@ face.  Coordinates follow GTA: x right, y forward, z up, metres.
 import math
 import numpy as np
 
+# global level of detail for primitives (1.0 = full, ~0.5 = mobile/BR budget)
+DETAIL = 1.0
+
+
+def _lod(n, lo=4):
+    return max(lo, int(round(n * DETAIL)))
+
 
 class Mesh:
     def __init__(self):
@@ -175,6 +182,7 @@ def lathe(profile, segments, mat, axis="x", u_scale=1.0, v_coords=None, angle0=0
     """Revolve profile [(r, a)] around `axis` ('x' for wheels).
     u = angle fraction, v = profile parameter."""
     prof = np.asarray(profile, float)
+    segments = _lod(segments, 6)
     k = len(prof)
     closed = abs(arc - 2 * math.pi) < 1e-9
     nseg = segments if closed else segments + 1
@@ -220,7 +228,7 @@ def box(lo, hi, mat, uv_scale=1.0):
 def superellipsoid(size, center, mat, n=(24, 12), p=4.0, uv_scale=1.0):
     """Rounded box (superellipsoid with exponent p) - used for seats, mirrors, etc."""
     sx, sy, sz = np.asarray(size) / 2
-    nu, nv = n
+    nu, nv = _lod(n[0], 6), _lod(n[1], 4)
     th = np.linspace(-math.pi / 2, math.pi / 2, nv + 1)
     ph = np.linspace(-math.pi, math.pi, nu + 1)
     def sgnpow(x, e):
@@ -245,7 +253,7 @@ def cylinder(r, h, center, axis, mat, seg=16, cap=True):
 
 
 def torus(R, r, center, axis, mat, seg=(32, 10)):
-    prof = [(R + r * math.cos(a), r * math.sin(a)) for a in np.linspace(0, 2 * math.pi, seg[1] + 1)]
+    prof = [(R + r * math.cos(a), r * math.sin(a)) for a in np.linspace(0, 2 * math.pi, _lod(seg[1], 6) + 1)]
     m = lathe(prof, seg[0], mat, axis=axis, u_scale=4)
     return m.transformed(t=center)
 

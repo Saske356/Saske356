@@ -182,7 +182,8 @@ def wheel_mesh(p):
     # face with spokes --------------------------------------------------
     xf = w / 2 - 0.012
     dish = {"steel": 0.02, "multi": 0.05, "forged": 0.06, "offroad": 0.03, "turbine": 0.035, "split": 0.045}.get(style, 0.04)
-    nr, nt = 12, 160
+    import mesh as _m
+    nr, nt = max(6, int(12 * _m.DETAIL)), max(60, int(160 * _m.DETAIL))
     rs = np.linspace(0.045, rr - 0.006, nr)
     th = np.linspace(0, 2 * math.pi, nt + 1)
     ns = max(p.get("spokes", 5), 1)

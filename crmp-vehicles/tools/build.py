@@ -217,6 +217,78 @@ def build_dff(car, p, specs, path):
     return size, tris, [f.name for f in frames]
 
 
+LIGHT_MATS = {"head_housing", "tail_housing", "lens", "lens_red", "lens_amber", "lamp_wall", "fog"} | set(LIGHTS)
+
+
+def build_dff_br(car, p, specs, path, dz=-0.10):
+    """Black-Russia-style mobile hierarchy (see README): no _dam copies,
+    br_steering with hand points, turnlights_* dummies, *_stock parts."""
+    F = car["frames"]
+    parts = car["parts"]
+    off = np.array([0, 0, dz])
+    frames = [rw.Frame(p["name"])]
+    atomics = []
+
+    def add_frame(name, parent, pos=(0, 0, 0), rot=None):
+        R = None
+        if rot is not None:
+            R = tuple(tuple(float(x) for x in rot[:, k]) for k in range(3))
+        frames.append(rw.Frame(name, parent, tuple(float(x) for x in pos), R))
+        return len(frames) - 1
+
+    def add_atomic(fi, mesh, angle=40.0):
+        g = geometry(mesh, specs, angle)
+        if g is not None:
+            atomics.append((fi, g))
+
+    def P(name):
+        return np.array(F[name]) + off
+    wf = add_frame("wheels", 0)
+    for nm in ("wheel_rf_dummy", "wheel_rb_dummy", "wheel_lb_dummy", "wheel_lf_dummy"):
+        fi = add_frame(nm, wf, P(nm))
+        if nm == "wheel_rf_dummy":
+            add_atomic(add_frame("wheel", fi), car["wheel"], 50)
+    H, T = p["head"], p["tail"]
+    L, yc = p["len"], car["yc"]
+    add_frame("headlights", 0, P("headlights"))
+    add_frame("turnlights_front", 0, (H["x"][1] - 0.04, L - yc - 0.08, (H["z"][0] + H["z"][1]) / 2 + dz))
+    add_frame("taillights", 0, P("taillights"))
+    add_frame("turnlights_rear", 0, (T["x"][1] - 0.06, -yc + 0.06, T["z"][0] + 0.03 + dz))
+    for nm in ("ped_frontseat", "ped_backseat", "ped_arm", "petrolcap", "engine", "exhaust"):
+        if nm in F:
+            add_frame(nm, 0, P(nm))
+    sw = add_frame("br_steering", 0, P("f_steer"))
+    swa = add_frame("br_steering", sw, (0, 0, 0), rot_x(car["tilt"]))
+    add_atomic(swa, car["steer"])
+    add_frame("LHandPos", swa, (-0.17, 0.0, 0.02))
+    add_frame("RHandPos", swa, (0.17, 0.0, 0.02))
+    cd = add_frame("chassis_dummy", 0)
+    inter, ext = split_by_material(parts["chassis"], INTERIOR_MATS)
+    lights, body = split_by_material(ext, LIGHT_MATS)
+    fl = lights.subset([lights.v[list(f)].mean(0)[1] > 0 for f in lights.f])
+    rl = lights.subset([lights.v[list(f)].mean(0)[1] <= 0 for f in lights.f])
+    bi = add_frame("body", cd)
+    add_atomic(bi, body.transformed(t=off))
+    add_atomic(add_frame("interior", bi), inter.transformed(t=off))
+    add_atomic(add_frame("front_lights", bi), fl.transformed(t=off))
+    add_atomic(add_frame("rear_lights", bi), rl.transformed(t=off))
+    tilt = math.atan2(car["dial_up"][1], car["dial_up"][2])
+    Rn = rot_x(-tilt) @ rot_y(math.radians(-225.0))
+    add_atomic(add_frame("f_spdo", cd, P("f_spdo"), Rn), car["needle_spdo"])
+    add_atomic(add_frame("f_tach", cd, P("f_tach"), Rn), car["needle_tach"])
+    for part, dn in (("bump_front", "bump_front"), ("bump_rear", "bump_rear"), ("door_rf", "door_rf_dummy"),
+                     ("door_lf", "door_lf_dummy"), ("door_rr", "door_rr_dummy"), ("door_lr", "door_lr_dummy"),
+                     ("bonnet", "bonnet"), ("boot", "boot"), ("windscreen", "windscreen")):
+        if part not in parts or not len(parts[part].f):
+            continue
+        pos = np.array(F.get(part + "_dummy", (0, 0, 0))) + off
+        fi = add_frame(dn, cd, pos)
+        add_atomic(add_frame(part + "_stock", fi), parts[part].transformed(t=-pos + off))
+    add_atomic(add_frame("chassis_vlo", cd), car["vlo"].transformed(t=off))
+    size = rw.write_dff(path, frames, atomics, collision(car, p))
+    return size, sum(len(g.tris) for _, g in atomics), [f.name for f in frames]
+
+
 def collision(car, p):
     yc = car["yc"]
     body = car["body"]
@@ -329,6 +401,11 @@ def main():
     quick = "--quick" in sys.argv
     os.makedirs(out, exist_ok=True)
     p = {c["name"]: c for c in presets.CARS}[name]
+    br = "--br" in sys.argv
+    if br:  # mobile budget, about 15-20k triangles
+        import mesh as _mesh
+        _mesh.DETAIL = 0.5
+        p = dict(p, stations=40, seg_scale=0.6)
     from car import build_car
     from body import Body
     car = build_car(p)
@@ -356,7 +433,7 @@ def main():
     os.makedirs(os.path.join(out, "textures"), exist_ok=True)
     for k, v in base_tex.items():
         tex.save_png(v, os.path.join(out, "textures", k + ".png"))
-    size, tris, fnames = build_dff(car, p, specs, os.path.join(out, name + ".dff"))
+    size, tris, fnames = (build_dff_br if br else build_dff)(car, p, specs, os.path.join(out, name + ".dff"))
     info.update(dff_bytes=size, triangles=tris, frames=fnames)
     # verify file structure
     with open(os.path.join(out, name + ".dff"), "rb") as fh:

@@ -82,3 +82,23 @@ python -I build.py toro_revuelto ../build/toro_revuelto --renders --quick
 ## Что не проверено
 
 У автора генератора не было запущенной GTA. Структура файлов проверяется кодом (`rw.walk`), но первую машину стоит открыть в игре или в Kam's / DragonFF и проверить: коллизию, положение сидений (`ped_frontseat`) и handling. Строки для `handling.cfg` подбирайте от заменяемой машины.
+
+## Формат для мобильного клиента в стиле Black Russia (`--br`)
+
+`python -I build.py bumer_m5 ../build_br/bumer_m5 --br` собирает облегчённую модель (23–25 тысяч треугольников вместо 52–60) с иерархией узлов как в мобильных CRMP‑клиентах:
+
+```
+<машина>
+  wheels → wheel_rf_dummy (wheel), wheel_rb_dummy, wheel_lb_dummy, wheel_lf_dummy
+  headlights, turnlights_front, taillights, turnlights_rear
+  ped_frontseat, ped_backseat, ped_arm, petrolcap, engine, exhaust
+  br_steering → br_steering (руль) → LHandPos, RHandPos
+  chassis_dummy
+    body → interior, front_lights, rear_lights
+    f_spdo, f_tach (стрелки)
+    bump_front/bump_front_stock, bump_rear/bump_rear_stock
+    door_*_dummy/door_*_stock, bonnet/bonnet_stock, boot/boot_stock, windscreen/windscreen_stock
+    chassis_vlo
+```
+
+Мятых `_dam` копий в этом формате нет: повреждения в таких клиентах обычно отключены. Готовые примеры лежат в `build_br/`.
