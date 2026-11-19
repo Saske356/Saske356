@@ -1,0 +1,15 @@
+{
+  "name": "novograd-rp",
+  "version": "0.1.0",
+  "description": "Новоград RP — браузерная мультиплеерная ролевая игра в открытом городе",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "three": "0.170.0",
+    "ws": "8.18.0"
+  }
+}

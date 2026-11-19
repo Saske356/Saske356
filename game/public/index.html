@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#12151b">
+  <title>Новоград RP</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="importmap">{ "imports": { "three": "/vendor/three.module.js" } }</script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="login">
+    <form id="loginform" class="panel" autocomplete="on">
+      <div class="logo">НОВОГРАД<span>RP</span></div>
+      <p class="sub">Ролевая игра в открытом городе</p>
+      <label>Ник персонажа
+        <input id="nick" name="username" placeholder="Ivan_Petrov" maxlength="32" required autocomplete="username" spellcheck="false">
+      </label>
+      <label>Пароль
+        <input id="pass" name="password" type="password" minlength="4" maxlength="64" required autocomplete="current-password">
+      </label>
+      <button id="loginbtn" class="btn primary big" type="submit">Играть</button>
+      <div id="loginerr"></div>
+      <p class="note">Ник — Имя_Фамилия латиницей. Если такого персонажа ещё нет, он будет создан с этим паролем.</p>
+    </form>
+  </div>
+
+  <div id="hud" hidden>
+    <div id="chat">
+      <div id="chatlog"></div>
+      <input id="chatinput" maxlength="140" hidden autocomplete="off" placeholder="Сообщение или /команда">
+    </div>
+    <div id="stats">
+      <div id="clock">09:00</div>
+      <div id="money">$0</div>
+      <div class="row"><span id="lvl">Ур. 1</span><span id="online">Онлайн: 1</span></div>
+    </div>
+    <canvas id="minimap" width="200" height="200"></canvas>
+    <div id="speedo" hidden><b id="spd">0</b><span>км/ч</span><div id="carname"></div></div>
+    <div id="jobpanel" hidden></div>
+    <div id="hint" hidden></div>
+    <div id="toasts"></div>
+    <div id="touch" hidden>
+      <div id="joyzone"><div id="joybase"><div id="knob"></div></div></div>
+      <div id="tbtns">
+        <button class="tb" data-key="KeyF">F<small>авто</small></button>
+        <button class="tb" data-key="KeyE">E<small>действие</small></button>
+        <button class="tb" id="holdbtn">⇧<small>бег/ручник</small></button>
+        <button class="tb" data-key="Chat">💬<small>чат</small></button>
+        <button class="tb" data-key="KeyM">☰<small>меню</small></button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal" hidden>
+    <div class="panel box">
+      <h2 id="mtitle"></h2>
+      <div id="mbody"></div>
+      <button id="mclose" class="btn">Закрыть</button>
+    </div>
+  </div>
+
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
