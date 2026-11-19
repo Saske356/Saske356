@@ -11,9 +11,12 @@ const city = W.generateCity();
 
 // ---------- Рендер ----------
 const canvas = $('game');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isTouch });
-renderer.setPixelRatio(Math.min(devicePixelRatio, isTouch ? 1.25 : 1.75));
-renderer.shadowMap.enabled = !isTouch;
+// Качество: ?q=low|mid|high (лаунчер передаёт выбор игрока), по умолчанию — по устройству.
+const QUALITY = ['low', 'mid', 'high'].includes(new URLSearchParams(location.search).get('q'))
+  ? new URLSearchParams(location.search).get('q') : isTouch ? 'mid' : 'high';
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: QUALITY === 'high' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, { low: 0.85, mid: 1.25, high: 1.75 }[QUALITY]));
+renderer.shadowMap.enabled = QUALITY !== 'low';
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(65, 1, 0.1, 1200);
@@ -26,7 +29,7 @@ Object.assign(sun.shadow.camera, { left: -90, right: 90, top: 90, bottom: -90, n
 sun.shadow.bias = -0.0006;
 scene.add(hemi, sun, sun.target);
 const world3d = buildCity(scene, city);
-const traffic = new Traffic(scene, isTouch ? 18 : 28);
+const traffic = new Traffic(scene, { low: 12, mid: 20, high: 28 }[QUALITY]);
 const jobBeam = makeBeam(0xff4040), gpsBeam = makeBeam(0x3f9bff);
 scene.add(jobBeam, gpsBeam);
 
@@ -168,6 +171,13 @@ $('loginform').addEventListener('submit', (e) => {
   connect(name, pass);
 });
 try { $('nick').value = localStorage.getItem('nrp-nick') || ''; } catch {}
+
+// Автовход из лаунчера: приложение вызывает window.__autoLogin(ник, пароль).
+window.__autoLogin = (name, pass) => {
+  if (S.playing || !name || !pass) return;
+  $('nick').value = name; $('pass').value = pass;
+  $('loginform').requestSubmit();
+};
 
 function startGame(m) {
   S.myId = m.id; S.name = m.name; S.profile = m.profile; S.time = m.time;

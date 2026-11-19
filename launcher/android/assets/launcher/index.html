@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Новоград RP — лаунчер</title>
+  <link rel="stylesheet" href="launcher.css">
+</head>
+<body>
+  <div class="bg"></div>
+  <main id="app">
+    <section class="side">
+      <header>
+        <div class="logo">НОВОГРАД<span>RP</span></div>
+        <div class="tag">Ролевая игра в открытом городе</div>
+      </header>
+      <h2>Новости</h2>
+      <div id="news" class="news"></div>
+    </section>
+
+    <section class="main">
+      <div class="head">
+        <h2>Серверы</h2>
+        <div class="tools">
+          <button class="icon" id="refresh" title="Обновить">⟳</button>
+          <button class="icon" id="addsrv" title="Добавить сервер">＋</button>
+          <button class="icon" id="settings" title="Настройки">⚙</button>
+        </div>
+      </div>
+      <div id="servers" class="servers"></div>
+
+      <form id="playform" class="profile">
+        <label>Ник
+          <input id="nick" placeholder="Ivan_Petrov" maxlength="32" autocomplete="username" spellcheck="false" autocapitalize="off">
+        </label>
+        <label>Пароль
+          <input id="pass" type="password" maxlength="64" autocomplete="current-password">
+        </label>
+        <button id="play" class="play" type="submit">ИГРАТЬ</button>
+      </form>
+      <div id="msg" class="msg"></div>
+    </section>
+  </main>
+  <footer><span id="ver"></span></footer>
+
+  <div id="dlg" class="dlg" hidden>
+    <div class="box">
+      <h3 id="dlgtitle"></h3>
+      <div id="dlgbody"></div>
+      <div class="actions" id="dlgactions"></div>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="launcher.js"></script>
+</body>
+</html>

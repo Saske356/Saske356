@@ -1,0 +1,99 @@
+:root {
+  --bg: #12151b;
+  --panel: rgba(20, 24, 32, 0.82);
+  --line: rgba(255, 255, 255, 0.09);
+  --text: #eef2f6;
+  --muted: #9aa5b1;
+  --accent: #ff8a3d;
+  --ok: #5ccf7a;
+  --bad: #ef5350;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden;
+  font: 14px/1.4 "Segoe UI", Roboto, system-ui, sans-serif; user-select: none; -webkit-user-select: none; }
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; cursor: pointer; }
+
+.bg { position: fixed; inset: 0; z-index: -1;
+  background:
+    radial-gradient(ellipse at 80% 0%, rgba(255,138,61,0.22), transparent 55%),
+    radial-gradient(ellipse at 0% 100%, rgba(63,155,255,0.18), transparent 55%),
+    linear-gradient(160deg, #161a22, #0d1015); }
+.bg::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 42%; opacity: 0.35;
+  background: repeating-linear-gradient(90deg, transparent 0 34px, rgba(255,255,255,0.05) 34px 36px),
+    linear-gradient(transparent, rgba(0,0,0,0.6));
+  -webkit-mask: linear-gradient(transparent, #000); mask: linear-gradient(transparent, #000); }
+
+#app { height: 100%; display: grid; grid-template-columns: minmax(240px, 38%) 1fr; gap: 14px;
+  padding: max(14px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 30px max(16px, env(safe-area-inset-left)); }
+section { min-height: 0; display: flex; flex-direction: column; }
+.logo { font-size: 30px; font-weight: 800; letter-spacing: 3px; line-height: 1.1; }
+.logo span { color: var(--accent); font-size: 18px; margin-left: 6px; vertical-align: super; }
+.tag { color: var(--muted); margin-bottom: 10px; }
+h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--accent); margin: 6px 0 8px; }
+
+.news { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.news .date { color: var(--muted); font-size: 11px; }
+.news b { display: block; margin: 2px 0; }
+.news p { margin: 0; color: #cfd6de; font-size: 13px; }
+
+.head { display: flex; align-items: center; justify-content: space-between; }
+.tools { display: flex; gap: 6px; }
+.icon { width: 36px; height: 36px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); font-size: 18px; }
+.icon:active { background: rgba(255,138,61,0.35); }
+
+.servers { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; min-height: 70px; }
+.srv { display: flex; align-items: center; gap: 12px; text-align: left; width: 100%; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.srv.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.srv .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+.srv .dot.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.srv .dot.bad { background: var(--bad); }
+.srv .info { flex: 1; min-width: 0; }
+.srv .name { font-weight: 700; }
+.srv .addr { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.srv .stat { text-align: right; font-size: 12px; color: var(--muted); }
+.srv .stat b { display: block; font-size: 15px; color: var(--text); }
+.bar { height: 4px; width: 70px; border-radius: 2px; background: rgba(255,255,255,0.1); margin-top: 4px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--accent); }
+.srv .del { background: none; border: none; color: var(--muted); font-size: 16px; padding: 4px; }
+.empty { color: var(--muted); padding: 14px; text-align: center; border: 1px dashed var(--line); border-radius: 12px; }
+
+.profile { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; margin-top: 10px; }
+label { color: var(--muted); font-size: 12px; }
+input, select { display: block; width: 100%; margin-top: 3px; font: inherit; font-size: 15px; color: var(--text);
+  background: rgba(0,0,0,0.4); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; outline: none; user-select: text; -webkit-user-select: text; }
+input:focus { border-color: var(--accent); }
+.play { height: 46px; padding: 0 34px; border: none; border-radius: 12px; background: var(--accent); color: #1b1007;
+  font-size: 17px; font-weight: 800; letter-spacing: 2px; box-shadow: 0 6px 20px rgba(255,138,61,0.35); }
+.play:active { transform: translateY(1px); filter: brightness(1.1); }
+.play:disabled { opacity: 0.5; box-shadow: none; }
+.msg { min-height: 20px; margin-top: 6px; color: #ffb4a8; font-size: 13px; }
+
+footer { position: fixed; left: 16px; bottom: 8px; color: var(--muted); font-size: 11px; }
+
+.dlg { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: grid; place-items: center; padding: 16px; }
+.dlg .box { width: min(420px, 100%); max-height: 90vh; overflow: auto; background: #1a1f28; border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+.dlg h3 { margin: 0 0 10px; }
+.dlg p { color: #cfd6de; margin: 6px 0; }
+.dlg label { display: block; margin: 8px 0; }
+.seg { display: flex; gap: 6px; margin-top: 4px; }
+.seg button { flex: 1; padding: 9px; border-radius: 10px; background: rgba(255,255,255,0.06); border: 1px solid var(--line); }
+.seg button.on { background: var(--accent); color: #1b1007; border-color: transparent; font-weight: 700; }
+.dlg .check, .check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }
+.check input { display: inline-block; width: 18px; height: 18px; margin: 0; flex: none; }
+.actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.btn { padding: 9px 16px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255,255,255,0.07); }
+.btn.primary { background: var(--accent); color: #1b1007; border-color: transparent; font-weight: 700; }
+
+@media (max-width: 640px), (max-height: 360px) {
+  .logo { font-size: 24px; }
+  .profile { grid-template-columns: 1fr 1fr; }
+  .play { grid-column: 1 / -1; }
+}
+@media (max-width: 560px) {
+  html, body { overflow: auto; }
+  #app { grid-template-columns: 1fr; height: auto; }
+  .news { max-height: 180px; }
+}

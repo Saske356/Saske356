@@ -11,6 +11,10 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
 const DB_FILE = path.join(DATA_DIR, 'players.json');
+const NEWS_FILE = path.join(ROOT, 'news.json');
+const SERVER_NAME = process.env.SERVER_NAME || 'Новоград #1';
+const MAX_PLAYERS = Number(process.env.MAX_PLAYERS) || 100;
+const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
 
 // ---------- Статика ----------
 const MIME = {
@@ -26,6 +30,12 @@ const MOUNTS = [
 const server = http.createServer((req, res) => {
   let url;
   try { url = decodeURIComponent(new URL(req.url, 'http://x').pathname); } catch { res.writeHead(400); return res.end(); }
+  if (url === '/api/status') {
+    let news = [];
+    try { news = JSON.parse(fs.readFileSync(NEWS_FILE, 'utf8')); } catch {}
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' });
+    return res.end(JSON.stringify({ name: SERVER_NAME, online: players.size, max: MAX_PLAYERS, version: VERSION, news }));
+  }
   if (url === '/') url = '/index.html';
   for (const [prefix, dir] of MOUNTS) {
     if (!url.startsWith(prefix)) continue;
@@ -109,6 +119,7 @@ function login(ws, m) {
   if (!/^[A-Z][a-z]{1,15}_[A-Z][a-z]{1,15}$/.test(name))
     return fail('Ник должен быть в формате Имя_Фамилия латиницей, например Ivan_Petrov');
   if (pass.length < 4 || pass.length > 64) return fail('Пароль должен быть от 4 до 64 символов');
+  if (players.size >= MAX_PLAYERS) return fail('Сервер переполнен, попробуйте позже');
   const key = name.toLowerCase();
   for (const q of players.values()) if (q.key === key) return fail('Этот персонаж уже в игре');
   let prof = db[key], isNew = false;
