@@ -951,7 +951,7 @@ const fmt = n => Math.floor(n).toLocaleString('ru-RU');
 class Pool {
   constructor(cap, make) { this.items = new Array(cap); for (let i = 0; i < cap; i++) this.items[i] = make(); this.n = 0; this.cap = cap; }
   spawn() { return this.n < this.cap ? this.items[this.n++] : null; }
-  kill(i) { const last = --this.n; const t = this.items[i]; this.items[i] = this.items[last]; this.items[last] = t; }
+  kill(i) { if (i < 0 || i >= this.n) return; const last = --this.n; const t = this.items[i]; this.items[i] = this.items[last]; this.items[last] = t; }
   clear() { this.n = 0; }
 }
 // Кэш строк для чисел урона (без аллокаций на каждый удар)
@@ -3052,7 +3052,7 @@ function updatePBullets(dt) {
 function updateEBullets(dt) {
   const R2 = (CFG.ARENA_R + 50) * (CFG.ARENA_R + 50);
   for (let i = ebul.n - 1; i >= 0; i--) {
-    const b = ebul.items[i]; b.life -= dt;
+    if (i >= ebul.n) continue; const b = ebul.items[i]; b.life -= dt;
     if (b.acc > 0 && b.life > 3) { // самонаводящиеся «тёмные искры» Сердца Бездны
       const a = Math.atan2(b.vy, b.vx), ta = Math.atan2(P.y - b.y, P.x - b.x), s = Math.hypot(b.vx, b.vy), na = a + clamp(angDiff(a, ta), -b.acc * dt, b.acc * dt);
       b.vx = Math.cos(na) * s; b.vy = Math.sin(na) * s; }
@@ -3061,7 +3061,7 @@ function updateEBullets(dt) {
     if (b.life <= 0 || b.x * b.x + b.y * b.y > R2) { ebul.kill(i); continue; }
     if (P.dead) continue;
     const dx = P.x - b.x, dy = P.y - b.y, d2 = dx * dx + dy * dy, rr = b.r + P.r * 0.7;
-    if (d2 < rr * rr) { if (P.inv <= 0 && P.dashT <= 0) { hurtPlayer(b.dmg); ebul.kill(i); } continue; }
+    if (d2 < rr * rr) { if (P.inv <= 0 && P.dashT <= 0) { const n0 = ebul.n; hurtPlayer(b.dmg); if (ebul.n !== n0) break; ebul.kill(i); } continue; } // удар мог стереть все пули
     if (!b.grazed) { const gr = rr + 24; if (d2 < gr * gr) { b.grazed = true; P.flare = Math.min(100, P.flare + 1.6 * ST.flareMul); G.score += 5;
       part(b.x, b.y, rand(-30, 30), rand(-30, 30), 0.3, 6, C.GOLD, 2); sfx.graze(); } }
   }
@@ -3130,9 +3130,10 @@ const ZONE_ACCENTS = [
 const DEMO = [];
 const XPC = [C.ICE, C.EMER, C.GOLD], XPS = [3.6, 5, 6.8]; // цвет и размер искр опыта по тирам // декоративные существа титульного экрана
 
+let SQX = 1, SQY = 1; // сжатие/растяжение спрайта вдоль/поперёк тела (удар, рывок, появление)
 function setXf(x, y, ang, sc, fl) { const cs = Math.cos(ang) * sc * WS, sn = Math.sin(ang) * sc * WS;
   // fl: рисованный «вид сбоку» — плывя влево, рыба зеркалится, а не переворачивается брюхом вверх
-  if (fl && cs < 0) ctx.setTransform(cs, sn, sn, -cs, OX + x * WS, OY + y * WS); else ctx.setTransform(cs, sn, -sn, cs, OX + x * WS, OY + y * WS); }
+  if (fl && cs < 0) ctx.setTransform(cs * SQX, sn * SQX, sn * SQY, -cs * SQY, OX + x * WS, OY + y * WS); else ctx.setTransform(cs * SQX, sn * SQX, -sn * SQY, cs * SQY, OX + x * WS, OY + y * WS); }
 function setWorld() { ctx.setTransform(WS, 0, 0, WS, OX, OY); }
 /* ============ АНИМАЦИЯ СУЩЕСТВ: волна по полоскам спрайта ============
    Спрайт режется на тонкие полоски, каждая сдвигается по своей фазе — изгибается хвост,
@@ -3144,14 +3145,14 @@ const ANIM = {drifter: 'swim', dart: 'swim', fry: 'swim', jelly: 'jelly', squid:
   boss1: 'fin', boss2: 'pulse', boss4: 'swim', kingcrab: 'crab', kingcrab_bare: 'crab', queen: 'jelly'};
 const ANIM_LIVE = {boss1: 1, boss2: 1, boss4: 1, kingcrab: 1, kingcrab_bare: 1, queen: 1};
 const ANIM_F = {swim: 1.7, fin: 1.1, tent: 1.15, jelly: 0.7, jellyV: 0.7, crab: 2.6, pulse: 0.8, flap: 1.3, orb: 1.6}; // циклов в секунду
-const ANIM_N = 8; let SPR_PH = 0, BAKE_LEFT = 2;
+const ANIM_N = 12; let SPR_PH = 0, SPR_T = -1, BAKE_LEFT = 3; // SPR_T — часы анимации текущего существа (быстрее, когда оно быстро плывёт)
 const ANIM_CODE = {jelly: 'jellyV', queen: 'jellyV', ray: 'flap'}; // родные модели: медуза нарисована куполом вверх, скат — крыльями в стороны
 function animOf(key) { const s = SPR[key], art = s && s.art; if (!art && ANIM_CODE[key]) return ANIM_CODE[key];
   return ANIM[key] || (key.startsWith('pl_') ? (art ? 'swim' : 'orb') : null); }
 /** Рисует src полосками в g (x0,y0 — левый верх, sc — масштаб пикселя), ph — фаза в радианах */
 function warpDraw(g, src, kind, ph, step, x0, y0, sc) {
   const W = src.width, H = src.height;
-  if (kind === 'pulse') { const k = 1 + 0.055 * Math.sin(ph), k2 = 1 + 0.055 * Math.sin(ph + 1.1);
+  if (kind === 'pulse') { const k = 1 + 0.07 * Math.sin(ph), k2 = 1 + 0.07 * Math.sin(ph + 1.1);
     g.save(); g.translate(x0 + W * sc / 2, y0 + H * sc / 2); g.rotate(Math.sin(ph * 0.5) * 0.06); g.scale(k, k2); g.drawImage(src, -W * sc / 2, -H * sc / 2, W * sc, H * sc); g.restore(); return; }
   if (kind === 'flap') { const k = 1 - 0.22 * Math.sin(ph); // скат машет крыльями
     g.save(); g.translate(x0 + W * sc / 2, y0 + H * sc / 2); g.scale(1, k); g.drawImage(src, -W * sc / 2, -H * sc / 2, W * sc, H * sc); g.restore(); return; }
@@ -3169,12 +3170,12 @@ function warpDraw(g, src, kind, ph, step, x0, y0, sc) {
     return; }
   for (let x = 0; x < W; x += step) {
     const u = (x + step / 2) / W; let dy = 0, sy = 1, dx = 0; // u: 0 — хвост (слева), 1 — голова (справа)
-    if (kind === 'swim') { const t = Math.pow(1 - u, 1.7); dy = Math.sin(ph - u * 5.2) * H * 0.095 * t; }
-    else if (kind === 'fin') { const t = Math.pow(1 - u, 2.2); dy = Math.sin(ph - u * 4) * H * 0.065 * t; }
-    else if (kind === 'tent') { const t = Math.max(0, (0.58 - u) / 0.58); dy = Math.sin(ph - u * 9) * H * 0.13 * t * t; sy = 1 - 0.03 * Math.sin(ph) * (1 - t); }
+    if (kind === 'swim') { const t = Math.pow(1 - u, 1.7); dy = Math.sin(ph - u * 5.2) * H * 0.12 * t; }
+    else if (kind === 'fin') { const t = Math.pow(1 - u, 2.2); dy = Math.sin(ph - u * 4) * H * 0.085 * t; }
+    else if (kind === 'tent') { const t = Math.max(0, (0.58 - u) / 0.58); dy = Math.sin(ph - u * 9) * H * 0.16 * t * t; sy = 1 - 0.03 * Math.sin(ph) * (1 - t); }
     else if (kind === 'jelly') { const bell = u > 0.5 ? (u - 0.5) / 0.5 : 0, t = Math.max(0, (0.62 - u) / 0.62);
-      sy = 1 + 0.11 * Math.sin(ph) * bell - 0.06 * Math.sin(ph - 1.3) * t; dx = (u - 0.75) * W * 0.06 * Math.sin(ph) * bell;
-      dy = Math.sin(ph - u * 10) * H * 0.1 * t; }
+      sy = 1 + 0.14 * Math.sin(ph) * bell - 0.07 * Math.sin(ph - 1.3) * t; dx = (u - 0.75) * W * 0.06 * Math.sin(ph) * bell;
+      dy = Math.sin(ph - u * 10) * H * 0.13 * t; }
     const h = H * sy;
     g.drawImage(src, x, 0, step, H, x0 + (x + dx) * sc, y0 + ((H - h) / 2 + dy) * sc, step * sc + 0.6, h * sc);
   }
@@ -3186,8 +3187,9 @@ function setAnim(key) { const s = SPR[key], k = animOf(key); if (!s || !k) retur
 function drawSpr(s, white) {
   if (!white && s.anim) {
     const f = ANIM_F[s.anim];
-    if (s.live) { const W = s.img.width, sc = s.h * 2 / W; warpDraw(ctx, s.img, s.anim, (G.t * f + SPR_PH) * TAU, Math.max(3, W / 70 | 0), -s.h, -s.h, sc); return; }
-    const i = ((((G.t * f + SPR_PH) * ANIM_N) % ANIM_N) + ANIM_N) % ANIM_N | 0;
+    const T = SPR_T >= 0 ? SPR_T : G.t;
+    if (s.live) { const W = s.img.width, sc = s.h * 2 / W; warpDraw(ctx, s.img, s.anim, (T * f + SPR_PH) * TAU, Math.max(3, W / 70 | 0), -s.h, -s.h, sc); return; }
+    const i = ((((T * f + SPR_PH) * ANIM_N) % ANIM_N) + ANIM_N) % ANIM_N | 0;
     if (!s.frames[i] && BAKE_LEFT > 0) { BAKE_LEFT--; bakeFrame(s, i); }
     if (s.frames[i]) { ctx.drawImage(s.frames[i], -s.h, -s.h, s.h * 2, s.h * 2); return; }
   }
@@ -3213,7 +3215,7 @@ function buildScreenCaches() {
 }
 /* ---------- декорации дна: свои для каждой зоны (только фон, без столкновений) ---------- */
 const DECOR = []; // {k, x, y, s, r, sw, p, a, lt}
-const DECOR_SWAY = {d_kelp: 0.18, d_anemone: 0.12, d_shroom: 0.04, d_coral: 0.03, d_coral2: 0.03};
+const DECOR_SWAY = {d_kelp: 0.22, d_anemone: 0.16, d_shroom: 0.06, d_coral: 0.04, d_coral2: 0.08};
 // какие объекты в какой зоне (по порядку ZONES)
 const DECOR_THEMES = [
   ['d_kelp', 'd_kelp', 'd_rock', 'd_shell'],               // Сумеречная толща
@@ -3430,7 +3432,7 @@ function renderDecor(g, rdt) {
     const sp = SPR[d.k], ext = sp.h * d.s;
     if (d.x + ext < x0 || d.x - ext > x1 || d.y + ext < y0 || d.y - ext > y1) continue;
     const sx = (W / 2 + (d.x - cx) * VS) * k, sy = (H / 2 + (d.y - cy) * VS) * k, sc = d.s * VS * k;
-    if (sp.art) { const dw = sp.dw; g.setTransform(sc, 0, 0, sc, sx, sy); g.globalAlpha = d.a; g.drawImage(DSHADOW, -dw * 0.42, dw * 0.3, dw * 0.84, dw * 0.2);
+    if (sp.art) { const dw = sp.dw, sw = d.sw ? Math.sin(G.t * 0.9 + d.p) * d.sw * 0.5 : 0, c0 = Math.cos(sw) * sc, s0 = Math.sin(sw) * sc; g.setTransform(c0, s0, -s0, c0, sx, sy); // водоросли и анемоны колышутся g.globalAlpha = d.a; g.drawImage(DSHADOW, -dw * 0.42, dw * 0.3, dw * 0.84, dw * 0.2);
       g.drawImage(sp.img, -sp.h, -sp.h, sp.h * 2, sp.h * 2); }
     else { const ang = d.r + (d.sw ? Math.sin(G.t * 0.9 + d.p) * d.sw : 0), cs = Math.cos(ang) * sc, sn = Math.sin(ang) * sc;
       g.setTransform(cs, sn, -sn, cs, sx, sy); g.globalAlpha = 0.9 * d.a; g.drawImage(sp.img, -sp.h, -sp.h, sp.h * 2, sp.h * 2); }
@@ -3555,7 +3557,10 @@ function renderWorld(rdt) {
   // враги: тела
   for (let i = 0; i < enemies.n; i++) {
     const e = it[i]; SPR_PH = e.phase / TAU; if (e.dead || !inView(e.x, e.y, e.r * 3 + (e.type === 'boss2' ? 260 : e.type === 'eel' ? 140 : 0))) continue;
-    let sc = e.scale; if (e.spawnT > 0) { sc *= 1 - e.spawnT / 0.4; ctx.globalAlpha = 1 - e.spawnT / 0.4; }
+    { const v = Math.hypot(e.vx, e.vy), k = Math.min(1.8, v / Math.max(20, e.spd || 60));
+      e.aT = (e.aT || 0) + (rdt || 0.016) * (0.55 + 0.85 * k); SPR_T = e.aT; // быстрее плывёт — чаще машет хвостом
+      const st = Math.max(0, k - 1) * 0.12, hit = e.flash > 0 ? 0.14 : 0; SQX = 1 + st - hit; SQY = 1 - st * 0.7 + hit; } // рывок вытягивает, удар сплющивает
+    let sc = e.scale; if (e.spawnT > 0) { const q = 1 - e.spawnT / 0.4; sc *= q < 0.7 ? q / 0.7 * 1.15 : 1.15 - (q - 0.7) / 0.3 * 0.15; ctx.globalAlpha = Math.min(1, q * 1.6); } // появление с «пружинкой»
     const wht = e.flash > 0;
     switch (e.type) {
       case 'jelly': { const ch = e.t > 2.6 ? (e.t - 2.6) / 0.7 : 0, pul = 1 + Math.sin(G.t * 4 + e.phase) * 0.06 + ch * 0.15;
@@ -3581,10 +3586,12 @@ function renderWorld(rdt) {
       default: {
         const breathe = 1 + Math.sin(G.t * (e.elite ? 3.1 : 2.35) + e.phase) * (e.elite ? 0.045 : 0.025);
         const drift = Math.sin(G.t * 1.7 + e.phase) * 1.4;
-        const dk = e.type === 'crab' && e.sh <= 0 ? 'crab_bare' : e.type; setXf(e.x, e.y + drift, e.ang, sc * breathe, SPR[dk].fl); drawSpr(SPR[dk], wht);
+        const dk = e.type === 'crab' && e.sh <= 0 ? 'crab_bare' : e.type, wob = SPR[dk].art ? Math.sin(G.t * 2.1 + e.phase) * 0.07 : 0; // лёгкое покачивание корпуса
+        setXf(e.x, e.y + drift, e.ang + wob, sc * breathe, SPR[dk].fl); drawSpr(SPR[dk], wht);
         break;
       }
     }
+    SQX = SQY = 1; SPR_T = -1;
     if (e.freeze > 0) { setWorld(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.7; glowAt(SOFT[C.ICE], e.x, e.y, e.r * e.scale * 2); ctx.globalCompositeOperation = 'source-over'; }
     else if (e.slow > 0 && hi) { setWorld(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.35; glowAt(SOFT[C.ICE], e.x, e.y, e.r * e.scale * 1.6); ctx.globalCompositeOperation = 'source-over'; }
     if (e.elite) { setWorld(); ctx.globalAlpha = 0.8; ctx.strokeStyle = PAL[C.GOLD]; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(e.x, e.y, e.r * e.scale * 1.35, G.t * 2, G.t * 2 + 4.6); ctx.stroke(); }
@@ -3608,8 +3615,10 @@ function renderWorld(rdt) {
     ctx.globalAlpha = 0.55 + 0.15 * Math.sin(G.t * 5); glowAt(SOFT[P.pal], P.x, P.y, P.dashT > 0 ? 70 : 46);
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     if (!(P.inv > 0 && (G.t * 16 | 0) % 2)) {
-      SPR_PH = 0; setXf(P.x, P.y, P.ang, 1, SPR['pl_' + P.skin].fl);
-      drawSpr(SPR['pl_' + P.skin], false);
+      SPR_PH = 0; { const v = Math.hypot(P.vx, P.vy), k = Math.min(1.6, v / Math.max(60, ST.speed || 200)); P.aT = (P.aT || 0) + (rdt || 0.016) * (0.5 + 1.1 * k); SPR_T = P.aT;
+        SQX = P.dashT > 0 ? 1.22 : 1 + 0.05 * k; SQY = P.dashT > 0 ? 0.84 : 1 - 0.03 * k; if (P.inv > 0.75) { SQX *= 0.9; SQY *= 1.1; } }
+      setXf(P.x, P.y, P.ang + Math.sin(G.t * 3) * 0.05, 1, SPR['pl_' + P.skin].fl);
+      drawSpr(SPR['pl_' + P.skin], false); SQX = SQY = 1; SPR_T = -1;
       if (!SPR['pl_' + P.skin].art) {
       // Подвижные боковые плавники и многослойное энергетическое ядро.
       const flap = Math.sin(G.t * 13) * 0.18, pulse = 1 + Math.sin(G.t * 6) * 0.07;
@@ -3882,7 +3891,7 @@ function renderHUD() {
   if (TUT.on && !G.boss) renderTut();
 }
 function render(dt) {
-  BAKE_LEFT = 2; // бюджет запекания кадров анимации на кадр игры
+  BAKE_LEFT = 3; // бюджет запекания кадров анимации на кадр игры
   // тряска
   const sh = G.shake, shx = sh > 0.3 ? (Math.random() * 2 - 1) * sh : 0, shy = sh > 0.3 ? (Math.random() * 2 - 1) * sh : 0;
   WS = VS * DPR; OX = DPR * W / 2 - (G.camX + shx) * WS; OY = DPR * H / 2 - (G.camY + shy) * WS;
@@ -4675,6 +4684,17 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) { if 
 
 const PERF = {frames: 0, sum: 0, max: 0, cpuSum: 0, cpuMax: 0, slow: 0, reset() { this.frames = this.sum = this.max = this.cpuSum = this.cpuMax = this.slow = 0; }};
 let lastT = performance.now(), lastP = -1, lastCd = -1, lastReady = false, prevState = '', rafAvg = 16.7, lastRaf = 0;
+/** Страховка: ошибка в кадре не должна замораживать игру. Чиним пулы объектов и продолжаем, ошибку запоминаем. */
+let faultN = 0;
+function gameFault(err) {
+  if (faultN++ < 3) console.error('game fault', err);
+  try { const L = S.errLog || (S.errLog = []); L.unshift(String(err && err.message || err).slice(0, 120) + ' @' + (G.zone * 100) + 'м'); L.length = Math.min(L.length, 5); persist(); } catch (e) {}
+  for (const p of [enemies, pbul, ebul, parts, rings, texts, bolts, picks, mines]) {
+    if (!p || !p.items) continue; p.n = Math.max(0, Math.min(p.n, p.items.length));
+    for (let i = p.n - 1; i >= 0; i--) if (!p.items[i]) { const last = --p.n; p.items[i] = p.items[last]; p.items[last] = null; }
+  }
+  for (const p of [enemies, pbul, ebul, parts, rings, texts, bolts, picks, mines]) if (p && p.items) for (let i = 0; i < p.items.length; i++) if (!p.items[i]) p.items[i] = {dead: true};
+}
 function frame(now) {
   requestAnimationFrame(frame);
   // На экранах 120 Гц: при настройке «60» рисуем каждый второй кадр — меньше нагрев и расход батареи
@@ -4690,7 +4710,7 @@ function frame(now) {
     let dt = rdt;
     if (G.hitStop > 0) { G.hitStop -= rdt; dt = rdt * 0.06; }
     if (G.dying > 0) { G.dying -= rdt; dt = rdt * 0.35; if (G.dying <= 0) { updateRun(dt, rdt); if (!offerRevive()) gameOver(); } }
-    if (G.state === 'play') updateRun(dt, rdt);
+    if (G.state === 'play') { try { updateRun(dt, rdt); } catch (err) { gameFault(err); } }
     // HUD-кнопки обновляются только при изменении (без лишних перерасчётов стилей)
     const p = Math.floor(P.flare) / 100;
     if (p !== lastP) { lastP = p; $('bFlare').style.setProperty('--p', p); const r = P.flare >= 100; if (r !== lastReady) { lastReady = r; $('bFlare').classList.toggle('ready', r); } }
@@ -4710,7 +4730,7 @@ function frame(now) {
   qualityTick(raw * 1000);
   // QA: на паузе и выборе улучшения мир заморожен — не перерисовываем его каждый кадр
   if (G.state !== prevState) { prevState = G.state; G.redraw = 2; }
-  if ((G.state !== 'pause' && G.state !== 'levelup') || G.redraw > 0) { render(rdt); if (G.redraw > 0) G.redraw--; }
+  if ((G.state !== 'pause' && G.state !== 'levelup') || G.redraw > 0) { try { render(rdt); } catch (err) { gameFault(err); } if (G.redraw > 0) G.redraw--; }
   const cpu = performance.now() - c0;
   PERF.frames++; PERF.sum += raw * 1000; if (raw * 1000 > PERF.max) PERF.max = raw * 1000; if (raw > 1 / 45) PERF.slow++;
   PERF.cpuSum += cpu; if (cpu > PERF.cpuMax) PERF.cpuMax = cpu;
@@ -4723,7 +4743,7 @@ applyLang(); dailyCheck(); applyQuality(); updMute(); startIntro();
 requestAnimationFrame(t => { lastT = t; frame(t); });
 
 // Хук для автотестов и отладки (QA): window.__SB
-window.__SB = {G, P, S, ST, Mus, warpDraw, DECOR, buildDecor, hurtPlayer, drawIcon, UPG, Ads, adGift, updGift, spawnEnemy, damageEnemy, pickType, updateRun, rollChoices, takeUpgrade, computeStats, SHOP, CFG, ET, PERF, SPR, DECOR, enemies, ebul, pbul, parts, picks, startRun, pauseGame, resumeGame, gameOver,
+window.__SB = {G, P, S, ST, Mus, ebul, warpDraw, DECOR, buildDecor, hurtPlayer, drawIcon, UPG, Ads, adGift, updGift, spawnEnemy, damageEnemy, pickType, updateRun, rollChoices, takeUpgrade, computeStats, SHOP, CFG, ET, PERF, SPR, DECOR, enemies, ebul, pbul, parts, picks, startRun, pauseGame, resumeGame, gameOver,
   jumpZone(z) { G.zone = z - 1; G.zoneT = CFG.ZONE_TIME; }, giveXP(n) { addXP(n); }, god(on) { G.god = !!on; },
   up(id, n) { P.up[id] = (P.up[id] || 0) + (n || 1); computeStats(); }, killBoss() { if (G.boss) killEnemy(G.boss, null); },
   intro: startIntro, ending() { G.zone = 15; G.victory = true; startEnding(); }, TUT, END, INTRO, renderAch,
