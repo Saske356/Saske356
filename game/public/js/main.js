@@ -60,8 +60,15 @@ const r2 = (v) => Math.round(v * 100) / 100;
 let ws = null;
 const send = (m) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); };
 
+// Если игра открыта из кэша лаунчера, адрес сервера приходит в ?server=http://ip:порт.
+function wsUrl() {
+  const srv = new URLSearchParams(location.search).get('server');
+  const base = srv ? new URL(srv) : location;
+  return (base.protocol === 'https:' ? 'wss://' : 'ws://') + base.host + '/ws';
+}
+
 function connect(name, pass) {
-  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+  ws = new WebSocket(wsUrl());
   ws.onopen = () => send({ t: 'login', name, pass });
   ws.onmessage = (e) => onMessage(JSON.parse(e.data));
   ws.onclose = () => {

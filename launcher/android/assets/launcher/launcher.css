@@ -11,6 +11,7 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden;
   font: 14px/1.4 "Segoe UI", Roboto, system-ui, sans-serif; user-select: none; -webkit-user-select: none; }
+body { background: transparent; }
 [hidden] { display: none !important; }
 button { font: inherit; color: inherit; cursor: pointer; }
 
@@ -19,6 +20,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
     radial-gradient(ellipse at 80% 0%, rgba(255,138,61,0.22), transparent 55%),
     radial-gradient(ellipse at 0% 100%, rgba(63,155,255,0.18), transparent 55%),
     linear-gradient(160deg, #161a22, #0d1015); }
+.bg.has-art { background-size: cover; background-position: center; }
+.bg.has-art::before { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(13,16,21,0.92) 0%, rgba(13,16,21,0.55) 45%, rgba(13,16,21,0.8) 100%); }
+.bg.has-art::after { display: none; }
+.logoimg { max-width: 260px; max-height: 70px; object-fit: contain; object-position: left; display: block; }
 .bg::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 42%; opacity: 0.35;
   background: repeating-linear-gradient(90deg, transparent 0 34px, rgba(255,255,255,0.05) 34px 36px),
     linear-gradient(transparent, rgba(0,0,0,0.6));
@@ -97,3 +102,19 @@ footer { position: fixed; left: 16px; bottom: 8px; color: var(--muted); font-siz
   #app { grid-template-columns: 1fr; height: auto; }
   .news { max-height: 180px; }
 }
+
+.srv { border-left: 4px solid var(--srv, var(--line)); }
+.srv.on { border-left-color: var(--srv, var(--accent)); }
+
+.load { position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; padding: 16px;
+  background: rgba(10, 12, 16, 0.86); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.loadbox { width: min(520px, 100%); text-align: center; }
+.logo.small { font-size: 22px; margin-bottom: 16px; }
+.loadtitle { font-size: 16px; font-weight: 600; margin-bottom: 14px; }
+.progress { height: 12px; border-radius: 6px; background: rgba(255,255,255,0.08); overflow: hidden; border: 1px solid var(--line); }
+.progress i { display: block; height: 100%; width: 0; border-radius: 6px; transition: width 0.15s linear;
+  background: linear-gradient(90deg, #ff6a2b, var(--accent), #ffb27a); background-size: 200% 100%; animation: shine 1.4s linear infinite; }
+@keyframes shine { to { background-position: -200% 0; } }
+.loadrow { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; margin-top: 8px; }
+.loadrow span:first-child { color: var(--text); font-weight: 700; }
+.loadfile { color: var(--muted); font-size: 11px; margin: 6px 0 14px; min-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

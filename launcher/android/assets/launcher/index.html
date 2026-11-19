@@ -11,7 +11,8 @@
   <main id="app">
     <section class="side">
       <header>
-        <div class="logo">НОВОГРАД<span>RP</span></div>
+        <img id="logoimg" class="logoimg" alt="" hidden>
+        <div class="logo" id="logotext">НОВОГРАД<span>RP</span></div>
         <div class="tag">Ролевая игра в открытом городе</div>
       </header>
       <h2>Новости</h2>
@@ -42,6 +43,17 @@
     </section>
   </main>
   <footer><span id="ver"></span></footer>
+
+  <div id="load" class="load" hidden>
+    <div class="loadbox">
+      <div class="logo small">НОВОГРАД<span>RP</span></div>
+      <div id="loadtitle" class="loadtitle">Загрузка игровых файлов</div>
+      <div class="progress"><i id="loadbar"></i></div>
+      <div class="loadrow"><span id="loadpct">0%</span><span id="loadsize"></span><span id="loadspeed"></span></div>
+      <div id="loadfile" class="loadfile"></div>
+      <button id="loadcancel" class="btn" type="button">Отмена</button>
+    </div>
+  </div>
 
   <div id="dlg" class="dlg" hidden>
     <div class="box">

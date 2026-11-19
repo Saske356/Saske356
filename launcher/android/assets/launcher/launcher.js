@@ -48,7 +48,7 @@
     try {
       const r = await fetch(url + '/api/status', { signal: ctl.signal, cache: 'no-store' });
       const j = await r.json();
-      status[url] = { ok: true, ping: Math.round(performance.now() - t0), online: j.online | 0, max: j.max | 0, name: j.name, news: Array.isArray(j.news) ? j.news : [], version: j.version };
+      status[url] = { ok: true, ping: Math.round(performance.now() - t0), online: j.online | 0, max: j.max | 0, name: j.name, news: Array.isArray(j.news) ? j.news : [], version: j.version, color: j.color };
     } catch {
       status[url] = { ok: false };
     } finally {
@@ -76,6 +76,7 @@
     for (const s of list) {
       const st = status[s.url] || {};
       const b = el('button', 'srv' + (s.url === selected ? ' on' : ''));
+      if (st.ok && /^#[0-9a-f]{6}$/i.test(st.color || '')) b.style.setProperty('--srv', st.color);
       b.type = 'button';
       b.append(el('span', 'dot' + (st.ok ? ' ok' : st.pending ? '' : ' bad')));
       const info = el('div', 'info');
@@ -171,7 +172,11 @@
     const rem = el('label', 'check');
     const cb = el('input'); cb.type = 'checkbox'; cb.checked = settings.remember;
     rem.append(cb, document.createTextNode('Запоминать пароль'));
-    dialog('Настройки', [ql, el('p', null, 'Низкая — без теней и с меньшим трафиком, для слабых телефонов.'), rem], [
+    const verify = el('button', 'btn', 'Перекачать файлы игры');
+    verify.type = 'button';
+    verify.hidden = !app || !selected;
+    verify.addEventListener('click', () => { app.clearCache(selected); verify.textContent = 'Файлы удалены — скачаются при входе'; verify.disabled = true; });
+    dialog('Настройки', [ql, el('p', null, 'Низкая — без теней и с меньшим трафиком, для слабых телефонов.'), rem, verify], [
       ['Готово', () => {
         settings.remember = cb.checked;
         store.set('settings', settings);
@@ -197,8 +202,71 @@
     msg('');
     store.set('nick', nick);
     if (settings.remember) store.set('pass', pass);
-    if (app) app.play(selected, nick, pass, settings.quality);
-    else location.href = `${selected}/?q=${settings.quality}`;
+    if (!app) { location.href = `${selected}/?q=${settings.quality}`; return; }
+    prepareAndPlay(selected, nick, pass);
+  });
+
+  // ---------- Игровой кэш ----------
+  const fmtSize = (b) => b >= 1048576 ? (b / 1048576).toFixed(1).replace('.', ',') + ' МБ' : Math.max(1, Math.round(b / 1024)) + ' КБ';
+  let pending = null; // { url, nick, pass }
+
+  function showLoad(title) {
+    $('loadtitle').textContent = title;
+    $('loadbar').style.width = '0%';
+    $('loadpct').textContent = '0%';
+    $('loadsize').textContent = ''; $('loadspeed').textContent = ''; $('loadfile').textContent = '';
+    $('loadcancel').hidden = false;
+    $('load').hidden = false;
+  }
+  function hideLoad() { $('load').hidden = true; }
+
+  function prepareAndPlay(url, nick, pass) {
+    pending = { url, nick, pass };
+    $('play').disabled = true;
+    showLoad('Проверка игровых файлов…');
+    $('loadcancel').hidden = true;
+    app.checkCache(url);
+  }
+  function launch() {
+    const p = pending; pending = null;
+    hideLoad();
+    $('play').disabled = false;
+    if (p) app.play(p.url, p.nick, p.pass, settings.quality);
+  }
+  function failLoad(text) {
+    pending = null;
+    hideLoad();
+    $('play').disabled = false;
+    msg(text);
+  }
+
+  window.onCacheCheck = (r) => {
+    if (!pending) return;
+    if (!r.ok) {
+      // без связи можно играть на старых файлах, но сервер всё равно нужен для мультиплеера
+      return failLoad(r.error || 'Не удалось проверить файлы игры');
+    }
+    if (r.files === 0) return launch();
+    showLoad(r.ready ? `Обновление игры до версии ${r.version}` : 'Загрузка игровых файлов');
+    $('loadsize').textContent = `0 из ${fmtSize(r.bytes)}`;
+    app.downloadCache(pending.url);
+  };
+  window.onCacheProgress = (p) => {
+    const pct = p.total ? Math.min(100, Math.floor((p.done / p.total) * 100)) : 100;
+    $('loadbar').style.width = pct + '%';
+    $('loadpct').textContent = pct + '%';
+    $('loadsize').textContent = `${fmtSize(p.done)} из ${fmtSize(p.total)} · файлов ${p.files}/${p.totalFiles}`;
+    $('loadspeed').textContent = p.speed ? fmtSize(p.speed) + '/с' : '';
+    $('loadfile').textContent = p.file || '';
+  };
+  window.onCacheDone = (r) => {
+    if (!pending) return;
+    if (r.ok) { $('loadbar').style.width = '100%'; $('loadpct').textContent = '100%'; setTimeout(launch, 300); }
+    else failLoad(r.error || 'Загрузка прервалась. Нажмите «Играть», чтобы продолжить');
+  };
+  $('loadcancel').addEventListener('click', () => {
+    if (app) app.cancelDownload();
+    failLoad('Загрузка остановлена. Нажмите «Играть», чтобы продолжить с того же места');
   });
 
   $('refresh').addEventListener('click', refresh);
@@ -207,7 +275,19 @@
   $('ver').textContent = app ? 'Лаунчер v' + app.version() : 'Лаунчер (веб-версия)';
 
   window.onLauncherResume = refresh;
-  window.onLauncherBack = () => { if (onDlgBack) { onDlgBack(); return true; } return false; };
+  window.onLauncherBack = () => {
+    if (!$('load').hidden) { if (!$('loadcancel').hidden) $('loadcancel').click(); return true; }
+    if (onDlgBack) { onDlgBack(); return true; }
+    return false;
+  };
+
+  // Иллюстрации: если в img/ лежат bg.jpg и logo.png — показываем их вместо оформления по умолчанию.
+  const bgImg = new Image();
+  bgImg.onload = () => { const b = document.querySelector('.bg'); b.style.backgroundImage = 'url(img/bg.jpg)'; b.classList.add('has-art'); };
+  bgImg.src = 'img/bg.jpg';
+  const logo = $('logoimg');
+  logo.onload = () => { logo.hidden = false; $('logotext').hidden = true; };
+  logo.src = 'img/logo.png';
 
   refresh();
   setInterval(refresh, 15000);

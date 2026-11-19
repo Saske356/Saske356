@@ -9,10 +9,13 @@ import android.webkit.ValueCallback;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.WebResourceRequest;
+import org.json.JSONObject;
+import java.io.File;
 
 /** Лаунчер: интерфейс из assets/launcher, мост в Java через объект NovogradApp. */
 public class MainActivity extends Activity {
     private WebView web;
+    private volatile CacheSync running;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -70,6 +73,12 @@ public class MainActivity extends Activity {
         super.onDestroy();
     }
 
+    private static void deleteTree(File f) {
+        File[] kids = f.listFiles();
+        if (kids != null) for (File k : kids) deleteTree(k);
+        f.delete();
+    }
+
     private void openExternal(String url) {
         try {
             startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
@@ -77,7 +86,96 @@ public class MainActivity extends Activity {
         }
     }
 
+    static File cacheRoot(Activity a) {
+        return new File(a.getFilesDir(), "gamecache");
+    }
+
+    /** Вызов JS-функции лаунчера с объектом-аргументом из UI-потока. */
+    private void emit(final String fn, final JSONObject arg) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                web.evaluateJavascript("window." + fn + " && window." + fn + "(" + arg + ")", null);
+            }
+        });
+    }
+
+    private static JSONObject obj(Object... kv) {
+        JSONObject o = new JSONObject();
+        try {
+            for (int i = 0; i < kv.length; i += 2) o.put((String) kv[i], kv[i + 1]);
+        } catch (org.json.JSONException ignored) {
+        }
+        return o;
+    }
+
+    private static String message(Exception e) {
+        String m = e.getMessage();
+        if (e instanceof java.net.UnknownHostException) return "Сервер не найден — проверьте адрес";
+        if (e instanceof java.net.ConnectException) return "Сервер не отвечает";
+        if (e instanceof java.net.SocketTimeoutException) return "Слишком долгий ответ сервера — проверьте интернет";
+        return m == null ? e.getClass().getSimpleName() : m;
+    }
+
     private class Bridge {
+        /** Проверка кэша: отвечает в window.onCacheCheck({ok, files, bytes, version, ready, error}). */
+        @JavascriptInterface
+        public void checkCache(final String url) {
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    CacheSync s = new CacheSync(url, cacheRoot(MainActivity.this));
+                    try {
+                        CacheSync.Plan p = s.check();
+                        emit("onCacheCheck", obj("ok", true, "files", p.missing.size(), "bytes", p.missingBytes,
+                                "version", p.version == null ? "" : p.version, "ready", s.isReady()));
+                    } catch (Exception e) {
+                        emit("onCacheCheck", obj("ok", false, "error", message(e), "ready", s.isReady()));
+                    }
+                }
+            }, "cache-check").start();
+        }
+
+        /** Загрузка кэша: прогресс в window.onCacheProgress, итог в window.onCacheDone({ok, error}). */
+        @JavascriptInterface
+        public void downloadCache(final String url) {
+            if (running != null) return;
+            final CacheSync s = new CacheSync(url, cacheRoot(MainActivity.this));
+            running = s;
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        CacheSync.Plan p = s.check();
+                        s.sync(p, new CacheSync.Listener() {
+                            @Override
+                            public void onProgress(long done, long total, int files, int totalFiles, long speed, String file) {
+                                emit("onCacheProgress", obj("done", done, "total", total, "files", files,
+                                        "totalFiles", totalFiles, "speed", speed, "file", file));
+                            }
+                        });
+                        emit("onCacheDone", obj("ok", true));
+                    } catch (Exception e) {
+                        emit("onCacheDone", obj("ok", false, "error", message(e)));
+                    } finally {
+                        running = null;
+                    }
+                }
+            }, "cache-download").start();
+        }
+
+        @JavascriptInterface
+        public void cancelDownload() {
+            CacheSync s = running;
+            if (s != null) s.cancel();
+        }
+
+        /** Удаляет кэш сервера (кнопка «Проверить файлы» / «Очистить кэш»). */
+        @JavascriptInterface
+        public void clearCache(String url) {
+            deleteTree(CacheSync.folderFor(cacheRoot(MainActivity.this), url));
+        }
+
         @JavascriptInterface
         public void play(String url, String nick, String pass, String quality) {
             final Intent i = new Intent(MainActivity.this, GameActivity.class);
