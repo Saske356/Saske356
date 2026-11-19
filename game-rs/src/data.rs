@@ -6,7 +6,7 @@ pub const PI: f32 = std::f32::consts::PI;
 
 pub mod cfg {
     pub const ARENA_R: f32 = 1250.0;
-    pub const MAX_ENEMIES: usize = 170;
+    pub const MAX_ENEMIES: usize = 200;
     pub const CRAB_MAX: usize = 6;
     pub const RAY_MAX: usize = 5;
     pub const SPAWNER_MAX: usize = 3;
@@ -103,6 +103,8 @@ upgs! {
     HARPOON = "harpoon", 3, c::AMBER; BEAM = "beam", 4, c::ICE; AURA = "aura", 4, c::PURP; TWIN = "twin", 3, c::CYAN;
     STATIC = "static", 3, c::GOLD; RAGE = "rage", 3, c::CORAL; INK = "ink", 2, c::PURP; VORTEX = "vortex", 2, c::ICE;
     THORNS = "thorns", 3, c::AMBER; GREED = "greed", 3, c::GOLD;
+    SALVO = "salvo", 3, c::CYAN; SEEKER = "seeker", 3, c::FIRE; CALIBER = "caliber", 3, c::WHITE; EXECUTE = "execute", 3, c::CORAL;
+    CHILL = "chill", 2, c::ICE; DASHNOVA = "dashnova", 2, c::JELLY; MARK = "mark", 3, c::CRAB; FORTUNE = "fortune", 3, c::GOLD;
     STORM = "storm", 1, c::GOLD, syn(ORBIT, 2, CHAIN, 2); SUPERNOVA = "supernova", 1, c::GOLD, syn(NOVA, 2, CRIT, 2);
     PRISM = "prism", 1, c::GOLD, syn(MULTI, 2, BOUNCE, 1); ABYSSICE = "abyssice", 1, c::GOLD, syn(FROST, 1, MINE, 2);
     HUNTER = "hunter", 1, c::GOLD, syn(HOMING, 1, PIERCE, 2); TIDE = "tide", 1, c::GOLD, syn(DASH, 2, SPEED, 2);
@@ -111,16 +113,21 @@ upgs! {
     LIGHTHOUSE = "lighthouse", 1, c::GOLD, syn(BEAM, 2, FROST, 1); MAELSTROM = "maelstrom", 1, c::GOLD, syn(AURA, 2, VORTEX, 1);
     CHOIR = "choir", 1, c::GOLD, syn(TWIN, 2, MULTI, 2); TEMPEST = "tempest", 1, c::GOLD, syn(STATIC, 2, CHAIN, 1);
     KRAKEN = "kraken", 1, c::GOLD, syn(INK, 1, THORNS, 2);
+    HURRICANE = "hurricane", 1, c::GOLD, syn(SALVO, 2, MULTI, 2); BOMBARD = "bombard", 1, c::GOLD, syn(SEEKER, 2, NOVA, 1);
+    REAPER = "reaper", 1, c::GOLD, syn(EXECUTE, 2, CRIT, 2); BLIZZARD = "blizzard", 1, c::GOLD, syn(CHILL, 1, FROST, 2);
 }
 /// Особая карта «Чистый свет», когда улучшения кончились
 pub const U_HEAL: usize = usize::MAX;
 
 pub struct CharDef { pub id: &'static str, pub cost: u32, pub hp: f32, pub speed: f32, pub rate: f32, pub dmg: f32, pub pierce: u8, pub orb: u8, pub armor: f32, pub dash_cd: f32, pub col: u8 }
-pub static CHARS: [CharDef; 4] = [
+pub static CHARS: [CharDef; 7] = [
     CharDef { id: "lumen", cost: 0, hp: 100., speed: 1., rate: 1., dmg: 1., pierce: 0, orb: 0, armor: 0., dash_cd: 1., col: c::CYAN },
     CharDef { id: "needle", cost: 250, hp: 70., speed: 1.15, rate: 1.2, dmg: 1., pierce: 1, orb: 0, armor: 0., dash_cd: 0.65, col: c::EMER },
     CharDef { id: "shell", cost: 400, hp: 160., speed: 0.88, rate: 0.9, dmg: 1.1, pierce: 0, orb: 2, armor: 2., dash_cd: 1.2, col: c::AMBER },
     CharDef { id: "squall", cost: 500, hp: 60., speed: 1.08, rate: 1., dmg: 1.3, pierce: 1, orb: 0, armor: 0., dash_cd: 0.8, col: c::FIRE },
+    CharDef { id: "warden", cost: 800, hp: 230., speed: 0.82, rate: 0.85, dmg: 1., pierce: 0, orb: 1, armor: 4., dash_cd: 1.3, col: c::CORAL },
+    CharDef { id: "storm", cost: 950, hp: 80., speed: 1.1, rate: 1.5, dmg: 0.78, pierce: 0, orb: 0, armor: 0., dash_cd: 0.9, col: c::ICE },
+    CharDef { id: "phantom", cost: 1200, hp: 85., speed: 1.25, rate: 1., dmg: 1.15, pierce: 2, orb: 0, armor: 0., dash_cd: 0.45, col: c::GHOST },
 ];
 
 pub struct SkinDef { pub id: &'static str, pub pal: u8, pub cost: u32, pub win: bool }

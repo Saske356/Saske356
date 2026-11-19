@@ -176,13 +176,13 @@ impl Gfx {
     pub fn text_add(&mut self, s: &str, x: f32, y: f32, size: f32, c: Color, align: u8, weight: u8) -> f32 { self.text_m(s, x, y, size, c, align, weight, true) }
     pub fn text_m(&mut self, s: &str, x: f32, y: f32, size: f32, c: Color, align: u8, weight: u8, add: bool) -> f32 {
         if s.is_empty() { return 0.; } self.set_add(add);
-        let fs = (size * self.px).round().max(4.) as u16; let font = self.font(weight).clone();
-        let m = measure_text(s, Some(&font), fs, 1.); let w = m.width;
+        let (fs, k) = font_bucket(size * self.px); let font = self.font(weight).clone();
+        let m = measure_text(s, Some(&font), fs, k); let w = m.width;
         let x0 = x * self.px - match align { 1 => w / 2., 2 => w, _ => 0. };
-        draw_text_ex(s, x0, y * self.px + size * self.px * 0.36, TextParams { font: Some(&font), font_size: fs, color: c, ..Default::default() });
+        draw_text_ex(s, x0, y * self.px + size * self.px * 0.36, TextParams { font: Some(&font), font_size: fs, font_scale: k, color: c, ..Default::default() });
         w / self.px
     }
-    pub fn text_w(&self, s: &str, size: f32, weight: u8) -> f32 { let fs = (size * self.px).round().max(4.) as u16; measure_text(s, Some(self.font(weight)), fs, 1.).width / self.px }
+    pub fn text_w(&self, s: &str, size: f32, weight: u8) -> f32 { let (fs, k) = font_bucket(size * self.px); measure_text(s, Some(self.font(weight)), fs, k).width / self.px }
     /// Текст с тенью (как HUD веб-версии)
     pub fn text_sh(&mut self, s: &str, x: f32, y: f32, size: f32, c: Color, align: u8, weight: u8) -> f32 { self.text(s, x + 1.5, y + 1.5, size, Color::new(0., 0., 0., 0.55 * c.a), align, weight); self.text(s, x, y, size, c, align, weight) }
     /// Текст в несколько строк по ширине. Возвращает высоту
@@ -227,6 +227,12 @@ impl Gfx {
     pub fn fill_screen(&mut self, c: Color, add: bool) { self.set_add(add); draw_rectangle(0., 0., screen_width(), screen_height(), c); }
 }
 
+/// Буквы растеризуются только в нескольких размерах и масштабируются: иначе атлас шрифта
+/// разрастается с каждым новым размером и на телефоне превышает предел текстуры (чёрные плашки вместо текста)
+pub fn font_bucket(px: f32) -> (u16, f32) {
+    const B: [f32; 6] = [20., 32., 48., 72., 108., 160.];
+    let b = B.iter().copied().find(|&b| b >= px * 0.95).unwrap_or(160.); (b as u16, px.max(1.) / b)
+}
 /// Рисует текстуру сеткой и деформирует её по виду анимации (хвост, щупальца, купол, ножки…).
 /// half — половина размера в пикселях, (sqx,sqy) — сжатие вдоль/поперёк тела.
 pub fn draw_warp(t: &Texture2D, sx: f32, sy: f32, half: f32, ang: f32, flip: bool, sqx: f32, sqy: f32, anim: Option<Anim>, ph: f32, col: Color) {
@@ -266,4 +272,58 @@ pub fn draw_warp(t: &Texture2D, sx: f32, sy: f32, half: f32, ang: f32, flip: boo
         } }
     for j in 0..NY { for i in 0..NX { let a = (j * (NX + 1) + i) as u16; let b = a + 1; let c = a + (NX + 1) as u16; let d = c + 1; idx.extend_from_slice(&[a, b, c, b, d, c]); } }
     draw_mesh(&Mesh { vertices: verts, indices: idx, texture: Some(t.clone()) });
+}
+
+// ---------- подсветка (bloom) ----------
+const FS_BRIGHT: &str = r#"#version 100
+precision mediump float;
+varying lowp vec4 color; varying lowp vec2 uv; uniform sampler2D Texture; uniform vec2 px;
+void main() {
+    vec3 s = texture2D(Texture, uv + vec2(-px.x, -px.y)).rgb + texture2D(Texture, uv + vec2(px.x, -px.y)).rgb
+           + texture2D(Texture, uv + vec2(-px.x, px.y)).rgb + texture2D(Texture, uv + vec2(px.x, px.y)).rgb;
+    s *= 0.25; float l = max(s.r, max(s.g, s.b)); float k = smoothstep(0.42, 0.95, l);
+    gl_FragColor = vec4(s * k, 1.0);
+}"#;
+const FS_BLUR: &str = r#"#version 100
+precision mediump float;
+varying lowp vec4 color; varying lowp vec2 uv; uniform sampler2D Texture; uniform vec2 dir;
+void main() {
+    vec3 s = texture2D(Texture, uv).rgb * 0.227;
+    s += (texture2D(Texture, uv + dir * 1.385).rgb + texture2D(Texture, uv - dir * 1.385).rgb) * 0.316;
+    s += (texture2D(Texture, uv + dir * 3.231).rgb + texture2D(Texture, uv - dir * 3.231).rgb) * 0.070;
+    gl_FragColor = vec4(s, 1.0);
+}"#;
+
+pub struct Bloom { pub scene: RenderTarget, pub a: RenderTarget, pub b: RenderTarget, pub bright: Material, pub blur: Material, pub w: u32, pub h: u32, pub on: bool }
+impl Bloom {
+    pub fn new() -> Option<Bloom> {
+        let mk = |fs: &str, u: &str| load_material(ShaderSource::Glsl { vertex: VS, fragment: fs }, MaterialParams { uniforms: vec![UniformDesc::new(u, UniformType::Float2)], ..Default::default() }).ok();
+        let bright = mk(FS_BRIGHT, "px")?; let blur = mk(FS_BLUR, "dir")?;
+        let rt = |w: u32, h: u32| { let r = render_target(w.max(1), h.max(1)); r.texture.set_filter(FilterMode::Linear); r };
+        Some(Bloom { scene: rt(1, 1), a: rt(1, 1), b: rt(1, 1), bright, blur, w: 0, h: 0, on: false })
+    }
+    fn ensure(&mut self) {
+        let (w, h) = (screen_width() as u32, screen_height() as u32);
+        if w == self.w && h == self.h { return; } self.w = w; self.h = h;
+        let rt = |w: u32, h: u32| { let r = render_target(w.max(1), h.max(1)); r.texture.set_filter(FilterMode::Linear); r };
+        self.scene = rt(w, h); self.a = rt(w / 4, h / 4); self.b = rt(w / 4, h / 4);
+    }
+    fn cam(rt: &RenderTarget, w: f32, h: f32) -> Camera2D { let mut c = Camera2D::from_display_rect(Rect::new(0., 0., w, h)); c.render_target = Some(rt.clone()); c.zoom.y = -c.zoom.y; c }
+    /// Начать рисовать мир в текстуру
+    pub fn begin(&mut self, gx: &mut Gfx) { self.ensure(); gx.set_mat(0); set_camera(&Self::cam(&self.scene, screen_width(), screen_height())); }
+    /// Выделить яркое, размыть и наложить на экран
+    pub fn end(&mut self, gx: &mut Gfx, strength: f32) {
+        gx.set_mat(0);
+        let (sw, sh) = (screen_width(), screen_height()); let (qw, qh) = ((self.w / 4).max(1) as f32, (self.h / 4).max(1) as f32);
+        let full = |t: &Texture2D, w: f32, h: f32, c: Color| draw_texture_ex(t, 0., 0., c, DrawTextureParams { dest_size: Some(vec2(w, h)), ..Default::default() });
+        set_camera(&Self::cam(&self.a, qw, qh)); clear_background(BLACK);
+        self.bright.set_uniform("px", vec2(1.5 / sw, 1.5 / sh)); gl_use_material(&self.bright); full(&self.scene.texture, qw, qh, WHITE);
+        for _ in 0..2 {
+            set_camera(&Self::cam(&self.b, qw, qh)); self.blur.set_uniform("dir", vec2(1. / qw, 0.)); gl_use_material(&self.blur); full(&self.a.texture, qw, qh, WHITE);
+            set_camera(&Self::cam(&self.a, qw, qh)); self.blur.set_uniform("dir", vec2(0., 1. / qh)); gl_use_material(&self.blur); full(&self.b.texture, qw, qh, WHITE);
+        }
+        gl_use_default_material(); set_default_camera();
+        full(&self.scene.texture, sw, sh, WHITE);
+        gl_use_material(&gx.add); full(&self.a.texture, sw, sh, Color::new(1., 1., 1., strength)); gl_use_default_material(); gx.mat = 0; gx.additive = false;
+    }
 }

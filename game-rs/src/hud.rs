@@ -82,7 +82,7 @@ pub fn hud(a: &mut App) {
     // босс
     if let Some(bi) = g.boss_idx() { let b = &g.en.items[bi];
         let bw = w - 40. - a.safe[2] - a.safe[3]; let bx = 20. + a.safe[2]; let by = top + 80.;
-        let name = if ET[b.kind as usize].guard { i18n::best(ET[b.kind as usize].key).0 } else { i18n::boss(ET[b.kind as usize].key) };
+        let name = crate::tiers::boss_name(b.kind, b.tier, i18n::is_en()).filter(|_| b.tier > 0).map(|s| s.to_string()).unwrap_or_else(|| i18n::boss(ET[b.kind as usize].key));
         gx.text(&name, w / 2., by - 9., 13., hex(0xff9ac0), 1, 2);
         gx.rrect(bx, by, bw, 10., 5., Color::new(30. / 255., 0., 20. / 255., 0.75)); gx.rrect_line(bx, by, bw, 10., 5., 1.5, Color::new(1., 80. / 255., 150. / 255., 0.7));
         let f = (b.hp / b.max_hp).max(0.); if f > 0. { gx.rrect(bx + 2., by + 2., ((bw - 4.) * f).max(4.), 6., 3., hex(if f < 0.5 { 0xff3b6b } else { 0xff4fd8 })); }
@@ -219,7 +219,7 @@ pub fn ending(a: &mut App, dt: f32) {
         gx.set_add(true);
         for i in 0..5 { let x = (0.08 + i as f32 * 0.22) * w + (tt * 0.4 + i as f32 * 1.7).sin() * 30.; let rw = 30. + (i % 3) as f32 * 22.; let col = Color::new(1., 1., 230. / 255., 0.16 * wv * 0.5);
             draw_triangle(vec2((x - rw * 0.3) * p, 0.), vec2((x + rw * 0.3) * p, 0.), vec2((x + rw + 70.) * p, h * p), col); draw_triangle(vec2((x - rw * 0.3) * p, 0.), vec2((x + rw + 70.) * p, h * p), vec2((x - rw + 70.) * p, h * p), col); }
-        let t = a.g.t; render_demo(a, t, dt, wv);
+        let t = a.g.t; render_demo(a, t, dt, wv); crate::screens::end_scene(&mut a.gx, tt, w, h, h * 0.62, wv * 0.8);
         let gx = &mut a.gx;
         for i in 0..44 { let x = ((i as f32 * 0.618) % 1.) * w + (tt * 0.8 + i as f32).sin() * 14.; let y = h + 20. - ((tt * (26. + (i % 4) as f32 * 14.) + i as f32 * 97.) % (h + 40.));
             gx.glow_scr(false, if i % 3 > 0 { c::ICE } else { c::GOLD }, x * p, y * p, (3. + (i % 3) as f32 * 2.5) * p, wv * 0.8); }
@@ -229,7 +229,7 @@ pub fn ending(a: &mut App, dt: f32) {
     let out = if a.end.shown { (1. - (tt - a.end.show) / 0.5).max(0.) } else { 1. };
     if out > 0. {
         let al = out * clamp01((tt - 1.4) / 0.8); gx.set_add(false);
-        gx.rrect(-w * 0.15, h * 0.2 - 110., w * 1.3, 360., 160., Color::new(0., 18. / 255., 40. / 255., 0.45 * al));
+        let sh = a.rd.shadow.clone(); draw_texture_ex(&sh, -w * 0.15 * p, (h * 0.2 - 110.) * p, Color::new(0.6, 1., 1., al), DrawTextureParams { dest_size: Some(vec2(w * 1.3 * p, 360. * p)), ..Default::default() });
         let fs = 22f32.min(w / 16.).round();
         for (i, (t0, line)) in i18n::story().iter().enumerate() { let aa = clamp01((tt - t0) / 0.8) * out; if aa <= 0. { continue; }
             gx.text_sh(line, w / 2., h * 0.2 + i as f32 * 36. + if i > 0 { 14. } else { 0. } + (1. - aa) * 10., fs, with_alpha(hex(if i == 0 { 0xffe27a } else { 0xfffbe8 }), aa), 1, 1); }

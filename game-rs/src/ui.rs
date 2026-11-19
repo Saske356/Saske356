@@ -158,12 +158,14 @@ pub fn pearl(gx: &mut Gfx, x: f32, y: f32, r: f32, a: f32) {
     gx.circle(x, y, r, Color::new(0.79, 0.63, 1., a)); gx.circle(x - r * 0.12, y - r * 0.12, r * 0.75, Color::new(1., 0.84, 0.96, a)); gx.circle(x - r * 0.3, y - r * 0.3, r * 0.35, Color::new(1., 1., 1., a));
 }
 /// Заголовок экрана с неоновым свечением
-pub fn h2(gx: &mut Gfx, s: &str, cx: f32, cy: f32, size: f32, a: f32) {
+pub fn h2(gx: &mut Gfx, s: &str, cx: f32, cy: f32, size: f32, a: f32) { h2c(gx, s, cx, cy, size, a, crate::data::c::CYAN, WHITE) }
+pub fn h2c(gx: &mut Gfx, s: &str, cx: f32, cy: f32, size: f32, a: f32, glow: u8, col: Color) {
+    let gc = hex(crate::data::PAL_HEX[glow as usize]);
     let w = gx.text_w(s, size, 2); let p = gx.px; let size = if w > gx.w - 24. { size * (gx.w - 24.) / w } else { size }; let w = w.min(gx.w - 24.);
-    let t = gx.glow[crate::data::c::CYAN as usize].clone(); gx.set_add(true);
+    let t = gx.glow[glow as usize].clone(); gx.set_add(true);
     draw_texture_ex(&t, (cx - w * 0.7) * p, (cy - size * 1.1) * p, Color::new(1., 1., 1., 0.35 * a), DrawTextureParams { dest_size: Some(vec2(w * 1.4 * p, size * 2.2 * p)), ..Default::default() });
-    for (dx, dy) in [(-1.2, 0.), (1.2, 0.), (0., -1.2), (0., 1.2)] { gx.set_add(true); gx.text_add(s, cx + dx, cy + dy, size, Color::new(0.25, 0.94, 1., 0.35 * a), 1, 2); }
-    gx.text(s, cx, cy, size, Color::new(1., 1., 1., a), 1, 2);
+    for (dx, dy) in [(-1.2, 0.), (1.2, 0.), (0., -1.2), (0., 1.2)] { gx.set_add(true); gx.text_add(s, cx + dx, cy + dy, size, Color::new(gc.r, gc.g, gc.b, 0.35 * a), 1, 2); }
+    gx.text(s, cx, cy, size, Color::new(col.r, col.g, col.b, a), 1, 2);
 }
 /// Полоса прогресса
 pub fn pbar(gx: &mut Gfx, x: f32, y: f32, w: f32, h: f32, k: f32, col: Color, a: f32) {

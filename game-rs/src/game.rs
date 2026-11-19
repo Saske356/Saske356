@@ -36,9 +36,9 @@ pub struct Enemy {
     pub col: u8, pub ang: f32, pub t: f32, pub st: f32, pub state: i32, pub flash: f32, pub slow: f32, pub freeze: f32, pub elite: bool, pub dead: bool, pub uid: u32,
     pub orb_cd: f32, pub dash_hit: u32, pub chain_mark: u32, pub scale: f32, pub next: i32, pub hist: Arr<f32, 64>, pub hh: usize, pub hn: usize, pub phase: f32,
     pub p1: f32, pub p2: f32, pub p3: f32, pub spawn_t: f32, pub lvl: i32, pub tx: f32, pub ty: f32, pub sh: f32, pub burn: f32, pub burn_t: f32, pub burn_acc: f32,
-    pub hx: f32, pub hy: f32, pub th_t: f32, pub txt: i32, pub a_t: f32 /* часы анимации */,
+    pub hx: f32, pub hy: f32, pub th_t: f32, pub txt: i32, pub a_t: f32 /* часы анимации */, pub tier: u8, pub tt: f32, pub tt2: f32, pub inv_t: f32,
 }
-#[derive(Clone, Default)] pub struct PBul { pub x: f32, pub y: f32, pub vx: f32, pub vy: f32, pub dmg: f32, pub pierce: i32, pub bounce: i32, pub life: f32, pub crit: bool, pub last_uid: u32, pub hom_t: f32, pub tgt: i32, pub tgt_uid: u32, pub split: bool, pub r: f32 }
+#[derive(Clone, Default)] pub struct PBul { pub x: f32, pub y: f32, pub vx: f32, pub vy: f32, pub dmg: f32, pub pierce: i32, pub bounce: i32, pub life: f32, pub crit: bool, pub last_uid: u32, pub hom_t: f32, pub tgt: i32, pub tgt_uid: u32, pub split: bool, pub r: f32, pub boom: f32 }
 #[derive(Clone, Default)] pub struct EBul { pub x: f32, pub y: f32, pub vx: f32, pub vy: f32, pub r: f32, pub dmg: f32, pub life: f32, pub col: u8, pub spin: f32, pub acc: f32, pub grazed: bool }
 #[derive(Clone, Default)] pub struct Part { pub x: f32, pub y: f32, pub vx: f32, pub vy: f32, pub life: f32, pub max: f32, pub size: f32, pub col: u8, pub drag: f32 }
 #[derive(Clone, Default)] pub struct Ring { pub x: f32, pub y: f32, pub r0: f32, pub r1: f32, pub life: f32, pub max: f32, pub col: u8, pub w: f32 }
@@ -46,7 +46,7 @@ pub struct Enemy {
 #[derive(Clone, Default)] pub struct Bolt { pub pts: [f32; 16], pub life: f32, pub col: u8 }
 #[derive(Clone, Default)] pub struct Pick { pub x: f32, pub y: f32, pub vx: f32, pub vy: f32, pub kind: u8, pub val: f32, pub mag: bool, pub t: f32 }
 #[derive(Clone, Default)] pub struct Mine { pub x: f32, pub y: f32, pub t: f32, pub r: f32, pub dmg: f32, pub inst: bool, pub freeze: bool }
-#[derive(Clone, Default)] pub struct Ghost { pub on: bool, pub kind: K, pub bare: bool, pub x: f32, pub y: f32, pub a: f32, pub s: f32, pub t: f32 }
+#[derive(Clone, Default)] pub struct Ghost { pub on: bool, pub kind: K, pub bare: bool, pub tier: u8, pub x: f32, pub y: f32, pub a: f32, pub s: f32, pub t: f32 }
 
 /// Пул с удалением перестановкой (как Pool в веб-версии)
 pub struct Pool<T: Clone + Default> { pub items: Vec<T>, pub n: usize }
@@ -69,6 +69,7 @@ pub struct Player {
     pub skin: usize, pub pal: u8, pub dead: bool, pub shield: i32, pub shield_t: f32, pub beat_t: f32, pub hb: f32, pub shot_n: u32,
     pub harp_t: f32, pub beam_t: f32, pub aura_t: f32, pub tw_t: f32, pub tw_x: f32, pub tw_y: f32, pub vort_t: f32, pub static_c: u32,
     pub beam_tg: i32, pub beam_tg2: i32, pub ink_t: f32, pub ink_x: f32, pub ink_y: f32, pub ink_d: f32, pub ink_q: bool, pub a_t: f32,
+    pub salvo_n: u32, pub seek_t: f32, pub was_dash: bool, pub mark_uid: u32, pub mark_t: f32,
 }
 #[derive(Default, Clone)]
 pub struct Stats {
@@ -111,7 +112,8 @@ pub struct Game {
 #[derive(Default, Clone, Copy)] pub struct Tut { pub on: bool, pub step: usize, pub v: f32, pub base: u32, pub ok: f32, pub t: f32, pub fin: f32 }
 pub const TUT_NEED: [f32; 5] = [300., 3., 6., 1., 1.];
 
-pub fn xp_need(l: u32) -> f32 { let l = l as f32; (6.0 + l * 4.0 + l * l * 0.55).floor() }
+/// Опыт до следующего уровня: после 15-го уровни заметно дороже, чтобы к глубине не набиралось 70 уровней
+pub fn xp_need(l: u32) -> f32 { let l = l as f32; let late = (l - 15.).max(0.); (6.0 + l * 4.0 + l * l * 0.55 + late * late * 0.9 + late * late * late * 0.04).floor() }
 
 impl Game {
     pub fn new(s: Save) -> Game {
@@ -177,6 +179,7 @@ impl Game {
         st.rage = 0.12 * lv(u::RAGE); st.ink_lv = lv(u::INK) as u32; st.vortex_lv = lv(u::VORTEX) as u32;
         st.thorns = if lv(u::THORNS) > 0. { st.dmg * (2.5 + 1.5 * lv(u::THORNS)) } else { 0. };
         st.xp_mul = (1. + 0.08 * sh("xp")) * (1. + 0.1 * lv(u::GREED)); st.bspd = 640. * if lv(u::HUNTER) > 0. { 1.15 } else { 1. }; st.range = 540.;
+        { let cl = self.p.up[u::CALIBER] as f32; self.st.dmg *= 1. + 0.12 * cl; self.st.rate *= 1. - 0.04 * cl; self.st.xp_mul *= 1. + 0.05 * self.p.up[u::FORTUNE] as f32; }
         let glass = self.mutf("glass");
         let st = &mut self.st;
         st.dmg *= (1. + 0.05 * if self.s.tal("t_dmg") { 1. } else { 0. }) * if glass { 1.5 } else { 1. };
@@ -257,6 +260,7 @@ impl Game {
         if !self.s.seen.contains_key(kind.key()) { self.s.seen.insert(kind.key().into(), 1); self.dirty = true; }
         if kind == K::Crab && !self.s.crab_hint { self.s.crab_hint = true; self.dirty = true; self.banner(t("crabT"), t("crabS"), 0xff8a9a, 3.); }
         if matches!(kind, K::Ray | K::Lantern | K::Wisp | K::Spawner | K::Fry) { self.init_new_foe(i); }
+        if !d.boss && !matches!(kind, K::Chest | K::Crystal) { let tr = self.roll_tier(); self.apply_tier(i, tr); }
         Some(i)
     }
     pub fn offscreen_point(&mut self) -> (f32, f32) {
@@ -299,12 +303,12 @@ impl Game {
         else if self.boss_clear_t > 0. { self.boss_clear_t -= dt; if self.boss_clear_t <= 0. { self.next_zone(); } return; }
         else { self.zone_t += dt; if self.zone_t >= cfg::ZONE_TIME * if self.muts[7] { 0.5 } else { 1. } { self.next_zone(); } }
         let z = self.zone as f32;
-        let mut rate = (2.3 + 0.55 * (z - 1.) + 0.35 * (z - 7.).max(0.)) * if self.hard { 1.2 } else { 1. } * if self.muts[2] { 1.5 } else { 1. } * (1. + self.zone_t / cfg::ZONE_TIME * 0.4);
+        let mut rate = (2.6 + 0.65 * (z - 1.) + 0.45 * (z - 7.).max(0.)) * if self.hard { 1.2 } else { 1. } * if self.muts[2] { 1.5 } else { 1. } * (1. + self.zone_t / cfg::ZONE_TIME * 0.4);
         if self.boss >= 0 { rate *= 0.22; }
-        let max_alive = (cfg::MAX_ENEMIES - 20).min(48 + self.zone as usize * 9);
+        let max_alive = (cfg::MAX_ENEMIES - 10).min(52 + self.zone as usize * 10);
         self.spawn_acc += rate * dt;
         while self.spawn_acc >= 1. { self.spawn_acc -= 1.; if self.en.n >= max_alive { continue; }
-            let (x, y) = self.offscreen_point(); let k = self.pick_kind(); let el = z >= 3. && self.rand() < (0.03 + z * 0.004) * if self.muts[3] { 3. } else { 1. };
+            let (x, y) = self.offscreen_point(); let k = self.pick_kind(); let el = z >= 3. && self.rand() < (0.03 + z * 0.006) * if self.muts[3] { 3. } else { 1. };
             self.spawn_enemy(k, x, y, el); }
         if self.boss < 0 { self.pack_t -= dt; if self.pack_t <= 0. { self.pack_t = self.rr(13., 18.); self.spawn_pack(); } }
         if self.boss < 0 && self.boss_clear_t <= 0. && self.chal.is_none() { self.ev_t -= dt; if self.ev_t <= 0. { self.ev_t = self.rr(26., 36.); self.start_run_event(); } }
@@ -331,10 +335,10 @@ impl Game {
         { let z = (self.zone - 1) as f32; let late = (z - 6.).max(0.); self.dmg_scale = (1. + 0.1 * z + 0.006 * z * z + 0.02 * late * late) * if self.hard { 1.35 } else { 1. }; }
         let depth = self.zone * 100;
         if self.zone == 3 && self.no_hit { self.unlock("depth300"); }
-        if self.zone >= 5 { self.unlock("depth500"); }
+        if self.zone >= 5 { self.unlock("depth500"); } if self.zone >= 11 { self.unlock("deep1100"); } if self.zone >= 20 { self.unlock("endless2000"); }
         if !self.rec_shown && self.start_best >= 200 && depth > self.start_best { self.rec_shown = true; let (x, y) = (self.p.x, self.p.y - 64.); self.text(x, y, t("newRec"), 0xffd54f, true, true); self.snd(Sfx::Level); self.ring(self.p.x, self.p.y, 10., 160., 0.6, c::GOLD, 5.); }
         self.s.best_depth = self.s.best_depth.max(depth);
-        if self.zone % 5 == 0 { let k = boss_at(self.zone); self.start_boss(k, ((self.zone - 5) / 20) as f32); }
+        if self.zone % 5 == 0 { let k = boss_at(self.zone); self.start_boss(k, ((self.zone - 5) / 20) as f32); let tr = boss_tier(self.zone); if let Some(b) = self.boss_idx() { self.apply_tier(b, tr); if tr > 0 { self.banner(crate::tiers::boss_name(k, tr, i18n::is_en()).unwrap_or("").to_string(), format!("{} · {} {}", t("lord"), self.zone * 100, t("m")), 0xff4f8f, 3.4); } } }
         else if !self.try_guardian() { self.banner(format!("{} {}", depth, t("m")), i18n::zone((self.zone as usize - 1) % 15), 0x8fd8ff, 2.6); self.snd(Sfx::Nova); }
     }
     fn start_boss(&mut self, k: K, cyc: f32) {
@@ -357,7 +361,7 @@ impl Game {
     }
     pub fn fire_pb(&mut self, x: f32, y: f32, a: f32, dmg: f32, split: bool) -> Option<usize> {
         let i = self.pb.spawn()?; let s = self.st.bspd; let crit = self.rand() < self.st.crit;
-        self.pb.items[i] = PBul { x, y, vx: a.cos() * s, vy: a.sin() * s, dmg, pierce: self.st.pierce, bounce: self.st.bounce, life: 1.1, crit, tgt: -1, split, r: 4., ..Default::default() };
+        self.pb.items[i] = PBul { x, y, vx: a.cos() * s, vy: a.sin() * s, dmg, pierce: self.st.pierce, bounce: self.st.bounce, life: 1.1, crit, tgt: -1, split, r: 4. + 2. * self.lv(u::CALIBER) as f32, ..Default::default() };
         Some(i)
     }
     pub fn e_shoot(&mut self, x: f32, y: f32, a: f32, mut spd: f32, r: f32, dmg: f32, col: u8, spin: f32) -> Option<usize> {
@@ -394,7 +398,7 @@ impl Game {
         if self.p.hp < self.p.max_hp * 0.3 { self.p.beat_t -= dt; if self.p.beat_t <= 0. { self.p.beat_t = 0.9; self.snd(Sfx::Beat); } }
         if self.st.regen > 0. && self.p.hp < self.p.max_hp { self.p.hp = (self.p.hp + self.st.regen * dt).min(self.p.max_hp); }
         self.p.hb = (self.p.max_hp * cfg::HEAL_RATE * 2.).min(self.p.hb + self.p.max_hp * cfg::HEAL_RATE * dt);
-        self.update_new_upg(dt);
+        self.update_new_upg(dt); self.update_upg2(dt);
         if self.st.barrier_max > 0 && self.p.shield < self.st.barrier_max { self.p.shield_t -= dt; if self.p.shield_t <= 0. { self.p.shield += 1; self.p.shield_t = self.st.barrier_cd; self.ring(self.p.x, self.p.y, self.p.r, self.p.r + 14., 0.4, c::WHITE, 3.); self.snd(Sfx::Graze); } }
         self.p.trail_t -= dt; if self.p.trail_t <= 0. { self.p.trail_t = 0.035; self.trail[self.trail_head * 2] = self.p.x; self.trail[self.trail_head * 2 + 1] = self.p.y; self.trail_head = (self.trail_head + 1) % 12; }
         // стрельба
@@ -407,7 +411,7 @@ impl Game {
                 if self.st.echo_ch > 0. && self.rand() < self.st.echo_ch { for i in 0..n { let j = self.rr(-0.05, 0.05); self.fire_pb(px + a.cos() * 14., py + a.sin() * 14., a + (i as f32 - (n - 1) as f32 / 2.) * sp + j, self.st.dmg * 0.8, true); } self.part(px, py, 0., 0., 0.2, 14., c::ICE, 1.); }
                 if self.st.over > 0 { self.p.shot_n += 1; if self.p.shot_n % self.st.over == 0 { if let Some(hb) = self.fire_pb(px + a.cos() * 16., py + a.sin() * 16., a, self.st.dmg * 4., false) { self.pb.items[hb].pierce += 4; self.pb.items[hb].r = 7.; } self.snd(Sfx::Nova); self.ring(px, py, 6., 40., 0.25, c::GOLD, 4.); } }
                 self.part(px + a.cos() * 18., py + a.sin() * 18., a.cos() * 60., a.sin() * 60., 0.12, 10., self.p.pal, 0.);
-                self.snd(Sfx::Shoot);
+                self.snd(Sfx::Shoot); self.on_shot(px, py, a);
             } else { self.p.fire_t = 0.05; }
         }
         // споры-спутники
@@ -508,6 +512,8 @@ impl Game {
     pub fn damage_enemy(&mut self, i: usize, mut dmg: f32, crit: bool, from_ang: f32, kx: f32, ky: f32, src: Src) {
         if self.en.items[i].dead { return; }
         let kind = self.en.items[i].kind;
+        if self.en.items[i].inv_t > 0. { dmg *= 0.15; } // щит жреца бездны
+        dmg *= self.upg2_mul(i);
         if kind == K::Crab && self.en.items[i].sh > 0. && !from_ang.is_nan() && ang_diff(self.en.items[i].ang, from_ang).abs() < 1.0 {
             let (ex, ey, ea, er) = { let e = &self.en.items[i]; (e.x, e.y, e.ang, e.r) };
             self.en.items[i].sh -= dmg; dmg *= 1. - cfg::CRAB_BLOCK; let (a, b) = (self.rr(-80., 80.), self.rr(-80., 80.)); self.part(ex + ea.cos() * er, ey + ea.sin() * er, a, b, 0.25, 7., c::WHITE, 2.);
@@ -525,7 +531,7 @@ impl Game {
             if burn > 0. && src != Src::Burn && !boss { e.burn = burn; e.burn_t = 3.; } }
         if self.s.set.nums { self.dmg_text(i, dmg, crit); }
         self.snd(Sfx::Hit);
-        if self.en.items[i].hp <= 0. { self.kill_enemy(i, src); }
+        if self.en.items[i].hp <= 0. { self.kill_enemy(i, src); } else { self.try_execute(i); }
     }
     fn dmg_text(&mut self, i: usize, dmg: f32, crit: bool) {
         let (uid, txt, ex, ey, er, sc) = { let e = &self.en.items[i]; (e.uid, e.txt, e.x, e.y, e.r, e.scale) };
@@ -548,10 +554,11 @@ impl Game {
         for &i in &q { let e = &mut self.en.items[i]; if e.dead || e.kind.d().boss { continue; } e.burn = e.burn.max(burn); e.burn_t = e.burn_t.max(2.4); }
         self.qb_back(q);
     }
-    fn add_ghost(&mut self, i: usize) { let e = &self.en.items[i]; let g = Ghost { on: true, kind: e.kind, bare: e.kind == K::Crab && e.sh <= 0., x: e.x, y: e.y, a: e.ang, s: e.scale, t: 0. }; self.ghosts[self.ghost_i] = g; self.ghost_i = (self.ghost_i + 1) % self.ghosts.len(); }
+    fn add_ghost(&mut self, i: usize) { let e = &self.en.items[i]; let g = Ghost { on: true, kind: e.kind, tier: e.tier, bare: e.kind == K::Crab && e.sh <= 0., x: e.x, y: e.y, a: e.ang, s: e.scale, t: 0. }; self.ghosts[self.ghost_i] = g; self.ghost_i = (self.ghost_i + 1) % self.ghosts.len(); }
     pub fn kill_enemy(&mut self, i: usize, src: Src) {
         self.en.items[i].dead = true; self.kills += 1;
         let e = self.en.items[i].clone(); let boss = e.kind.d().boss;
+        self.tier_death(&e); self.upg2_kill(&e);
         self.combo += 1; self.combo_t = 2.6; if self.combo > self.max_combo { self.max_combo = self.combo; }
         self.mult = 1. + (self.combo as f32 * 0.05).min(9.); self.score += (e.score * self.mult).round() as f64;
         self.p.flare = (self.p.flare + if boss { 50. } else if e.elite { 6. } else { 0.9 } * self.st.flare_mul).min(100.);
@@ -583,7 +590,7 @@ impl Game {
     }
     fn boss_death(&mut self, i: usize) {
         let e = self.en.items[i].clone();
-        self.quest_add("boss", 1);
+        self.quest_add("boss", 1); if e.tier > 0 { self.unlock("lord"); }
         self.boss = -1; self.bosses_killed += 1; self.boss_clear_t = 3.; self.level_delay = self.level_delay.max(1.6);
         self.hit_stop = 0.35; self.flash = 1.; self.shake(34.); self.vibrate(370); self.snd(Sfx::Boom(true));
         for k in 0..4 { self.ring(e.x, e.y, 20., 200. + k as f32 * 120., 0.6 + k as f32 * 0.2, if k % 2 == 1 { c::WHITE } else { e.col }, 8.); }
@@ -595,7 +602,8 @@ impl Game {
             K::Boss1 => { self.unlock("boss1"); let (a, b) = i18n::pair("bossDie", 0); self.banner(a, b, 0x3ff0ff, 3.); }
             K::Boss2 => { self.unlock("boss2"); let (a, b) = i18n::pair("bossDie", 1); self.banner(a, b, 0xff4fd8, 3.5); }
             K::KingCrab | K::Queen => self.guardian_death(i),
-            K::Boss4 => self.banner(t("leviathanDie"), t("leviathanDieS"), 0x49e0c0, 3.),
+            K::Boss4 => { self.banner(t("leviathanDie"), t("leviathanDieS"), 0x49e0c0, 3.);
+                if self.zone % 5 != 0 { self.unlock("guard"); self.spawn_chest(e.x, e.y); self.boss_clear_t = 0.; self.zone_t = self.zone_t.max(cfg::ZONE_TIME * 0.45); } }
             _ => { self.unlock("boss3");
                 for k in 0..self.en.n { if !self.en.items[k].dead && self.en.items[k].kind == K::Crystal { self.kill_enemy(k, Src::None); } }
                 if !self.endless && !self.victory { self.victory = true; self.boss_clear_t = 0.; self.ending_t = 2.6; self.level_delay = 99.; self.p.inv = 99.;
@@ -604,7 +612,7 @@ impl Game {
                 } else { let (a, b) = i18n::pair("bossDie", 2); self.banner(a, b, 0xffd54f, 3.); } }
         }
     }
-    fn explode(&mut self, x: f32, y: f32, r: f32, dmg: f32, freeze: bool) {
+    pub fn explode(&mut self, x: f32, y: f32, r: f32, dmg: f32, freeze: bool) {
         let col = if freeze { c::ICE } else { c::PURP };
         self.ring(x, y, 8., r, 0.4, col, 5.); self.burst(x, y, 16, col, 260., 10., 0.5); self.burst(x, y, 5, c::WHITE, 120., 8., 0.3); self.snd(Sfx::Boom(false)); self.shake(4.);
         let q = self.qb(x, y, r + 30.);
@@ -701,7 +709,7 @@ impl Game {
         let r2 = cfg::ARENA_R * cfg::ARENA_R; let mut i = self.pb.n;
         while i > 0 { i -= 1; if i >= self.pb.n { continue; }
             self.pb.items[i].life -= dt;
-            if self.st.homing > 0 { self.pb.items[i].hom_t -= dt;
+            if self.st.homing > 0 || self.pb.items[i].boom > 0. { self.pb.items[i].hom_t -= dt;
                 if self.pb.items[i].hom_t <= 0. { self.pb.items[i].hom_t = 0.12; let (bx, by, lu) = (self.pb.items[i].x, self.pb.items[i].y, self.pb.items[i].last_uid); let q = self.qb(bx, by, 230.);
                     let mut bd = 230. * 230.; let (mut tg, mut tu) = (-1i32, 0u32);
                     for &k in &q { let e = &self.en.items[k]; if e.dead || e.uid == lu { continue; } let dd = (e.x - bx).powi(2) + (e.y - by).powi(2); if dd < bd { bd = dd; tg = k as i32; tu = e.uid; } }
@@ -709,7 +717,7 @@ impl Game {
                 let tg = self.pb.items[i].tgt;
                 if tg >= 0 { let ok = (tg as usize) < self.en.n && self.en.items[tg as usize].uid == self.pb.items[i].tgt_uid && !self.en.items[tg as usize].dead;
                     if ok { let (ex, ey) = (self.en.items[tg as usize].x, self.en.items[tg as usize].y); let b = &mut self.pb.items[i]; let a = b.vy.atan2(b.vx); let ta = (ey - b.y).atan2(ex - b.x); let s = hypot(b.vx, b.vy);
-                        let lim = (3. + self.st.homing as f32 * 2.5) * dt; let na = a + clamp(ang_diff(a, ta), -lim, lim); b.vx = na.cos() * s; b.vy = na.sin() * s; } else { self.pb.items[i].tgt = -1; } } }
+                        let lim = if b.boom > 0. { 7. } else { 3. + self.st.homing as f32 * 2.5 } * dt; let na = a + clamp(ang_diff(a, ta), -lim, lim); b.vx = na.cos() * s; b.vy = na.sin() * s; } else { self.pb.items[i].tgt = -1; } } }
             if self.lv(u::HUNTER) > 0 { let b = &mut self.pb.items[i]; let f = 1. + dt * 0.9; if b.vx * b.vx + b.vy * b.vy < 1400. * 1400. { b.vx *= f; b.vy *= f; } }
             { let b = &mut self.pb.items[i]; b.x += b.vx * dt; b.y += b.vy * dt; }
             let b = self.pb.items[i].clone();
@@ -720,6 +728,7 @@ impl Game {
             self.qa_back(q);
             if hit == usize::MAX { continue; }
             let k = hit; let s = hypot(b.vx, b.vy).max(1.);
+            if b.boom > 0. { self.pb.kill(i); self.missile_boom(b.x, b.y, b.boom, b.dmg); continue; }
             let dm = b.dmg * if b.crit { self.st.crit_mul } else { 1. };
             self.damage_enemy(k, dm, b.crit, (-b.vy).atan2(-b.vx), b.vx / s * 70., b.vy / s * 70., Src::None);
             let (r1, r2b) = (self.rr(-50., 50.), self.rr(-50., 50.)); self.part(b.x, b.y, -b.vx * 0.15 + r1, -b.vy * 0.15 + r2b, 0.2, 8., self.p.pal, 2.);
@@ -802,5 +811,7 @@ impl Game {
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)] pub enum Src { None, Chain, Burn, Nova, Static, Cleanup }
+/// Ярус владыки: в бесконечном спуске боссы возвращаются новыми
+pub fn boss_tier(z: u32) -> u8 { if z <= 20 { 0 } else if z <= 40 { 1 } else { 2 } }
 pub fn boss_at(z: u32) -> K { let n = z / 5; if n <= 3 { [K::Boss1, K::Boss2, K::Boss3][(n - 1) as usize] } else { [K::Boss4, K::Boss1, K::Boss2, K::Boss3][((n - 4) % 4) as usize] } }
 pub fn num_str(v: f32) -> String { let n = v.round() as i64; if n >= 10000 { format!("{:.1}k", n as f32 / 1000.) } else { n.to_string() } }

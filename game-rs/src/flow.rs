@@ -110,7 +110,7 @@ impl Game {
         let rec = self.score as u64 > s.best; if rec { s.best = self.score as u64; }
         s.best_depth = s.best_depth.max(self.zone * 100); s.best_kills = s.best_kills.max(self.kills); s.best_combo = s.best_combo.max(self.max_combo);
         s.best_level = s.best_level.max(self.p.level); s.best_syn = s.best_syn.max(self.synergies);
-        self.unlock("first"); if self.s.total_kills >= 5000 { self.unlock("kill5k"); } if self.s.total_pearls >= 300 { self.unlock("rich"); }
+        self.unlock("first"); if self.s.total_kills >= 5000 { self.unlock("kill5k"); } if self.s.total_kills >= 20000 { self.unlock("kill20k"); } if self.s.total_pearls >= 300 { self.unlock("rich"); }
         self.dirty = true; (earned, rec && self.score > 0.)
     }
     /// Победа над Сердцем Бездны: всё, что лежит, собирается само
@@ -150,7 +150,7 @@ impl Game {
         let s = &self.s;
         Some(match id { "kill100" => (s.best_kills as u64, 100), "kill500" => (s.best_kills as u64, 500), "kill5k" => (s.total_kills, 5000), "combo50" => (s.best_combo as u64, 50),
             "combo150" => (s.best_combo as u64, 150), "depth500" => (s.best_depth as u64, 500), "lvl20" => (s.best_level as u64, 20), "flare10" => (s.flares as u64, 10),
-            "rich" => (s.total_pearls, 300), "syn3" => (s.best_syn as u64, 3), _ => return None })
+            "rich" => (s.total_pearls, 300), "syn3" => (s.best_syn as u64, 3), "kill20k" => (s.total_kills, 20000), "deep1100" => (s.best_depth as u64, 1100), "endless2000" => (s.best_depth as u64, 2000), _ => return None })
     }
     pub fn mode_tf(&self) -> String { tf("pauseInfo", &[&(self.zone * 100).to_string(), &self.p.level.to_string(), &i18n::fmt_num(self.score as i64)]) }
 }

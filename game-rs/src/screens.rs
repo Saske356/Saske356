@@ -39,6 +39,54 @@ fn logo(gx: &mut Gfx, cx: f32, y: f32, k: f32, al: f32, tm: f32) {
         spaced(gx, &txt, cx, y0, s, if glow == c::CYAN { 6. } else { 9. } * k, col, al, glow);
     }
 }
+
+/// Сцена главного экрана: свет с поверхности, веер лучей, пузырьки и плывущая искра со шлейфом
+fn title_scene(gx: &mut Gfx, tm: f32, w: f32, h: f32, hero_c: (f32, f32), hero_r: (f32, f32), skin: &str, pal_i: u8, al: f32) {
+    let p = gx.px; gx.set_add(true);
+    // свет сверху
+    let top = Color::new(0.35, 0.85, 1., 0.20 * al); let bot = Color::new(0.35, 0.85, 1., 0.);
+    draw_mesh(&Mesh { vertices: vec![Vertex::new(0., 0., 0., 0., 0., top), Vertex::new(w * p, 0., 0., 0., 0., top), Vertex::new(w * p, h * 0.5 * p, 0., 0., 0., bot), Vertex::new(0., h * 0.5 * p, 0., 0., 0., bot)], indices: vec![0, 1, 2, 0, 2, 3], texture: None });
+    // веер лучей от поверхности
+    for i in 0..7 { let a = -0.55 + i as f32 * 0.18 + (tm * 0.21 + i as f32 * 1.7).sin() * 0.05; let len = h * 1.05; let wd = 0.035 + 0.02 * ((i * 37) % 5) as f32 / 5.;
+        let (ox, oy) = (w * 0.5 + (tm * 0.13).sin() * 30., -h * 0.08); let k = 0.07 + 0.05 * (tm * 0.7 + i as f32 * 2.3).sin().max(0.);
+        let c0 = Color::new(0.6, 0.95, 1., k * al); let c1 = Color::new(0.6, 0.95, 1., 0.);
+        let (s0, s1) = ((a - wd).sin(), (a + wd).sin()); let (q0, q1) = ((a - wd).cos(), (a + wd).cos());
+        draw_mesh(&Mesh { vertices: vec![Vertex::new(ox * p, oy * p, 0., 0., 0., c0), Vertex::new((ox + s0 * len) * p, (oy + q0 * len) * p, 0., 0., 0., c1), Vertex::new((ox + s1 * len) * p, (oy + q1 * len) * p, 0., 0., 0., c1)], indices: vec![0, 1, 2], texture: None }); }
+    // пузырьки
+    for i in 0..34 { let fi = i as f32; let sp = 18. + (i * 13 % 7) as f32 * 7.; let y = h + 20. - ((tm * sp + fi * 97.) % (h + 40.)); let x = ((fi * 0.618 + 0.13) % 1.) * w + (tm * 0.9 + fi).sin() * 10.;
+        let r = 1.5 + (i % 4) as f32 * 1.1; gx.ring(x, y, r, 1., Color::new(0.75, 0.95, 1., 0.35 * al)); gx.glow_scr(false, c::ICE, (x - r * 0.4) * p, (y - r * 0.4) * p, r * 1.2 * p, 0.5 * al); }
+    // искра-герой плывёт восьмёркой, за ней шлейф
+    let pos = |t: f32| (hero_c.0 + (t * 0.42).sin() * hero_r.0, hero_c.1 + (t * 0.84).sin() * hero_r.1);
+    for k in (1..16).rev() { let (x, y) = pos(tm - k as f32 * 0.07); gx.glow_scr(true, pal_i, x * p, y * p, (26. - k as f32 * 1.3) * p, (1. - k as f32 / 16.) * 0.5 * al); }
+    let (x, y) = pos(tm); let (x2, y2) = pos(tm + 0.02); let ang = (y2 - y).atan2(x2 - x);
+    gx.glow_scr(true, pal_i, x * p, y * p, 70. * p, 0.55 * al); gx.glow_scr(false, c::WHITE, x * p, y * p, 14. * p, 0.8 * al);
+    let key = format!("pl_{skin}"); let ph = gx.spr_anim(&key).map(|a| tm * a.freq() * 1.6 * std::f32::consts::TAU).unwrap_or(0.);
+    gx.spr_screen(&key, x * p, y * p, ang, 2.5 * p, al, false, ph, true);
+}
+/// Блик, пробегающий по логотипу
+fn logo_shine(gx: &mut Gfx, cx: f32, y: f32, k: f32, tm: f32, al: f32) {
+    let ph = (tm % 4.5) / 1.4; if ph > 1. { return; } let p = gx.px; let w = 300. * k; let x = cx - w * 0.6 + ph * w * 1.2;
+    let tg = gx.soft[c::WHITE as usize].clone(); gx.set_add(true);
+    draw_texture_ex(&tg, (x - 30. * k) * p, (y - 10.) * p, Color::new(1., 1., 1., 0.35 * al * (ph * std::f32::consts::PI).sin()), DrawTextureParams { dest_size: Some(vec2(60. * k * p, 140. * k * p)), rotation: 0.35, ..Default::default() });
+    for i in 0..10 { let fi = i as f32; let a = tm * 0.6 + fi * 0.628; let rr = 130. * k + (tm * 1.3 + fi).sin() * 12.; let (sx, sy) = (cx + a.cos() * rr * 1.1, y + 58. * k + a.sin() * rr * 0.45);
+        gx.glow_scr(false, if i % 2 == 0 { c::CYAN } else { c::JELLY }, sx * p, sy * p, (3. + (i % 3) as f32) * p, (0.5 + 0.5 * (tm * 3. + fi).sin()) * al); }
+}
+
+/// Праздничная сцена финала: вращающиеся золотые лучи, падающие искры, «Заря» кружит над итогами
+pub fn end_scene(gx: &mut Gfx, tm: f32, w: f32, h: f32, cy: f32, al: f32) {
+    let p = gx.px; gx.set_add(true); let (cx, cy) = (w / 2., cy);
+    for i in 0..12 { let a = tm * 0.15 + i as f32 * std::f32::consts::TAU / 12.; let wd = 0.09; let len = (w * w + h * h).sqrt();
+        let c0 = Color::new(1., 0.85, 0.45, 0.16 * al); let c1 = Color::new(1., 0.85, 0.45, 0.);
+        draw_mesh(&Mesh { vertices: vec![Vertex::new(cx * p, cy * p, 0., 0., 0., c0), Vertex::new((cx + (a - wd).cos() * len) * p, (cy + (a - wd).sin() * len) * p, 0., 0., 0., c1), Vertex::new((cx + (a + wd).cos() * len) * p, (cy + (a + wd).sin() * len) * p, 0., 0., 0., c1)], indices: vec![0, 1, 2], texture: None }); }
+    gx.glow_scr(true, c::GOLD, cx * p, cy * p, w.min(h) * 0.5 * p, 0.45 * al);
+    for i in 0..60 { let fi = i as f32; let sp = 30. + (i * 17 % 9) as f32 * 9.; let y = ((tm * sp + fi * 71.) % (h + 40.)) - 20.; let x = ((fi * 0.618 + 0.31) % 1.) * w + (tm * 1.3 + fi).sin() * 18.;
+        gx.glow_scr(false, [c::GOLD, c::DAWN, c::WHITE, c::CORAL, c::ICE][i % 5], x * p, y * p, (2.5 + (i % 3) as f32 * 1.5) * p, (0.55 + 0.45 * (tm * 4. + fi).sin()) * al); }
+    let (hx, hy) = (cx + (tm * 0.9).cos() * 70., cy - 8. + (tm * 0.9).sin() * 18.); let ang = (tm * 0.9).cos().atan2(-(tm * 0.9).sin() * 3.9) + std::f32::consts::PI;
+    for k in (1..14).rev() { let t2 = tm - k as f32 * 0.06; gx.glow_scr(true, c::DAWN, (cx + (t2 * 0.9).cos() * 70.) * p, (cy - 8. + (t2 * 0.9).sin() * 18.) * p, (22. - k as f32 * 1.2) * p, (1. - k as f32 / 14.) * 0.5 * al); }
+    gx.glow_scr(true, c::DAWN, hx * p, hy * p, 60. * p, 0.6 * al);
+    let ph = gx.spr_anim("pl_dawn").map(|a| tm * a.freq() * 1.5 * std::f32::consts::TAU).unwrap_or(0.); let _ = ang;
+    let dir = -(tm * 0.9).sin(); gx.spr_screen("pl_dawn", hx * p, hy * p, if dir < 0. { std::f32::consts::PI } else { 0. }, 2.2 * p, al, false, ph, true);
+}
 /// Текст с разрядкой (letter-spacing) и неоновым ореолом
 fn spaced(gx: &mut Gfx, s: &str, cx: f32, cy: f32, size: f32, sp: f32, col: Color, al: f32, glow: u8) {
     let chars: Vec<String> = s.chars().map(|c| c.to_string()).collect(); let ws: Vec<f32> = chars.iter().map(|c| gx.text_w(c, size, 2)).collect();
@@ -67,11 +115,19 @@ fn title(a: &mut App) {
     let (bx, bw, mut y);
     if land { bw = (w * 0.46).min(360.); bx = w * 0.52 + (w * 0.48 - bw) / 2. - a.safe[3] / 2.; y = ((h - block) / 2.).max(tp); }
     else { bw = cw; bx = (w - bw) / 2.; y = bottom(a) - block; }
+    // живая сцена: свет, лучи, пузырьки, искра
+    { let skin = a.g.s.skin.clone(); let pi = SKINS.iter().find(|k| k.id == skin).map(|k| k.pal).unwrap_or(c::CYAN);
+        let (hc, hr) = if land { ((w * 0.26, h * 0.78), (w * 0.17, 26.)) } else { { let he = tp + h * 0.05 + 210.; ((w * 0.5, ((he + y) / 2.).max(he - 20.)), (w * 0.3, ((y - he) * 0.25).clamp(8., 40.))) } };
+        title_scene(&mut a.gx, tm, w, h, hc, hr, &skin, pi, al);
+        // затемнение под кнопками — текст читается на любом фоне
+        let p = a.gx.px; a.gx.set_add(false); let c0 = Color::new(0., 0.02, 0.06, 0.); let c1 = Color::new(0., 0.02, 0.06, 0.55 * al);
+        let (x0, x1, y0) = if land { (w * 0.5, w, 0.) } else { (0., w, y - 30.) };
+        draw_mesh(&Mesh { vertices: vec![Vertex::new(x0 * p, y0 * p, 0., 0., 0., if land { c1 } else { c0 }), Vertex::new(x1 * p, y0 * p, 0., 0., 0., if land { c1 } else { c0 }), Vertex::new(x1 * p, h * p, 0., 0., 0., c1), Vertex::new(x0 * p, h * p, 0., 0., 0., c1)], indices: vec![0, 1, 2, 0, 2, 3], texture: None }); }
     // логотип и история
     { let gx = &mut a.gx;
-        if land { let k = (h / 420.).clamp(0.55, 0.85); let lx = w * 0.26 + a.safe[2] / 2.; let ly = (h * 0.5 - 100. * k).max(tp); logo(gx, lx, ly, k, al, tm);
+        if land { let k = (h / 420.).clamp(0.55, 0.85); let lx = w * 0.26 + a.safe[2] / 2.; let ly = (h * 0.5 - 100. * k).max(tp); logo(gx, lx, ly, k, al, tm); logo_shine(gx, lx, ly, k, tm, al);
             if h > 380. { gx.text_wrap(&t("hook"), lx, ly + 116. * k + 26., (w * 0.44).min(360.), 13., 18., Color::new(1., 1., 1., 0.88 * al), 1, 0); } }
-        else { let k = if w < 350. { 0.84 } else if sm { 0.8 } else { 1. }; let ly = tp + h * if sm { 0.02 } else { 0.05 }; logo(gx, w / 2., ly, k, al, tm);
+        else { let k = if w < 350. { 0.84 } else if sm { 0.8 } else { 1. }; let ly = tp + h * if sm { 0.02 } else { 0.05 }; logo(gx, w / 2., ly, k, al, tm); logo_shine(gx, w / 2., ly, k, tm, al);
             let hy = ly + 116. * k + 18.; let lines = gx.wrap(&t("hook"), 330f32.min(w - 32.), 15., 0); let hh = lines.len() as f32 * 21.75;
             if hy + hh + 10. < y { for (i, l) in lines.iter().enumerate() { gx.text_sh(l, w / 2., hy + 10. + i as f32 * 21.75, if sm { 13.5 } else { 15. }, Color::new(1., 1., 1., 0.88 * al), 1, 0); } } }
     }
@@ -267,9 +323,10 @@ fn end(a: &mut App) {
         (g.p.level.to_string(), t("level"), false), (g.max_combo.to_string(), t("maxCombo"), false), (g.synergies.to_string(), t("syn"), false)];
     let cols = if land { 3 } else { 2 }; let cell_h = if land { 40. } else { 52. }; let sw = if land { (w - 40.).min(520.) } else { (w - 32.).min(340.) };
     let sh = ((cells.len() + cols - 1) / cols) as f32 * (cell_h + 8.) - 8.;
-    let total = 40. + 44. + sh + 12. + if land { 0. } else { 70. } + 74. + 64.;
-    let mut y = ((h - total) / 2.).max(tp);
-    h2(&mut a.gx, &t("endTitle"), w / 2., y + 14., if land { 22. } else { 34. }, al); y += 42.;
+    let total = 40. + 44. + sh + 12. + if land { 0. } else { 70. } + 74. + 64. + if land { 0. } else { 70. };
+    let mut y = ((h - total) / 2.).max(tp) + if land { 0. } else { 70. };
+    end_scene(&mut a.gx, a.g.t, w, h, y - 30., al);
+    ui::h2c(&mut a.gx, &t("endTitle"), w / 2., y + 14., if land { 22. } else { 34. }, al, c::GOLD, hex(0xfff3c4)); y += 42.;
     y += a.gx.text_wrap(&tf("endSub", &[&(a.g.zone * 100).to_string()]), w / 2., y, w - 40., 14., 19., Color::new(1., 1., 1., 0.75 * al), 1, 0) + 6.;
     y += stat_cells(&mut a.gx, (w - sw) / 2., y, sw, cols, &cells, al, cell_h) + 12.;
     if !land { let bxw = (w - 32.).min(340.); let ux = (w - bxw) / 2.; let gx = &mut a.gx;
@@ -425,24 +482,33 @@ fn best(a: &mut App) {
     let al = a.ui.alpha; let w = a.gx.w;
     let (f, back) = list_frame(a, &t("bestT"), 30.);
     if back { a.click(); a.show(Scr::Title); return; }
-    let keys: Vec<usize> = (0..ET.len()).filter(|&i| ET[i].boss || !i18n::best(ET[i].key).1.is_empty()).collect();
-    let n = keys.iter().filter(|&&i| a.g.s.seen.contains_key(ET[i].key)).count();
+    let en = i18n::is_en();
+    // (вид, ярус): обычные, затем багровые, затем твари бездны; боссы — со своими новыми обликами
+    let mut keys: Vec<(usize, u8)> = vec![];
+    for tr in 0..3u8 { for i in 0..ET.len() { let k = crate::data::K_ALL[i];
+        let ok = if tr == 0 { ET[i].boss || !i18n::best(ET[i].key).1.is_empty() } else if ET[i].boss { crate::tiers::boss_name(k, tr, en).is_some() && !(tr == 2 && k != crate::data::K::Boss4 && keys.iter().any(|&(j, t2)| j == i && t2 == 1)) } else { crate::tiers::foe_name(k, tr, en).is_some() };
+        if ok { keys.push((i, tr)); } } }
+    let seen = |a: &App, i: usize, tr: u8| a.g.s.seen.contains_key(&crate::render::tkey(ET[i].key, tr));
+    let n = keys.iter().filter(|&&(i, tr)| seen(a, i, tr)).count();
     a.gx.text(&tf("bestInfo", &[&n.to_string(), &keys.len().to_string()]), w / 2., tp + 48., 14., Color::new(1., 1., 1., 0.75 * al), 1, 0);
-    let iw = f.w; let hs: Vec<f32> = keys.iter().map(|&i| { let ok = a.g.s.seen.contains_key(ET[i].key); let d = if ok { i18n::best(ET[i].key).1 } else { t("bestLocked") };
+    let info = |i: usize, tr: u8| -> (String, String) { let k = crate::data::K_ALL[i]; let key = ET[i].key;
+        if tr == 0 { let nm = if ET[i].boss { i18n::boss(key) } else { let n = i18n::best(key).0; if n.is_empty() { key.to_string() } else { n } }; (nm, i18n::best(key).1) }
+        else if ET[i].boss { (crate::tiers::boss_name(k, tr, en).unwrap_or("").to_string(), if en { format!("A lord of the deep: new attacks. {}", i18n::best(key).1) } else { format!("Владыка глубин: новые приёмы. {}", i18n::best(key).1) }) }
+        else { (crate::tiers::foe_name(k, tr, en).unwrap_or("").to_string(), format!("{} · {}", if tr == 1 { if en { "600 m+" } else { "600 м и глубже" } } else if en { "1100 m+" } else { "1100 м и глубже" }, crate::tiers::foe_desc(k, tr, en))) } };
+    let iw = f.w; let hs: Vec<f32> = keys.iter().map(|&(i, tr)| { let d = if seen(a, i, tr) { info(i, tr).1 } else { t("bestLocked") };
         (30. + a.gx.wrap(&d, iw - 24. - 66., 12.5, 0).len() as f32 * 16. + 12.).max(70.) }).collect();
     let area = Rect::new(f.x - 4., f.y0, f.w + 8., f.y1 - f.y0); let content: f32 = hs.iter().map(|h| h + 9.).sum();
     let off = a.ui.scroll(4, area, content, get_frame_time()); a.ui.clip_on(&a.gx, area);
     let mut y = f.y0 - off;
-    for (k, &i) in keys.iter().enumerate() { let h = hs[k]; if y + h < f.y0 || y > f.y1 { y += h + 9.; continue; }
-        let key = ET[i].key; let ok = a.g.s.seen.contains_key(key); let r = Rect::new(f.x, y, iw, h); item_panel(&mut a.gx, r, ET[i].boss, al);
+    for (k, &(i, tr)) in keys.iter().enumerate() { let h = hs[k]; if y + h < f.y0 || y > f.y1 { y += h + 9.; continue; }
+        let key_s = crate::render::tkey(ET[i].key, tr); let key = key_s.as_str(); let ok = seen(a, i, tr); let r = Rect::new(f.x, y, iw, h); item_panel(&mut a.gx, r, ET[i].boss, al);
         let p = a.gx.px; let half = a.gx.spr_half(key); let k_ = 26. / half;
         let ph = a.gx.spr_anim(key).map(|an| a.g.t * an.freq() * std::f32::consts::TAU + k as f32).unwrap_or(0.);
-        if ok { a.gx.glow_scr(true, ET[i].col, (f.x + 40.) * p, (y + h / 2.) * p, 30. * p, 0.4 * al); a.gx.spr_screen(key, (f.x + 40.) * p, (y + h / 2.) * p, 0., k_ * p, al, false, ph, false); }
-        else { // силуэт: тёмно-синяя тень существа
-            let s = a.gx.spr.get(key).map(|s| s.tex.clone()); if let Some(tx) = s { a.gx.set_mat(2); draw_warp(&tx, (f.x + 40.) * p, (y + h / 2.) * p, 26. * p, 0., false, 1., 1., None, 0., Color::new(29. / 255., 68. / 255., 102. / 255., al)); a.gx.set_mat(0); } }
-        let name = if ok { if ET[i].boss && !ET[i].guard { i18n::boss(key) } else { let n = i18n::best(key).0; if n.is_empty() { i18n::boss(key) } else { n } } } else { "???".into() };
-        a.gx.text(&name, f.x + 78., y + 20., 16., Color::new(1., 1., 1., al), 0, 1);
-        a.gx.text_wrap(&if ok { i18n::best(key).1 } else { t("bestLocked") }, f.x + 78., y + 40., iw - 24. - 66., 12.5, 16., Color::new(1., 1., 1., 0.75 * al), 0, 0);
+        if ok { a.gx.glow_scr(true, crate::tiers::tier_col(ET[i].col, tr), (f.x + 40.) * p, (y + h / 2.) * p, 30. * p, 0.4 * al); a.gx.spr_screen(key, (f.x + 40.) * p, (y + h / 2.) * p, 0., k_ * p, al, false, ph, false); }
+        else { let s = a.gx.spr.get(key).map(|s| s.tex.clone()); if let Some(tx) = s { a.gx.set_mat(2); draw_warp(&tx, (f.x + 40.) * p, (y + h / 2.) * p, 26. * p, 0., false, 1., 1., None, 0., Color::new(29. / 255., 68. / 255., 102. / 255., al)); a.gx.set_mat(0); } }
+        let (nm, ds) = info(i, tr);
+        a.gx.text(&if ok { nm } else { "???".into() }, f.x + 78., y + 20., 16., if tr == 1 { Color::new(1., 0.7, 0.7, al) } else if tr == 2 { Color::new(0.85, 0.75, 1., al) } else { Color::new(1., 1., 1., al) }, 0, 1);
+        a.gx.text_wrap(&if ok { ds } else { t("bestLocked") }, f.x + 78., y + 40., iw - 24. - 66., 12.5, 16., Color::new(1., 1., 1., 0.75 * al), 0, 0);
         y += h + 9.; }
     a.ui.clip_off();
 }
@@ -456,7 +522,7 @@ fn settings(a: &mut App) {
         (format!("{}: {}", t("sound"), on_off(s.sound)), 0), (format!("{}: {}", t("music"), on_off(s.music)), 1), (format!("{}: {}", t("vibro"), on_off(s.vibro)), 2),
         (format!("{}: {}", t("graphics"), match s.quality.as_str() { "high" => t("gHigh"), "low" => t("gLow"), _ => t("gAuto") }), 3),
         (format!("{}: {}", t("nums"), on_off(s.nums)), 4), (format!("{}: {}", t("shake"), on_off(s.shake)), 5),
-        (format!("{orient_l}: {orient}"), 8), (format!("{}: {}", t("lang"), if s.lang == "en" { "English" } else { "Русский" }), 6), (format!("{}: {}", t("fps"), s.fps), 7) ];
+        (format!("{orient_l}: {orient}"), 8), (format!("{}: {}", if i18n::is_en() { "Glow" } else { "Подсветка" }, on_off(s.fx)), 9), (format!("{}: {}", t("lang"), if s.lang == "en" { "English" } else { "Русский" }), 6), (format!("{}: {}", t("fps"), s.fps), 7) ];
     let (bx, bw) = col(a); let bh = if sm { 46. } else { 50. }; let gap = if sm { 6. } else { 8. };
     let ncol = if land { 2 } else { 1 }; let cw = if land { ((w - 40.) / 2.).min(300.) } else { bw }; let x0 = if land { (w - cw * 2. - 12.) / 2. } else { bx };
     let nrow = (rows.len() + ncol - 1) / ncol; let total = 40. + nrow as f32 * (bh + gap) + 8. + bh;
@@ -471,6 +537,6 @@ fn settings(a: &mut App) {
         match id { 0 => s.sound = !s.sound, 1 => s.music = !s.music, 2 => { s.vibro = !s.vibro; if s.vibro { crate::platform::vibrate(30); } },
             3 => s.quality = match s.quality.as_str() { "auto" => "high".into(), "high" => "low".into(), _ => "auto".into() }, 4 => s.nums = !s.nums, 5 => s.shake = !s.shake,
             6 => { s.lang = if s.lang == "en" { "ru".into() } else { "en".into() }; i18n::set_en(s.lang == "en"); }, 7 => s.fps = if s.fps == 120 { 60 } else { 120 },
-            _ => s.orient = (s.orient + 1) % 3 }
+            9 => s.fx = !s.fx, _ => s.orient = (s.orient + 1) % 3 }
         a.g.dirty = true; a.persist(); }
 }

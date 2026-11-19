@@ -75,6 +75,7 @@ impl Game {
                     _ => { self.en.items[i].dead = true; let (x, y) = (self.en.items[i].x, self.en.items[i].y); self.burst(x, y, 10, c::GOLD, 150., 7., 0.4); } } }
             }
             if self.en.items[i].dead { i += 1; continue; }
+            if self.en.items[i].tier > 0 { self.tier_extra(i, dt, d, ux, uy, fz); if self.en.items[i].inv_t > 0. { self.en.items[i].inv_t -= dt; } }
             { let e = &mut self.en.items[i]; e.x += e.vx * dt; e.y += e.vy * dt;
                 if e.x * e.x + e.y * e.y > r2 { let l = (e.x * e.x + e.y * e.y).sqrt(); let f = (cfg::ARENA_R - 10.) / l; e.x *= f; e.y *= f; e.vx *= -0.3; e.vy *= -0.3; } }
             // контакт с игроком
@@ -233,7 +234,7 @@ impl Game {
 
     // ---------- стражи ----------
     pub fn guardian_for(z: u32) -> Option<(K, i32)> {
-        if z == 3 { return Some((K::KingCrab, 0)); } if z == 8 { return Some((K::Queen, 0)); } if z == 13 { return Some((K::KingCrab, 1)); }
+        if z == 3 { return Some((K::KingCrab, 0)); } if z == 8 { return Some((K::Queen, 0)); } if z == 13 { return Some((K::Boss4, 0)); }
         if z > 15 && z % 5 == 3 { let k = (z - 18) / 5; return Some((if k % 2 == 1 { K::KingCrab } else { K::Queen }, 1 + (k / 2) as i32)); }
         None
     }
@@ -245,8 +246,12 @@ impl Game {
         { let e = &mut self.en.items[i]; e.spawn_t = 0.; e.state = 0; e.st = 2.4; e.lvl = lvl; e.p1 = 0.8; e.phase = 0.; e.ty = 0.;
             if kind == K::KingCrab { e.sh = e.max_hp * 0.2; e.tx = e.sh; e.ang = PI / 2.; } else { e.ang = 0.; } }
         self.qz = Qz::default(); self.boss = self.en.items[i].uid as i32;
+        // ярус стража: 1300 м — Ледяной Левиафан, дальше стражи возвращаются в облике бездны
+        let tr = if self.zone == 13 { 1 } else if self.zone > 15 { if self.zone > 30 { 2 } else { 1 } } else { 0 }; self.apply_tier(i, tr);
+        if kind == K::Boss4 { let e = &mut self.en.items[i]; e.st = 3.5; e.p1 = 0.8; e.lvl = 0; }
         let dx = self.rr(-40., 40.); self.drop_pick(self.p.x + dx, self.p.y + 60., 4, 30.);
-        self.banner(i18n::boss(kind.key()), format!("{} · {} {}", t("guard"), self.zone * 100, t("m")), if kind == K::KingCrab { 0xffd54f } else { 0x8fd8ff }, 3.2);
+        let nm = crate::tiers::boss_name(kind, tr, i18n::is_en()).map(|s| s.to_string()).filter(|_| tr > 0).unwrap_or_else(|| i18n::boss(kind.key()));
+        self.banner(nm, format!("{} · {} {}", t("guard"), self.zone * 100, t("m")), if kind == K::KingCrab { 0xffd54f } else { 0x8fd8ff }, 3.2);
         self.snd(Sfx::Warn); self.vibrate(160); self.shake(8.);
         true
     }
