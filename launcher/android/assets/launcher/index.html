@@ -3,67 +3,89 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <title>Новоград RP — лаунчер</title>
+  <title>Новоград RP</title>
   <link rel="stylesheet" href="launcher.css">
+  <script type="importmap">{ "imports": { "three": "/vendor/three.module.js" } }</script>
 </head>
 <body>
-  <div class="bg"></div>
-  <main id="app">
-    <section class="side">
-      <header>
-        <img id="logoimg" class="logoimg" alt="" hidden>
-        <div class="logo" id="logotext">НОВОГРАД<span>RP</span></div>
-        <div class="tag">Ролевая игра в открытом городе</div>
-      </header>
-      <h2>Новости</h2>
-      <div id="news" class="news"></div>
-    </section>
+  <canvas id="scene"></canvas>
+  <div class="shade"></div>
 
-    <section class="main">
-      <div class="head">
-        <h2>Серверы</h2>
-        <div class="tools">
-          <button class="icon" id="refresh" title="Обновить">⟳</button>
-          <button class="icon" id="addsrv" title="Добавить сервер">＋</button>
-          <button class="icon" id="settings" title="Настройки">⚙</button>
-        </div>
-      </div>
-      <div id="servers" class="servers"></div>
+  <!-- Главный экран -->
+  <main id="main" class="screen">
+    <div class="topleft" id="socials"></div>
+    <div class="topright">
+      <button class="ic" id="newsbtn" type="button" aria-label="Новости">
+        <svg viewBox="0 0 24 24"><path d="M4 5h13v14H6a2 2 0 0 1-2-2V5zm13 4h3v8a2 2 0 0 1-2 2M7 9h7M7 12h7M7 15h4" /></svg>
+        <i class="badge" id="newsdot" hidden></i>
+      </button>
+      <button class="ic" id="supportbtn" type="button" aria-label="Поддержка" hidden>
+        <svg viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0 1 16 0v2M4 14a2 2 0 0 1 2-2h1v6H6a2 2 0 0 1-2-2v-2zm16 0a2 2 0 0 0-2-2h-1v6h1a2 2 0 0 0 2-2v-2zM17 18c0 2-2 3-5 3" /></svg>
+      </button>
+      <button class="ic" id="settingsbtn" type="button" aria-label="Настройки">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" /></svg>
+      </button>
+    </div>
 
-      <form id="playform" class="profile">
-        <label>Ник
-          <input id="nick" placeholder="Ivan_Petrov" maxlength="32" autocomplete="username" spellcheck="false" autocapitalize="off">
-        </label>
-        <label>Пароль
-          <input id="pass" type="password" maxlength="64" autocomplete="current-password">
-        </label>
-        <button id="play" class="play" type="submit">ИГРАТЬ</button>
-      </form>
-      <div id="msg" class="msg"></div>
-    </section>
+    <form id="form" class="form" autocomplete="on">
+      <input id="fname" placeholder="Введите имя" maxlength="16" autocomplete="given-name" spellcheck="false" autocapitalize="words">
+      <input id="lname" placeholder="Введите фамилию" maxlength="16" autocomplete="family-name" spellcheck="false" autocapitalize="words">
+      <input id="pass" placeholder="Пароль" type="password" maxlength="64" autocomplete="current-password">
+      <div id="hint" class="hint"></div>
+    </form>
+
+    <div class="server">
+      <button type="button" id="srvpill" class="pill">
+        <span class="srvicon" id="srvicon">1</span>
+        <span class="srvtext"><small>Сервер <b id="srvonline"></b></small><b id="srvname">—</b></span>
+      </button>
+      <button type="button" class="ic swap" id="swapbtn" aria-label="Сменить сервер">
+        <svg viewBox="0 0 24 24"><path d="M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7" /></svg>
+      </button>
+    </div>
+
+    <button id="play" class="play" type="button" disabled>ИГРАТЬ</button>
+    <div class="ver" id="ver"></div>
   </main>
-  <footer><span id="ver"></span></footer>
 
-  <div id="load" class="load" hidden>
-    <div class="loadbox">
-      <div class="logo small">НОВОГРАД<span>RP</span></div>
-      <div id="loadtitle" class="loadtitle">Загрузка игровых файлов</div>
-      <div class="progress"><i id="loadbar"></i></div>
-      <div class="loadrow"><span id="loadpct">0%</span><span id="loadsize"></span><span id="loadspeed"></span></div>
-      <div id="loadfile" class="loadfile"></div>
-      <button id="loadcancel" class="btn" type="button">Отмена</button>
+  <!-- Загрузка игровых данных -->
+  <section id="loading" class="screen loading" hidden>
+    <div class="loadart"></div>
+    <div class="biglogo"><img class="logoimg" alt=""><span class="logotext">НОВОГРАД<em>RP</em></span></div>
+    <div class="loadbar">
+      <div class="loadinfo"><span id="loadtext">Подключение к серверу…</span><span id="loadnums"></span></div>
+      <div class="track"><i id="loadfill"></i></div>
+      <button id="loadcancel" class="link" type="button" hidden>Отменить</button>
+    </div>
+  </section>
+
+  <!-- Окно-вопрос (обновление и пр.) -->
+  <section id="ask" class="screen ask" hidden>
+    <h1 id="asktitle"></h1>
+    <div class="rule"></div>
+    <p id="asktext"></p>
+    <div class="askbtns">
+      <button id="askyes" class="wbtn" type="button"></button>
+      <button id="askno" class="gbtn" type="button"></button>
+    </div>
+  </section>
+
+  <!-- Панели: серверы, новости, настройки -->
+  <div id="sheet" class="sheet" hidden>
+    <div class="panel">
+      <div class="phead"><h2 id="sheettitle"></h2><button class="ic small" id="sheetclose" type="button" aria-label="Закрыть">✕</button></div>
+      <div id="sheetbody" class="pbody"></div>
     </div>
   </div>
 
-  <div id="dlg" class="dlg" hidden>
-    <div class="box">
-      <h3 id="dlgtitle"></h3>
-      <div id="dlgbody"></div>
-      <div class="actions" id="dlgactions"></div>
-    </div>
+  <!-- Заставка -->
+  <div id="splash" class="splash">
+    <div class="biglogo"><img class="logoimg" alt=""><span class="logotext">НОВОГРАД<em>RP</em></span></div>
+    <div class="studio">ролевая игра в открытом городе</div>
   </div>
 
   <script src="config.js"></script>
   <script src="launcher.js"></script>
+  <script type="module" src="scene.js"></script>
 </body>
 </html>

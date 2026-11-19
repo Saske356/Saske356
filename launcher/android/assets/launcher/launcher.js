@@ -1,38 +1,34 @@
-// Лаунчер Новоград RP. В приложении работает через мост window.NovogradApp,
-// в обычном браузере открывает игру в этой же вкладке (удобно для проверки).
+// Лаунчер Новоград RP.
+// Поток: заставка → проверка файлов → «Доступно обновление!» → загрузка → главный экран → игра.
+// В приложении работает через мост window.NovogradApp; в обычном браузере открывает игру по ссылке.
 (function () {
   'use strict';
   const $ = (id) => document.getElementById(id);
   const app = window.NovogradApp || null;
-  const CFG = window.LAUNCHER_CONFIG || { servers: [] };
-  const NICK_RE = /^[A-Z][a-z]{1,15}_[A-Z][a-z]{1,15}$/;
+  const CFG = Object.assign({ servers: [], links: {} }, window.LAUNCHER_CONFIG || {});
+  const NAME_RE = /^[A-Z][a-z]{1,15}$/;
 
   const store = {
     get(k, d) { try { const v = localStorage.getItem('nl-' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
     set(k, v) { try { localStorage.setItem('nl-' + k, JSON.stringify(v)); } catch {} },
   };
-
   const settings = Object.assign({ quality: 'mid', remember: true }, store.get('settings', {}));
   let custom = store.get('servers', []);
   let selected = store.get('selected', null);
-  const status = {}; // url → { ok, online, max, name, ping, news }
+  const status = {};
 
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const mb = (b) => (b / 1048576).toFixed(2);
 
+  // ---------- серверы ----------
   function normalize(addr) {
     let a = String(addr || '').trim();
     if (!a) return null;
     if (!/^https?:\/\//i.test(a)) a = 'http://' + a;
-    try {
-      const u = new URL(a);
-      if (!/^https?:$/.test(u.protocol) || !u.hostname) return null;
-      return u.origin;
-    } catch { return null; }
+    try { const u = new URL(a); return /^https?:$/.test(u.protocol) && u.hostname ? u.origin : null; } catch { return null; }
   }
-
   function allServers() {
-    const list = [];
-    const seen = new Set();
+    const list = [], seen = new Set();
     for (const s of CFG.servers || []) {
       const url = normalize(s.url);
       if (url && !seen.has(url)) { seen.add(url); list.push({ url, name: s.name, builtin: true }); }
@@ -40,255 +36,291 @@
     for (const s of custom) if (!seen.has(s.url)) { seen.add(s.url); list.push(s); }
     return list;
   }
-
   async function probe(url) {
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 4000);
-    const t0 = performance.now();
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 4000), t0 = performance.now();
     try {
-      const r = await fetch(url + '/api/status', { signal: ctl.signal, cache: 'no-store' });
-      const j = await r.json();
-      status[url] = { ok: true, ping: Math.round(performance.now() - t0), online: j.online | 0, max: j.max | 0, name: j.name, news: Array.isArray(j.news) ? j.news : [], version: j.version, color: j.color };
-    } catch {
-      status[url] = { ok: false };
-    } finally {
-      clearTimeout(timer);
-    }
+      const j = await (await fetch(url + '/api/status', { signal: ctl.signal, cache: 'no-store' })).json();
+      status[url] = { ok: true, ping: Math.round(performance.now() - t0), online: j.online | 0, max: j.max | 0, name: j.name,
+        color: /^#[0-9a-f]{6}$/i.test(j.color || '') ? j.color : null, news: Array.isArray(j.news) ? j.news : [], version: j.version };
+    } catch { status[url] = { ok: false }; } finally { clearTimeout(timer); }
   }
-
   async function refresh() {
     const list = allServers();
-    for (const s of list) if (!status[s.url]) status[s.url] = { pending: true };
-    render();
-    await Promise.all(list.map((s) => probe(s.url).then(render)));
+    if (!list.some((s) => s.url === selected)) { selected = list[0]?.url || null; store.set('selected', selected); }
+    renderServer();
+    await Promise.all(list.map((s) => probe(s.url).then(() => { renderServer(); if (sheetKind === 'servers') openServers(); })));
+    updateNewsDot();
+  }
+  function srvName(s) { const st = status[s.url] || {}; return st.name || s.name || s.url.replace(/^https?:\/\//, ''); }
+  function renderServer() {
+    const list = allServers(), i = list.findIndex((s) => s.url === selected);
+    const s = list[i], st = s ? status[s.url] || {} : {};
+    const icon = $('srvicon');
+    icon.textContent = s ? String(i + 1) : '?';
+    $('srvpill').style.setProperty('--srv', st.color || '#ff8a3d');
+    $('srvname').textContent = s ? srvName(s) : 'Добавьте сервер';
+    $('srvonline').textContent = !s ? '' : st.ok ? `● ${st.online}/${st.max}` : st.ok === false ? '' : '…';
+    $('srvonline').style.color = st.ok ? '' : '#ef5350';
+    validate();
   }
 
-  function render() {
-    const list = allServers();
-    if (!list.some((s) => s.url === selected)) selected = list[0]?.url || null;
-    const box = $('servers');
-    box.replaceChildren();
-    if (!list.length) {
-      const e = el('div', 'empty', 'Серверов пока нет. Нажмите «＋» и введите адрес, например 203.0.113.10:3000');
-      e.addEventListener('click', addServer);
-      box.append(e);
-    }
-    for (const s of list) {
-      const st = status[s.url] || {};
-      const b = el('button', 'srv' + (s.url === selected ? ' on' : ''));
-      if (st.ok && /^#[0-9a-f]{6}$/i.test(st.color || '')) b.style.setProperty('--srv', st.color);
-      b.type = 'button';
-      b.append(el('span', 'dot' + (st.ok ? ' ok' : st.pending ? '' : ' bad')));
-      const info = el('div', 'info');
-      info.append(el('div', 'name', st.name || s.name || 'Сервер'), el('div', 'addr', s.url.replace(/^https?:\/\//, '')));
-      const stat = el('div', 'stat');
-      if (st.ok) {
-        const on = el('b', null, `${st.online} / ${st.max}`);
-        const bar = el('div', 'bar'); const fill = el('i');
-        fill.style.width = Math.min(100, (st.online / Math.max(1, st.max)) * 100) + '%';
-        bar.append(fill);
-        stat.append(on, el('span', null, `пинг ${st.ping} мс`), bar);
-      } else stat.append(el('span', null, st.pending ? 'проверка…' : 'недоступен'));
-      b.append(info, stat);
-      if (!s.builtin) {
-        const del = el('button', 'del', '✕');
-        del.type = 'button';
-        del.addEventListener('click', (e) => { e.stopPropagation(); removeServer(s.url); });
-        b.append(del);
-      }
-      b.addEventListener('click', () => { selected = s.url; store.set('selected', selected); render(); });
-      box.append(b);
-    }
-    renderNews();
-  }
-
-  function renderNews() {
-    const st = status[selected];
-    const news = st?.ok && st.news.length ? st.news : [{
-      title: 'Добро пожаловать!',
-      text: 'Выберите сервер, введите ник в формате Имя_Фамилия и пароль. Новый персонаж создаётся автоматически при первом входе.',
-    }];
-    $('news').replaceChildren(...news.slice(0, 20).map((n) => {
-      const c = el('div', 'card');
-      if (n.date) c.append(el('div', 'date', new Date(n.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })));
-      c.append(el('b', null, n.title || ''), el('p', null, n.text || ''));
-      return c;
-    }));
-  }
-
-  // ---------- Диалоги ----------
-  let onDlgBack = null;
-  function dialog(title, body, actions) {
-    $('dlgtitle').textContent = title;
-    $('dlgbody').replaceChildren(...body);
-    $('dlgactions').replaceChildren(...actions.map(([text, fn, primary]) => {
-      const b = el('button', 'btn' + (primary ? ' primary' : ''), text);
-      b.type = 'button';
-      b.addEventListener('click', () => { if (fn() !== false) closeDialog(); });
-      return b;
-    }));
-    $('dlg').hidden = false;
-    onDlgBack = closeDialog;
-  }
-  function closeDialog() { $('dlg').hidden = true; onDlgBack = null; }
-  $('dlg').addEventListener('click', (e) => { if (e.target.id === 'dlg') closeDialog(); });
-
-  function addServer() {
-    const name = el('input'); name.placeholder = 'Мой сервер'; name.maxLength = 40;
-    const addr = el('input'); addr.placeholder = '203.0.113.10:3000'; addr.autocapitalize = 'off'; addr.spellcheck = false;
-    const err = el('p'); err.style.color = '#ffb4a8';
-    const l1 = el('label', null, 'Адрес (IP или домен с портом)'); l1.append(addr);
-    const l2 = el('label', null, 'Название (необязательно)'); l2.append(name);
-    dialog('Добавить сервер', [l1, l2, err], [
-      ['Отмена', () => {}],
-      ['Добавить', () => {
-        const url = normalize(addr.value);
-        if (!url) { err.textContent = 'Неверный адрес'; return false; }
-        if (allServers().some((s) => s.url === url)) { err.textContent = 'Такой сервер уже есть'; return false; }
-        custom.push({ url, name: name.value.trim() || null });
-        store.set('servers', custom);
-        selected = url; store.set('selected', url);
-        refresh();
-      }, true],
-    ]);
-    setTimeout(() => addr.focus(), 50);
-  }
-  function removeServer(url) {
-    dialog('Удалить сервер?', [el('p', null, url)], [
-      ['Отмена', () => {}],
-      ['Удалить', () => { custom = custom.filter((s) => s.url !== url); store.set('servers', custom); render(); }, true],
-    ]);
-  }
-  function openSettings() {
-    const seg = el('div', 'seg');
-    const names = { low: 'Низкая', mid: 'Средняя', high: 'Высокая' };
-    for (const q of ['low', 'mid', 'high']) {
-      const b = el('button', settings.quality === q ? 'on' : '', names[q]);
-      b.type = 'button';
-      b.addEventListener('click', () => { settings.quality = q; [...seg.children].forEach((c) => c.classList.toggle('on', c === b)); });
-      seg.append(b);
-    }
-    const ql = el('label', null, 'Графика'); ql.append(seg);
-    const rem = el('label', 'check');
-    const cb = el('input'); cb.type = 'checkbox'; cb.checked = settings.remember;
-    rem.append(cb, document.createTextNode('Запоминать пароль'));
-    const verify = el('button', 'btn', 'Перекачать файлы игры');
-    verify.type = 'button';
-    verify.hidden = !app || !selected;
-    verify.addEventListener('click', () => { app.clearCache(selected); verify.textContent = 'Файлы удалены — скачаются при входе'; verify.disabled = true; });
-    dialog('Настройки', [ql, el('p', null, 'Низкая — без теней и с меньшим трафиком, для слабых телефонов.'), rem, verify], [
-      ['Готово', () => {
-        settings.remember = cb.checked;
-        store.set('settings', settings);
-        if (!settings.remember) store.set('pass', '');
-      }, true],
-    ]);
-  }
-
-  // ---------- Игра ----------
-  $('nick').value = store.get('nick', '');
+  // ---------- главный экран: имя, фамилия, пароль ----------
+  const saved = String(store.get('nick', '')).split('_');
+  $('fname').value = saved[0] || ''; $('lname').value = saved[1] || '';
   $('pass').value = settings.remember ? store.get('pass', '') : '';
-  const msg = (t) => { $('msg').textContent = t || ''; };
+  const hint = (t) => { $('hint').textContent = t || ''; };
 
-  $('playform').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const nick = $('nick').value.trim(), pass = $('pass').value;
-    if (!selected) return msg('Добавьте сервер кнопкой «＋»');
-    if (!NICK_RE.test(nick)) return msg('Ник — Имя_Фамилия латиницей, например Ivan_Petrov');
-    if (pass.length < 4) return msg('Пароль — минимум 4 символа');
+  function fixName(inp) {
+    const v = inp.value;
+    if (/[а-яё]/i.test(v)) { inp.classList.add('bad'); return 'Имя и фамилия — латиницей, например Ivan Petrov'; }
+    const clean = v.replace(/[^A-Za-z]/g, '');
+    const cap = clean ? clean[0].toUpperCase() + clean.slice(1).toLowerCase() : '';
+    if (cap !== v) inp.value = cap;
+    inp.classList.toggle('bad', cap.length === 1);
+    return '';
+  }
+  function validate() {
+    const f = $('fname').value, l = $('lname').value, p = $('pass').value;
+    const ok = NAME_RE.test(f) && NAME_RE.test(l) && p.length >= 4 && !!selected;
+    $('play').disabled = !ok;
+    return ok;
+  }
+  for (const id of ['fname', 'lname']) $(id).addEventListener('input', (e) => { hint(fixName(e.target)); validate(); });
+  $('pass').addEventListener('input', validate);
+  $('form').addEventListener('submit', (e) => { e.preventDefault(); if (validate()) play(); });
+  $('fname').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('lname').focus(); } });
+  $('lname').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('pass').focus(); } });
+  $('pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('pass').blur(); if (validate()) play(); } });
+  $('play').addEventListener('click', () => { if (validate()) play(); });
+
+  let mode = null; // 'startup' | 'play'
+  let pendingPlay = null;
+  function play() {
+    const nick = `${$('fname').value}_${$('lname').value}`, pass = $('pass').value;
+    if ($('pass').value.length < 4) return hint('Пароль — минимум 4 символа');
     const st = status[selected];
-    if (st && st.ok === false) return msg('Сервер недоступен. Проверьте адрес и что сервер запущен');
-    if (st?.ok && st.online >= st.max) return msg('Сервер переполнен');
-    msg('');
+    if (st && st.ok === false) return hint('Сервер недоступен. Попробуйте позже или смените сервер');
+    if (st?.ok && st.online >= st.max) return hint('Сервер переполнен, выберите другой');
+    hint('');
     store.set('nick', nick);
     if (settings.remember) store.set('pass', pass);
     if (!app) { location.href = `${selected}/?q=${settings.quality}`; return; }
-    prepareAndPlay(selected, nick, pass);
-  });
-
-  // ---------- Игровой кэш ----------
-  const fmtSize = (b) => b >= 1048576 ? (b / 1048576).toFixed(1).replace('.', ',') + ' МБ' : Math.max(1, Math.round(b / 1024)) + ' КБ';
-  let pending = null; // { url, nick, pass }
-
-  function showLoad(title) {
-    $('loadtitle').textContent = title;
-    $('loadbar').style.width = '0%';
-    $('loadpct').textContent = '0%';
-    $('loadsize').textContent = ''; $('loadspeed').textContent = ''; $('loadfile').textContent = '';
-    $('loadcancel').hidden = false;
-    $('load').hidden = false;
-  }
-  function hideLoad() { $('load').hidden = true; }
-
-  function prepareAndPlay(url, nick, pass) {
-    pending = { url, nick, pass };
-    $('play').disabled = true;
-    showLoad('Проверка игровых файлов…');
-    $('loadcancel').hidden = true;
-    app.checkCache(url);
+    pendingPlay = { url: selected, nick, pass };
+    mode = 'play';
+    showLoading('Проверка игровых файлов…');
+    app.checkCache(selected);
   }
   function launch() {
-    const p = pending; pending = null;
-    hideLoad();
-    $('play').disabled = false;
+    const p = pendingPlay; pendingPlay = null;
+    showMain();
     if (p) app.play(p.url, p.nick, p.pass, settings.quality);
   }
-  function failLoad(text) {
-    pending = null;
-    hideLoad();
-    $('play').disabled = false;
-    msg(text);
-  }
 
+  // ---------- экраны ----------
+  function showMain() {
+    $('loading').hidden = true; $('ask').hidden = true; $('main').hidden = false;
+    if (app) app.cancelDownload();
+  }
+  function showLoading(text) {
+    $('main').hidden = true; $('ask').hidden = true; $('loading').hidden = false;
+    $('loadtext').textContent = text;
+    $('loadnums').textContent = '';
+    $('loadfill').style.width = '0%';
+    $('loadfill').parentElement.classList.add('indef');
+    $('loadcancel').hidden = true;
+  }
+  function ask(title, text, yes, no, onYes, onNo) {
+    $('main').hidden = true; $('loading').hidden = true; $('ask').hidden = false;
+    $('asktitle').textContent = title; $('asktext').textContent = text;
+    $('askyes').textContent = yes; $('askno').textContent = no;
+    $('askyes').onclick = onYes; $('askno').onclick = onNo;
+  }
+  const backToMain = (text) => { pendingPlay = null; mode = null; showMain(); hint(text || ''); };
+
+  // ---------- игровой кэш ----------
   window.onCacheCheck = (r) => {
-    if (!pending) return;
+    if (!mode) return;
     if (!r.ok) {
-      // без связи можно играть на старых файлах, но сервер всё равно нужен для мультиплеера
-      return failLoad(r.error || 'Не удалось проверить файлы игры');
+      if (mode === 'play' && r.ready) return launch(); // играем на уже скачанных файлах
+      return backToMain(mode === 'play' ? r.error : '');
     }
-    if (r.files === 0) return launch();
-    showLoad(r.ready ? `Обновление игры до версии ${r.version}` : 'Загрузка игровых файлов');
-    $('loadsize').textContent = `0 из ${fmtSize(r.bytes)}`;
-    app.downloadCache(pending.url);
+    if (r.files === 0) return mode === 'play' ? launch() : backToMain();
+    const upd = r.ready;
+    ask(upd ? 'Доступно обновление!' : 'Загрузка игровых данных',
+      `Размер ${upd ? 'обновления' : 'игровых данных'} составляет ${mb(r.bytes)} МБ\nЖелаете загрузить сейчас?`,
+      'Начать загрузку', 'Закрыть', startDownload, () => backToMain());
   };
+  function startDownload() {
+    showLoading('Загрузка игровых данных...');
+    $('loadcancel').hidden = false;
+    app.downloadCache(pendingPlay ? pendingPlay.url : selected);
+  }
   window.onCacheProgress = (p) => {
-    const pct = p.total ? Math.min(100, Math.floor((p.done / p.total) * 100)) : 100;
-    $('loadbar').style.width = pct + '%';
-    $('loadpct').textContent = pct + '%';
-    $('loadsize').textContent = `${fmtSize(p.done)} из ${fmtSize(p.total)} · файлов ${p.files}/${p.totalFiles}`;
-    $('loadspeed').textContent = p.speed ? fmtSize(p.speed) + '/с' : '';
-    $('loadfile').textContent = p.file || '';
+    const tr = $('loadfill').parentElement;
+    tr.classList.remove('indef');
+    $('loadfill').style.width = (p.total ? Math.min(100, (p.done / p.total) * 100) : 100) + '%';
+    $('loadnums').textContent = `${mb(p.done)} из ${mb(p.total)} МБ (${mb(p.speed)} МБ/сек)`;
   };
   window.onCacheDone = (r) => {
-    if (!pending) return;
-    if (r.ok) { $('loadbar').style.width = '100%'; $('loadpct').textContent = '100%'; setTimeout(launch, 300); }
-    else failLoad(r.error || 'Загрузка прервалась. Нажмите «Играть», чтобы продолжить');
+    if (!mode) return;
+    if (r.ok) {
+      $('loadfill').parentElement.classList.remove('indef');
+      $('loadfill').style.width = '100%';
+      $('loadtext').textContent = 'Готово!';
+      return setTimeout(() => (mode === 'play' ? launch() : backToMain()), 400);
+    }
+    ask('Загрузка прервалась', `${r.error || 'Нет связи с сервером'}\nУже скачанное сохранено — загрузка продолжится с того же места.`,
+      'Повторить', 'Закрыть', startDownload, () => backToMain());
   };
-  $('loadcancel').addEventListener('click', () => {
-    if (app) app.cancelDownload();
-    failLoad('Загрузка остановлена. Нажмите «Играть», чтобы продолжить с того же места');
+  $('loadcancel').addEventListener('click', () => backToMain('Загрузка остановлена — продолжится при следующем входе'));
+
+  // ---------- панели ----------
+  let sheetKind = null;
+  function sheet(kind, title, body) {
+    sheetKind = kind;
+    $('sheettitle').textContent = title;
+    $('sheetbody').replaceChildren(...body);
+    $('sheet').hidden = false;
+  }
+  function closeSheet() { $('sheet').hidden = true; sheetKind = null; }
+  $('sheetclose').addEventListener('click', closeSheet);
+  $('sheet').addEventListener('click', (e) => { if (e.target.id === 'sheet') closeSheet(); });
+
+  function openServers() {
+    const rows = allServers().map((s, i) => {
+      const st = status[s.url] || {};
+      const b = el('button', 'srvrow' + (s.url === selected ? ' on' : ''));
+      b.type = 'button';
+      b.style.setProperty('--srv', st.color || '#ff8a3d');
+      const ic = el('span', 'srvicon', String(i + 1));
+      const meta = el('div', 'meta');
+      meta.append(el('b', null, srvName(s)), el('span', null, s.url.replace(/^https?:\/\//, '')));
+      const num = el('div', 'num');
+      if (st.ok) num.append(el('b', null, `${st.online} / ${st.max}`), document.createTextNode(`пинг ${st.ping} мс`));
+      else num.append(el('b', st.ok === false ? 'off' : '', st.ok === false ? 'недоступен' : '…'));
+      b.append(ic, meta, num);
+      if (!s.builtin) {
+        const d = el('button', 'del', '✕'); d.type = 'button';
+        d.addEventListener('click', (e) => {
+          e.stopPropagation();
+          custom = custom.filter((c) => c.url !== s.url); store.set('servers', custom);
+          refresh(); openServers();
+        });
+        b.append(d);
+      }
+      b.addEventListener('click', () => { selected = s.url; store.set('selected', selected); renderServer(); updateNewsDot(); closeSheet(); });
+      return b;
+    });
+    const addr = el('input'); addr.placeholder = '203.0.113.10:3000'; addr.autocapitalize = 'off'; addr.spellcheck = false;
+    const lab = el('label', 'field', 'Добавить сервер — IP или домен с портом'); lab.append(addr);
+    const err = el('div', 'err');
+    const add = el('button', 'btn primary', 'Добавить'); add.type = 'button';
+    add.addEventListener('click', () => {
+      const url = normalize(addr.value);
+      if (!url) { err.textContent = 'Неверный адрес'; return; }
+      if (allServers().some((s) => s.url === url)) { err.textContent = 'Такой сервер уже есть'; return; }
+      custom.push({ url, name: null }); store.set('servers', custom);
+      selected = url; store.set('selected', url);
+      refresh(); openServers();
+    });
+    sheet('servers', 'Выбор сервера', [...(rows.length ? rows : [el('div', 'empty', 'Серверов пока нет.')]), lab, err, add]);
+  }
+  $('srvpill').addEventListener('click', openServers);
+  $('swapbtn').addEventListener('click', openServers);
+
+  function newsList() { return (status[selected]?.ok && status[selected].news) || []; }
+  function updateNewsDot() {
+    const n = newsList()[0];
+    $('newsdot').hidden = !n || store.get('seen-news', '') === (n.title || '') + (n.date || '');
+  }
+  $('newsbtn').addEventListener('click', () => {
+    const list = newsList();
+    if (list[0]) store.set('seen-news', (list[0].title || '') + (list[0].date || ''));
+    updateNewsDot();
+    sheet('news', 'Новости', list.length ? list.slice(0, 30).map((n) => {
+      const d = el('div', 'news');
+      if (n.date) d.append(el('small', null, new Date(n.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })));
+      d.append(el('b', null, n.title || ''), el('p', null, n.text || ''));
+      return d;
+    }) : [el('div', 'empty', 'Новостей пока нет.')]);
   });
 
-  $('refresh').addEventListener('click', refresh);
-  $('addsrv').addEventListener('click', addServer);
-  $('settings').addEventListener('click', openSettings);
-  $('ver').textContent = app ? 'Лаунчер v' + app.version() : 'Лаунчер (веб-версия)';
+  $('settingsbtn').addEventListener('click', () => {
+    const seg = el('div', 'seg');
+    const names = { low: 'Низкая', mid: 'Средняя', high: 'Высокая' };
+    for (const q of ['low', 'mid', 'high']) {
+      const b = el('button', settings.quality === q ? 'on' : '', names[q]); b.type = 'button';
+      b.addEventListener('click', () => {
+        settings.quality = q; store.set('settings', settings);
+        [...seg.children].forEach((c) => c.classList.toggle('on', c === b));
+      });
+      seg.append(b);
+    }
+    const ql = el('div', 'field', 'Качество графики'); ql.append(seg);
+    const rem = el('label', 'check'), cb = el('input'); cb.type = 'checkbox'; cb.checked = settings.remember;
+    cb.addEventListener('change', () => { settings.remember = cb.checked; store.set('settings', settings); if (!cb.checked) store.set('pass', ''); });
+    rem.append(cb, document.createTextNode('Запоминать пароль'));
+    const items = [ql, el('p', 'note', 'Низкая — без теней и с меньшим трафиком, для слабых телефонов.'), rem];
+    if (app && selected) {
+      const re = el('button', 'btn', 'Перекачать файлы игры'); re.type = 'button';
+      re.addEventListener('click', () => { app.clearCache(selected); re.textContent = 'Файлы удалены — скачаются при входе'; re.disabled = true; });
+      items.push(re);
+    }
+    items.push(el('p', 'note', `Лаунчер ${app ? 'v' + app.version() : '(веб-версия)'}`));
+    sheet('settings', 'Настройки', items);
+  });
 
-  window.onLauncherResume = refresh;
+  // ---------- соцсети и поддержка ----------
+  const openLink = (url) => { if (app) app.open(url); else window.open(url, '_blank'); };
+  const L = CFG.links || {};
+  if (L.telegram) {
+    const b = el('button', 'ic'); b.type = 'button'; b.setAttribute('aria-label', 'Telegram');
+    b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M21 4 3 11l6 2 2 6 3-4 5 4 2-15zM9 13l8-6-6 8"/></svg>';
+    b.addEventListener('click', () => openLink(L.telegram));
+    $('socials').append(b);
+  }
+  if (L.vk) {
+    const b = el('button', 'ic social', 'VK'); b.type = 'button';
+    b.addEventListener('click', () => openLink(L.vk));
+    $('socials').append(b);
+  }
+  if (L.support) {
+    $('supportbtn').hidden = false;
+    $('supportbtn').addEventListener('click', () => openLink(L.support));
+  }
+
+  // ---------- иллюстрации из img/ ----------
+  const probeImg = (src, ok) => { const i = new Image(); i.onload = () => ok(src); i.src = src; };
+  probeImg('img/logo.png', (src) => { document.querySelectorAll('.logoimg').forEach((i) => { i.src = src; }); document.documentElement.classList.add('has-logo'); });
+  probeImg('img/loading.jpg', (src) => { document.querySelector('.loadart').style.backgroundImage = `url(${src})`; });
+  probeImg('img/bg.jpg', (src) => {
+    const c = $('scene'); if (c) c.style.display = 'none';
+    document.body.style.background = `#07090d url(${src}) center / cover no-repeat`;
+  });
+
+  // ---------- кнопка «Назад» ----------
   window.onLauncherBack = () => {
-    if (!$('load').hidden) { if (!$('loadcancel').hidden) $('loadcancel').click(); return true; }
-    if (onDlgBack) { onDlgBack(); return true; }
+    if (!$('sheet').hidden) { closeSheet(); return true; }
+    if (!$('ask').hidden) { $('askno').click(); return true; }
+    if (!$('loading').hidden) { if (!$('loadcancel').hidden) $('loadcancel').click(); return true; }
     return false;
   };
+  window.onLauncherResume = refresh;
 
-  // Иллюстрации: если в img/ лежат bg.jpg и logo.png — показываем их вместо оформления по умолчанию.
-  const bgImg = new Image();
-  bgImg.onload = () => { const b = document.querySelector('.bg'); b.style.backgroundImage = 'url(img/bg.jpg)'; b.classList.add('has-art'); };
-  bgImg.src = 'img/bg.jpg';
-  const logo = $('logoimg');
-  logo.onload = () => { logo.hidden = false; $('logotext').hidden = true; };
-  logo.src = 'img/logo.png';
-
-  refresh();
-  setInterval(refresh, 15000);
+  // ---------- старт ----------
+  $('ver').textContent = app ? `v${app.version()}` : 'web';
+  $('main').hidden = true;
+  const splashStart = performance.now();
+  refresh().then(() => {
+    setTimeout(() => {
+      $('splash').classList.add('out');
+      setTimeout(() => $('splash').remove(), 700);
+      if (app && selected && status[selected]?.ok) {
+        mode = 'startup';
+        showLoading('Подключение к серверу…');
+        app.checkCache(selected);
+      } else showMain();
+    }, Math.max(0, 1800 - (performance.now() - splashStart)));
+  });
+  setInterval(refresh, 20000);
 })();

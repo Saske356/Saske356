@@ -9,11 +9,15 @@ import android.webkit.ValueCallback;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
+import java.io.IOException;
+import java.util.Locale;
 import org.json.JSONObject;
 import java.io.File;
 
 /** Лаунчер: интерфейс из assets/launcher, мост в Java через объект NovogradApp. */
 public class MainActivity extends Activity {
+    static final String HOST = "launcher.local";
     private WebView web;
     private volatile CacheSync running;
 
@@ -22,19 +26,36 @@ public class MainActivity extends Activity {
         super.onCreate(state);
         Screen.immersive(this);
         web = Screen.webView(this);
-        web.getSettings().setAllowFileAccess(true);
         web.addJavascriptInterface(new Bridge(), "NovogradApp");
         web.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
                 Uri u = r.getUrl();
-                if ("file".equals(u.getScheme())) return false;
+                if (HOST.equals(u.getHost())) return false;
                 openExternal(u.toString());
                 return true;
             }
+
+            // Лаунчер открывается с http://launcher.local/, файлы берутся из assets/launcher.
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) {
+                Uri u = r.getUrl();
+                if (!HOST.equals(u.getHost())) return null;
+                String path = u.getPath();
+                if (path == null || path.equals("/")) path = "/index.html";
+                if (path.contains("..")) return new WebResourceResponse("text/plain", "utf-8", 404, "Not Found", null, null);
+                String ext = path.substring(path.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
+                String mime = GameActivity.MIME.containsKey(ext) ? GameActivity.MIME.get(ext) : "application/octet-stream";
+                try {
+                    return new WebResourceResponse(mime, mime.startsWith("text/") ? "utf-8" : null,
+                            getAssets().open("launcher" + path));
+                } catch (IOException e) {
+                    return new WebResourceResponse("text/plain", "utf-8", 404, "Not Found", null, null);
+                }
+            }
         });
         setContentView(web);
-        web.loadUrl("file:///android_asset/launcher/index.html");
+        web.loadUrl("http://" + HOST + "/index.html");
     }
 
     @Override

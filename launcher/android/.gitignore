@@ -1,2 +1,5 @@
 build/
 keystore/
+assets/launcher/js/
+assets/launcher/shared/
+assets/launcher/vendor/

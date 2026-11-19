@@ -22,13 +22,14 @@ import org.json.JSONObject;
 public class GameActivity extends Activity {
     /** Игра грузится с этого адреса; файлы подставляются из кэша, в сеть запросы не уходят. */
     static final String HOST = "game.local";
-    private static final Map<String, String> MIME = new HashMap<>();
+    static final Map<String, String> MIME = new HashMap<>();
     static {
         MIME.put("html", "text/html"); MIME.put("js", "text/javascript"); MIME.put("mjs", "text/javascript");
         MIME.put("css", "text/css"); MIME.put("json", "application/json"); MIME.put("png", "image/png");
         MIME.put("jpg", "image/jpeg"); MIME.put("webp", "image/webp"); MIME.put("svg", "image/svg+xml");
         MIME.put("glb", "model/gltf-binary"); MIME.put("gltf", "model/gltf+json"); MIME.put("bin", "application/octet-stream");
         MIME.put("ogg", "audio/ogg"); MIME.put("mp3", "audio/mpeg"); MIME.put("wasm", "application/wasm"); MIME.put("txt", "text/plain");
+        MIME.put("woff2", "font/woff2"); MIME.put("ttf", "font/ttf");
     }
     private WebView web;
     private File cacheDir;

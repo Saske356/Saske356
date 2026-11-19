@@ -18,6 +18,16 @@ VERSION=$(sed -n 's/.*android:versionName="\([^"]*\)".*/\1/p' AndroidManifest.xm
 OUT=build
 rm -rf "$OUT"; mkdir -p "$OUT"/{res,gen,classes,dex}
 
+echo "▸ 3D-сцена для фона лаунчера (из папки игры)"
+GAME="${GAME_DIR:-../../game}"
+SC=assets/launcher
+mkdir -p "$SC/js" "$SC/shared" "$SC/vendor"
+cp "$GAME/shared/world.js" "$SC/shared/"
+cp "$GAME/public/js/city.js" "$GAME/public/js/models.js" "$GAME/public/js/traffic.js" "$SC/js/"
+THREE_JS="$GAME/node_modules/three/build/three.module.js"
+[ -f "$THREE_JS" ] || { echo "Нет $THREE_JS — выполните npm install в папке игры"; exit 1; }
+cp "$THREE_JS" "$SC/vendor/"
+
 echo "▸ Ресурсы"
 "$BT/aapt2" compile --dir res -o "$OUT/res/res.zip"
 "$BT/aapt2" link -I "$JAR" --manifest AndroidManifest.xml -A assets \
