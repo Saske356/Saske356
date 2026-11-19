@@ -30,11 +30,19 @@ impl Ui {
         let ts = touches();
         if !ts.is_empty() { self.touch_seen = true; }
         if self.touch_seen {
+            // macroquad хранит одно событие на палец за кадр: «нажал» второго пальца перетирается его «двигаю»,
+            // а быстрый тап приходит сразу как «отпустил». Восстанавливаем пропущенные нажатия.
+            let ids: Vec<u64> = ts.iter().map(|t| t.id).collect();
+            self.ptrs.retain(|p| ids.contains(&p.id)); // палец пропал без «отпустил»
             for t in ts { let (x, y) = (t.position.x / px, t.position.y / px);
+                let known = self.ptrs.iter().any(|q| q.id == t.id);
                 match t.phase {
-                    TouchPhase::Started => { let p = Ptr { id: t.id, x, y, sx: x, sy: y, moved: 0., used: false, scroll: false, t: 0. }; self.ptrs.retain(|q| q.id != t.id); self.ptrs.push(p); self.downs.push(p); }
+                    TouchPhase::Started | TouchPhase::Moved | TouchPhase::Stationary if !known => { let p = Ptr { id: t.id, x, y, sx: x, sy: y, moved: 0., used: false, scroll: false, t: 0. }; self.ptrs.push(p); self.downs.push(p); }
+                    TouchPhase::Started => { if let Some(p) = self.ptrs.iter_mut().find(|q| q.id == t.id) { *p = Ptr { id: t.id, x, y, sx: x, sy: y, moved: 0., used: false, scroll: false, t: 0. }; self.downs.push(*p); } }
                     TouchPhase::Moved | TouchPhase::Stationary => if let Some(p) = self.ptrs.iter_mut().find(|q| q.id == t.id) { p.moved = p.moved.max(((x - p.sx).powi(2) + (y - p.sy).powi(2)).sqrt()); p.x = x; p.y = y; },
-                    TouchPhase::Ended | TouchPhase::Cancelled => if let Some(i) = self.ptrs.iter().position(|q| q.id == t.id) { let mut p = self.ptrs.remove(i); p.x = x; p.y = y; self.ups.push(p); },
+                    TouchPhase::Ended | TouchPhase::Cancelled => {
+                        if let Some(i) = self.ptrs.iter().position(|q| q.id == t.id) { let mut p = self.ptrs.remove(i); p.x = x; p.y = y; self.ups.push(p); }
+                        else { let p = Ptr { id: t.id, x, y, sx: x, sy: y, moved: 0., used: false, scroll: false, t: 0. }; self.downs.push(p); self.ups.push(p); } }
                 } }
         } else {
             let (mx, my) = mouse_position(); let (x, y) = (mx / px, my / px); let d = is_mouse_button_down(MouseButton::Left);

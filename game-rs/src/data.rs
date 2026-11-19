@@ -6,7 +6,7 @@ pub const PI: f32 = std::f32::consts::PI;
 
 pub mod cfg {
     pub const ARENA_R: f32 = 1250.0;
-    pub const MAX_ENEMIES: usize = 200;
+    pub const MAX_ENEMIES: usize = 185;
     pub const CRAB_MAX: usize = 6;
     pub const RAY_MAX: usize = 5;
     pub const SPAWNER_MAX: usize = 3;

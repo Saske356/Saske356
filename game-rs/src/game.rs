@@ -303,9 +303,9 @@ impl Game {
         else if self.boss_clear_t > 0. { self.boss_clear_t -= dt; if self.boss_clear_t <= 0. { self.next_zone(); } return; }
         else { self.zone_t += dt; if self.zone_t >= cfg::ZONE_TIME * if self.muts[7] { 0.5 } else { 1. } { self.next_zone(); } }
         let z = self.zone as f32;
-        let mut rate = (2.6 + 0.65 * (z - 1.) + 0.45 * (z - 7.).max(0.)) * if self.hard { 1.2 } else { 1. } * if self.muts[2] { 1.5 } else { 1. } * (1. + self.zone_t / cfg::ZONE_TIME * 0.4);
+        let mut rate = (2.4 + 0.6 * (z - 1.) + 0.38 * (z - 7.).max(0.)) * if self.hard { 1.2 } else { 1. } * if self.muts[2] { 1.5 } else { 1. } * (1. + self.zone_t / cfg::ZONE_TIME * 0.4);
         if self.boss >= 0 { rate *= 0.22; }
-        let max_alive = (cfg::MAX_ENEMIES - 10).min(52 + self.zone as usize * 10);
+        let max_alive = (cfg::MAX_ENEMIES - 15).min(50 + self.zone as usize * 9);
         self.spawn_acc += rate * dt;
         while self.spawn_acc >= 1. { self.spawn_acc -= 1.; if self.en.n >= max_alive { continue; }
             let (x, y) = self.offscreen_point(); let k = self.pick_kind(); let el = z >= 3. && self.rand() < (0.03 + z * 0.006) * if self.muts[3] { 3. } else { 1. };

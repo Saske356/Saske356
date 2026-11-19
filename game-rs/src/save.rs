@@ -32,7 +32,7 @@ impl Default for Save {
         Save { pearls: 0, best: 0, best_depth: 0, total_kills: 0, total_pearls: 0, runs: 0, flares: 0, shop: BTreeMap::new(), tal: BTreeMap::new(),
             chars, ch: "lumen".into(), skins, skin: "azure".into(), ach: BTreeMap::new(), seen_how: false, seen_intro: false, foe_seen: BTreeMap::new(),
             seen: BTreeMap::new(), tut: false, wins: 0, daily: Daily::default(), best_kills: 0, best_combo: 0, best_level: 0, best_syn: 0, crab_hint: false,
-            set: Settings { sound: true, music: true, vibro: true, quality: "auto".into(), nums: true, shake: true, lang: default_lang(), fps: 120, fx: true, hard: false, orient: 0 },
+            set: Settings { sound: true, music: true, vibro: true, quality: "auto".into(), nums: true, shake: true, lang: default_lang(), fps: 120, fx: false, hard: false, orient: 0 },
             err_log: vec![], migrated: false }
     }
 }
@@ -75,7 +75,7 @@ impl Save {
             if let Some(q) = s(st, "quality") { if ["auto", "high", "low"].contains(&q.as_str()) { t.quality = q; } }
             if let Some(l) = s(st, "lang") { if l == "ru" || l == "en" { t.lang = l; } }
             t.fps = if num(st, "fps") == Some(60.0) { 60 } else { 120 };
-            t.fx = flag(st, "fx", true); t.hard = flag(st, "hard", false); t.orient = num(st, "orient").unwrap_or(0.).min(2.) as u8;
+            t.fx = flag(st, "bloom", false); // подсветка — новая тяжёлая настройка, по умолчанию выключена t.hard = flag(st, "hard", false); t.orient = num(st, "orient").unwrap_or(0.).min(2.) as u8;
         }
         if let Some(Value::Array(a)) = o.get("errLog") { d.err_log = a.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).take(5).collect(); }
         // проверки, как в веб-версии
@@ -96,7 +96,7 @@ impl Save {
             "daily": {"day": self.daily.day, "quests": q, "streak": self.daily.streak, "last": self.daily.last, "gift": self.daily.gift, "chBest": self.daily.ch_best, "chDone": self.daily.ch_done as u8},
             "bestKills": self.best_kills, "bestCombo": self.best_combo, "bestLevel": self.best_level, "bestSyn": self.best_syn,
             "set": {"sound": t.sound as u8, "music": t.music as u8, "vibro": t.vibro as u8, "quality": t.quality, "nums": t.nums as u8, "shake": t.shake as u8, "qv": 1,
-                "lang": t.lang, "fps": t.fps, "fx": t.fx as u8, "hard": t.hard as u8, "orient": t.orient},
+                "lang": t.lang, "fps": t.fps, "bloom": t.fx as u8, "hard": t.hard as u8, "orient": t.orient},
             "errLog": self.err_log,
         }).to_string()
     }
