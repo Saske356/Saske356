@@ -160,6 +160,29 @@ function resize() {
 }
 addEventListener("resize", resize);
 
+// The artifact sandbox does not let the page fetch data: URIs, so the
+// embedded buffer is decoded here and the model is parsed as an in-memory GLB.
+function loadModel(url, onLoad, onError) {
+  fetch(url).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(js => {
+    const uri = js.buffers[0].uri;
+    const b64 = uri.slice(uri.indexOf(",") + 1);
+    const bin = Uint8Array.from(atob(b64), ch => ch.charCodeAt(0));
+    delete js.buffers[0].uri;
+    js.buffers[0].byteLength = bin.length;
+    let jb = new TextEncoder().encode(JSON.stringify(js));
+    const jpad = (4 - jb.length % 4) % 4, bpad = (4 - bin.length % 4) % 4;
+    const total = 12 + 8 + jb.length + jpad + 8 + bin.length + bpad;
+    const out = new Uint8Array(total), dv = new DataView(out.buffer);
+    dv.setUint32(0, 0x46546C67, true); dv.setUint32(4, 2, true); dv.setUint32(8, total, true);
+    dv.setUint32(12, jb.length + jpad, true); dv.setUint32(16, 0x4E4F534A, true);
+    out.set(jb, 20); out.fill(0x20, 20 + jb.length, 20 + jb.length + jpad);
+    let o = 20 + jb.length + jpad;
+    dv.setUint32(o, bin.length + bpad, true); dv.setUint32(o + 4, 0x004E4942, true);
+    out.set(bin, o + 8);
+    loader.parse(out.buffer, "", onLoad, onError);
+  }).catch(onError);
+}
+
 function loadCar(c) {
   cur = c;
   document.getElementById("loading").hidden = false;
@@ -167,7 +190,7 @@ function loadCar(c) {
   document.getElementById("sub").textContent = c.cls;
   [...document.querySelectorAll("#cars button")].forEach(b => b.setAttribute("aria-pressed", b.dataset.id === c.id));
   if (!c.scissor) c.scissor = false;
-  loader.load("models/" + c.id + ".json", g => {
+  loadModel("models/" + c.id + ".json", g => {
     if (car) scene.remove(car);
     car = g.scene;
     N = {}; M = {};
@@ -186,7 +209,7 @@ function loadCar(c) {
     paintColor(c.color);
     renderSpec();
     document.getElementById("loading").hidden = true;
-  }, undefined, () => { document.getElementById("loading").textContent = "Не удалось загрузить модель"; });
+  }, err => { console.error(err); document.getElementById("loading").textContent = "Не удалось загрузить модель"; });
 }
 
 function paintColor(hex) {
