@@ -505,7 +505,8 @@ const CFG = {
   RAY_MAX: 5, SPAWNER_MAX: 3, LANTERN_MAX: 4, WISP_MAX: 8, // новые враги: одновременно не больше
   CRAB_SHIELD: 0.6,       // щит выдерживает урон = 60% здоровья краба
   CRAB_BLOCK: 0.65,       // и срезает 65% урона спереди
-  INTER_GAP: 150000,      // межстраничная реклама — не чаще раза в 2,5 мин
+  INTER_GAP: 240000,      // межстраничная реклама — не чаще раза в 4 мин (и только после каждой 2-й смерти)
+  LV_GAP: 11,             // экран выбора улучшения — не чаще раза в 11 с, новые уровни копятся
   MAX_EBUL: 520,
   MAX_PBUL: 380,
   MAX_PART_HI: 650,
@@ -785,7 +786,7 @@ const EN = {
     shopTitle:'UPGRADES', tabUp:'Boosts', tabChars:'Sparks', tabSkins:'Skins', tabTal:'Talents', bestT:'BESTIARY', bestL:'Bestiary', bestInfo:(n,m)=>'Creatures met: '+n+' / '+m, bestLocked:'Not met yet — dive deeper.', talOwn:'Learned', dailyB:'DAILY CHALLENGE', dailyT:'DAILY CHALLENGE', dailyX2:'×2 pearls', dailyWin:'DAILY CHALLENGE COMPLETE', best:'best', back:'Back',
     achTitle:'AWARDS', setTitle:'SETTINGS',
     sound:'Sound', music:'Music', vibro:'Vibration', graphics:'Graphics', nums:'Damage numbers', shake:'Screen shake', fxL:'Glow (GPU)', fxNo:'unavailable', fxHi:'on high graphics', fxSlow:'off (too heavy)',
-    lang:'Language', track:'Melody', ost:'SOUNDTRACK', ostNo:'no files', on:'ON', off:'OFF', gHigh:'HIGH', gLow:'SAVER', gAuto:'AUTO',
+    lang:'Language', sec:'s', nextDepth:(d,t)=>'↓ '+d+' m in '+t+' s', track:'Melody', ost:'SOUNDTRACK', ostNo:'no files', on:'ON', off:'OFF', gHigh:'HIGH', gLow:'SAVER', gAuto:'AUTO',
     depth:'DEPTH', time:'TIME', foes:'FOES', maxCombo:'MAX COMBO', level:'LEVEL', pearlsL:'PEARLS', score:'SCORE', syn:'SYNERGIES',
     crabT:'SHIELD CRAB', crabS:'Hit from the side or dash — the shield cracks', crabBreak:'SHIELD BROKEN', lord:'LORD OF THE ABYSS', flareB:'FLARE!', comboX:'COMBO ×', synergy:'SYNERGY', pack:'Ambush!',
     comboLost:'combo lost', pearl1:'+1 pearl', magnetB:'ATTRACTION!',
@@ -802,7 +803,7 @@ const EN = {
     achHead:(n,m)=>'Unlocked <b style="color:#ffd54f">'+n+' / '+m+'</b> · earned ',
     achReward:(r)=>'AWARD · +'+r+' PEARLS', pearlsGen:'pearls', adGift:(r,n)=>'▶ +'+r+' pearls for an ad ('+n+')', giftT:'GIFT FROM THE DEEP',
     reroll2:(n)=>'Reroll ('+n+')', lvSubMore:(n)=>'Pick an upgrade · '+n+' more',
-    tutDone:'Done!', tutFin:'Great! You are ready.', tutFinS:'Dive deeper — a lord of the abyss waits at 500 m',
+    tutDone:'Done!', tutFin:'Great! You are ready.', tutFinS:'Depth grows by itself — survive, and you sink deeper',
     introDark:'The ocean went dark.', introSpark:'But one spark still lives…', skip:'tap to skip',
     story:[[1.6,'The Heart of the Abyss went dark.'],[3.0,'Lumen’s light spread'],[3.6,'through all the water —'],[4.4,'and the ocean remembered how to shine.']],
     cont:'tap to continue', m:'m', lv:'LV', comboW:'combo', flareBtn:'FLARE', dashBtn:'DASH', fps:'Frame rate', quests:'Daily quests', questsTitle:'TODAY\u2019S QUESTS', claim:'Claim', claimed:'Claimed',
@@ -835,7 +836,7 @@ const RU = {ui:{
   shopTitle:'УЛУЧШЕНИЯ', tabUp:'Усиления', tabChars:'Искры', tabSkins:'Облики', tabTal:'Таланты', bestT:'БЕСТИАРИЙ', bestL:'Бестиарий', bestInfo:(n,m)=>'Встречено существ: '+n+' / '+m, bestLocked:'Ещё не встречено — ныряй глубже.', talOwn:'Изучено', dailyB:'ИСПЫТАНИЕ ДНЯ', dailyT:'ИСПЫТАНИЕ ДНЯ', dailyX2:'жемчуг ×2', dailyWin:'ИСПЫТАНИЕ ДНЯ ПРОЙДЕНО', best:'лучшее', back:'Назад',
   achTitle:'НАГРАДЫ', setTitle:'НАСТРОЙКИ',
   sound:'Звуки', music:'Музыка', vibro:'Вибрация', graphics:'Графика', nums:'Цифры урона', shake:'Тряска экрана', fxL:'Свечение', fxNo:'недоступно', fxHi:'на высокой графике', fxSlow:'выкл (тяжело для телефона)',
-  lang:'Язык', track:'Мелодия', ost:'САУНДТРЕК', ostNo:'нет файлов', on:'ВКЛ', off:'ВЫКЛ', gHigh:'ВЫСОКАЯ', gLow:'ЭКОНОМ', gAuto:'АВТО',
+  lang:'Язык', sec:'с', nextDepth:(d,t)=>'↓ '+d+' м через '+t+' с', track:'Мелодия', ost:'САУНДТРЕК', ostNo:'нет файлов', on:'ВКЛ', off:'ВЫКЛ', gHigh:'ВЫСОКАЯ', gLow:'ЭКОНОМ', gAuto:'АВТО',
   depth:'ГЛУБИНА', time:'ВРЕМЯ', foes:'ВРАГОВ', maxCombo:'МАКС. КОМБО', level:'УРОВЕНЬ', pearlsL:'ЖЕМЧУГ', score:'ОЧКИ', syn:'СИНЕРГИЙ',
   crabT:'КРАБ СО ЩИТОМ', crabS:'Бей сбоку или рывком — щит треснет', crabBreak:'ЩИТ РАСКОЛОТ', lord:'ВЛАДЫКА БЕЗДНЫ', flareB:'ВСПЫШКА!', comboX:'КОМБО ×', synergy:'СИНЕРГИЯ', pack:'Окружение!',
   comboLost:'комбо потеряно', pearl1:'+1 жемчуг', magnetB:'ПРИТЯЖЕНИЕ!',
@@ -852,7 +853,7 @@ const RU = {ui:{
   achHead:(n,m)=>'Открыто <b style="color:#ffd54f">'+n+' / '+m+'</b> · получено ',
   achReward:(r)=>'НАГРАДА · +'+r+' ЖЕМЧУГА', pearlsGen:'жемчуга', adGift:(r,n)=>'▶ +'+r+' жемчуга за рекламу ('+n+')', giftT:'ДАР БЕЗДНЫ',
   reroll2:(n)=>'Перебор ('+n+')', lvSubMore:(n)=>'Выбери улучшение · ещё '+n,
-  tutDone:'Готово!', tutFin:'Отлично! Ты готов.', tutFinS:'Ныряй глубже — на 500 м ждёт владыка бездны',
+  tutDone:'Готово!', tutFin:'Отлично! Ты готов.', tutFinS:'Глубина растёт сама — держись, и опустишься глубже',
   introDark:'Океан погас.', introSpark:'Но одна искра ещё жива…', skip:'коснись, чтобы пропустить',
   story:[[1.6,'Сердце Бездны погасло.'],[3.0,'Свет Люмена разлился'],[3.6,'по всей толще воды —'],[4.4,'и океан вспомнил, как сиять.']],
   cont:'коснись, чтобы продолжить', m:'м', lv:'УР', comboW:'комбо', flareBtn:'ВСПЫШКА', dashBtn:'РЫВОК', fps:'Частота кадров', quests:'Задания', questsTitle:'ЗАДАНИЯ НА ДЕНЬ', claim:'Забрать', claimed:'Получено',
@@ -1875,7 +1876,7 @@ function computeStats() {
   if (P.maxHp > oldMax && G.state !== 'title') P.hp += P.maxHp - oldMax;
   P.hp = Math.min(P.hp, P.maxHp);
 }
-const xpNeed = l => Math.floor(4 + l * 3.2 + l * l * 0.55);
+const xpNeed = l => Math.floor(6 + l * 4 + l * l * 0.55); // первые уровни чуть «дороже» — меньше прерываний в начале
 
 /* ---------- эффекты ---------- */
 function part(x, y, vx, vy, life, size, col, drag) {
@@ -3104,7 +3105,7 @@ function updateRun(dt, realDt) {
   G.camX += (tx - G.camX) * a; G.camY += (ty - G.camY) * a;
   // QA: окно улучшений не открывается поверх крупного баннера (босс, победа над боссом, смена зоны)
   if (G.levelPending > 0 && !P.dead && G.dying <= 0) { G.levelDelay -= realDt; const bn = G.banner, busy = bn.text && bn.t < bn.dur - 0.5 && G.levelDelay > -2.5;
-    if (G.levelDelay <= 0 && !busy) openLevelUp(); }
+    if (G.levelDelay <= 0 && !busy && G.runT - (G.lvT === undefined ? -99 : G.lvT) >= CFG.LV_GAP) openLevelUp(); }
 
 }
 
@@ -3142,14 +3143,25 @@ const ANIM = {drifter: 'swim', dart: 'swim', fry: 'swim', jelly: 'jelly', squid:
   mender: 'pulse', crystal: 'pulse', spawner: 'pulse', bomber: 'fin', lantern: 'fin', eel: 'fin',
   boss1: 'fin', boss2: 'pulse', boss4: 'swim', kingcrab: 'crab', kingcrab_bare: 'crab', queen: 'jelly'};
 const ANIM_LIVE = {boss1: 1, boss2: 1, boss4: 1, kingcrab: 1, kingcrab_bare: 1, queen: 1};
-const ANIM_F = {swim: 1.7, fin: 1.1, tent: 1.15, jelly: 0.7, crab: 2.6, pulse: 0.8}; // циклов в секунду
+const ANIM_F = {swim: 1.7, fin: 1.1, tent: 1.15, jelly: 0.7, jellyV: 0.7, crab: 2.6, pulse: 0.8, flap: 1.3, orb: 1.6}; // циклов в секунду
 const ANIM_N = 8; let SPR_PH = 0, BAKE_LEFT = 2;
-function animOf(key) { return ANIM[key] || (key.startsWith('pl_') ? 'swim' : null); }
+const ANIM_CODE = {jelly: 'jellyV', queen: 'jellyV', ray: 'flap'}; // родные модели: медуза нарисована куполом вверх, скат — крыльями в стороны
+function animOf(key) { const s = SPR[key], art = s && s.art; if (!art && ANIM_CODE[key]) return ANIM_CODE[key];
+  return ANIM[key] || (key.startsWith('pl_') ? (art ? 'swim' : 'orb') : null); }
 /** Рисует src полосками в g (x0,y0 — левый верх, sc — масштаб пикселя), ph — фаза в радианах */
 function warpDraw(g, src, kind, ph, step, x0, y0, sc) {
   const W = src.width, H = src.height;
   if (kind === 'pulse') { const k = 1 + 0.055 * Math.sin(ph), k2 = 1 + 0.055 * Math.sin(ph + 1.1);
     g.save(); g.translate(x0 + W * sc / 2, y0 + H * sc / 2); g.rotate(Math.sin(ph * 0.5) * 0.06); g.scale(k, k2); g.drawImage(src, -W * sc / 2, -H * sc / 2, W * sc, H * sc); g.restore(); return; }
+  if (kind === 'flap') { const k = 1 - 0.22 * Math.sin(ph); // скат машет крыльями
+    g.save(); g.translate(x0 + W * sc / 2, y0 + H * sc / 2); g.scale(1, k); g.drawImage(src, -W * sc / 2, -H * sc / 2, W * sc, H * sc); g.restore(); return; }
+  if (kind === 'orb') { const k = 1 + 0.035 * Math.sin(ph); // искра Люмена мягко пульсирует
+    g.save(); g.translate(x0 + W * sc / 2, y0 + H * sc / 2); g.scale(k, 2 - k); g.drawImage(src, -W * sc / 2, -H * sc / 2, W * sc, H * sc); g.restore(); return; }
+  if (kind === 'jellyV') { // купол сверху сокращается, щупальца снизу колышутся с запаздыванием
+    for (let y = 0; y < H; y += step) { const v = (y + step / 2) / H, bell = v < 0.42 ? 1 : Math.max(0, 1 - (v - 0.42) / 0.16), t = Math.min(1, Math.max(0, (v - 0.42) / 0.5));
+      const w = W * (1 + 0.1 * Math.sin(ph) * bell - 0.05 * Math.sin(ph - 1.3) * t), dx = Math.sin(ph - v * 9) * W * 0.06 * t * t;
+      g.drawImage(src, 0, y, W, step, x0 + ((W - w) / 2 + dx) * sc, y0 + y * sc, w * sc, step * sc + 0.6); }
+    return; }
   if (kind === 'crab') { // ножки (верх и низ спрайта) перебирают навстречу друг другу
     for (let y = 0; y < H; y += step) { const v = (y + step / 2) / H, leg = Math.min(1, Math.max(0, (Math.abs(v - 0.5) - 0.12) * 4));
       const dx = leg * Math.sin(ph + (v < 0.5 ? 0 : Math.PI) + v * 5) * W * 0.032;
@@ -3294,13 +3306,17 @@ function buildDecorSprites() {
     for (let i = 0; i < 5; i++) { g.beginPath(); g.arc(-r * 0.6 + i * r * 0.3, 0, 2.2, 0, TAU); g.fill(); }
   });
   // Череп древнего чудища (вид сверху)
-  makeSprite('d_skull', 40, 8, (g, r) => {
-    const gr = g.createRadialGradient(0, -r * 0.2, r * 0.1, 0, 0, r); gr.addColorStop(0, '#5a564a'); gr.addColorStop(1, '#22201a');
-    g.fillStyle = gr; g.beginPath(); g.ellipse(-r * 0.15, 0, r * 0.7, r * 0.62, 0, 0, TAU); g.fill();
-    g.beginPath(); g.moveTo(r * 0.3, -r * 0.35); g.quadraticCurveTo(r * 1.0, -r * 0.2, r * 0.95, 0); g.quadraticCurveTo(r * 1.0, r * 0.2, r * 0.3, r * 0.35); g.fill();
-    g.fillStyle = '#0a0806'; for (const s of [-1, 1]) { g.beginPath(); g.ellipse(r * 0.15, s * r * 0.28, r * 0.16, r * 0.12, 0, 0, TAU); g.fill(); }
-    g.shadowColor = '#ff4f5f'; g.shadowBlur = 10; g.fillStyle = 'rgba(255,90,100,0.7)'; for (const s of [-1, 1]) { g.beginPath(); g.arc(r * 0.15, s * r * 0.28, 2.6, 0, TAU); g.fill(); }
-    g.shadowBlur = 0; g.fillStyle = 'rgba(230,220,190,0.6)'; for (let i = 0; i < 4; i++) { g.beginPath(); g.moveTo(r * (0.55 + i * 0.1), -r * 0.1); g.lineTo(r * (0.6 + i * 0.1), r * 0.06); g.lineTo(r * (0.65 + i * 0.1), -r * 0.1); g.fill(); }
+  makeSprite('d_skull', 40, 10, (g, r) => {
+    const bone = g.createRadialGradient(-r * 0.2, -r * 0.2, r * 0.1, 0, 0, r * 1.05); bone.addColorStop(0, '#3d4f66'); bone.addColorStop(0.7, '#1c2a3d'); bone.addColorStop(1, '#0d1626');
+    const shape = () => { g.beginPath(); g.ellipse(-r * 0.15, 0, r * 0.7, r * 0.62, 0, 0, TAU);
+      g.moveTo(r * 0.3, -r * 0.35); g.quadraticCurveTo(r * 1.0, -r * 0.22, r * 0.97, 0); g.quadraticCurveTo(r * 1.0, r * 0.22, r * 0.3, r * 0.35); };
+    g.shadowColor = '#7fd6ff'; g.shadowBlur = 10; shape(); g.fillStyle = bone; g.fill();
+    g.shadowBlur = 6; g.strokeStyle = 'rgba(170,225,255,0.55)'; g.lineWidth = 1.6; shape(); g.stroke();
+    g.shadowBlur = 0; g.strokeStyle = 'rgba(150,210,240,0.25)'; g.lineWidth = 1.2; // швы черепа
+    g.beginPath(); g.moveTo(-r * 0.8, 0); g.quadraticCurveTo(-r * 0.3, -r * 0.08, r * 0.1, 0); g.moveTo(-r * 0.45, -r * 0.45); g.quadraticCurveTo(-r * 0.4, 0, -r * 0.5, r * 0.45); g.stroke();
+    for (const sd of [-1, 1]) { g.fillStyle = '#04070e'; g.beginPath(); g.ellipse(r * 0.15, sd * r * 0.28, r * 0.17, r * 0.13, 0, 0, TAU); g.fill();
+      g.shadowColor = '#3ff0ff'; g.shadowBlur = 12; g.fillStyle = 'rgba(80,240,255,0.85)'; g.beginPath(); g.arc(r * 0.17, sd * r * 0.28, 2.4, 0, TAU); g.fill(); g.shadowBlur = 0; }
+    g.fillStyle = 'rgba(200,235,255,0.75)'; for (let i = 0; i < 5; i++) { const x = r * (0.5 + i * 0.09); for (const sd of [-1, 1]) { g.beginPath(); g.moveTo(x, sd * r * 0.2); g.lineTo(x + r * 0.04, sd * r * 0.06); g.lineTo(x + r * 0.08, sd * r * 0.2); g.fill(); } }
   });
   // Ледяные кристаллы
   makeSprite('d_ice', 46, 10, (g, r) => {
@@ -3795,6 +3811,7 @@ function renderHUD() {
   ctx.fillText(Math.ceil(P.hp) + ' / ' + P.maxHp, L + hw / 2, top + 16);
   ctx.textAlign = 'left'; ctx.font = '800 13px ' + FONT; ctx.fillStyle = PAL[C.GOLD];
   ctx.fillText(uiT('lv') + ' ' + P.level, L, top + 38);
+  if (G.levelPending > 0 && G.state === 'play') { const w0 = ctx.measureText(uiT('lv') + ' ' + P.level).width; ctx.fillStyle = PAL[C.GOLD]; ctx.globalAlpha = 0.75 + 0.25 * Math.sin(G.t * 6); ctx.fillText(' +' + G.levelPending, L + w0, top + 38); ctx.globalAlpha = 1; } // накопленные выборы
   ctx.fillStyle = '#8fd8ff'; ctx.fillText(G.zone * 100 + ' ' + uiT('m'), L + 48, top + 38);
   if (G.endless) { ctx.fillStyle = PAL[C.GOLD]; ctx.fillText('∞', L + 104, top + 38); }
   // прогресс зоны
@@ -3802,7 +3819,10 @@ function renderHUD() {
   if (!G.boss) {
   // Название текущего биома помогает ориентироваться в длинном погружении.
   ctx.textAlign = 'left'; ctx.font = '700 9px ' + FONT; ctx.fillStyle = 'rgba(190,225,238,0.66)';
-  ctx.fillText((G.hard ? '☠ ' : G.daily ? '☀ ' : '') + (ZONES[Math.max(0, Math.min(ZONES.length - 1, G.zone - 1))] || '').toLocaleUpperCase(), L, top + 63, hw + 30); }
+  const zl = (G.hard ? '☠ ' : G.daily ? '☀ ' : '') + (ZONES[Math.max(0, Math.min(ZONES.length - 1, G.zone - 1))] || '').toLocaleUpperCase();
+  ctx.fillText(zl, L, top + 63, hw + 30);
+  if (G.bossClearT <= 0) { const rem = Math.max(0, Math.ceil(CFG.ZONE_TIME * (mut('rush') ? 0.5 : 1) - G.zoneT)); ctx.fillStyle = 'rgba(143,216,255,0.85)'; // глубина растёт сама — показываем, когда следующие 100 м
+    ctx.fillText(uiT('nextDepth')((G.zone + 1) * 100, rem), L, top + 76, hw + 30); } }
   // счёт и комбо
   ctx.textAlign = 'center'; ctx.font = '900 26px ' + FONT;
   const cx = W / 2 + 20;
@@ -4087,7 +4107,7 @@ function startRun() {
   Object.assign(G, {t: 0, runT: 0, zone: 1, zoneT: 0, score: 0, combo: 0, comboT: 0, maxCombo: 0, mult: 1, kills: 0, runPearls: 0, boss: null,
     bossClearT: 0, bossesKilled: 0, shake: 0, hitStop: 0, flash: 0, hurtFlash: 0, levelPending: 0, levelDelay: 0, dying: 0, noHit: true,
     synergies: 0, revived: false, camX: 0, camY: 0, spawnAcc: 0, packT: 9, dmgScale: 1, hpScale: 1, pullT: 0, comboMilestone: 0, victory: false,
-    hard: !!(S.set.hard && S.wins) && RUN_MODE !== 'daily', daily: RUN_MODE === 'daily', mut: RUN_MODE === 'daily' ? Object.fromEntries(dailyMuts().map(m => [m.id, 1])) : {}, endless: false, endingT: 0, adRevived: false, adDoubled: false, adRerolls: 0, lastEarned: 0, evT: 20, chal: null, lastEv: '', chests: 0});
+    hard: !!(S.set.hard && S.wins) && RUN_MODE !== 'daily', daily: RUN_MODE === 'daily', mut: RUN_MODE === 'daily' ? Object.fromEntries(dailyMuts().map(m => [m.id, 1])) : {}, endless: false, endingT: 0, adRevived: false, adDoubled: false, adRerolls: 0, lastEarned: 0, evT: 20, chal: null, lastEv: '', chests: 0, lvT: -99});
   if (G.hard) G.dmgScale = 1.35; // «Кошмар»: враги больнее, крепче и чаще
   if (G.daily) setTimeout(() => { const m = dailyMuts(); banner(uiT('dailyT'), m.map(tName).join(' + '), '#ffd54f', 3); }, 400);
   G.rerolls = S.shop.reroll || 0; buildDecor(0); G.startBest = S.bestDepth; G.recShown = false;
@@ -4208,7 +4228,7 @@ function takeUpgrade(u) {
   computeStats();
   ring(P.x, P.y, 10, 120, 0.5, u.syn ? C.GOLD : C.CYAN, 5);
   if (G.levelPending > 0) { G.levelPending--; renderCards(); }
-  else { G.state = 'play'; show(null); resetJoy(); }
+  else { G.state = 'play'; show(null); resetJoy(); G.lvT = G.runT; }
 }
 function drawIcon(c, id, colIdx) {
   const g = c.getContext('2d'), s = c.width / 64; g.setTransform(s, 0, 0, s, 0, 0);
@@ -4498,7 +4518,8 @@ const Ads = {
       и не сразу после рекламы за награду. Затем в любом случае выполняется next(). */
   between(next) {
     const now = Date.now();
-    if (this.cb || S.runs < 3 || now - this.last < CFG.INTER_GAP || now - this.t0 < 90000 || !this.interReady()) { next(); return; }
+    this.overN = (this.overN || 0) + 1;
+    if (this.cb || S.runs < 4 || this.overN % 2 || (G.runT || 0) < 90 || now - this.last < CFG.INTER_GAP || now - this.t0 < 90000 || !this.interReady()) { next(); return; }
     this.cb = () => next(); this.wait(35000);
     try { window.AndroidInter.show(); } catch (e) { this.cb = null; next(); }
   }
