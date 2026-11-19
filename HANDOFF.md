@@ -212,3 +212,14 @@ DECOR`. Проверять оба языка (locale ru-RU / en-US) и perf по
 - Привязать игру в Яндекс Партнёрах после одобрения RuStore → пойдёт настоящая реклама.
 - Продвижение: ролики в TikTok/Shorts/VK Клипы (трейлер и клипы уже делались).
 - Дальнейшая полировка игры по запросу.
+
+## Порт на Rust (начат по просьбе пользователя: WebView-версия лагает на Tecno Pova 6 Pro)
+- `game-rs/` — Rust + macroquad (OpenGL ES). `src/lib.rs` (cdylib `libsvet.so`, точка входа `quad_main`),
+  `src/main.rs` — запуск на ПК. Сборка APK: `game-rs/build-apk.sh КЛЮЧ ПАРОЛЬ [appId]`
+  (нужны ANDROID_HOME, ANDROID_NDK_HOME=ndk r27c, cargo-ndk, GRADLE).
+- `game-rs/android/` — копия нашего Gradle-проекта: активность miniquad (`MainActivity.java` из шаблона miniquad
+  + мост для Rust: adReady/adShow/adPoll, vibrate, filesDir, 120 Гц), `quad_native/QuadNative.java`,
+  реклама Яндекса (RewardedAds/InterstitialAds без WebView, итог в очередь `pushAd`).
+- Ассеты — `game-rs/assets/` (PNG; macroquad не читает WebP). Шрифт по умолчанию без кириллицы — нужен свой TTF.
+- Тест: `game/dist/SvetBezdny-rust-test.apk` (appId com.svetbezdny.rusttest, ставится рядом с игрой) — 400 спрайтов + FPS.
+- Дальше: перенос игры по частям (ядро забега → враги/боссы → улучшения → UI/магазин/режимы → реклама/сохранения/звук).

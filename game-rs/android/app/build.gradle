@@ -1,0 +1,52 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.svetbezdny.game'
+    compileSdk 35
+    buildToolsVersion '35.0.0'
+
+    defaultConfig {
+        applicationId project.findProperty('appId') ?: 'com.svetbezdny.game' // -PappId=... — тестовая сборка рядом с основной
+        minSdk 24
+        targetSdk 35
+        versionCode 17
+        versionName '2.5'
+        buildConfigField 'String', 'YANDEX_REWARDED_ID', "\"${project.findProperty('yandexRewardedId') ?: 'demo-rewarded-yandex'}\""
+        buildConfigField 'String', 'YANDEX_INTERSTITIAL_ID', "\"${project.findProperty('yandexInterstitialId') ?: 'demo-interstitial-yandex'}\""
+    }
+
+    buildFeatures { buildConfig true }
+
+    signingConfigs {
+        release {
+            // Ключ подписи НЕ хранится в репозитории: путь и пароль передаются при сборке
+            // ./gradlew assembleRelease -Pks=/путь/к/svetbezdny.keystore -PksPass=пароль
+            storeFile file(project.findProperty('ks') ?: "${System.getProperty('user.home')}/.svetbezdny.keystore")
+            storePassword project.findProperty('ksPass') ?: 'svetbezdny'
+            keyAlias 'svetbezdny'
+            keyPassword project.findProperty('ksPass') ?: 'svetbezdny'
+            // RuStore проверяет классическую подпись v1 — включаем все схемы
+            enableV1Signing true
+            enableV2Signing true
+            enableV3Signing true
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    // Игра — тот же единый index.html из папки game/
+    sourceSets { main { assets.srcDirs = ['../../assets'] } } // картинки и звуки игры
+}
+
+// Нативная библиотека Rust (libsvet.so) кладётся в src/main/jniLibs скриптом game-rs/build-apk.sh
+
+dependencies {
+    implementation 'com.yandex.android:mobileads:7.18.8'
+}
