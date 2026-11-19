@@ -1,4 +1,4 @@
-package ru.novograd.rp;
+package ru.oniks.rp;
 
 import java.io.BufferedReader;
 import java.io.File;

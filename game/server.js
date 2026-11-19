@@ -1,4 +1,4 @@
-// Новоград RP — игровой сервер: раздаёт клиент и ведёт мультиплеер по WebSocket.
+// ONIKS RP — игровой сервер: раздаёт клиент и ведёт мультиплеер по WebSocket.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -12,7 +12,7 @@ const PORT = Number(process.env.PORT) || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
 const DB_FILE = path.join(DATA_DIR, 'players.json');
 const NEWS_FILE = path.join(ROOT, 'news.json');
-const SERVER_NAME = process.env.SERVER_NAME || 'Новоград #1';
+const SERVER_NAME = process.env.SERVER_NAME || 'ONIKS #1';
 const MAX_PLAYERS = Number(process.env.MAX_PLAYERS) || 100;
 const SERVER_COLOR = /^#[0-9a-f]{6}$/i.test(process.env.SERVER_COLOR || '') ? process.env.SERVER_COLOR : '#ff8a3d';
 const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
@@ -163,4 +163,4 @@ function shutdown() {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
-server.listen(PORT, () => console.log(`Новоград RP запущен: http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`ONIKS RP запущен: http://localhost:${PORT}`));

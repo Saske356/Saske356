@@ -1,4 +1,4 @@
-# Лаунчер Новоград RP для Android
+# Лаунчер ONIKS RP для Android
 
 Экраны: заставка → проверка файлов → «Доступно обновление! Размер … МБ» → полноэкранная загрузка
 с полосой и скоростью → главный экран (имя, фамилия, пароль, сервер с кнопкой смены, соцсети,
@@ -29,7 +29,7 @@
 
 - `assets/launcher/` — интерфейс лаунчера (HTML/CSS/JS). Его можно открыть и в обычном браузере для проверки.
 - `assets/launcher/config.js` — встроенный список серверов. **Впишите сюда адрес своего сервера перед сборкой.**
-- `src/ru/novograd/rp/` — Java: `MainActivity` (лаунчер и мост в JS), `GameActivity` (игра из кэша),
+- `src/ru/oniks/rp/` — Java: `MainActivity` (лаунчер и мост в JS), `GameActivity` (игра из кэша),
   `CacheSync` (загрузка и проверка кэша, без зависимостей от Android), `Screen` (полноэкранный режим, WebView).
 - Сервер игры отдаёт `GET /api/status` → `{ name, online, max, version, news }`.
   Новости правятся в `game/news.json`, имя и лимит — переменными `SERVER_NAME` и `MAX_PLAYERS`.
@@ -42,7 +42,7 @@
 ```bash
 cd launcher/android
 ANDROID_HOME=/путь/к/android-sdk ./build.sh
-# → build/NovogradRP-<версия>.apk
+# → build/OniksRP-<версия>.apk
 ```
 
 `DEBUG=1 ./build.sh` включает отладку WebView через `chrome://inspect`.

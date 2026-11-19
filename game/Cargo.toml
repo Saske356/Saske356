@@ -1,4 +1,4 @@
-# Rust-часть ONIKS/Новоград RP: общий мир, сервер и клиент на Bevy.
+# Rust-часть ONIKS/ONIKS RP: общий мир, сервер и клиент на Bevy.
 [workspace]
 resolver = "2"
 members = ["world-rs", "server-rs", "client-rs"]

@@ -1,4 +1,4 @@
-# Сервер Новоград RP на Rust
+# Сервер ONIKS RP на Rust
 
 Полная замена `server.js`: тот же протокол, тот же `data/players.json` и те же пароли (scrypt
 с параметрами Node.js), поэтому игроки и лаунчер переходят на него без изменений. Город генерируется
@@ -10,25 +10,25 @@
 ```bash
 cd game
 npm install                 # клиент использует three.js из node_modules
-npm run build:rust          # = cargo build --release -p novograd-server
+npm run build:rust          # = cargo build --release -p oniks-server
 npm run start:rust          # http://localhost:3000
 ```
 
 Переменные окружения те же, что у Node-сервера: `PORT`, `DATA_DIR`, `SERVER_NAME`, `SERVER_COLOR`,
 `MAX_PLAYERS`, плюс `GAME_DIR` — папка игры (по умолчанию текущая или родительская).
-Готовый бинарник `game/target/release/novograd-server` один, ~2 МБ, без зависимостей — его можно скопировать на VPS и запустить.
+Готовый бинарник `game/target/release/oniks-server` один, ~2 МБ, без зависимостей — его можно скопировать на VPS и запустить.
 
 ### systemd
 
 ```ini
 [Unit]
-Description=Novograd RP
+Description=ONIKS RP
 After=network.target
 
 [Service]
-WorkingDirectory=/opt/novograd/game
+WorkingDirectory=/opt/oniks/game
 Environment=PORT=3000 SERVER_NAME=Новоград\x20#1 MAX_PLAYERS=500
-ExecStart=/opt/novograd/game/target/release/novograd-server
+ExecStart=/opt/oniks/game/target/release/oniks-server
 Restart=always
 
 [Install]

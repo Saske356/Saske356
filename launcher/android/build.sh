@@ -41,9 +41,9 @@ echo "▸ Ресурсы"
 
 echo "▸ Java"
 DEBUG_FLAG=$([ "${DEBUG:-0}" = "1" ] && echo true || echo false)
-mkdir -p "$OUT/gen/ru/novograd/rp"
-cat > "$OUT/gen/ru/novograd/rp/BuildInfo.java" <<EOF
-package ru.novograd.rp;
+mkdir -p "$OUT/gen/ru/oniks/rp"
+cat > "$OUT/gen/ru/oniks/rp/BuildInfo.java" <<EOF
+package ru.oniks.rp;
 final class BuildInfo {
     static final String VERSION = "$VERSION";
     static final boolean DEBUG = $DEBUG_FLAG;
@@ -63,14 +63,14 @@ if [ ! -f "$KS" ]; then
   mkdir -p keystore
   PASS=$(head -c 18 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')
   keytool -genkeypair -keystore "$KS" -alias novograd -keyalg RSA -keysize 2048 -validity 10000 \
-    -storepass "$PASS" -keypass "$PASS" -dname "CN=Novograd RP" >/dev/null 2>&1
+    -storepass "$PASS" -keypass "$PASS" -dname "CN=ONIKS RP" >/dev/null 2>&1
   echo "$PASS" > keystore/password.txt
   echo "  Создан ключ подписи $KS — сохраните его вместе с keystore/password.txt:"
   echo "  без этого ключа обновления не установятся поверх старой версии."
 fi
 "$BT/zipalign" -f -p 4 "$OUT/unsigned.apk" "$OUT/aligned.apk"
 "$BT/apksigner" sign --ks "$KS" --ks-key-alias novograd --ks-pass "file:keystore/password.txt" \
-  --out "$OUT/NovogradRP-$VERSION.apk" "$OUT/aligned.apk"
-"$BT/apksigner" verify "$OUT/NovogradRP-$VERSION.apk"
-rm -f "$OUT/NovogradRP-$VERSION.apk.idsig"
-echo "✔ Готово: $(pwd)/$OUT/NovogradRP-$VERSION.apk ($(du -h "$OUT/NovogradRP-$VERSION.apk" | cut -f1))"
+  --out "$OUT/OniksRP-$VERSION.apk" "$OUT/aligned.apk"
+"$BT/apksigner" verify "$OUT/OniksRP-$VERSION.apk"
+rm -f "$OUT/OniksRP-$VERSION.apk.idsig"
+echo "✔ Готово: $(pwd)/$OUT/OniksRP-$VERSION.apk ($(du -h "$OUT/OniksRP-$VERSION.apk" | cut -f1))"

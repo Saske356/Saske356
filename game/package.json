@@ -1,13 +1,13 @@
 {
-  "name": "novograd-rp",
+  "name": "oniks-rp",
   "version": "0.1.0",
-  "description": "Новоград RP — браузерная мультиплеерная ролевая игра в открытом городе",
+  "description": "ONIKS RP — браузерная мультиплеерная ролевая игра в открытом городе",
   "type": "module",
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "build:rust": "cargo build --release -p novograd-server",
-    "start:rust": "target/release/novograd-server",
+    "build:rust": "cargo build --release -p oniks-server",
+    "start:rust": "target/release/oniks-server",
     "bench": "node tools/bench.mjs"
   },
   "engines": {

@@ -1,10 +1,10 @@
-// Лаунчер Новоград RP.
+// Лаунчер ONIKS RP.
 // Поток: заставка → проверка файлов → «Доступно обновление!» → загрузка → главный экран → игра.
-// В приложении работает через мост window.NovogradApp; в обычном браузере открывает игру по ссылке.
+// В приложении работает через мост window.OniksApp; в обычном браузере открывает игру по ссылке.
 (function () {
   'use strict';
   const $ = (id) => document.getElementById(id);
-  const app = window.NovogradApp || null;
+  const app = window.OniksApp || null;
   const CFG = Object.assign({ servers: [], links: {} }, window.LAUNCHER_CONFIG || {});
   const NAME_RE = /^[A-Z][a-z]{1,15}$/;
 

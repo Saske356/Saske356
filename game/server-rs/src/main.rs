@@ -1,4 +1,4 @@
-//! Новоград RP — игровой сервер на Rust.
+//! ONIKS RP — игровой сервер на Rust.
 //! Раздаёт клиент и игровой кэш, ведёт мультиплеер по WebSocket. Совместим с прежним
 //! сервером на Node.js: тот же протокол, тот же формат players.json и паролей (scrypt).
 
@@ -287,7 +287,7 @@ async fn main() {
         .unwrap_or_else(|| "0.0.0".into());
     let color = env("SERVER_COLOR", "#ff8a3d");
     let cfg = Config {
-        name: env("SERVER_NAME", "Новоград #1"),
+        name: env("SERVER_NAME", "ONIKS #1"),
         color: if color.len() == 7 && color.starts_with('#') && color[1..].chars().all(|c| c.is_ascii_hexdigit()) { color } else { "#ff8a3d".into() },
         max_players: env("MAX_PLAYERS", "100").parse().unwrap_or(100),
         version,
@@ -348,7 +348,7 @@ async fn main() {
         eprintln!("Не удалось открыть порт {port}: {e}");
         std::process::exit(1);
     });
-    println!("Новоград RP (Rust) запущен: http://localhost:{port}");
+    println!("ONIKS RP (Rust) запущен: http://localhost:{port}");
     let shutdown = async {
         let ctrl_c = tokio::signal::ctrl_c();
         #[cfg(unix)]

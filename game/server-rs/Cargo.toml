@@ -1,8 +1,8 @@
 [package]
-name = "novograd-server"
+name = "oniks-server"
 version = "0.2.0"
 edition = "2021"
-description = "Игровой сервер Новоград RP на Rust: мультиплеер, экономика, работы, раздача клиента и кэша"
+description = "Игровой сервер ONIKS RP на Rust: мультиплеер, экономика, работы, раздача клиента и кэша"
 publish = false
 
 [dependencies]

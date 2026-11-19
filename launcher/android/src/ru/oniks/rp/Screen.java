@@ -1,4 +1,4 @@
-package ru.novograd.rp;
+package ru.oniks.rp;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;

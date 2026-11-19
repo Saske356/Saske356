@@ -1,4 +1,4 @@
-package ru.novograd.rp;
+package ru.oniks.rp;
 
 import android.app.Activity;
 import android.content.Intent;
@@ -15,7 +15,7 @@ import java.util.Locale;
 import org.json.JSONObject;
 import java.io.File;
 
-/** Лаунчер: интерфейс из assets/launcher, мост в Java через объект NovogradApp. */
+/** Лаунчер: интерфейс из assets/launcher, мост в Java через объект OniksApp. */
 public class MainActivity extends Activity {
     static final String HOST = "launcher.local";
     private WebView web;
@@ -26,7 +26,7 @@ public class MainActivity extends Activity {
         super.onCreate(state);
         Screen.immersive(this);
         web = Screen.webView(this);
-        web.addJavascriptInterface(new Bridge(), "NovogradApp");
+        web.addJavascriptInterface(new Bridge(), "OniksApp");
         web.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
