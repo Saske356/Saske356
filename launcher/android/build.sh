@@ -40,6 +40,7 @@ cp "$THREE_JS" assets/game/vendor/
 cp -r "$SC/addons" assets/game/
 # модели машин (если сконвертированы в game/cache/cars) — для одиночной игры без интернета
 if [ -f "$GAME/cache/cars/cars.json" ]; then mkdir -p assets/game/cache && cp -r "$GAME/cache/cars" assets/game/cache/; fi
+if [ -d "$GAME/cache/brmap" ]; then mkdir -p assets/game/cache && cp -r "$GAME/cache/brmap" assets/game/cache/; fi
 
 echo "▸ Ресурсы"
 "$BT/aapt2" compile --dir res -o "$OUT/res/res.zip"

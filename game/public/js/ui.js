@@ -96,6 +96,15 @@ export const button = (text, onclick, cls = '') => el('button', { class: 'btn ' 
 // ---------- Миникарта ----------
 let mapImg = null;
 const MM = 200, SCALE = 0.75;
+/** Готовая картинка миникарты (1 пиксель = 1 метр), например для карты BR. */
+let showPlaces = true;
+export function useMinimapImage(url) {
+  showPlaces = false;
+  const img = new Image();
+  img.onload = () => { mapImg = img; };
+  img.src = url;
+}
+
 export function initMinimap(city) {
   const c = document.createElement('canvas');
   c.width = c.height = W.SIZE;
@@ -126,7 +135,7 @@ export function drawMinimap(s) {
   ctx.fillStyle = '#2d4a26'; ctx.fillRect(0, 0, MM, MM);
   ctx.save();
   ctx.translate(MM / 2, MM / 2); ctx.rotate(th); ctx.scale(SCALE, SCALE); ctx.translate(-s.x, -s.z);
-  ctx.drawImage(mapImg, 0, 0);
+  if (mapImg) ctx.drawImage(mapImg, 0, 0);
   ctx.restore();
 
   const dot = (px, pz, color, r = 4, clamp = false) => {
@@ -137,7 +146,7 @@ export function drawMinimap(s) {
     ctx.fillStyle = color; ctx.fill();
     ctx.lineWidth = 1.5; ctx.strokeStyle = '#000'; ctx.stroke();
   };
-  for (const p of Object.values(W.PLACES)) if (!p.hidden) dot(p.pos[0], p.pos[1], p.color, 4.5, true);
+  if (showPlaces) for (const p of Object.values(W.PLACES)) if (!p.hidden) dot(p.pos[0], p.pos[1], p.color, 4.5, true);
   for (const o of s.others) dot(o.x, o.z, '#e8eef5', 3);
   if (s.waypoint) dot(s.waypoint[0], s.waypoint[1], '#4fa3ff', 6, true);
   if (s.target) dot(s.target[0], s.target[1], '#ff4d4d', 6, true);

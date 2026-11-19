@@ -5,6 +5,7 @@ import { makeCar, loadCarModels, updateCarLod, loadSkin, hasSkin, availableCars,
 import { Traffic } from './traffic.js';
 import * as UI from './ui.js';
 import { offlineSocket } from './offline.js';
+import { loadMap } from './brmap.js';
 import { handlers, readInput, takeCamera, initPointer, initTouch, isTouch, isTyping } from './input.js';
 
 const $ = (id) => document.getElementById(id);
@@ -31,8 +32,27 @@ sun.shadow.bias = -0.0006;
 scene.add(hemi, sun, sun.target);
 // 3D-модели машин (если есть в кэше); без них — машины из коробок
 const carModels = await loadCarModels();
-const world3d = buildCity(scene, city);
-const traffic = new Traffic(scene, { low: 12, mid: 20, high: 28 }[QUALITY]);
+// ?map=br — район карты Black Russia (cache/brmap) вместо нашего города
+const MAP = new URLSearchParams(location.search).get('map');
+let BR = null, world3d, traffic;
+if (MAP === 'br') {
+  try { BR = await loadMap(scene); } catch (e) { console.warn('Карта не загрузилась, остаётся наш город', e); }
+}
+if (BR) {
+  world3d = { windowMats: [], lampMat: new THREE.MeshLambertMaterial(), markers: [] };
+  traffic = new Traffic(scene, 0);
+} else {
+  world3d = buildCity(scene, city);
+  traffic = new Traffic(scene, { low: 12, mid: 20, high: 28 }[QUALITY]);
+}
+const groundAt = (x, z, y) => (BR ? BR.ground(x, z, y) : W.groundHeight(x, z));
+// шаг по карте BR: если впереди здание — скользим вдоль стены
+function stepBR(ox, oz, nx, nz, y) {
+  if (!BR.blocked(nx, nz, y)) return [nx, nz, false];
+  if (!BR.blocked(nx, oz, y)) return [nx, oz, true];
+  if (!BR.blocked(ox, nz, y)) return [ox, nz, true];
+  return [ox, oz, true];
+}
 const jobBeam = makeBeam(0xff4040), gpsBeam = makeBeam(0x3f9bff);
 scene.add(jobBeam, gpsBeam);
 
@@ -115,7 +135,7 @@ function onMessage(m) {
       break;
     case 'fly':
       S.fly = !!m.on;
-      if (!S.fly && !S.car) S.y = W.groundHeight(S.x, S.z);
+      if (!S.fly && !S.car) S.y = groundAt(S.x, S.z, S.y);
       break;
     case 'apanel': openAdminPanel(); break;
     case 'exited':
@@ -193,7 +213,7 @@ function applySnap(m) {
     if (!v) {
       if (skin && !hasSkin(skin)) loadSkin(skin); // модель подгрузится, машина пересоберётся
       const mesh = makeCar(model, color, skin || undefined);
-      mesh.position.set(x, W.groundHeight(x, z), z); mesh.rotation.y = ry;
+      mesh.position.set(x, groundAt(x, z), z); mesh.rotation.y = ry;
       scene.add(mesh);
       v = { mesh, model, plate, color, skin, skinWanted: !!skin, skinReady: !skin || hasSkin(skin) };
       vehicles.set(id, v);
@@ -245,6 +265,8 @@ window.__autoLogin = (name, pass) => {
 function startGame(m) {
   S.myId = m.id; S.name = m.name; S.profile = m.profile; S.time = m.time;
   S.x = m.x; S.z = m.z; S.ry = m.ry; S.camYaw = m.ry;
+  if (BR && (m.isNew || BR.blocked(S.x, S.z, BR.ground(S.x, S.z)))) { S.x = BR.spawn[0]; S.z = BR.spawn[1]; }
+  if (BR) S.y = BR.ground(S.x, S.z);
   S.playing = true;
   me = makePed(colorFromString(m.name));
   scene.add(me);
@@ -254,8 +276,9 @@ function startGame(m) {
   updateStats();
   UI.addChat(`Добро пожаловать в Новоград, ${m.name}!`, '#ffd54f');
   UI.addChat('M — меню и GPS, E — взаимодействие, F — сесть в транспорт, T — чат, /help — команды', '#ffd54f');
-  if (OFFLINE) UI.addChat('Сервер 1 (офлайн): работает прямо на устройстве, прогресс сохраняется здесь же. Вы — главный админ: /apanel или меню (M).', '#80cbc4');
-  if (m.isNew) {
+  if (OFFLINE) UI.addChat(`${BR ? 'Сервер 2 · Арзамас (карта BR)' : 'Сервер 1'} — офлайн: работает прямо на устройстве, прогресс сохраняется здесь же. Вы — главный админ: /apanel или меню (M).`, '#80cbc4');
+  if (BR) UI.addChat('Пробная карта: ходите, ездите (/spcar или админ-панель), летайте (/fly). Работ и мест нашего города здесь пока нет.', '#80cbc4');
+  if (m.isNew && !BR) {
     UI.toast('Начните с автошколы: права откроют аренду, покупку машин и работу водителем', 'info');
     S.waypoint = [...W.PLACES.school.pos];
   }
@@ -312,6 +335,7 @@ function toggleVehicle() {
 
 // ---------- Места и диалоги ----------
 function nearestPlace() {
+  if (BR) return null; // на карте BR мест нашего города нет
   const lim = S.veh >= 0 ? 8 : 3.5;
   for (const [id, p] of Object.entries(W.PLACES)) {
     if (p.hidden) continue;
@@ -457,7 +481,7 @@ function updateFly(dt, inp) {
   // наклон камеры задаёт высоту: смотрите вниз — снижаетесь, вверх — набираете высоту
   const dy = (inp.up - inp.down) + inp.y * -(S.camPitch - 0.32) * 1.6;
   S.x = clampWorld(S.x + dx * speed * dt); S.z = clampWorld(S.z + dz * speed * dt);
-  S.y = Math.max(W.groundHeight(S.x, S.z), Math.min(400, S.y + dy * speed * dt));
+  S.y = Math.max(groundAt(S.x, S.z, S.y), Math.min(400, S.y + dy * speed * dt));
   if (Math.hypot(dx, dz) > 0.05) S.ry = lerpAngle(S.ry, Math.atan2(dx, dz), 1 - Math.exp(-dt * 8));
   S.anim = 0;
   me.position.set(S.x, S.y, S.z);
@@ -467,6 +491,7 @@ function updateFly(dt, inp) {
 
 function updateWalk(dt, inp) {
   if (S.fly) return updateFly(dt, inp);
+  const walkFrom = [S.x, S.z];
   const speed = inp.sprint ? 8.5 : 4.5;
   const fx = Math.sin(S.camYaw), fz = Math.cos(S.camYaw);
   let dx = fx * inp.y - fz * inp.x, dz = fz * inp.y + fx * inp.x;
@@ -478,10 +503,11 @@ function updateWalk(dt, inp) {
     S.ry = lerpAngle(S.ry, Math.atan2(dx, dz), 1 - Math.exp(-dt * 12));
     S.anim = inp.sprint && len > 0.5 ? 2 : 1;
   } else S.anim = 0;
-  let r = W.collideCircle(S.x, S.z, 0.35, city.boxes);
+  let r = BR ? { x: S.x, z: S.z } : W.collideCircle(S.x, S.z, 0.35, city.boxes);
+  if (BR) [r.x, r.z] = stepBR(walkFrom[0], walkFrom[1], S.x, S.z, S.y);
   r = pushFrom(r.x, r.z, 0.35, obstacleCircles());
   S.x = clampWorld(r.x); S.z = clampWorld(r.z);
-  S.y = W.groundHeight(S.x, S.z);
+  S.y = groundAt(S.x, S.z, S.y);
   me.position.set(S.x, me.position.y + (S.y - me.position.y) * Math.min(1, dt * 15), S.z);
   me.rotation.y = S.ry;
   animatePed(me, S.anim, dt);
@@ -501,20 +527,27 @@ function updateCar(dt, inp) {
   c.steer += (inp.x - c.steer) * Math.min(1, dt * 7);
   const ang = -c.steer * 0.55 * (1 - Math.min(Math.abs(c.spd) / (m.maxSpeed * 1.3), 0.65));
   c.ry += (c.spd * Math.tan(ang)) / (m.len * 0.6) * dt;
+  const carFrom = [c.x, c.z];
   c.x += Math.sin(c.ry) * c.spd * dt;
   c.z += Math.cos(c.ry) * c.spd * dt;
 
   // столкновения: машина — набор окружностей
   const others = obstacleCircles();
   let hit = false;
-  for (const circ of W.carCircles(c.x, c.z, c.ry, c.model)) {
+  if (BR) {
+    // карта BR: если передняя или задняя часть машины упирается в здание — откатываемся
+    for (const circ of W.carCircles(c.x, c.z, c.ry, c.model)) {
+      if (BR.blocked(circ.x, circ.z, S.y, 1.0)) { c.x = carFrom[0]; c.z = carFrom[1]; hit = true; break; }
+    }
+  }
+  for (const circ of BR ? [] : W.carCircles(c.x, c.z, c.ry, c.model)) {
     let r = W.collideCircle(circ.x, circ.z, circ.r, city.boxes);
     r = pushFrom(r.x, r.z, circ.r, others);
     if (r.x !== circ.x || r.z !== circ.z) { c.x += r.x - circ.x; c.z += r.z - circ.z; hit = true; }
   }
   if (hit) c.spd = Math.abs(c.spd) > 5 ? c.spd * -0.25 : c.spd * 0.6;
   c.x = clampWorld(c.x); c.z = clampWorld(c.z);
-  S.x = c.x; S.z = c.z; S.ry = c.ry; S.y = W.groundHeight(c.x, c.z); S.anim = 0;
+  S.x = c.x; S.z = c.z; S.ry = c.ry; S.y = groundAt(c.x, c.z, S.y); S.anim = 0;
   if (v) {
     v.mesh.position.set(c.x, v.mesh.position.y + (S.y - v.mesh.position.y) * Math.min(1, dt * 10), c.z);
     v.mesh.rotation.y = c.ry;
@@ -607,7 +640,7 @@ function frame(now) {
     if (id === S.veh || v.tx == null) continue;
     v.mesh.position.x += (v.tx - v.mesh.position.x) * k;
     v.mesh.position.z += (v.tz - v.mesh.position.z) * k;
-    v.mesh.position.y = W.groundHeight(v.mesh.position.x, v.mesh.position.z);
+    v.mesh.position.y = groundAt(v.mesh.position.x, v.mesh.position.z, v.mesh.position.y + 1);
     v.mesh.rotation.y = lerpAngle(v.mesh.rotation.y, v.tr, k);
     if (v.driver >= 0) spinWheels(v.mesh, v.spd, dt);
     obstacles.push({ x: v.mesh.position.x, z: v.mesh.position.z });
@@ -627,14 +660,14 @@ function frame(now) {
   const target = S.job?.target;
   jobBeam.visible = !!target;
   if (target) {
-    jobBeam.position.set(target[0], W.groundHeight(target[0], target[1]), target[1]);
+    jobBeam.position.set(target[0], groundAt(target[0], target[1]), target[1]);
     const d = Math.hypot(S.x - target[0], S.z - target[1]);
     if (now - uiT < 20) UI.jobDistance(d);
     if (d < (S.job.type === 'bus' ? 8 : 5) && now - cpT > 1000) { cpT = now; send({ t: 'cp' }); }
   }
   gpsBeam.visible = !!S.waypoint;
   if (S.waypoint) {
-    gpsBeam.position.set(S.waypoint[0], W.groundHeight(S.waypoint[0], S.waypoint[1]), S.waypoint[1]);
+    gpsBeam.position.set(S.waypoint[0], groundAt(S.waypoint[0], S.waypoint[1]), S.waypoint[1]);
     if (Math.hypot(S.x - S.waypoint[0], S.z - S.waypoint[1]) < 6) { S.waypoint = null; UI.toast('Вы прибыли на место'); }
   }
 
@@ -660,6 +693,6 @@ function frame(now) {
 }
 
 initPointer(canvas);
-UI.initMinimap(city);
+if (BR) UI.useMinimapImage(BR.minimap); else UI.initMinimap(city);
 requestAnimationFrame(frame);
 window.__game = { S, players, vehicles, traffic };

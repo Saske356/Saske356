@@ -3,7 +3,9 @@
 // Прогресс (деньги, машины, права) хранится в localStorage устройства.
 import { createGame } from '/shared/core.js';
 
-const KEY = 'nrp-offline-db';
+// у каждой карты свой офлайн-сервер и своё сохранение
+const MAP = new URLSearchParams(location.search).get('map');
+const KEY = 'nrp-offline-db' + (MAP ? '-' + MAP.replace(/[^a-z0-9]/gi, '') : '');
 
 export function offlineSocket() {
   let db = {};

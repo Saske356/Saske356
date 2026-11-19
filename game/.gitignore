@@ -3,4 +3,5 @@ data/
 target/
 # личные ассеты, не для git
 cache/cars/
+cache/brmap/
 private/

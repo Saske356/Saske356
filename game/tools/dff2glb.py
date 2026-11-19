@@ -158,6 +158,9 @@ class Glb:
             m["emissiveFactor"] = list(info["emissive"])
         if info.get("blend"):
             m["alphaMode"] = "BLEND"
+        elif info.get("mask"):
+            m["alphaMode"] = "MASK"
+            m["alphaCutoff"] = 0.45
         m["doubleSided"] = True
         self.j["materials"].append(m)
         return len(self.j["materials"]) - 1

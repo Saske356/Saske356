@@ -48,7 +48,8 @@ public class GameActivity extends Activity {
         String quality = getIntent().getStringExtra("quality");
         if (url == null) { finish(); return; }
 
-        offline = OFFLINE.equals(url);
+        offline = url.startsWith(OFFLINE);
+        final String map = url.startsWith(OFFLINE + ":") ? url.substring(OFFLINE.length() + 1).replaceAll("[^a-z0-9]", "") : "";
         cacheDir = CacheSync.folderFor(MainActivity.cacheRoot(this), url);
         web = Screen.webView(this);
         web.setWebViewClient(new WebViewClient() {
@@ -95,7 +96,7 @@ public class GameActivity extends Activity {
         String q = quality == null ? "mid" : quality;
         try {
             if (offline) {
-                web.loadUrl("http://" + HOST + "/index.html?launcher=android&offline=1&q=" + q);
+                web.loadUrl("http://" + HOST + "/index.html?launcher=android&offline=1&q=" + q + (map.isEmpty() ? "" : "&map=" + map));
             } else if (new File(cacheDir, "index.html").isFile()) {
                 web.loadUrl("http://" + HOST + "/index.html?launcher=android&q=" + q
                         + "&server=" + URLEncoder.encode(url, "UTF-8"));
