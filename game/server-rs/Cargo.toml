@@ -5,6 +5,14 @@ edition = "2021"
 description = "Игровой сервер ONIKS RP на Rust: мультиплеер, экономика, работы, раздача клиента и кэша"
 publish = false
 
+[lib]
+name = "oniks_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "oniks-server"
+path = "src/main.rs"
+
 [dependencies]
 novo_world = { path = "../world-rs" }
 axum = { version = "0.8", features = ["ws"] }
@@ -16,5 +24,5 @@ scrypt = { version = "0.11", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal", "sync", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "rt", "macros", "net", "time", "signal", "sync", "fs"] }
 tower-http = { version = "0.6", features = ["fs", "set-header"] }
