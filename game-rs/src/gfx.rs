@@ -306,7 +306,7 @@ impl Bloom {
         let (w, h) = (screen_width() as u32, screen_height() as u32);
         if w == self.w && h == self.h { return; } self.w = w; self.h = h;
         let rt = |w: u32, h: u32| { let r = render_target(w.max(1), h.max(1)); r.texture.set_filter(FilterMode::Linear); r };
-        self.scene = rt(w, h); self.a = rt(w / 4, h / 4); self.b = rt(w / 4, h / 4);
+        self.scene = rt(w, h); self.a = rt(w / 6, h / 6); self.b = rt(w / 6, h / 6);
     }
     fn cam(rt: &RenderTarget, w: f32, h: f32) -> Camera2D { let mut c = Camera2D::from_display_rect(Rect::new(0., 0., w, h)); c.render_target = Some(rt.clone()); c.zoom.y = -c.zoom.y; c }
     /// Начать рисовать мир в текстуру
@@ -314,11 +314,11 @@ impl Bloom {
     /// Выделить яркое, размыть и наложить на экран
     pub fn end(&mut self, gx: &mut Gfx, strength: f32) {
         gx.set_mat(0);
-        let (sw, sh) = (screen_width(), screen_height()); let (qw, qh) = ((self.w / 4).max(1) as f32, (self.h / 4).max(1) as f32);
+        let (sw, sh) = (screen_width(), screen_height()); let (qw, qh) = ((self.w / 6).max(1) as f32, (self.h / 6).max(1) as f32);
         let full = |t: &Texture2D, w: f32, h: f32, c: Color| draw_texture_ex(t, 0., 0., c, DrawTextureParams { dest_size: Some(vec2(w, h)), ..Default::default() });
         set_camera(&Self::cam(&self.a, qw, qh)); clear_background(BLACK);
-        self.bright.set_uniform("px", vec2(1.5 / sw, 1.5 / sh)); gl_use_material(&self.bright); full(&self.scene.texture, qw, qh, WHITE);
-        for _ in 0..2 {
+        self.bright.set_uniform("px", vec2(2.5 / sw, 2.5 / sh)); gl_use_material(&self.bright); full(&self.scene.texture, qw, qh, WHITE);
+        for _ in 0..1 {
             set_camera(&Self::cam(&self.b, qw, qh)); self.blur.set_uniform("dir", vec2(1. / qw, 0.)); gl_use_material(&self.blur); full(&self.a.texture, qw, qh, WHITE);
             set_camera(&Self::cam(&self.a, qw, qh)); self.blur.set_uniform("dir", vec2(0., 1. / qh)); gl_use_material(&self.blur); full(&self.b.texture, qw, qh, WHITE);
         }

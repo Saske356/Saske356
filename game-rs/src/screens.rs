@@ -537,6 +537,6 @@ fn settings(a: &mut App) {
         match id { 0 => s.sound = !s.sound, 1 => s.music = !s.music, 2 => { s.vibro = !s.vibro; if s.vibro { crate::platform::vibrate(30); } },
             3 => s.quality = match s.quality.as_str() { "auto" => "high".into(), "high" => "low".into(), _ => "auto".into() }, 4 => s.nums = !s.nums, 5 => s.shake = !s.shake,
             6 => { s.lang = if s.lang == "en" { "ru".into() } else { "en".into() }; i18n::set_en(s.lang == "en"); }, 7 => s.fps = if s.fps == 120 { 60 } else { 120 },
-            9 => s.fx = !s.fx, _ => s.orient = (s.orient + 1) % 3 }
+            9 => { s.fx = !s.fx; a.glow_auto_off = false; a.glow_slow = 0.; } _ => s.orient = (s.orient + 1) % 3 }
         a.g.dirty = true; a.persist(); }
 }

@@ -29,7 +29,7 @@ pub struct App {
     pub scr: Scr, pub scr_t: f32, pub back_to: Scr, pub intro: Intro, pub end: End, pub joy: Joy, pub ads: Ads,
     pub cards: Vec<usize>, pub cards_t: f32, pub earned: u32, pub rec: bool, pub over_t: f32, pub revive_n: f32,
     pub shop_tab: u8, pub toasts: Vec<Toast>, pub save_t: f32, pub safe: [f32; 4], pub now: f64, pub was_paused: bool,
-    pub test: Vec<(f64, String)>, pub bot: bool, pub shot: Option<String>, pub fps_acc: f32, pub fps_n: u32, pub fps: f32, pub slow_t: f32, pub q_auto: u8, pub last_land: bool, pub orient_set: u8, pub fps_set: u32,
+    pub glow_auto_off: bool, pub glow_slow: f32, pub test: Vec<(f64, String)>, pub bot: bool, pub shot: Option<String>, pub fps_acc: f32, pub fps_n: u32, pub fps: f32, pub slow_t: f32, pub q_auto: u8, pub last_land: bool, pub orient_set: u8, pub fps_set: u32,
 }
 
 pub const GIFT_R: u32 = 30; pub const GIFT_MAX: u32 = 5;
@@ -73,7 +73,7 @@ impl App {
         let mut app = App { gx, bloom: crate::gfx::Bloom::new(), rd: Rd::new(), g, ui: Ui::new(), au, scr: Scr::None, scr_t: 0., back_to: Scr::Title,
             intro: Intro { t: 0., dur: if full { 5.8 } else { 1.5 }, full, ig: if full { 3.7 } else { 0.08 }, revealed: false }, end: End { t: 0., show: 7.4, shown: false, first: false },
             joy: Joy::default(), ads: Ads { cb: None, wd: 0., wd_len: 0., last: -1e9, t0: now, over_n: 0, back_t: 0. }, cards: vec![], cards_t: 0., earned: 0, rec: false, over_t: 0., revive_n: 0.,
-            shop_tab: 0, toasts: vec![], save_t: 0., safe: [0.; 4], now, was_paused: false, test: std::env::var("SVET_TEST").unwrap_or_default().split(';').filter_map(|c| c.split_once(':').map(|(t, c)| (t.trim().parse().unwrap_or(0.), c.trim().to_string()))).collect(), bot: false, shot: None, fps_acc: 0., fps_n: 0, fps: 60., slow_t: 0., q_auto: 2, last_land: false, orient_set: 99, fps_set: 0 };
+            shop_tab: 0, toasts: vec![], save_t: 0., safe: [0.; 4], now, was_paused: false, glow_auto_off: false, glow_slow: 0., test: std::env::var("SVET_TEST").unwrap_or_default().split(';').filter_map(|c| c.split_once(':').map(|(t, c)| (t.trim().parse().unwrap_or(0.), c.trim().to_string()))).collect(), bot: false, shot: None, fps_acc: 0., fps_n: 0, fps: 60., slow_t: 0., q_auto: 2, last_land: false, orient_set: 99, fps_set: 0 };
         app.g.state = State::Intro;
         if let Some(crate::flow::DailyMsg::Login(d, r)) = app.g.daily_check() { app.toast_later(tf("loginT", &[&d.to_string()]), format!("+{r} {}", t("pearlsGen"))); }
         app.persist();
@@ -185,6 +185,9 @@ impl App {
             let mut img = img; for px in img.bytes.chunks_mut(4) { px[3] = 255; } img.export_png(&p); let _ = (w, h); }
         // частота кадров и автоподстройка качества
         self.fps_acc += raw; self.fps_n += 1; if self.fps_acc >= 1. { let avg = self.fps_acc / self.fps_n as f32; self.fps = 1. / avg; self.fps_acc = 0.; self.fps_n = 0;
+            // подсветка сама выключается, если телефон не держит ~50 кадров
+            if self.g.s.set.fx && !self.glow_auto_off && self.g.state == State::Play { if avg > 0.021 { self.glow_slow += 1.; if self.glow_slow >= 3. { self.glow_auto_off = true;
+                self.toast(if i18n::is_en() { "GLOW OFF".into() } else { "ПОДСВЕТКА ВЫКЛЮЧЕНА".into() }, if i18n::is_en() { "for a smoother game".into() } else { "ради плавности".into() }); } } else { self.glow_slow = 0.; } }
             if self.g.s.set.quality == "auto" && self.g.state == State::Play { if avg > 0.024 { self.slow_t += 1.; if self.slow_t >= 3. && self.q_auto > 0 { self.q_auto -= 1; self.slow_t = 0.; } } else { self.slow_t = 0.; } }
             self.g.quality = match self.g.s.set.quality.as_str() { "low" => 0, "high" => 2, _ => self.q_auto };
             self.g.max_part = match self.g.quality { 2 => cfg::MAX_PART_HI, 1 => 420, _ => cfg::MAX_PART_LO }; }
@@ -286,7 +289,7 @@ impl App {
         let st = self.g.state;
         let intro_dark = st == State::Intro && self.intro.t < self.intro.ig;
         let end_lit = st == State::Ending && self.end.t > 4.15;
-        let use_bloom = self.g.s.set.fx && self.bloom.is_some() && !intro_dark;
+        let use_bloom = self.g.s.set.fx && !self.glow_auto_off && self.bloom.is_some() && !intro_dark;
         if use_bloom { if let Some(b) = self.bloom.as_mut() { b.begin(&mut self.gx); } }
         if intro_dark { clear_background(Color::from_rgba(0, 2, 7, 255)); }
         else if !end_lit { render::background(&mut self.gx, &mut self.rd, &mut self.g, rdt, !(st == State::Intro && self.intro.t <= self.intro.ig)); }
