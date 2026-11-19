@@ -7,6 +7,9 @@ import { lightMats } from '/js/models.js';
 import { Traffic } from '/js/traffic.js';
 
 const canvas = document.getElementById('scene');
+// Если в лаунчер положен арт img/bg.jpg — 3D-сцену не запускаем (экономим батарею).
+const hasArt = await new Promise((ok) => { const i = new Image(); i.onload = () => ok(true); i.onerror = () => ok(false); i.src = 'img/bg.jpg'; });
+if (hasArt) { canvas.remove(); throw new Error('art background'); }
 let renderer;
 try {
   renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'low-power' });

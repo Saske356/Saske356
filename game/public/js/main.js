@@ -113,14 +113,32 @@ function onMessage(m) {
   }
 }
 
+// Ники и неизменные данные машин сервер шлёт один раз — запоминаем их.
+const nameCache = new Map();
+const vehCache = new Map();
+
+// Снимок мира. Формат 2 (сервер на Rust): игрок [id,x,y,z,ry,anim,veh(,ник)],
+// машина [id,x,z,ry,spd,driver(,модель,цвет,владелец,номер)]. Формат 1 (старый сервер) — всё в каждой записи.
 function applySnap(m) {
   S.time = m.time;
-  S.online = m.p.length;
+  S.online = m.n ?? m.p.length;
+  const v2 = m.f === 2;
   const seenP = new Set();
-  for (const [id, name, x, y, z, ry, anim, veh] of m.p) {
+  for (const e of m.p) {
+    let id, name, x, y, z, ry, anim, veh;
+    if (v2) {
+      [id, x, y, z, ry, anim, veh, name] = e;
+      if (name) nameCache.set(id, name);
+      name = nameCache.get(id) || `Игрок_${id}`;
+    } else [id, name, x, y, z, ry, anim, veh] = e;
     if (id === S.myId) continue;
     seenP.add(id);
     let p = players.get(id);
+    if (p && p.name !== name) { // номер перешёл к другому игроку
+      scene.remove(p.mesh, p.tag); disposeSprite(p.tag);
+      if (p.bubble) { scene.remove(p.bubble.sprite); disposeSprite(p.bubble.sprite); }
+      players.delete(id); p = null;
+    }
     if (!p) {
       const mesh = makePed(colorFromString(name));
       mesh.position.set(x, y, z);
@@ -138,7 +156,15 @@ function applySnap(m) {
     players.delete(id);
   }
   const seenV = new Set();
-  for (const [id, model, color, x, z, ry, spd, driver, owner, plate] of m.v) {
+  for (const e of m.v) {
+    let id, model, color, x, z, ry, spd, driver, owner, plate;
+    if (v2) {
+      [id, x, z, ry, spd, driver, model, color, owner, plate] = e;
+      if (model) vehCache.set(id, { model, color, owner, plate });
+      const c = vehCache.get(id);
+      if (!c) continue; // данных о машине ещё нет — дождёмся
+      ({ model, color, owner, plate } = c);
+    } else [id, model, color, x, z, ry, spd, driver, owner, plate] = e;
     seenV.add(id);
     let v = vehicles.get(id);
     if (!v) {

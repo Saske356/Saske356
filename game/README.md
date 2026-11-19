@@ -5,6 +5,16 @@
 
 ## Запуск
 
+Рекомендуемый сервер — на Rust (в 10 раз меньше трафика, см. [`server-rs/README.md`](server-rs/README.md)):
+
+```bash
+cd game
+npm install
+npm run build:rust && npm run start:rust
+```
+
+Прежний сервер на Node.js остаётся для разработки:
+
 ```bash
 cd game
 npm install
@@ -40,7 +50,8 @@ npm start          # http://localhost:3000
 
 ## Устройство
 
-- `server.js` — HTTP-сервер статики + WebSocket; авторитетно ведёт деньги, работы, транспорт, чат.
+- `server-rs/` — игровой сервер на Rust (основной).
+- `server.js` — тот же сервер на Node.js (запасной, для разработки).
 - `shared/world.js` — общий для сервера и клиента генератор города, места, модели машин, коллизии.
 - `public/js/` — клиент на Three.js: `main.js` (цикл, сеть, физика), `city.js`, `models.js`, `traffic.js`, `ui.js`, `input.js`.
 
