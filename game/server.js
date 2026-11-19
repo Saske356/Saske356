@@ -142,6 +142,8 @@ const hashPass = (pass, salt) => crypto.scryptSync(pass, salt, 32).toString('hex
 // ---------- Игра ----------
 const game = createGame({
   db, saveSoon, maxPlayers: MAX_PLAYERS, log: console.log,
+  // главный админ по умолчанию; свои — через ADMINS=Ivan_Petrov,Anna_Smirnova
+  admins: (process.env.ADMINS || 'Linar_Safin').split(','),
   auth: {
     create(pass) { const salt = crypto.randomBytes(16).toString('hex'); return { salt, hash: hashPass(pass, salt) }; },
     verify(pass, prof) {
@@ -155,7 +157,7 @@ const players = game.players;
 // ---------- Сеть ----------
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 8192 });
 wss.on('connection', (ws) => {
-  const c = game.connect({ send: (s) => ws.send(s), isOpen: () => ws.readyState === 1 });
+  const c = game.connect({ send: (s) => ws.send(s), isOpen: () => ws.readyState === 1, close: () => ws.close() });
   ws.on('message', (raw) => c.message(raw.toString()));
   ws.on('close', () => c.close());
   ws.on('error', () => {});

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import * as W from '/shared/world.js';
 import { buildCity, makeBeam } from './city.js';
-import { makeCar, loadCarModels, updateCarLod, makePed, animatePed, textSprite, disposeSprite, lightMats, colorFromString, spinWheels } from './models.js';
+import { makeCar, loadCarModels, updateCarLod, loadSkin, hasSkin, availableCars, CAR_NAMES, makePed, animatePed, textSprite, disposeSprite, lightMats, colorFromString, spinWheels } from './models.js';
 import { Traffic } from './traffic.js';
 import * as UI from './ui.js';
 import { offlineSocket } from './offline.js';
@@ -110,6 +110,14 @@ function onMessage(m) {
       S.camYaw = m.ry;
       break;
     }
+    case 'teleport':
+      if (S.car) { S.car.x = m.x; S.car.z = m.z; S.car.spd = 0; } else { S.x = m.x; S.z = m.z; }
+      break;
+    case 'fly':
+      S.fly = !!m.on;
+      if (!S.fly && !S.car) S.y = W.groundHeight(S.x, S.z);
+      break;
+    case 'apanel': openAdminPanel(); break;
     case 'exited':
       S.veh = -1; S.car = null;
       S.x = m.x; S.z = m.z;
@@ -163,21 +171,31 @@ function applySnap(m) {
   }
   const seenV = new Set();
   for (const e of m.v) {
-    let id, model, color, x, z, ry, spd, driver, owner, plate;
+    let id, model, color, x, z, ry, spd, driver, owner, plate, skin;
     if (v2) {
       [id, x, z, ry, spd, driver, model, color, owner, plate] = e;
       if (model) vehCache.set(id, { model, color, owner, plate });
       const c = vehCache.get(id);
       if (!c) continue; // данных о машине ещё нет — дождёмся
       ({ model, color, owner, plate } = c);
-    } else [id, model, color, x, z, ry, spd, driver, owner, plate] = e;
+    } else [id, model, color, x, z, ry, spd, driver, owner, plate, skin] = e;
     seenV.add(id);
     let v = vehicles.get(id);
+    // перекрасили или модель догрузилась — пересобираем машину
+    if (v && (v.color !== color || (skin && v.skinWanted && hasSkin(skin) && !v.skinReady))) {
+      const pos = v.mesh.position.clone(), rot = v.mesh.rotation.y;
+      scene.remove(v.mesh);
+      v.mesh = makeCar(model, color, skin || undefined);
+      v.mesh.position.copy(pos); v.mesh.rotation.y = rot;
+      scene.add(v.mesh);
+      v.color = color; v.skinReady = !skin || hasSkin(skin);
+    }
     if (!v) {
-      const mesh = makeCar(model, color);
+      if (skin && !hasSkin(skin)) loadSkin(skin); // модель подгрузится, машина пересоберётся
+      const mesh = makeCar(model, color, skin || undefined);
       mesh.position.set(x, W.groundHeight(x, z), z); mesh.rotation.y = ry;
       scene.add(mesh);
-      v = { mesh, model, plate };
+      v = { mesh, model, plate, color, skin, skinWanted: !!skin, skinReady: !skin || hasSkin(skin) };
       vehicles.set(id, v);
     }
     Object.assign(v, { tx: x, tz: z, tr: ry, spd, driver, owner });
@@ -236,7 +254,7 @@ function startGame(m) {
   updateStats();
   UI.addChat(`Добро пожаловать в Новоград, ${m.name}!`, '#ffd54f');
   UI.addChat('M — меню и GPS, E — взаимодействие, F — сесть в транспорт, T — чат, /help — команды', '#ffd54f');
-  if (OFFLINE) UI.addChat('Одиночная игра: сервер работает прямо на устройстве, прогресс сохраняется здесь же.', '#80cbc4');
+  if (OFFLINE) UI.addChat('Сервер 1 (офлайн): работает прямо на устройстве, прогресс сохраняется здесь же. Вы — главный админ: /apanel или меню (M).', '#80cbc4');
   if (m.isNew) {
     UI.toast('Начните с автошколы: права откроют аренду, покупку машин и работу водителем', 'info');
     S.waypoint = [...W.PLACES.school.pos];
@@ -368,6 +386,7 @@ function openMenu() {
     row('Права', p.license ? 'Категория B' : 'Нет'),
     row('Работа', j ? (j.type === 'bus' ? 'Водитель автобуса' : 'Курьер') : 'Безработный'),
     j && UI.button('Уволиться с работы', () => act({ a: 'quitjob' })),
+    p.admin > 0 && UI.button(`Админ-панель (уровень ${p.admin})`, () => openAdminPanel(), 'primary'),
     UI.el('h3', {}, 'Мой транспорт'),
     ...cars,
     UI.button('Убрать мой транспорт', () => act({ a: 'despawn' })),
@@ -378,6 +397,38 @@ function openMenu() {
       ? 'Джойстик — движение, свайп справа — камера. F — транспорт, E — действие, ⇧ — бег/ручник.'
       : 'WASD — движение/вождение, Shift — бег, Пробел — ручник, мышь (зажать) — камера, колесо — зум. F — сесть/выйти, E — действие, T — чат, M — меню.'),
     P('Чат: /me, /do, /try, /s, /w, /b, /o, /pay [id] [сумма], /id, /help'),
+  ]);
+}
+
+// ---------- Админ-панель ----------
+const cmd = (text, close = false) => { send({ t: 'chat', text }); if (close) UI.closeModal(); };
+function openAdminPanel() {
+  const p = S.profile;
+  if (!p || !(p.admin > 0)) return UI.toast('Нет доступа', 'warn');
+  const B = UI.button, G = (...k) => UI.el('div', { class: 'grid' }, ...k);
+  const lvlOk = (l) => p.admin >= l;
+  const carGrid = availableCars().map((c) => B(c.name, () => cmd(`/spcar ${c.id}`, true)));
+  UI.openModal(`Админ-панель · ${S.name} · уровень ${p.admin}`, [
+    UI.el('h3', {}, 'Я'),
+    G(B(S.fly ? 'Выключить полёт' : 'Полёт', () => cmd('/fly', true), 'primary'),
+      B('На площадь', () => cmd('/spawn', true)),
+      lvlOk(2) && B('Выдать себе права', () => cmd('/givelic me')),
+      lvlOk(4) && B('Уровень +1', () => cmd(`/setlevel me ${p.level + 1}`)),
+      lvlOk(4) && B('PayDay сейчас', () => cmd('/payday'))),
+    lvlOk(3) && UI.el('h3', {}, 'Деньги'),
+    lvlOk(3) && G(B('+$10 000', () => cmd('/givecash 10000')), B('+$100 000', () => cmd('/givecash 100000')),
+      B('+$1 000 000', () => cmd('/givecash 1000000'))),
+    UI.el('h3', {}, 'Телепорт'),
+    G(...Object.entries(W.PLACES).map(([id, pl]) => B(pl.name, () => cmd(`/tpp ${id}`, true)))),
+    lvlOk(2) && UI.el('h3', {}, 'Время суток'),
+    lvlOk(2) && G(B('Утро 07:00', () => cmd('/settime 7')), B('День 13:00', () => cmd('/settime 13')),
+      B('Вечер 19:00', () => cmd('/settime 19')), B('Ночь 23:00', () => cmd('/settime 23'))),
+    lvlOk(2) && UI.el('h3', {}, 'Создать машину'),
+    lvlOk(2) && (carGrid.length ? G(...carGrid) : P('Моделей в кэше нет — доступны классы: ' + Object.keys(W.CARS).join(', '))),
+    lvlOk(2) && G(B('Убрать мои админ-машины', () => cmd('/dvall')),
+      S.car && B('Перекрасить в случайный цвет', () => cmd(`/color ${Math.floor(Math.random() * 8)}`))),
+    UI.el('h3', {}, 'Команды'),
+    P('/ahelp — все команды. /goto, /gethere, /kick [id], /givecash [id] [сумма], /setadmin [id] [0-5], /tp [x] [z], /a [текст].'),
   ]);
 }
 
@@ -398,7 +449,24 @@ function pushFrom(x, z, r, circles) {
 }
 const clampWorld = (v) => Math.max(1, Math.min(W.SIZE - 1, v));
 
+// Полёт (админ): летим куда смотрит камера; Пробел — вверх, C — вниз, Shift — быстрее.
+function updateFly(dt, inp) {
+  const speed = inp.sprint ? 60 : 22;
+  const fx = Math.sin(S.camYaw), fz = Math.cos(S.camYaw);
+  const dx = fx * inp.y - fz * inp.x, dz = fz * inp.y + fx * inp.x;
+  // наклон камеры задаёт высоту: смотрите вниз — снижаетесь, вверх — набираете высоту
+  const dy = (inp.up - inp.down) + inp.y * -(S.camPitch - 0.32) * 1.6;
+  S.x = clampWorld(S.x + dx * speed * dt); S.z = clampWorld(S.z + dz * speed * dt);
+  S.y = Math.max(W.groundHeight(S.x, S.z), Math.min(400, S.y + dy * speed * dt));
+  if (Math.hypot(dx, dz) > 0.05) S.ry = lerpAngle(S.ry, Math.atan2(dx, dz), 1 - Math.exp(-dt * 8));
+  S.anim = 0;
+  me.position.set(S.x, S.y, S.z);
+  me.rotation.y = S.ry;
+  animatePed(me, 0, dt);
+}
+
 function updateWalk(dt, inp) {
+  if (S.fly) return updateFly(dt, inp);
   const speed = inp.sprint ? 8.5 : 4.5;
   const fx = Math.sin(S.camYaw), fz = Math.cos(S.camYaw);
   let dx = fx * inp.y - fz * inp.x, dz = fz * inp.y + fx * inp.x;
@@ -452,7 +520,7 @@ function updateCar(dt, inp) {
     v.mesh.rotation.y = c.ry;
     spinWheels(v.mesh, c.spd, dt);
   }
-  UI.speedo(Math.abs(c.spd) * 3.6, `${m.name}${v ? ' · ' + v.plate : ''}`);
+  UI.speedo(Math.abs(c.spd) * 3.6, `${(v?.skin && CAR_NAMES[v.skin]) || m.name}${v ? ' · ' + v.plate : ''}`);
 }
 
 // ---------- Камера и небо ----------
@@ -516,7 +584,7 @@ function frame(now) {
     return;
   }
   const blocked = isTyping() || UI.isModalOpen();
-  const inp = blocked ? { x: 0, y: 0, sprint: false, brake: true } : readInput();
+  const inp = blocked ? { x: 0, y: 0, sprint: false, brake: true, up: 0, down: 0 } : readInput();
   if (S.car) updateCar(dt, inp); else updateWalk(dt, inp);
 
   // интерполяция других игроков и машин

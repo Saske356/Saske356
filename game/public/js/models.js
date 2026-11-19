@@ -36,18 +36,16 @@ const paintCache = new Map();
 const lodCars = new Set();
 const LOD_DIST = 70; // дальше — простая коробка вместо детальной модели
 
-export async function loadCarModels(base = '/cache/cars') {
-  let index;
-  try {
-    const r = await fetch(`${base}/cars.json`, { cache: 'no-cache' });
-    if (!r.ok) return 0;
-    index = await r.json();
-  } catch { return 0; }
-  const loader = new GLTFLoader();
-  const wanted = [...new Set(Object.values(SKINS).flat())].filter((n) => index[n]);
-  await Promise.all(wanted.map(async (name) => {
-    try {
-      const g = await loader.loadAsync(`${base}/${name}.glb`);
+let carIndex = {}, carBase = '/cache/cars';
+const loading = new Map();
+const gltf = new GLTFLoader();
+
+/** Загрузить одну модель (если ещё не загружена). Возвращает true, если модель есть. */
+export function loadSkin(name) {
+  if (protos.has(name)) return Promise.resolve(true);
+  if (!carIndex[name]) return Promise.resolve(false);
+  if (!loading.has(name)) {
+    loading.set(name, gltf.loadAsync(`${carBase}/${name}.glb`).then((g) => {
       g.scene.traverse((o) => {
         if (!o.isMesh) return;
         o.castShadow = true;
@@ -56,11 +54,40 @@ export async function loadCarModels(base = '/cache/cars') {
         else if (m.name === 'light_rear') o.material = lightMats.tail;
         else if (/^paint/.test(m.name)) o.userData.paint = true;
       });
-      protos.set(name, { scene: g.scene, info: index[name] });
-    } catch (e) { console.warn('Модель не загрузилась:', name, e); }
-  }));
+      protos.set(name, { scene: g.scene, info: carIndex[name] });
+      return true;
+    }).catch((e) => { console.warn('Модель не загрузилась:', name, e); return false; }));
+  }
+  return loading.get(name);
+}
+export const hasSkin = (name) => protos.has(name);
+/** Все модели в кэше (для админ-панели): [{ id, name }]. */
+export function availableCars() {
+  return Object.keys(carIndex).sort().map((id) => ({ id, name: CAR_NAMES[id] || id }));
+}
+
+export async function loadCarModels(base = '/cache/cars') {
+  carBase = base;
+  try {
+    const r = await fetch(`${base}/cars.json`, { cache: 'no-cache' });
+    if (!r.ok) return 0;
+    carIndex = await r.json();
+  } catch { return 0; }
+  await Promise.all([...new Set(Object.values(SKINS).flat())].map(loadSkin));
   return protos.size;
 }
+
+// Подписи моделей в админ-панели (остальные показываются по имени файла).
+export const CAR_NAMES = {
+  granta: 'Lada Granta', grantaf: 'Lada Granta FL', vesta: 'Lada Vesta', vestasw: 'Lada Vesta SW', logan: 'Renault Logan',
+  kiar: 'Kia Rio', kiakf: 'Kia K5', focus: 'Ford Focus', patriota: 'УАЗ Патриот', patriotf: 'УАЗ Патриот пикап',
+  patriotp: 'УАЗ Патриот (новый)', patriot: 'ГАЗ Тигр', lexuslx: 'Lexus LX', mercesg: 'Mercedes G 63', mercescls: 'Mercedes CLS',
+  mercesgls: 'Mercedes GLS', merceseqs: 'Mercedes EQS', mercesm: 'Mercedes M', bmwmkf: 'BMW M8', bmwmgc: 'BMW M8 Gran Coupe',
+  bmwmli: 'BMW 7 E38', bmwxma: 'BMW X7', bmwxka: 'BMW X5 E53', supra: 'Toyota Supra', huracan: 'Lamborghini Huracán',
+  cullinan: 'Rolls-Royce Cullinan', phantom: 'Rolls-Royce Phantom', bentlgt: 'Bentley GT', teslas: 'Tesla Model S',
+  teslax: 'Tesla Model X', ptaycan: 'Porsche Taycan', audirs: 'Audi RS7', audiq: 'Audi Q7', cadillac: 'Cadillac Escalade',
+  divo: 'Bugatti Divo', jaguarxk: 'Jaguar XK120', vwstation: 'Volkswagen T1', ambulan: 'Mercedes Sprinter', bus: 'Автобус',
+};
 
 function paintMaterial(base, color) {
   const key = base.uuid + '|' + color;

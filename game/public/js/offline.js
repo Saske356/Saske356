@@ -15,7 +15,7 @@ export function offlineSocket() {
   };
   const saveSoon = () => { if (!timer) timer = setTimeout(save, 2000); };
   const game = createGame({
-    db, saveSoon, maxPlayers: 1,
+    db, saveSoon, maxPlayers: 1, ownerAll: true, // офлайн-сервер: вы главный админ
     auth: { create: () => ({ salt: '', hash: '' }), verify: () => true }, // пароль офлайн не нужен
   });
 

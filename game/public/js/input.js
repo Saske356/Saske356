@@ -25,7 +25,8 @@ export function readInput() {
   let x = (k('KeyD') || k('ArrowRight') ? 1 : 0) - (k('KeyA') || k('ArrowLeft') ? 1 : 0);
   let y = (k('KeyW') || k('ArrowUp') ? 1 : 0) - (k('KeyS') || k('ArrowDown') ? 1 : 0);
   if (joy.x || joy.y) { x = joy.x; y = joy.y; }
-  return { x, y, sprint: k('ShiftLeft') || k('ShiftRight') || touchHold, brake: k('Space') || touchHold };
+  return { x, y, sprint: k('ShiftLeft') || k('ShiftRight') || touchHold, brake: k('Space') || touchHold,
+    up: k('Space') ? 1 : 0, down: k('KeyC') || k('ControlLeft') ? 1 : 0 };
 }
 
 export function takeCamera() {

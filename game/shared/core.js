@@ -6,13 +6,16 @@
 //   conn.message(text);  …  conn.close();
 import * as W from './world.js';
 
-export function createGame({ db = {}, saveSoon = () => {}, auth, maxPlayers = 100, log = () => {} }) {
+export function createGame({ db = {}, saveSoon = () => {}, auth, maxPlayers = 100, log = () => {}, admins = [], ownerAll = false }) {
+  // admins — ники (Имя_Фамилия), которые получают 5-й уровень админки при входе; ownerAll — так в офлайне.
+  const ADMINS = new Set(admins.map((n) => String(n).trim().toLowerCase()).filter(Boolean));
   const timers = [];
   // ---------- Мир ----------
   const city = W.generateCity();
   const ROUTE = W.busRoute();
   const START = Date.now();
-  const gameTime = () => (9 * 60 + (Date.now() - START) / 2000) % 1440; // сутки = 48 минут
+  let timeOffset = 0; // /settime сдвигает часы
+  const gameTime = () => ((9 * 60 + (Date.now() - START) / 2000 + timeOffset) % 1440 + 1440) % 1440; // сутки = 48 минут
   const players = new Map();
   const vehicles = new Map();
   let nextVid = 1;
@@ -26,7 +29,7 @@ export function createGame({ db = {}, saveSoon = () => {}, auth, maxPlayers = 10
   function notify(p, text, kind = 'info') { send(p, { t: 'notify', text, kind }); }
   function pubProfile(p) {
     const { money, level, exp, license, cars, stats } = p.prof;
-    return { money, level, exp, license, cars, stats };
+    return { money, level, exp, license, cars, stats, admin: p.prof.admin | 0 };
   }
   function sendProfile(p) { send(p, { t: 'profile', profile: pubProfile(p) }); saveSoon(); }
   function sendJob(p) {
@@ -41,8 +44,8 @@ export function createGame({ db = {}, saveSoon = () => {}, auth, maxPlayers = 10
     const L = () => PLATE[Math.floor(Math.random() * PLATE.length)];
     return L() + String(Math.floor(Math.random() * 900) + 100) + L() + L();
   }
-  function spawnVehicle(model, color, x, z, ry, owner, kind) {
-    const v = { id: nextVid++, model, color, x, z, ry, spd: 0, driver: -1, owner, kind, plate: makePlate() };
+  function spawnVehicle(model, color, x, z, ry, owner, kind, skin = null) {
+    const v = { id: nextVid++, model, color, x, z, ry, spd: 0, driver: -1, owner, kind, plate: makePlate(), skin };
     vehicles.set(v.id, v);
     return v;
   }
@@ -78,6 +81,7 @@ export function createGame({ db = {}, saveSoon = () => {}, auth, maxPlayers = 10
     } else {
       if (!auth.verify(pass, prof)) return fail('Неверный пароль');
     }
+    if (ownerAll || ADMINS.has(key)) prof.admin = 5;
     const id = freeId();
     const pos = prof.pos || W.PLACES.spawn.pos;
     const p = {
@@ -161,8 +165,100 @@ export function createGame({ db = {}, saveSoon = () => {}, auth, maxPlayers = 10
         local(p, 25, `${p.name} передал ${money(sum)} — ${q.name}`, '#c2a2da');
         break;
       }
-      default: notify(p, 'Неизвестная команда. /help — список команд', 'warn');
+      default: if (!adminCommand(p, cmd, rest, arg)) notify(p, 'Неизвестная команда. /help — список команд', 'warn');
     }
+  }
+
+  // ---------- Админка ----------
+  // Уровни: 1 — хелпер, 2 — модератор, 3 — админ, 4 — старший админ, 5 — владелец.
+  const CLASS_OF = { granta: 'kroha', grantaf: 'kroha', logan: 'kroha', kiar: 'kroha', vesta: 'vektor', vestasw: 'vektor',
+    focus: 'vektor', kiakf: 'vektor', patriota: 'taiga', patriotf: 'taiga', patriotp: 'taiga', lexuslx: 'taiga', mercesg: 'taiga',
+    bus: 'bus' };
+  const lvl = (p) => p.prof.admin | 0;
+  const target = (p, s) => (s === undefined || s === '' || s === 'me' ? p : players.get(Number(s)));
+  const teleport = (q, x, z) => { q.x = x; q.z = z; send(q, { t: 'teleport', x, z }); };
+  function adminChat(text) {
+    for (const q of players.values()) if (lvl(q) > 0) send(q, { t: 'chat', text, color: '#ff8a65' });
+  }
+  const ADMIN = {
+    ahelp: [1, 'список админ-команд', (p) => {
+      for (const [c, [l, d]] of Object.entries(ADMIN)) if (l <= lvl(p)) send(p, { t: 'chat', text: `[${l}] /${c} — ${d}`, color: '#ff8a65' });
+    }],
+    apanel: [1, 'админ-панель', (p) => send(p, { t: 'apanel' })],
+    a: [1, '[текст] — чат администрации', (p, a, arg) => { if (arg) adminChat(`[A] ${p.name} [${p.id}]: ${arg}`); }],
+    admins: [1, 'админы онлайн', (p) => {
+      const list = [...players.values()].filter((q) => lvl(q) > 0).map((q) => `${q.name} [${q.id}] — ${lvl(q)} ур.`);
+      send(p, { t: 'chat', text: 'Администрация онлайн: ' + (list.join(', ') || 'никого'), color: '#ff8a65' });
+    }],
+    fly: [1, 'полёт вкл/выкл', (p) => { p.fly = !p.fly; send(p, { t: 'fly', on: p.fly }); notify(p, p.fly ? 'Полёт включён' : 'Полёт выключен', 'ok'); }],
+    tp: [1, '[x] [z] — телепорт по координатам', (p, a) => {
+      const x = Number(a[0]), z = Number(a[1]);
+      if (!Number.isFinite(x) || !Number.isFinite(z)) return notify(p, 'Использование: /tp [x] [z]', 'warn');
+      teleport(p, Math.max(0, Math.min(W.SIZE, x)), Math.max(0, Math.min(W.SIZE, z)));
+    }],
+    tpp: [1, '[место] — телепорт к месту (spawn, rent, school, dealer, courier, bus)', (p, a) => {
+      const pl = W.PLACES[a[0]];
+      if (!pl) return notify(p, 'Места: ' + Object.keys(W.PLACES).join(', '), 'warn');
+      teleport(p, pl.pos[0], pl.pos[1] + 2);
+    }],
+    spawn: [1, 'на центральную площадь', (p) => teleport(p, W.PLACES.spawn.pos[0], W.PLACES.spawn.pos[1])],
+    goto: [1, '[id] — к игроку', (p, a) => { const q = target(p, a[0]); if (!q || q === p) return notify(p, 'Нет такого игрока', 'warn'); teleport(p, q.x + 1.5, q.z); }],
+    gethere: [2, '[id] — игрока к себе', (p, a) => { const q = target(p, a[0]); if (!q || q === p) return notify(p, 'Нет такого игрока', 'warn'); teleport(q, p.x + 1.5, p.z); notify(q, `Вас телепортировал администратор ${p.name}`); }],
+    spcar: [2, '[модель] [цвет 0-7] — создать машину рядом', (p, a) => {
+      const skin = String(a[0] || '').toLowerCase().replace(/[^a-z0-9_]/g, '');
+      if (!skin) return notify(p, 'Использование: /spcar [модель], список моделей — в /apanel', 'warn');
+      const model = W.CARS[skin] ? skin : CLASS_OF[skin] || 'bars';
+      const ci = Number(a[1]);
+      const color = W.CAR_COLORS[Number.isInteger(ci) && ci >= 0 && ci < 8 ? ci : Math.floor(Math.random() * 8)];
+      const mine = [...vehicles.values()].filter((v) => v.owner === p.id && v.kind === 'admin');
+      if (mine.length >= 10) removeVehicle(mine[0]);
+      const len = W.CARS[model].len;
+      const x = p.x + Math.sin(p.ry) * (len / 2 + 2.5), z = p.z + Math.cos(p.ry) * (len / 2 + 2.5);
+      spawnVehicle(model, color, Math.max(1, Math.min(W.SIZE - 1, x)), Math.max(1, Math.min(W.SIZE - 1, z)), p.ry, p.id, 'admin', W.CARS[skin] ? null : skin);
+      notify(p, `Машина ${skin} создана — подойдите и нажмите F`, 'ok');
+    }],
+    dvall: [2, 'убрать созданные мной машины', (p) => { removeVehiclesOf(p, 'admin'); notify(p, 'Админ-машины убраны'); }],
+    color: [2, '[0-7] [0-7] — перекрасить машину, в которой сидите', (p, a) => {
+      const v = vehicles.get(p.veh);
+      if (!v) return notify(p, 'Сядьте в машину', 'warn');
+      v.color = W.CAR_COLORS[(Number(a[0]) | 0) & 7];
+      notify(p, 'Машина перекрашена', 'ok');
+    }],
+    givelic: [2, '[id] — выдать права', (p, a) => { const q = target(p, a[0]); if (!q) return; q.prof.license = true; sendProfile(q); notify(q, 'Вам выданы водительские права', 'ok'); }],
+    settime: [2, '[час 0-23] — время суток', (p, a) => {
+      const h = Number(a[0]);
+      if (!(h >= 0 && h < 24)) return notify(p, 'Использование: /settime [0-23]', 'warn');
+      timeOffset += h * 60 - Math.floor(gameTime());
+      broadcast({ t: 'chat', text: `Администратор ${p.name} установил время ${String(h).padStart(2, '0')}:00`, color: '#ff8a65' });
+    }],
+    kick: [2, '[id] — кикнуть', (p, a) => {
+      const q = target(p, a[0]);
+      if (!q || q === p) return notify(p, 'Нет такого игрока', 'warn');
+      broadcast({ t: 'chat', text: `Администратор ${p.name} кикнул ${q.name}`, color: '#ff6b6b' });
+      q.conn.close?.();
+    }],
+    givecash: [3, '[id] [сумма] или [сумма] — выдать деньги', (p, a) => {
+      const self = a.length < 2, q = self ? p : target(p, a[0]), sum = Math.floor(Number(self ? a[0] : a[1]));
+      if (!q || !(Math.abs(sum) > 0) || Math.abs(sum) > 1e9) return notify(p, 'Использование: /givecash [id] [сумма]', 'warn');
+      addMoney(q, sum); sendProfile(q);
+      notify(q, `Администратор выдал вам ${money(sum)}`, 'ok');
+    }],
+    setmoney: [4, '[id] [сумма]', (p, a) => { const q = target(p, a[0]), sum = Math.floor(Number(a[1])); if (!q || !(sum >= 0)) return; q.prof.money = sum; sendProfile(q); }],
+    setlevel: [4, '[id] [уровень]', (p, a) => { const q = target(p, a[0]), l = Math.floor(Number(a[1])); if (!q || !(l >= 1 && l <= 999)) return; q.prof.level = l; q.prof.exp = 0; sendProfile(q); }],
+    payday: [4, 'PayDay всем прямо сейчас', () => { for (const q of players.values()) payday(q); }],
+    setadmin: [5, '[id] [0-5] — выдать/снять админку', (p, a) => {
+      const q = target(p, a[0]), l = Math.floor(Number(a[1]));
+      if (!q || !(l >= 0 && l <= 5)) return notify(p, 'Использование: /setadmin [id] [0-5]', 'warn');
+      q.prof.admin = l; sendProfile(q);
+      adminChat(`${p.name} выдал ${q.name} админку ${l} уровня`);
+    }],
+  };
+  function adminCommand(p, cmd, args, arg) {
+    const c = ADMIN[cmd];
+    if (!c) return false;
+    if (lvl(p) < c[0]) { notify(p, 'Нет доступа', 'warn'); return true; }
+    c[2](p, args.filter((x) => x !== ''), arg);
+    return true;
   }
 
   // ---------- Действия ----------
@@ -354,22 +450,22 @@ export function createGame({ db = {}, saveSoon = () => {}, auth, maxPlayers = 10
     const s = JSON.stringify({
       t: 'snap', time: gameTime(), n: players.size,
       p: [...players.values()].map((p) => [p.id, p.name, r2(p.x), r2(p.y), r2(p.z), r2(p.ry), p.anim, p.veh]),
-      v: [...vehicles.values()].map((v) => [v.id, v.model, v.color, r2(v.x), r2(v.z), r2(v.ry), r2(v.spd), v.driver, v.owner, v.plate]),
+      v: [...vehicles.values()].map((v) => [v.id, v.model, v.color, r2(v.x), r2(v.z), r2(v.ry), r2(v.spd), v.driver, v.owner, v.plate, v.skin]),
     });
     for (const p of players.values()) if (p.conn.isOpen()) p.conn.send(s);
   }, 66));
 
   // PayDay каждые 10 минут игры.
+  function payday(p) {
+    const prof = p.prof, pay = 150 + prof.level * 50;
+    addMoney(p, pay); prof.exp++;
+    let text = `PayDay! Зарплата ${money(pay)}, +1 опыт`;
+    if (prof.exp >= prof.level * 3) { prof.exp = 0; prof.level++; text += `. Новый уровень: ${prof.level}!`; }
+    notify(p, text, 'ok');
+    sendProfile(p);
+  }
   timers.push(setInterval(() => {
-    for (const p of players.values()) {
-      if (++p.online % 600 !== 0) continue;
-      const prof = p.prof, pay = 150 + prof.level * 50;
-      addMoney(p, pay); prof.exp++;
-      let text = `PayDay! Зарплата ${money(pay)}, +1 опыт`;
-      if (prof.exp >= prof.level * 3) { prof.exp = 0; prof.level++; text += `. Новый уровень: ${prof.level}!`; }
-      notify(p, text, 'ok');
-      sendProfile(p);
-    }
+    for (const p of players.values()) if (++p.online % 600 === 0) payday(p);
   }, 1000));
 
 
