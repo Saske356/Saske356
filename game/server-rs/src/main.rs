@@ -3,7 +3,7 @@
 //! сервером на Node.js: тот же протокол, тот же формат players.json и паролей (scrypt).
 
 mod game;
-mod world;
+use novo_world as world;
 
 #[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -270,7 +270,11 @@ async fn manifest(State(app): State<Shared>) -> impl IntoResponse {
 async fn main() {
     if std::env::args().any(|a| a == "--dump-world") {
         // для проверки совпадения с клиентским генератором
-        println!("{}", json!({ "deliveries": world::deliveries(), "route": world::bus_route() }));
+        let c = world::generate_city();
+        let b: Vec<Value> = c.buildings.iter().map(|b| json!([b.r.x0, b.r.z0, b.r.x1, b.r.z1, b.h, b.color])).collect();
+        let o: Vec<Value> = c.boxes.iter().map(|o| json!([o.r.x0, o.r.z0, o.r.x1, o.r.z1])).collect();
+        println!("{}", json!({ "deliveries": c.deliveries, "route": world::bus_route(), "buildings": b, "trees": c.trees,
+                               "parks": c.parks.len(), "decor": c.decor.len(), "boxes": o }));
         return;
     }
     let game_dir = find_game_dir();

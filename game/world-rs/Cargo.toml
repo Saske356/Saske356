@@ -1,0 +1,6 @@
+[package]
+name = "novo_world"
+version = "0.2.0"
+edition = "2021"
+description = "Город Новоград: генератор, места, транспорт, коллизии — общий для сервера и клиента"
+publish = false

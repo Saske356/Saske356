@@ -6,8 +6,8 @@
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "build:rust": "cargo build --release --manifest-path server-rs/Cargo.toml",
-    "start:rust": "server-rs/target/release/novograd-server",
+    "build:rust": "cargo build --release -p novograd-server",
+    "start:rust": "target/release/novograd-server",
     "bench": "node tools/bench.mjs"
   },
   "engines": {

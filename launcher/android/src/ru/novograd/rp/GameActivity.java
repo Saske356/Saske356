@@ -33,6 +33,9 @@ public class GameActivity extends Activity {
     }
     private WebView web;
     private File cacheDir;
+    /** Одиночная игра: файлы игры вшиты в APK (assets/game), сервер работает внутри самой игры. */
+    private boolean offline;
+    static final String OFFLINE = "offline";
     private boolean failed;
 
     @Override
@@ -45,6 +48,7 @@ public class GameActivity extends Activity {
         String quality = getIntent().getStringExtra("quality");
         if (url == null) { finish(); return; }
 
+        offline = OFFLINE.equals(url);
         cacheDir = CacheSync.folderFor(MainActivity.cacheRoot(this), url);
         web = Screen.webView(this);
         web.setWebViewClient(new WebViewClient() {
@@ -90,7 +94,9 @@ public class GameActivity extends Activity {
         setContentView(web);
         String q = quality == null ? "mid" : quality;
         try {
-            if (new File(cacheDir, "index.html").isFile()) {
+            if (offline) {
+                web.loadUrl("http://" + HOST + "/index.html?launcher=android&offline=1&q=" + q);
+            } else if (new File(cacheDir, "index.html").isFile()) {
                 web.loadUrl("http://" + HOST + "/index.html?launcher=android&q=" + q
                         + "&server=" + URLEncoder.encode(url, "UTF-8"));
             } else { // кэша нет (не должен случаться) — грузим игру с сервера
@@ -103,6 +109,7 @@ public class GameActivity extends Activity {
 
     private WebResourceResponse serve(String path) {
         if (path == null || path.equals("/")) path = "/index.html";
+        if (offline) return serveAsset(path);
         WebResourceResponse res;
         File f = new File(cacheDir, path.substring(1));
         try {
@@ -116,6 +123,17 @@ public class GameActivity extends Activity {
             return new WebResourceResponse(mime, text ? "utf-8" : null, new FileInputStream(f));
         } catch (IOException e) {
             return new WebResourceResponse("text/plain", "utf-8", 500, "Error", null, null);
+        }
+    }
+
+    private WebResourceResponse serveAsset(String path) {
+        if (!CacheSync.safePath(path)) return new WebResourceResponse("text/plain", "utf-8", 404, "Not Found", null, null);
+        String ext = path.substring(path.lastIndexOf('.') + 1).toLowerCase(java.util.Locale.ROOT);
+        String mime = MIME.containsKey(ext) ? MIME.get(ext) : "application/octet-stream";
+        try {
+            return new WebResourceResponse(mime, mime.startsWith("text/") ? "utf-8" : null, getAssets().open("game" + path));
+        } catch (IOException e) {
+            return new WebResourceResponse("text/plain", "utf-8", 404, "Not Found", null, null);
         }
     }
 

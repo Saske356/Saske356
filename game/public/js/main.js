@@ -4,6 +4,7 @@ import { buildCity, makeBeam } from './city.js';
 import { makeCar, makePed, animatePed, textSprite, disposeSprite, lightMats, colorFromString, spinWheels } from './models.js';
 import { Traffic } from './traffic.js';
 import * as UI from './ui.js';
+import { offlineSocket } from './offline.js';
 import { handlers, readInput, takeCamera, initPointer, initTouch, isTouch, isTyping } from './input.js';
 
 const $ = (id) => document.getElementById(id);
@@ -67,14 +68,17 @@ function wsUrl() {
   return (base.protocol === 'https:' ? 'wss://' : 'ws://') + base.host + '/ws';
 }
 
+// Офлайн: ?offline=1 (так запускает лаунчер) или кнопка «Одиночная игра» на экране входа.
+let OFFLINE = new URLSearchParams(location.search).get('offline') === '1';
+
 function connect(name, pass) {
-  ws = new WebSocket(wsUrl());
+  ws = OFFLINE ? offlineSocket() : new WebSocket(wsUrl());
   ws.onopen = () => send({ t: 'login', name, pass });
   ws.onmessage = (e) => onMessage(JSON.parse(e.data));
   ws.onclose = () => {
     if (S.playing) {
       UI.openModal('Соединение потеряно', [UI.el('p', {}, 'Связь с сервером прервалась.'), UI.button('Переподключиться', () => location.reload())]);
-    } else loginError('Сервер недоступен');
+    } else loginError('Сервер недоступен — можно начать одиночную игру');
   };
 }
 
@@ -195,9 +199,15 @@ function loginError(text) {
   $('loginerr').textContent = text;
   $('loginbtn').disabled = false;
 }
+$('offlinebtn').addEventListener('click', () => {
+  OFFLINE = true;
+  $('loginform').requestSubmit();
+});
+if (OFFLINE) { $('pass').required = false; $('offlinebtn').hidden = true; $('loginbtn').textContent = 'Играть офлайн'; }
 $('loginform').addEventListener('submit', (e) => {
   e.preventDefault();
-  const name = $('nick').value.trim(), pass = $('pass').value;
+  const name = $('nick').value.trim(), pass = OFFLINE ? ($('pass').value || 'offline') : $('pass').value;
+  if (!OFFLINE && pass.length < 4) return loginError('Пароль — минимум 4 символа');
   try { localStorage.setItem('nrp-nick', name); } catch {}
   $('loginerr').textContent = '';
   $('loginbtn').disabled = true;
@@ -224,6 +234,7 @@ function startGame(m) {
   updateStats();
   UI.addChat(`Добро пожаловать в Новоград, ${m.name}!`, '#ffd54f');
   UI.addChat('M — меню и GPS, E — взаимодействие, F — сесть в транспорт, T — чат, /help — команды', '#ffd54f');
+  if (OFFLINE) UI.addChat('Одиночная игра: сервер работает прямо на устройстве, прогресс сохраняется здесь же.', '#80cbc4');
   if (m.isNew) {
     UI.toast('Начните с автошколы: права откроют аренду, покупку машин и работу водителем', 'info');
     S.waypoint = [...W.PLACES.school.pos];

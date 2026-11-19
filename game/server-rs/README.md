@@ -2,20 +2,21 @@
 
 Полная замена `server.js`: тот же протокол, тот же `data/players.json` и те же пароли (scrypt
 с параметрами Node.js), поэтому игроки и лаунчер переходят на него без изменений. Город генерируется
-тем же алгоритмом, что и у клиента, — адреса доставки совпадают бит в бит (`--dump-world` для проверки).
+тем же алгоритмом, что и у клиента (общая библиотека `world-rs`), — здания, деревья и адреса доставки совпадают
+с JS бит в бит (`--dump-world` выводит город для проверки).
 
 ## Сборка и запуск
 
 ```bash
 cd game
 npm install                 # клиент использует three.js из node_modules
-npm run build:rust          # = cargo build --release --manifest-path server-rs/Cargo.toml
+npm run build:rust          # = cargo build --release -p novograd-server
 npm run start:rust          # http://localhost:3000
 ```
 
 Переменные окружения те же, что у Node-сервера: `PORT`, `DATA_DIR`, `SERVER_NAME`, `SERVER_COLOR`,
 `MAX_PLAYERS`, плюс `GAME_DIR` — папка игры (по умолчанию текущая или родительская).
-Готовый бинарник один, ~2 МБ, без зависимостей — его можно скопировать на VPS и запустить.
+Готовый бинарник `game/target/release/novograd-server` один, ~2 МБ, без зависимостей — его можно скопировать на VPS и запустить.
 
 ### systemd
 
@@ -27,7 +28,7 @@ After=network.target
 [Service]
 WorkingDirectory=/opt/novograd/game
 Environment=PORT=3000 SERVER_NAME=Новоград\x20#1 MAX_PLAYERS=500
-ExecStart=/opt/novograd/game/server-rs/target/release/novograd-server
+ExecStart=/opt/novograd/game/target/release/novograd-server
 Restart=always
 
 [Install]

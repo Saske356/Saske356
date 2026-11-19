@@ -1,0 +1,15 @@
+# Rust-часть ONIKS/Новоград RP: общий мир, сервер и клиент на Bevy.
+[workspace]
+resolver = "2"
+members = ["world-rs", "server-rs", "client-rs"]
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Bevy в отладке собирается медленно и тормозит — оптимизируем зависимости и в dev-сборке.
+[profile.dev.package."*"]
+opt-level = 2

@@ -28,6 +28,12 @@ THREE_JS="$GAME/node_modules/three/build/three.module.js"
 [ -f "$THREE_JS" ] || { echo "Нет $THREE_JS — выполните npm install в папке игры"; exit 1; }
 cp "$THREE_JS" "$SC/vendor/"
 
+echo "▸ Игра для одиночного режима (assets/game)"
+rm -rf assets/game && mkdir -p assets/game/vendor
+cp -r "$GAME/public/." assets/game/
+cp -r "$GAME/shared" assets/game/
+cp "$THREE_JS" assets/game/vendor/
+
 echo "▸ Ресурсы"
 "$BT/aapt2" compile --dir res -o "$OUT/res/res.zip"
 "$BT/aapt2" link -I "$JAR" --manifest AndroidManifest.xml -A assets \

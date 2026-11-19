@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use tokio::sync::mpsc;
 
-use crate::world::{self, Places};
+use novo_world::{self as world, Places};
 
 pub type Tx = mpsc::Sender<Utf8Bytes>;
 

@@ -6,6 +6,7 @@ description = "Игровой сервер Новоград RP на Rust: мул
 publish = false
 
 [dependencies]
+novo_world = { path = "../world-rs" }
 axum = { version = "0.8", features = ["ws"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 hex = "0.4"
@@ -17,10 +18,3 @@ serde_json = "1"
 sha2 = "0.10"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal", "sync", "fs"] }
 tower-http = { version = "0.6", features = ["fs", "set-header"] }
-
-[profile.release]
-opt-level = 3
-lto = "fat"
-codegen-units = 1
-panic = "abort"
-strip = true

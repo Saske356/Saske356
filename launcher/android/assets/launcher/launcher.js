@@ -27,8 +27,10 @@
     if (!/^https?:\/\//i.test(a)) a = 'http://' + a;
     try { const u = new URL(a); return /^https?:$/.test(u.protocol) && u.hostname ? u.origin : null; } catch { return null; }
   }
+  const OFFLINE = 'offline'; // одиночная игра: сервер работает внутри самой игры
+  const isOff = (url) => url === OFFLINE;
   function allServers() {
-    const list = [], seen = new Set();
+    const list = [{ url: OFFLINE, name: 'Одиночная игра', builtin: true }], seen = new Set([OFFLINE]);
     for (const s of CFG.servers || []) {
       const url = normalize(s.url);
       if (url && !seen.has(url)) { seen.add(url); list.push({ url, name: s.name, builtin: true }); }
@@ -37,6 +39,7 @@
     return list;
   }
   async function probe(url) {
+    if (isOff(url)) { status[url] = { ok: true, offline: true, online: 1, max: 1, color: '#5ccf7a', news: [] }; return; }
     const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 4000), t0 = performance.now();
     try {
       const j = await (await fetch(url + '/api/status', { signal: ctl.signal, cache: 'no-store' })).json();
@@ -51,16 +54,18 @@
     await Promise.all(list.map((s) => probe(s.url).then(() => { renderServer(); if (sheetKind === 'servers') openServers(); })));
     updateNewsDot();
   }
-  function srvName(s) { const st = status[s.url] || {}; return st.name || s.name || s.url.replace(/^https?:\/\//, ''); }
+  function srvName(s) { const st = status[s.url] || {}; return isOff(s.url) ? 'Одиночная игра' : st.name || s.name || s.url.replace(/^https?:\/\//, ''); }
+  const srvIcon = (s, i) => (isOff(s.url) ? '★' : String(i));
   function renderServer() {
     const list = allServers(), i = list.findIndex((s) => s.url === selected);
     const s = list[i], st = s ? status[s.url] || {} : {};
     const icon = $('srvicon');
-    icon.textContent = s ? String(i + 1) : '?';
+    icon.textContent = s ? srvIcon(s, i) : '?';
     $('srvpill').style.setProperty('--srv', st.color || '#ff8a3d');
     $('srvname').textContent = s ? srvName(s) : 'Добавьте сервер';
-    $('srvonline').textContent = !s ? '' : st.ok ? `● ${st.online}/${st.max}` : st.ok === false ? '' : '…';
+    $('srvonline').textContent = !s ? '' : st.offline ? '● без интернета' : st.ok ? `● ${st.online}/${st.max}` : st.ok === false ? '' : '…';
     $('srvonline').style.color = st.ok ? '' : '#ef5350';
+    $('pass').placeholder = s && isOff(s.url) ? 'Пароль не нужен' : 'Пароль';
     validate();
   }
 
@@ -81,7 +86,7 @@
   }
   function validate() {
     const f = $('fname').value, l = $('lname').value, p = $('pass').value;
-    const ok = NAME_RE.test(f) && NAME_RE.test(l) && p.length >= 4 && !!selected;
+    const ok = NAME_RE.test(f) && NAME_RE.test(l) && (isOff(selected) || p.length >= 4) && !!selected;
     $('play').disabled = !ok;
     return ok;
   }
@@ -97,6 +102,12 @@
   let pendingPlay = null;
   function play() {
     const nick = `${$('fname').value}_${$('lname').value}`, pass = $('pass').value;
+    if (isOff(selected)) {
+      hint('');
+      store.set('nick', nick);
+      if (!app) return hint('Одиночная игра доступна в приложении');
+      return app.play(OFFLINE, nick, pass || 'offline', settings.quality);
+    }
     if ($('pass').value.length < 4) return hint('Пароль — минимум 4 символа');
     const st = status[selected];
     if (st && st.ok === false) return hint('Сервер недоступен. Попробуйте позже или смените сервер');
@@ -192,11 +203,12 @@
       const b = el('button', 'srvrow' + (s.url === selected ? ' on' : ''));
       b.type = 'button';
       b.style.setProperty('--srv', st.color || '#ff8a3d');
-      const ic = el('span', 'srvicon', String(i + 1));
+      const ic = el('span', 'srvicon', srvIcon(s, i));
       const meta = el('div', 'meta');
-      meta.append(el('b', null, srvName(s)), el('span', null, s.url.replace(/^https?:\/\//, '')));
+      meta.append(el('b', null, srvName(s)), el('span', null, isOff(s.url) ? 'без интернета, прогресс на телефоне' : s.url.replace(/^https?:\/\//, '')));
       const num = el('div', 'num');
-      if (st.ok) num.append(el('b', null, `${st.online} / ${st.max}`), document.createTextNode(`пинг ${st.ping} мс`));
+      if (st.offline) num.append(el('b', null, 'офлайн'));
+      else if (st.ok) num.append(el('b', null, `${st.online} / ${st.max}`), document.createTextNode(`пинг ${st.ping} мс`));
       else num.append(el('b', st.ok === false ? 'off' : '', st.ok === false ? 'недоступен' : '…'));
       b.append(ic, meta, num);
       if (!s.builtin) {
@@ -261,7 +273,7 @@
     cb.addEventListener('change', () => { settings.remember = cb.checked; store.set('settings', settings); if (!cb.checked) store.set('pass', ''); });
     rem.append(cb, document.createTextNode('Запоминать пароль'));
     const items = [ql, el('p', 'note', 'Низкая — без теней и с меньшим трафиком, для слабых телефонов.'), rem];
-    if (app && selected) {
+    if (app && selected && !isOff(selected)) {
       const re = el('button', 'btn', 'Перекачать файлы игры'); re.type = 'button';
       re.addEventListener('click', () => { app.clearCache(selected); re.textContent = 'Файлы удалены — скачаются при входе'; re.disabled = true; });
       items.push(re);
@@ -315,7 +327,7 @@
     setTimeout(() => {
       $('splash').classList.add('out');
       setTimeout(() => $('splash').remove(), 700);
-      if (app && selected && status[selected]?.ok) {
+      if (app && selected && !isOff(selected) && status[selected]?.ok) {
         mode = 'startup';
         showLoading('Подключение к серверу…');
         app.checkCache(selected);

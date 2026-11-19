@@ -19,9 +19,10 @@
         <input id="nick" name="username" placeholder="Ivan_Petrov" maxlength="32" required autocomplete="username" spellcheck="false">
       </label>
       <label>Пароль
-        <input id="pass" name="password" type="password" minlength="4" maxlength="64" required autocomplete="current-password">
+        <input id="pass" name="password" type="password" maxlength="64" autocomplete="current-password">
       </label>
       <button id="loginbtn" class="btn primary big" type="submit">Играть</button>
+      <button id="offlinebtn" class="btn big" type="button">Одиночная игра (без сервера)</button>
       <div id="loginerr"></div>
       <p class="note">Ник — Имя_Фамилия латиницей. Если такого персонажа ещё нет, он будет создан с этим паролем.</p>
     </form>
