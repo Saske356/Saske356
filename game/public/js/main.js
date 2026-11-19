@@ -193,11 +193,11 @@ function applySnap(m) {
   for (const e of m.v) {
     let id, model, color, x, z, ry, spd, driver, owner, plate, skin;
     if (v2) {
-      [id, x, z, ry, spd, driver, model, color, owner, plate] = e;
-      if (model) vehCache.set(id, { model, color, owner, plate });
+      [id, x, z, ry, spd, driver, model, color, owner, plate, skin] = e;
+      if (model) vehCache.set(id, { model, color, owner, plate, skin });
       const c = vehCache.get(id);
       if (!c) continue; // данных о машине ещё нет — дождёмся
-      ({ model, color, owner, plate } = c);
+      ({ model, color, owner, plate, skin } = c);
     } else [id, model, color, x, z, ry, spd, driver, owner, plate, skin] = e;
     seenV.add(id);
     let v = vehicles.get(id);

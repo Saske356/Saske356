@@ -37,6 +37,8 @@ async fn main() {
         color: env("SERVER_COLOR", "#ff8a3d"),
         max_players: env("MAX_PLAYERS", "100").parse().unwrap_or(100),
         version,
+        admins: env("ADMINS", "Linar_Safin").split(',').map(String::from).collect(),
+        owner_all: false,
     };
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await.unwrap_or_else(|e| {
         eprintln!("Не удалось открыть порт {port}: {e}");

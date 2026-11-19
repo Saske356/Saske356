@@ -2,15 +2,16 @@
 name = "oniks-client"
 version = "0.1.0"
 edition = "2021"
-description = "Клиент Новоград/ONIKS RP на Bevy: город, персонаж, вождение, мультиплеер"
+description = "Клиент ONIKS RP на Bevy: город, персонаж, вождение, мультиплеер, офлайн-сервер внутри"
 publish = false
 
 [dependencies]
+oniks-server = { path = "../server-rs" }
 novo_world = { path = "../world-rs" }
 bevy = { version = "0.16", default-features = false, features = [
   "std", "async_executor", "multi_threaded", "bevy_log", "bevy_asset", "bevy_color", "bevy_window", "bevy_winit",
   "bevy_render", "bevy_core_pipeline", "bevy_pbr", "bevy_text", "bevy_ui", "bevy_state",
-  "tonemapping_luts", "ktx2", "zstd", "x11",
+  "tonemapping_luts", "ktx2", "zstd", "x11", "bevy_gltf", "bevy_scene", "png", "jpeg",
 ] }
 serde_json = "1"
 tungstenite = { version = "0.26", default-features = false, features = ["handshake"] }

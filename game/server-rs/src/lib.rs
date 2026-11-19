@@ -135,7 +135,7 @@ async fn login(app: &Shared, m: &Value, tx: &game::Tx) -> Result<i64, String> {
             let created = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
             g.db.insert(key.clone(), Profile {
                 name: name.clone(), salt, hash, money: 2000, level: 1, exp: 0, license: false, cars: vec![], pos: None,
-                created, stats: Default::default(), extra: Default::default(),
+                created, stats: Default::default(), extra: Default::default(), admin: 0,
             });
             g.dirty = true;
             true
@@ -274,6 +274,10 @@ pub struct Options {
     pub color: String,
     pub max_players: usize,
     pub version: String,
+    /// Главные админы (Имя_Фамилия) — 5 уровень при входе.
+    pub admins: Vec<String>,
+    /// Офлайн-сервер внутри клиента: каждый вошедший — владелец.
+    pub owner_all: bool,
 }
 
 /// Запускает сервер на готовом сокете и работает до `shutdown`; перед выходом сохраняет базу.
@@ -285,6 +289,8 @@ pub async fn serve(opts: Options, listener: tokio::net::TcpListener, shutdown: i
         color: if color.len() == 7 && color.starts_with('#') && color[1..].chars().all(|c| c.is_ascii_hexdigit()) { color } else { "#ff8a3d".into() },
         max_players: opts.max_players,
         version: opts.version,
+        admins: opts.admins.iter().map(|a| a.trim().to_lowercase()).filter(|a| !a.is_empty()).collect(),
+        owner_all: opts.owner_all,
     };
     let game_dir = opts.game_dir.filter(|d| d.join("public").is_dir());
     let app: Shared = Arc::new(App {
@@ -355,8 +361,8 @@ pub fn start_local(data_dir: PathBuf) -> std::io::Result<u16> {
         rt.block_on(async move {
             let listener = tokio::net::TcpListener::from_std(std_listener).expect("сокет");
             let opts = Options {
-                data_dir, game_dir: None, name: "Одиночная игра".into(), color: "#5ccf7a".into(), max_players: 4,
-                version: env!("CARGO_PKG_VERSION").into(),
+                data_dir, game_dir: None, name: "Сервер 1".into(), color: "#5ccf7a".into(), max_players: 4,
+                version: env!("CARGO_PKG_VERSION").into(), admins: vec![], owner_all: true,
             };
             serve(opts, listener, std::future::pending()).await;
         });

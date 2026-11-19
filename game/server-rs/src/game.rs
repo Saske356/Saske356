@@ -73,6 +73,9 @@ pub struct Profile {
     pub created: i64,
     #[serde(default)]
     pub stats: Stats,
+    /// Уровень админки 0–5 (5 — владелец).
+    #[serde(default)]
+    pub admin: i64,
     /// Поля, о которых этот сервер не знает, сохраняются как есть.
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -87,6 +90,7 @@ pub enum Kind {
     Own,
     Rent,
     Job,
+    Admin,
 }
 
 pub struct Vehicle {
@@ -101,6 +105,8 @@ pub struct Vehicle {
     pub owner: i64,
     pub kind: Kind,
     pub plate: String,
+    /// Модель из кэша (cache/cars), если машина создана админом не из стандартных классов.
+    pub skin: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -136,6 +142,7 @@ pub struct Player {
     pub chat_t: u64,
     pub cp_t: u64,
     pub spawn_t: u64,
+    pub fly: bool,
     /// Кого этот игрок уже «знает»: ник и неизменные данные машин шлём только один раз.
     pub known_p: IdSet,
     pub known_v: IdSet,
@@ -146,6 +153,10 @@ pub struct Config {
     pub color: String,
     pub max_players: usize,
     pub version: String,
+    /// Ники (в нижнем регистре), которые при входе получают админку 5 уровня.
+    pub admins: Vec<String>,
+    /// Офлайн-сервер внутри клиента: любой вошедший — владелец.
+    pub owner_all: bool,
 }
 
 pub struct Game {
@@ -159,6 +170,7 @@ pub struct Game {
     route: Vec<[f64; 2]>,
     places: Places,
     start: Instant,
+    time_offset: f64,
 }
 
 // ---------- мелочи ----------
@@ -234,11 +246,12 @@ impl Game {
             route: world::bus_route(),
             places: world::places(),
             start: Instant::now(),
+            time_offset: 0.0,
         }
     }
 
     pub fn game_time(&self) -> f64 {
-        (9.0 * 60.0 + self.start.elapsed().as_millis() as f64 / 2000.0) % 1440.0
+        ((9.0 * 60.0 + self.start.elapsed().as_millis() as f64 / 2000.0 + self.time_offset) % 1440.0 + 1440.0) % 1440.0
     }
 
     fn now(&self) -> u64 {
@@ -247,7 +260,7 @@ impl Game {
 
     fn pub_profile(prof: &Profile) -> Value {
         json!({ "money": prof.money, "level": prof.level, "exp": prof.exp, "license": prof.license,
-                "cars": prof.cars, "stats": prof.stats })
+                "cars": prof.cars, "stats": prof.stats, "admin": prof.admin })
     }
 
     fn send_profile(&mut self, pid: i64) {
@@ -283,10 +296,13 @@ impl Game {
     }
 
     fn spawn_vehicle(&mut self, model: &'static str, color: i64, pos: [f64; 3], owner: i64, kind: Kind) -> i64 {
+        self.spawn_vehicle_skin(model, color, pos, owner, kind, None)
+    }
+    fn spawn_vehicle_skin(&mut self, model: &'static str, color: i64, pos: [f64; 3], owner: i64, kind: Kind, skin: Option<String>) -> i64 {
         let id = self.next_vid;
         self.next_vid += 1;
         self.vehicles.insert(id, Vehicle {
-            id, model, color, x: pos[0], z: pos[1], ry: pos[2], spd: 0.0, driver: -1, owner, kind, plate: plate(),
+            id, model, color, x: pos[0], z: pos[1], ry: pos[2], spd: 0.0, driver: -1, owner, kind, plate: plate(), skin,
         });
         id
     }
@@ -350,11 +366,17 @@ impl Game {
         while self.players.contains_key(&id) {
             id += 1;
         }
+        let own = self.cfg.owner_all || self.cfg.admins.iter().any(|a| a == &key);
+        if own {
+            if let Some(pr) = self.db.get_mut(&key) {
+                pr.admin = 5;
+            }
+        }
         let prof = &self.db[&key];
         let pos = prof.pos.unwrap_or(self.places.spawn.pos);
         let p = Player {
             id, key: key.clone(), name: prof.name.clone(), tx, x: pos[0], y: world::ground_height(pos[0], pos[1]), z: pos[1],
-            ry: std::f64::consts::PI, anim: 0, veh: -1, job: None, online: 0, chat_t: 0, cp_t: 0, spawn_t: 0,
+            ry: std::f64::consts::PI, anim: 0, veh: -1, job: None, online: 0, chat_t: 0, cp_t: 0, spawn_t: 0, fly: false,
             known_p: IdSet::default(), known_v: IdSet::default(),
         };
         send(&p, json!({ "t": "welcome", "id": id, "name": p.name, "x": p.x, "z": p.z, "ry": p.ry, "isNew": is_new,
@@ -503,7 +525,11 @@ impl Game {
                 self.send_profile(qid);
                 self.local(pid, 25.0, format!("{} передал {} — {}", name, money(sum), qname), "#c2a2da", None);
             }
-            _ => notify(p, "Неизвестная команда. /help — список команд", "warn"),
+            _ => {
+                if !self.admin_command(pid, &cmd, &rest, &arg) {
+                    notify(&self.players[&pid], "Неизвестная команда. /help — список команд", "warn");
+                }
+            }
         }
     }
 
@@ -752,7 +778,8 @@ impl Game {
         let ve: Vec<SnapEntry> = self.vehicles.values().map(|v| SnapEntry {
             id: v.id, x: v.x, z: v.z, owner: v.owner,
             short: format!("[{},{},{},{},{},{}", v.id, r2(v.x), r2(v.z), r2(v.ry), r2(v.spd), v.driver),
-            tail: format!(",\"{}\",{},{},{}]", v.model, v.color, v.owner, serde_json::to_string(&v.plate).unwrap()),
+            tail: format!(",\"{}\",{},{},{},{}]", v.model, v.color, v.owner, serde_json::to_string(&v.plate).unwrap(),
+                          serde_json::to_string(&v.skin).unwrap()),
         }).collect();
         let ctx = SnapCtx {
             head: format!("{{\"t\":\"snap\",\"f\":2,\"time\":{},\"n\":{},\"p\":[", self.game_time(), self.players.len()),
@@ -788,19 +815,23 @@ impl Game {
             (p.online % 600 == 0).then_some(p.id)
         }).collect();
         for pid in due {
-            let Some(pr) = self.prof_mut(pid) else { continue };
-            let pay = 150 + pr.level * 50;
-            pr.money += pay;
-            pr.exp += 1;
-            let mut text = format!("PayDay! Зарплата {}, +1 опыт", money(pay));
-            if pr.exp >= pr.level * 3 {
-                pr.exp = 0;
-                pr.level += 1;
-                let _ = write!(text, ". Новый уровень: {}!", pr.level);
-            }
-            notify(&self.players[&pid], &text, "ok");
-            self.send_profile(pid);
+            self.payday(pid);
         }
+    }
+
+    fn payday(&mut self, pid: i64) {
+        let Some(pr) = self.prof_mut(pid) else { return };
+        let pay = 150 + pr.level * 50;
+        pr.money += pay;
+        pr.exp += 1;
+        let mut text = format!("PayDay! Зарплата {}, +1 опыт", money(pay));
+        if pr.exp >= pr.level * 3 {
+            pr.exp = 0;
+            pr.level += 1;
+            let _ = write!(text, ". Новый уровень: {}!", pr.level);
+        }
+        notify(&self.players[&pid], &text, "ok");
+        self.send_profile(pid);
     }
 }
 
@@ -899,5 +930,176 @@ impl SnapCtx {
             p.known_p.clear();
             p.known_v.clear();
         }
+    }
+}
+
+// ---------- админка (как в shared/core.js) ----------
+const ADMIN_CMDS: &[(&str, i64, &str)] = &[
+    ("ahelp", 1, "список админ-команд"), ("apanel", 1, "админ-панель"), ("a", 1, "[текст] — чат администрации"),
+    ("admins", 1, "админы онлайн"), ("fly", 1, "полёт вкл/выкл"), ("tp", 1, "[x] [z] — телепорт"),
+    ("tpp", 1, "[место] — к месту города"), ("spawn", 1, "на площадь"), ("goto", 1, "[id] — к игроку"),
+    ("gethere", 2, "[id] — игрока к себе"), ("spcar", 2, "[модель] [цвет 0-7] — машина рядом"),
+    ("dvall", 2, "убрать мои админ-машины"), ("color", 2, "[0-7] — перекрасить машину"), ("givelic", 2, "[id] — права"),
+    ("settime", 2, "[час] — время суток"), ("givecash", 3, "[id] [сумма] или [сумма]"), ("setmoney", 4, "[id] [сумма]"),
+    ("setlevel", 4, "[id] [уровень]"), ("payday", 4, "PayDay всем"), ("setadmin", 5, "[id] [0-5]"),
+];
+
+fn class_of(skin: &str) -> &'static str {
+    match skin {
+        "granta" | "grantaf" | "logan" | "kiar" => "kroha",
+        "vesta" | "vestasw" | "focus" | "kiakf" => "vektor",
+        "patriota" | "patriotf" | "patriotp" | "lexuslx" | "mercesg" => "taiga",
+        "bus" => "bus",
+        _ => "bars",
+    }
+}
+
+impl Game {
+    fn admin_level(&self, pid: i64) -> i64 {
+        self.prof(pid).map_or(0, |p| p.admin)
+    }
+
+    fn target(&self, pid: i64, arg: Option<&&str>) -> Option<i64> {
+        match arg.copied() {
+            None | Some("") | Some("me") => Some(pid),
+            Some(s) => s.parse::<i64>().ok().filter(|id| self.players.contains_key(id)),
+        }
+    }
+
+    fn teleport(&mut self, pid: i64, x: f64, z: f64) {
+        if let Some(p) = self.players.get_mut(&pid) {
+            p.x = x.clamp(0.0, world::SIZE);
+            p.z = z.clamp(0.0, world::SIZE);
+            send(p, json!({ "t": "teleport", "x": p.x, "z": p.z }));
+        }
+    }
+
+    fn admin_chat(&self, text: &str) {
+        for q in self.players.values() {
+            if self.db.get(&q.key).map_or(0, |p| p.admin) > 0 {
+                send(q, json!({ "t": "chat", "text": text, "color": "#ff8a65" }));
+            }
+        }
+    }
+
+    /// true — команда админская (выполнена или отказано в доступе).
+    fn admin_command(&mut self, pid: i64, cmd: &str, rest: &[&str], arg: &str) -> bool {
+        let Some(&(_, need, _)) = ADMIN_CMDS.iter().find(|c| c.0 == cmd) else { return false };
+        let lvl = self.admin_level(pid);
+        let a: Vec<&str> = rest.iter().copied().filter(|s| !s.is_empty()).collect();
+        let warn = |g: &Game, t: &str| notify(&g.players[&pid], t, "warn");
+        if lvl < need {
+            warn(self, "Нет доступа");
+            return true;
+        }
+        let (px, pz, pry, name) = { let p = &self.players[&pid]; (p.x, p.z, p.ry, p.name.clone()) };
+        match cmd {
+            "ahelp" => {
+                for (c, l, d) in ADMIN_CMDS {
+                    if *l <= lvl {
+                        send(&self.players[&pid], json!({ "t": "chat", "text": format!("[{l}] /{c} — {d}"), "color": "#ff8a65" }));
+                    }
+                }
+            }
+            "apanel" => send(&self.players[&pid], json!({ "t": "apanel" })),
+            "a" => if !arg.is_empty() { self.admin_chat(&format!("[A] {name} [{pid}]: {arg}")) },
+            "admins" => {
+                let list: Vec<String> = self.players.values()
+                    .filter_map(|q| self.db.get(&q.key).filter(|p| p.admin > 0).map(|p| format!("{} [{}] — {} ур.", q.name, q.id, p.admin)))
+                    .collect();
+                let text = format!("Администрация онлайн: {}", if list.is_empty() { "никого".into() } else { list.join(", ") });
+                send(&self.players[&pid], json!({ "t": "chat", "text": text, "color": "#ff8a65" }));
+            }
+            "fly" => {
+                let p = self.players.get_mut(&pid).unwrap();
+                p.fly = !p.fly;
+                let on = p.fly;
+                send(p, json!({ "t": "fly", "on": on }));
+                notify(p, if on { "Полёт включён" } else { "Полёт выключен" }, "ok");
+            }
+            "tp" => {
+                let (x, z) = (a.first().and_then(|s| s.parse::<f64>().ok()), a.get(1).and_then(|s| s.parse::<f64>().ok()));
+                match (x, z) { (Some(x), Some(z)) => self.teleport(pid, x, z), _ => warn(self, "Использование: /tp [x] [z]") }
+            }
+            "tpp" | "spawn" => {
+                let pl = self.places;
+                let pos = match if cmd == "spawn" { "spawn" } else { a.first().copied().unwrap_or("") } {
+                    "spawn" => Some(pl.spawn.pos), "rent" => Some(pl.rent.pos), "school" => Some(pl.school.pos),
+                    "dealer" => Some(pl.dealer.pos), "courier" => Some(pl.courier.pos), "bus" => Some(pl.bus.pos), _ => None,
+                };
+                match pos { Some(p) => self.teleport(pid, p[0], p[1] + 2.0), None => warn(self, "Места: spawn, rent, school, dealer, courier, bus") }
+            }
+            "goto" => match self.target(pid, a.first()).filter(|&t| t != pid) {
+                Some(t) => { let (x, z) = (self.players[&t].x, self.players[&t].z); self.teleport(pid, x + 1.5, z) }
+                None => warn(self, "Нет такого игрока"),
+            },
+            "gethere" => match self.target(pid, a.first()).filter(|&t| t != pid) {
+                Some(t) => { self.teleport(t, px + 1.5, pz); notify(&self.players[&t], &format!("Вас телепортировал администратор {name}"), "info") }
+                None => warn(self, "Нет такого игрока"),
+            },
+            "spcar" => {
+                let skin: String = a.first().unwrap_or(&"").to_lowercase().chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_').collect();
+                if skin.is_empty() { warn(self, "Использование: /spcar [модель]"); return true; }
+                let (model, skin_opt) = match world::car(&skin) { Some(c) => (c.id, None), None => (class_of(&skin), Some(skin.clone())) };
+                let ci = a.get(1).and_then(|s| s.parse::<usize>().ok()).filter(|&c| c < 8).unwrap_or_else(|| rand::thread_rng().gen_range(0..8));
+                let mine: Vec<i64> = self.vehicles.values().filter(|v| v.owner == pid && v.kind == Kind::Admin).map(|v| v.id).collect();
+                if mine.len() >= 10 { self.remove_vehicle(mine[0]); }
+                let len = world::car(model).map_or(4.5, |c| c.len);
+                let d = len / 2.0 + 2.5;
+                let x = (px + pry.sin() * d).clamp(1.0, world::SIZE - 1.0);
+                let z = (pz + pry.cos() * d).clamp(1.0, world::SIZE - 1.0);
+                self.spawn_vehicle_skin(model, world::CAR_COLORS[ci], [x, z, pry], pid, Kind::Admin, skin_opt);
+                notify(&self.players[&pid], &format!("Машина {skin} создана — подойдите и нажмите F"), "ok");
+            }
+            "dvall" => { self.remove_vehicles_of(pid, Some(Kind::Admin)); notify(&self.players[&pid], "Админ-машины убраны", "info") }
+            "color" => {
+                let vid = self.players[&pid].veh;
+                let c = world::CAR_COLORS[a.first().and_then(|s| s.parse::<usize>().ok()).unwrap_or(0) & 7];
+                match self.vehicles.get_mut(&vid) { Some(v) => v.color = c, None => warn(self, "Сядьте в машину") }
+            }
+            "givelic" => if let Some(t) = self.target(pid, a.first()) {
+                if let Some(p) = self.prof_mut(t) { p.license = true; }
+                self.send_profile(t);
+                notify(&self.players[&t], "Вам выданы водительские права", "ok");
+            },
+            "settime" => match a.first().and_then(|s| s.parse::<f64>().ok()).filter(|h| (0.0..24.0).contains(h)) {
+                Some(h) => {
+                    self.time_offset += h.floor() * 60.0 - self.game_time().floor();
+                    self.broadcast(json!({ "t": "chat", "text": format!("Администратор {name} установил время {:02}:00", h as i64), "color": "#ff8a65" }), None);
+                }
+                None => warn(self, "Использование: /settime [0-23]"),
+            },
+            "givecash" => {
+                let (t, sum) = if a.len() < 2 { (Some(pid), a.first()) } else { (self.target(pid, a.first()), a.get(1)) };
+                match (t, sum.and_then(|s| s.parse::<f64>().ok()).map(|v| v.floor() as i64).filter(|v| *v != 0 && v.abs() <= 1_000_000_000)) {
+                    (Some(t), Some(sum)) => {
+                        self.add_money(t, sum);
+                        self.send_profile(t);
+                        notify(&self.players[&t], &format!("Администратор выдал вам {}", money(sum)), "ok");
+                    }
+                    _ => warn(self, "Использование: /givecash [id] [сумма]"),
+                }
+            }
+            "setmoney" => if let (Some(t), Some(v)) = (self.target(pid, a.first()), a.get(1).and_then(|s| s.parse::<i64>().ok()).filter(|v| *v >= 0)) {
+                if let Some(p) = self.prof_mut(t) { p.money = v; }
+                self.send_profile(t);
+            },
+            "setlevel" => if let (Some(t), Some(v)) = (self.target(pid, a.first()), a.get(1).and_then(|s| s.parse::<i64>().ok()).filter(|v| (1..=999).contains(v))) {
+                if let Some(p) = self.prof_mut(t) { p.level = v; p.exp = 0; }
+                self.send_profile(t);
+            },
+            "payday" => { let ids: Vec<i64> = self.players.keys().copied().collect(); for id in ids { self.payday(id); } }
+            "setadmin" => match (self.target(pid, a.first()), a.get(1).and_then(|s| s.parse::<i64>().ok()).filter(|v| (0..=5).contains(v))) {
+                (Some(t), Some(l)) => {
+                    if let Some(p) = self.prof_mut(t) { p.admin = l; }
+                    self.send_profile(t);
+                    let tn = self.players[&t].name.clone();
+                    self.admin_chat(&format!("{name} выдал {tn} админку {l} уровня"));
+                }
+                _ => warn(self, "Использование: /setadmin [id] [0-5]"),
+            },
+            _ => {}
+        }
+        true
     }
 }

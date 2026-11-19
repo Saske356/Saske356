@@ -1,5 +1,7 @@
 node_modules/
 data/
+data-local/
+data-local-map/
 target/
 # личные ассеты, не для git
 cache/cars/
