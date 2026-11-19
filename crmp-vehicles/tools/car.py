@@ -382,7 +382,11 @@ def interior(p, body):
         out.extend(seat(style, sx * xd, yh, zh))
     if not two_seat:
         out.extend(rear_bench(w_in - 0.05, yh - 0.86, zh + 0.02))
-        out.extend(box((-w_in, yh - 1.25, zh + 0.50), (w_in, yh - 1.05, zh + 0.52), "plastic_dark"))  # parcel shelf
+        ys0, ys1 = max(p["rw0"] + 0.02, yh - 1.30), yh - 1.08
+        zsh = float(body.z_belt(ys1)) + 0.01
+        wsh_ = float(body.w_sh(ys1)) - 0.16
+        if ys1 > ys0:
+            out.extend(box((-wsh_, ys0, zsh - 0.02), (wsh_, ys1, zsh), "plastic_dark"))  # parcel shelf
     else:
         out.extend(box((-w_in, y_back - 0.02, zf), (w_in, y_back, float(body.z_belt(y_back)) + 0.2), "trim"))  # bulkhead
     # dashboard --------------------------------------------------------
@@ -548,17 +552,43 @@ def build_car(p, low=False):
     G = p["grille"]
     gw = G["w"]
     gz0, gz1 = G["z"]
-    if G["style"] == "horseshoe":
-        lo = lambda a: gz0 + 0.12 * (abs(a) / (gw / 2)) ** 2
-        hi = lambda a: gz1 - 0.03 * (abs(a) / (gw / 2)) ** 2
+    gmat = "grille_hc" if G["style"] in ("honeycomb", "horseshoe", "spindle", "wide_mesh") else "grille_slat"
+    openings = []
+    def rounded(x0, x1, z0, z1, r):
+        cx = (x0 + x1) / 2
+        hw = (x1 - x0) / 2
+        def lo(a):
+            q = max(0.0, abs(a - cx) - (hw - r)) / r
+            return z0 + r * (1 - math.sqrt(max(0.0, 1 - min(q, 1) ** 2)))
+        def hi(a):
+            q = max(0.0, abs(a - cx) - (hw - r)) / r
+            return z1 - r * (1 - math.sqrt(max(0.0, 1 - min(q, 1) ** 2)))
+        return (x0, x1, lo, hi)
+    st = G["style"]
+    if st == "kidney":
+        # twin rounded openings either side of the centre
+        gap = G.get("gap", 0.025)
+        r = min(0.05, (gz1 - gz0) * 0.35)
+        for sx in (-1, 1):
+            x0, x1 = sorted((sx * gap, sx * gw / 2))
+            openings.append(rounded(x0, x1, gz0, gz1, r))
+    elif st == "spindle":
+        zm = gz0 + (gz1 - gz0) * 0.55
+        openings.append((-gw * 0.32, gw * 0.32, lambda a: zm, lambda a: gz1 - 0.03 * (abs(a) / (gw * 0.32)) ** 2))
+        openings.append((-gw / 2, gw / 2, lambda a: gz0 + 0.03 * (abs(a) / (gw / 2)) ** 2, lambda a: zm - 0.02 + 0.06 * (abs(a) / (gw / 2))))
+    elif st == "horseshoe":
+        openings.append((-gw / 2, gw / 2, lambda a: gz0 + 0.12 * (abs(a) / (gw / 2)) ** 2, lambda a: gz1 - 0.03 * (abs(a) / (gw / 2)) ** 2))
     else:
-        lo = lambda a: gz0 + 0.01 * (abs(a) / (gw / 2)) ** 2
-        hi = lambda a: gz1 - 0.02 * (abs(a) / (gw / 2)) ** 2
-    gmat = "grille_hc" if G["style"] in ("honeycomb", "horseshoe") else "grille_slat"
-    mg, gpatch = lamp(bvh, parts, "front", "c", -gw / 2, gw / 2, lo, hi, {"housing": "grille_back", "lens": gmat}, 0.06, True, (24, 8))
-    extra["bump_front"].extend(mg)
-    if gpatch.ok:
-        extra["bump_front"].extend(gpatch.ring(0.006, -0.004, "chrome"))
+        openings.append(rounded(-gw / 2, gw / 2, gz0, gz1, min(0.04, (gz1 - gz0) * 0.3)))
+    gpatch = None
+    for (x0, x1, lo, hi) in openings:
+        mg, gp = lamp(bvh, parts, "front", "c", x0, x1, lo, hi, {"housing": "grille_back", "lens": gmat}, 0.06, True, (20, 8))
+        extra["bump_front"].extend(mg)
+        if gp.ok:
+            extra["bump_front"].extend(gp.ring(0.008, -0.004, "chrome" if G.get("chrome", True) else "trim_gloss"))
+            gpatch = gpatch or gp
+    if gpatch is None:
+        gpatch = gp
     # lower side intakes / fog lamps
     bz = p["bumper_top"][1]
     zfog = float(p["z_sill"][-2][1]) + 0.10
@@ -569,7 +599,7 @@ def build_car(p, low=False):
                      [(c - 0.04, c + 0.04, lambda a: zfog + 0.012, lambda a: zfog + 0.048, "fog", 0.02)])
         extra["bump_front"].extend(mf)
     # badge
-    if gpatch.ok:
+    if gpatch.ok and st not in ("kidney",) and G.get("badge", True):
         ctr = gpatch.P[gpatch.P.shape[0] // 2, gpatch.P.shape[1] // 2]
         extra["bump_front"].extend(lathe([(0.0, 0.012), (0.04, 0.008), (0.045, 0.0)], 24, "badge", axis="y").transformed(rot_x(math.pi / 2) @ rot_x(-math.pi / 2), ctr + (0, 0.005, 0)))
 

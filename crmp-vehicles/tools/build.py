@@ -14,7 +14,7 @@ import numpy as np
 import tex
 import rw
 from mesh import Mesh, corner_normals, unique_vertices, rot_x, rot_y, rot_z
-import presets
+import lineup as presets
 
 LIVERIES = ["paint", "police", "taxi", "vinyl_stripes", "vinyl_tribal", "vinyl_camo"]
 
@@ -28,7 +28,7 @@ LIGHTS = {  # vehicle light materials (SA) + indicator colours used by ImVehFt /
 }
 
 
-def build_textures(p, livery="paint", size="hi"):
+def build_textures(p, livery="paint", size="lo"):
     I = p["interior"]
     big = 2048 if size == "hi" else 1024
     car = dict(len=p["len"], belt=float(np.interp(p["len"] * 0.5, *zip(*p["z_belt"]))),
@@ -40,7 +40,7 @@ def build_textures(p, livery="paint", size="hi"):
         "v_taillight": tex.taillight(512, 256, p["tail"]["pattern"]),
         "v_grille": tex.grille_honeycomb(256) if p["grille"]["style"] in ("honeycomb", "horseshoe") else tex.grille_slats(256),
         "v_plate": plate_image(p),
-        "v_tire": tex.tire(1024, 256),
+        "v_tire": tex.tire(1024 if size == "hi" else 512, 256 if size == "hi" else 128),
         "v_rim": tex.rim(256, finish={"forged": "gunmetal", "turbine": "black", "offroad": "black", "steel": "silver"}.get(p["rim_style"], "silver")),
         "v_disc": tex.brake_disc(256),
         "v_badge": tex.badge(128, p["name"][0].upper()),
@@ -50,7 +50,7 @@ def build_textures(p, livery="paint", size="hi"):
         "v_dash": tex.plastic(256, (30, 30, 32), 4),
         "v_trim": tex.carbon(256) if I["trim"] == "carbon" else tex.plastic(256, (22, 22, 24), 5, 3),
         "v_deco": tex.carbon(256) if I["trim"] == "carbon" else (tex.wood(512) if I["trim"] == "wood" else tex.brushed(256, (190, 192, 198), 8)),
-        "v_gauges": tex.gauges(1024, 512, p["gauges"]["max"], p["gauges"]["red"]),
+        "v_gauges": tex.gauges(1024 if size == "hi" else 512, 512 if size == "hi" else 256, p["gauges"]["max"], p["gauges"]["red"]),
         "v_screen": tex.screen(512, 256),
         "v_climate": tex.climate_panel(256, 128),
         "v_fabric": tex.fabric(256, (150, 148, 144)),
@@ -345,7 +345,7 @@ def main():
     info = {"name": name, "title": p["title"], "liveries": {}}
     # textures + TXD per livery, one DFF
     base_tex = None
-    for liv in (LIVERIES if not quick else ["paint"]):
+    for liv in (LIVERIES if "--paint-only" not in sys.argv else ["paint"]):
         T = build_textures(p, liv)
         if base_tex is None:
             base_tex = T

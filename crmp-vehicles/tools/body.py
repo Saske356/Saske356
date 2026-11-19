@@ -65,7 +65,7 @@ class Body:
         for k in range(1, n_r + 1):
             ty = rcr * (1 - math.cos(k / n_r * math.pi / 2))
             st.append((ty, None))
-        n_mid = p.get("stations", 90)
+        n_mid = p.get("stations", 72)
         for ty in np.linspace(rcr, L - rcf, n_mid)[1:-1]:
             st.append((float(ty), None))
         for k in range(n_r, 0, -1):
@@ -121,14 +121,19 @@ class Body:
         za = self.arch_z(ty)
         lift = max(0.0, za - zs)
         zs2 = zs + lift
+        if lift > 0:
+            zb = max(zb, za + 0.07)          # fender hump over the wheel
+            zt = max(zt, zb - 0.09)          # but keep the bonnet valley shallow
+        zc = max(zs, min(zs2, zt - 0.14, zb - 0.25))   # floor stays low in the middle
+        x_in = min(wb * 0.80, p["track"] - p["tire_w"] / 2 - 0.07) if lift > 0 else wb * 0.80
         zmid = zs + (zb - zs) * 0.45
         zmid = max(zmid, zs2 + 0.06)
         flare = p.get("flare", 0.0) * smoothstep(0.0, 0.05, lift) if lift > 0 else 0.0
         crown = p.get("crown", 0.05)
         wg = w - p.get("tumble", 0.10)
         C = [
-            (0.0, zs2),
-            (wb * 0.80, zs2),
+            (0.0, zc),
+            (x_in, zs2 - (0.02 if lift > 0 else 0.0)),
             (wb, zs2 + 0.05),
             (w + bulge + flare, zmid),
             (w + flare * 0.5, zb - 0.04),

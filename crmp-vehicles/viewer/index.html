@@ -28,7 +28,9 @@ body { background: var(--bg); color: var(--fg); font-family: var(--body); font-s
 .rail { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding-block: 16px 24px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 18px; }
 .grp { display: flex; flex-direction: column; gap: 8px; }
 .grp > label, .lbl { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
-.cars { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.cars { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; max-height: 300px; overflow-y: auto; padding-right: 4px; }
+.filters { display: flex; flex-wrap: wrap; gap: 4px; }
+.filters button { padding: 4px 8px; font-size: 12px; }
 button { font: inherit; color: var(--fg); background: #1f242b; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; cursor: pointer; text-align: left; }
 button:hover { border-color: #46505d; }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -61,7 +63,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
     <div class="loading" id="loading">Загружаю модель…</div>
   </div>
   <aside class="rail">
-    <div class="grp"><label>Машина</label><div class="cars" id="cars"></div></div>
+    <div class="grp"><label>Машина</label><div class="filters" id="filters"></div><div class="cars" id="cars"></div></div>
     <div class="grp"><label>Скин</label><div class="row" id="liv"></div></div>
     <div class="grp"><label>Цвет краски</label><div class="row" id="cols"></div></div>
     <div class="grp"><label>Свет</label>
@@ -98,14 +100,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
 <script>
-const CARS = [
-  {id:"compact_sedan", name:"Волжанка С", cls:"компакт-седан", max:220, red:6.5, color:"#961418"},
-  {id:"classic_sedan", name:"Семёрка", cls:"классика", max:180, red:6.0, color:"#e6e4dc"},
-  {id:"exec_sedan", name:"Сенатор 7", cls:"бизнес-седан", max:280, red:6.5, color:"#0a4637"},
-  {id:"suv", name:"Тайга 4×4", cls:"внедорожник", max:240, red:5.0, color:"#7a7a76"},
-  {id:"supercar", name:"Торо V12", cls:"суперкар", max:360, red:8.5, color:"#f5be00", scissor:true},
-  {id:"hypercar", name:"Аврора W16", cls:"гиперкар", max:500, red:6.5, color:"#14286e", scissor:true},
-];
+let CARS = [];
 const LIVS = [["paint","Краска"],["police","ДПС"],["taxi","Такси"],["vinyl_stripes","Полосы"],["vinyl_tribal","Винил"],["vinyl_camo","Камуфляж"]];
 const COLS = ["#f2f2f0","#111214","#7b8087","#961418","#f5be00","#0a4637","#14286e","#e85d12","#5b2c83"];
 let INFO = {};
@@ -152,7 +147,7 @@ headL.forEach(l => { scene.add(l); scene.add(l.target); });
 
 const loader = new THREE.GLTFLoader();
 const texLoader = new THREE.TextureLoader();
-let car = null, N = {}, M = {}, cur = CARS[0];
+let car = null, N = {}, M = {}, cur = null;
 const state = {head:false, L:false, R:false, haz:false, brake:false, doors:false, hood:false, boot:false, night:false, steer:0, speed:0, livery:"paint", color:null};
 const anim = {doors:0, hood:0, boot:0, wheelRot:0};
 const cache = {};
@@ -168,9 +163,10 @@ addEventListener("resize", resize);
 function loadCar(c) {
   cur = c;
   document.getElementById("loading").hidden = false;
-  document.getElementById("title").textContent = "«" + c.name + "»";
+  document.getElementById("title").textContent = c.name;
   document.getElementById("sub").textContent = c.cls;
   [...document.querySelectorAll("#cars button")].forEach(b => b.setAttribute("aria-pressed", b.dataset.id === c.id));
+  if (!c.scissor) c.scissor = false;
   loader.load("models/" + c.id + ".json", g => {
     if (car) scene.remove(car);
     car = g.scene;
@@ -223,7 +219,24 @@ function toggle(id, key, after) {
 
 // UI
 const carsEl = document.getElementById("cars");
-CARS.forEach(c => { const b = document.createElement("button"); b.dataset.id = c.id; b.innerHTML = "«" + c.name + "»<small>" + c.cls + "</small>"; b.onclick = () => loadCar(c); carsEl.appendChild(b); });
+let filter = "все";
+function drawCars() {
+  carsEl.innerHTML = "";
+  CARS.filter(c => filter === "все" || c.group === filter).forEach(c => {
+    const b = document.createElement("button"); b.dataset.id = c.id;
+    b.innerHTML = c.name + "<small>" + c.cls + "</small>";
+    b.setAttribute("aria-pressed", c === cur);
+    b.onclick = () => loadCar(c); carsEl.appendChild(b);
+  });
+}
+function drawFilters() {
+  const el = document.getElementById("filters");
+  ["все", ...new Set(CARS.map(c => c.group))].forEach(g => {
+    const b = document.createElement("button"); b.textContent = g; b.setAttribute("aria-pressed", g === filter);
+    b.onclick = () => { filter = g; [...el.children].forEach(x => x.setAttribute("aria-pressed", x === b)); drawCars(); };
+    el.appendChild(b);
+  });
+}
 const livEl = document.getElementById("liv");
 LIVS.forEach(([l, n]) => { const b = document.createElement("button"); b.dataset.l = l; b.textContent = n; b.onclick = () => setLivery(l); livEl.appendChild(b); });
 const colEl = document.getElementById("cols");
@@ -298,8 +311,11 @@ function tick() {
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
 }
-fetch("models/info.json").then(r => r.json()).then(j => { INFO = j; renderSpec(); }).catch(() => {});
 resize();
-loadCar(CARS[4]);
+fetch("models/cars.json").then(r => r.json()).then(j => {
+  CARS = j; j.forEach(c => INFO[c.id] = c);
+  drawFilters(); drawCars();
+  loadCar(CARS.find(c => c.id === "toro_revuelto") || CARS[0]);
+}).catch(() => { document.getElementById("loading").textContent = "Не удалось загрузить список машин"; });
 tick();
 </script>
