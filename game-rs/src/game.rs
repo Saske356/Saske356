@@ -786,6 +786,8 @@ impl Game {
     // ---------- обучение ----------
     pub fn tut_progress(&self) -> f32 { (if self.tut.step == 1 { (self.kills - self.tut.base) as f32 } else { self.tut.v } / TUT_NEED[self.tut.step]).min(1.) }
     fn update_tut(&mut self, dt: f32) {
+        if self.p.dead { return; }
+        if self.zone >= 3 || self.boss >= 0 { self.tut.on = false; self.s.tut = true; self.dirty = true; return; } // глубже обучение не мешает
         if self.tut.fin > 0. { self.tut.fin -= dt; if self.tut.fin <= 0. { self.tut.on = false; } return; }
         self.tut.t += dt;
         if self.tut.step == 0 { self.tut.v += hypot(self.p.vx, self.p.vy) * dt; }

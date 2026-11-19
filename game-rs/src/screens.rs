@@ -136,7 +136,7 @@ fn level(a: &mut App) {
     let total: f32 = if land { hs.iter().cloned().fold(0., f32::max) } else { hs.iter().sum::<f32>() + gap * (n as f32 - 1.) };
     let head = 28. + 14. + 24. + 14.; let foot = 12. + 44. + 50.;
     if !land { y = ((h - head - total - foot) / 2.).max(tp) + 14.; }
-    h2(&mut a.gx, &format!("{}{}", t("lvlUp"), a.g.p.level), w / 2., y + 14., if land { 21. } else { 28. }, al); y += if land { 26. } else { 42. };
+    h2(&mut a.gx, &format!("{}{}", t("lvlUp"), a.g.p.level), w / 2., y + 14., if land { 21. } else { 28. }, al); y += if land { 34. } else { 42. };
     let sub = if a.g.level_pending > 0 { tf("lvSubMore", &[&a.g.level_pending.to_string()]) } else { t("lvSub") };
     a.gx.text(&sub, w / 2., y, 14., Color::new(1., 1., 1., 0.75 * al), 1, 0); y += 24.;
     let x0 = if land { (w - (cwid + 12.) * n as f32 + 12.) / 2. } else { (w - cwid) / 2. };

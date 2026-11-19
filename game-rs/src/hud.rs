@@ -103,8 +103,7 @@ pub fn hud(a: &mut App) {
         let (bx, by) = (w / 2., h * 0.3);
         if !bn.text.is_empty() { let n = bn.text.chars().count() as f32; let fs = if n > 12. { 34f32.min(w / n * 1.55) } else { 44. } * s;
             let p = gx.px; let tw = gx.text_w(&bn.text, fs, 2);
-            let gt = gx.glow[c::WHITE as usize].clone(); gx.set_add(true);
-            let bc = hex(bn.col); draw_texture_ex(&gx.glow[0].clone(), 0., 0., Color::new(0., 0., 0., 0.), DrawTextureParams::default()); let _ = gt;
+            gx.set_add(true); let bc = hex(bn.col);
             for k in 0..2 { let gg = gx.soft[c::WHITE as usize].clone(); let ww = tw * (1.2 + k as f32 * 0.3); draw_texture_ex(&gg, (bx - ww / 2.) * p, (by - fs) * p, Color::new(bc.r, bc.g, bc.b, 0.35 * al), DrawTextureParams { dest_size: Some(vec2(ww * p, fs * 2. * p)), ..Default::default() }); }
             gx.text(&bn.text, bx, by, fs, Color::new(1., 1., 1., al), 1, 2); }
         if !bn.sub.is_empty() { let mw = w - 28.; let mut fs = 16. * s; let tw = gx.text_w(&bn.sub, fs, 1); if tw > mw { fs = (16. * mw / tw).floor().max(11.); }
@@ -230,7 +229,6 @@ pub fn ending(a: &mut App, dt: f32) {
     let out = if a.end.shown { (1. - (tt - a.end.show) / 0.5).max(0.) } else { 1. };
     if out > 0. {
         let al = out * clamp01((tt - 1.4) / 0.8); gx.set_add(false);
-        let sh = gx.vign.clone(); let _ = sh;
         gx.rrect(-w * 0.15, h * 0.2 - 110., w * 1.3, 360., 160., Color::new(0., 18. / 255., 40. / 255., 0.45 * al));
         let fs = 22f32.min(w / 16.).round();
         for (i, (t0, line)) in i18n::story().iter().enumerate() { let aa = clamp01((tt - t0) / 0.8) * out; if aa <= 0. { continue; }
@@ -246,10 +244,10 @@ pub fn toasts(a: &mut App) {
     let list: Vec<(String, String, f32)> = a.toasts.iter().filter(|t| t.t >= 0.).map(|t| (t.title.clone(), t.sub.clone(), t.t)).collect();
     for (title, sub, tt) in list.iter().take(3) {
         let al = clamp01(tt / 0.25) * clamp01((3.2 - tt) / 0.4); if al <= 0. { continue; }
-        let gx = &mut a.gx; let tw = gx.text_w(title, 11., 2).max(gx.text_w(sub, 13., 1)) + 32.; let bw = tw.min(w - 24.).max(160.); let x = (w - bw) / 2.; let dy = (1. - clamp01(tt / 0.25)) * 12.;
+        let land = a.gx.w > a.gx.h * 1.15; let gx = &mut a.gx; let tw = gx.text_w(title, 11., 2).max(gx.text_w(sub, 13., 1)) + 32.; let bw = tw.min(w - 24.).max(160.); let x = if land && menu { 12. + a.safe[2] } else { (w - bw) / 2. }; let tcx = x + bw / 2.; let dy = (1. - clamp01(tt / 0.25)) * 12.;
         ui::rrect_grad(gx, x, y + dy, bw, 46., 14., Color::new(80. / 255., 60. / 255., 10. / 255., 0.95 * al), Color::new(40. / 255., 15. / 255., 50. / 255., 0.95 * al));
         gx.rrect_line(x, y + dy, bw, 46., 14., 2., with_alpha(pal(c::GOLD), al));
-        gx.text(title, w / 2., y + dy + 15., 11., with_alpha(pal(c::GOLD), al), 1, 2); gx.text(sub, w / 2., y + dy + 31., 13., Color::new(1., 1., 1., al), 1, 1);
+        gx.text(title, tcx, y + dy + 15., 11., with_alpha(pal(c::GOLD), al), 1, 2); gx.text(sub, tcx, y + dy + 31., 13., Color::new(1., 1., 1., al), 1, 1);
         y += if menu { 54. } else { -54. };
     }
 }

@@ -137,7 +137,7 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
         let wl = Color::new(1., 1., 1., 0.8); for (u, v) in [(a, b), (b, cc), (cc, d), (d, a)] { gx.line_world(u.0, u.1, v.0, v.1, 1., wl, false); } }
     // враги: свечение
     if hi { for i in 0..g.en.n { let e = &g.en.items[i]; if e.dead || !in_view(e.x, e.y, e.r * 3.) { continue; }
-        gx.glow_world(true, if e.elite { c::GOLD } else { e.col }, e.x, e.y, e.r * e.scale * if e.elite { 3.4 } else { 2.6 }, 0.45); } }
+        gx.glow_world(true, if e.elite { c::GOLD } else { e.col }, e.x, e.y, e.r * e.scale * if e.elite { 3.4 } else { 2.6 } * (1. + 0.06 * (t * 2.2 + e.phase).sin()), 0.4 + 0.1 * (t * 2.2 + e.phase).sin()); } } // свечение существ дышит
     // телеграфы атак
     for i in 0..g.en.n { let e = g.en.items[i].clone(); if e.dead || !in_view(e.x, e.y, 300.) { continue; } telegraph(gx, g, &e); }
     // враги: тела

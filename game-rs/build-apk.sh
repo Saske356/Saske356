@@ -4,7 +4,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 KS="$1"; PASS="$2"; APPID="${3:-com.svetbezdny.game}"
+rm -rf android/app/src/main/jniLibs
 cargo ndk -t arm64-v8a -t armeabi-v7a -P 24 -o android/app/src/main/jniLibs build --release --lib
+find android/app/src/main/jniLibs -name "*.so" ! -name "libsvet.so" -delete # лишние библиотеки зависимостей
 BT="$ANDROID_HOME/build-tools/35.0.0"
 ( cd android && ${GRADLE:-gradle} assembleRelease -q -Pks="$KS" -PksPass="$PASS" -PappId="$APPID" )
 OUT=dist/Svet-rust.apk; mkdir -p dist
