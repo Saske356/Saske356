@@ -226,6 +226,10 @@ class ResizingLayout
 
 
 
+        if (Build.VERSION.SDK_INT >= 28) {
+            android.view.DisplayCutout dc = insets.getDisplayCutout();
+            if (dc != null) MainActivity.INSETS = dc.getSafeInsetTop() + "," + dc.getSafeInsetBottom() + "," + dc.getSafeInsetLeft() + "," + dc.getSafeInsetRight();
+        }
         if (Build.VERSION.SDK_INT >= 30) {
             Insets imeInsets = insets.getInsets(WindowInsets.Type.ime());
             Insets sysInsets = insets.getInsets(WindowInsets.Type.systemBars());
@@ -266,6 +270,75 @@ public class MainActivity extends Activity {
             if (v == null) return;
             if (Build.VERSION.SDK_INT >= 26) v.vibrate(android.os.VibrationEffect.createOneShot(ms, android.os.VibrationEffect.DEFAULT_AMPLITUDE)); else v.vibrate(ms);
         } catch (Throwable t) { }
+    }
+
+    // ----- музыка: MediaPlayer играет OGG из assets потоково (мало памяти), команды из Rust -----
+    private static final String[] TRACKS = {"menu", "zone1", "zone2", "zone3", "zone4", "boss1", "boss2", "boss3", "gameover", "victory"};
+    private final android.media.MediaPlayer[] mp = new android.media.MediaPlayer[TRACKS.length];
+    private final android.os.Handler ui = new android.os.Handler(android.os.Looper.getMainLooper());
+    private static final java.util.concurrent.ConcurrentLinkedQueue<String> EVENTS = new java.util.concurrent.ConcurrentLinkedQueue<>();
+    private volatile boolean paused = false;
+    /** op: 1 — запустить с громкостью v, 0 — сменить громкость, -1 — остановить и освободить */
+    public void musicCmd(final int i, final int op, final float v) {
+        ui.post(() -> {
+            try {
+                if (i < 0 || i >= TRACKS.length) return;
+                if (op == 1) {
+                    if (mp[i] == null) {
+                        android.content.res.AssetFileDescriptor fd = getAssets().openFd("audio/" + TRACKS[i] + ".ogg");
+                        android.media.MediaPlayer m = new android.media.MediaPlayer();
+                        m.setDataSource(fd.getFileDescriptor(), fd.getStartOffset(), fd.getLength()); fd.close();
+                        m.setLooping(i < 8); m.prepare();
+                        m.setOnCompletionListener(x -> EVENTS.add("music:" + i));
+                        mp[i] = m;
+                    }
+                    mp[i].setVolume(v, v); mp[i].seekTo(0); if (!paused) mp[i].start();
+                } else if (op == 0) { if (mp[i] != null) mp[i].setVolume(v, v); }
+                else { if (mp[i] != null) { mp[i].stop(); mp[i].release(); mp[i] = null; } }
+            } catch (Throwable t) { Log.w("SvetMusic", "music " + i, t); }
+        });
+    }
+    public String eventPoll() { String r = EVENTS.poll(); return r == null ? "" : r; }
+    public boolean isPaused() { return paused; }
+    /** 0 — вертикально, 1 — горизонтально, 2 — как держишь телефон */
+    public void setOrient(final int o) {
+        runOnUiThread(() -> setRequestedOrientation(o == 1 ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            : o == 2 ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_USER : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT));
+    }
+    public float density() { try { return getResources().getDisplayMetrics().density; } catch (Throwable t) { return 2.5f; } }
+    /** Частота кадров: 60 — экономия батареи, иначе максимум экрана */
+    public void setFps(final int fps) {
+        runOnUiThread(() -> { try {
+            android.view.Display d = Build.VERSION.SDK_INT >= 30 ? getDisplay() : getWindowManager().getDefaultDisplay(); if (d == null) return;
+            android.view.Display.Mode cur = d.getMode(), best = null;
+            for (android.view.Display.Mode m : d.getSupportedModes()) { if (m.getPhysicalWidth() != cur.getPhysicalWidth() || m.getPhysicalHeight() != cur.getPhysicalHeight()) continue;
+                if (best == null) best = m;
+                else if (fps == 60 ? Math.abs(m.getRefreshRate() - 60) < Math.abs(best.getRefreshRate() - 60) : m.getRefreshRate() > best.getRefreshRate()) best = m; }
+            if (best == null) return;
+            LayoutParams lp = getWindow().getAttributes(); lp.preferredDisplayModeId = best.getModeId(); lp.preferredRefreshRate = best.getRefreshRate(); getWindow().setAttributes(lp);
+        } catch (Throwable t) { } });
+    }
+    public void quit() { runOnUiThread(this::finish); }
+    /** Отступы под вырез камеры и системные полосы: "сверху,снизу,слева,справа" в пикселях */
+    static volatile String INSETS = "0,0,0,0";
+    public String insets() { return INSETS; }
+
+    // ----- перенос сохранения из прежней версии (HTML в WebView): localStorage того же file:// -----
+    private android.webkit.WebView mig;
+    public void migrate() {
+        runOnUiThread(() -> {
+            try {
+                mig = new android.webkit.WebView(this);
+                android.webkit.WebSettings ws = mig.getSettings(); ws.setJavaScriptEnabled(true); ws.setDomStorageEnabled(true); ws.setAllowFileAccess(true);
+                mig.addJavascriptInterface(new Object() {
+                    @android.webkit.JavascriptInterface public void done(String json) {
+                        EVENTS.add("save:" + (json == null ? "" : json));
+                        ui.post(() -> { try { if (mig != null) { mig.destroy(); mig = null; } } catch (Throwable t) { } });
+                    }
+                }, "Mig");
+                mig.loadUrl("file:///android_asset/migrate.html");
+            } catch (Throwable t) { EVENTS.add("save:"); }
+        });
     }
     /** Максимальная частота экрана (90/120 Гц), без смены разрешения */
     private void requestMaxRefreshRate() {
@@ -308,6 +381,8 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         QuadNative.activityOnResume();
+        paused = false; setFullScreen(true);
+        ui.post(() -> { for (android.media.MediaPlayer m : mp) if (m != null) try { m.start(); } catch (Throwable t) { } });
 
 
     }
@@ -332,12 +407,15 @@ public class MainActivity extends Activity {
 
         QuadNative.activityOnDestroy();
         if (ads != null) ads.destroy(); if (inter != null) inter.destroy();
+        for (int i = 0; i < mp.length; i++) if (mp[i] != null) { try { mp[i].release(); } catch (Throwable t) { } mp[i] = null; }
     }
 
     @Override
     protected void onPause() {
         super.onPause();
         QuadNative.activityOnPause();
+        paused = true;
+        ui.post(() -> { for (android.media.MediaPlayer m : mp) if (m != null) try { if (m.isPlaying()) m.pause(); } catch (Throwable t) { } });
 
 
     }
@@ -360,6 +438,8 @@ public class MainActivity extends Activity {
                         }
                         if (Build.VERSION.SDK_INT >= 30) {
                             getWindow().setDecorFitsSystemWindows(false);
+                            android.view.WindowInsetsController c = getWindow().getInsetsController();
+                            if (c != null) { c.hide(WindowInsets.Type.systemBars()); c.setSystemBarsBehavior(android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE); }
                         } else {
                             int uiOptions = View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
                             decorView.setSystemUiVisibility(uiOptions);

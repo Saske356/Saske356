@@ -4743,7 +4743,7 @@ applyLang(); dailyCheck(); applyQuality(); updMute(); startIntro();
 requestAnimationFrame(t => { lastT = t; frame(t); });
 
 // Хук для автотестов и отладки (QA): window.__SB
-window.__SB = {G, P, S, ST, Mus, ebul, warpDraw, DECOR, buildDecor, hurtPlayer, drawIcon, UPG, Ads, adGift, updGift, spawnEnemy, damageEnemy, pickType, updateRun, rollChoices, takeUpgrade, computeStats, SHOP, CFG, ET, PERF, SPR, DECOR, enemies, ebul, pbul, parts, picks, startRun, pauseGame, resumeGame, gameOver,
+window.__SB = {DATA: () => ({CHARS, SKINS, ACH, EN, RU, RU_DATA, RUTUT, ZONES_RU: RU_DATA.zones, TALENTS, TAL_BR, MUTS, QDEF, BEST, BEST_N, DECOR_THEMES, DECOR_ROLE, GROUND_KIND, ART_SIZE, ART_SIDE, ANIM, ANIM_F, GUARD_TYPES, ACH_IDS: ACH.map(a => a.id), TUTN: TUT_STEPS.map(t => t.need)}), G, P, S, ST, Mus, ebul, warpDraw, GLOW, SOFT, BUL, PAL, C, ZONE_COLS, ZONE_ACCENTS, buildGround, getGround: () => GROUND, animOf, DECOR, buildDecor, hurtPlayer, drawIcon, UPG, Ads, adGift, updGift, spawnEnemy, damageEnemy, pickType, updateRun, rollChoices, takeUpgrade, computeStats, SHOP, CFG, ET, PERF, SPR, DECOR, enemies, ebul, pbul, parts, picks, startRun, pauseGame, resumeGame, gameOver,
   jumpZone(z) { G.zone = z - 1; G.zoneT = CFG.ZONE_TIME; }, giveXP(n) { addXP(n); }, god(on) { G.god = !!on; },
   up(id, n) { P.up[id] = (P.up[id] || 0) + (n || 1); computeStats(); }, killBoss() { if (G.boss) killEnemy(G.boss, null); },
   intro: startIntro, ending() { G.zone = 15; G.victory = true; startEnding(); }, TUT, END, INTRO, renderAch,

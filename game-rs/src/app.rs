@@ -1,0 +1,301 @@
+//! Приложение: главный цикл, состояния, реклама, сохранение, музыка, джойстик.
+use crate::audio::Audio;
+use crate::data::{cfg, U_HEAL};
+use crate::game::*;
+use crate::gfx::Gfx;
+use crate::i18n::{self, t, tf};
+use crate::platform::{self, Ev};
+use crate::render::{self, Rd};
+use crate::save::Save;
+use crate::ui::Ui;
+use macroquad::prelude::*;
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Scr { None, Title, How, Level, Pause, Revive, Over, Shop, Ach, Set, Quest, Best, End }
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum AdCb { Revive, Double, Reroll, Gift, Inter(Next) }
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Next { Again, Menu }
+
+pub struct Intro { pub t: f32, pub dur: f32, pub full: bool, pub ig: f32, pub revealed: bool }
+pub struct End { pub t: f32, pub show: f32, pub shown: bool, pub first: bool }
+#[derive(Default)] pub struct Joy { pub id: Option<u64>, pub ox: f32, pub oy: f32, pub jx: f32, pub jy: f32 }
+pub struct Ads { pub cb: Option<AdCb>, pub wd: f64, pub wd_len: f64, pub last: f64, pub t0: f64, pub over_n: u32, pub back_t: f64 }
+pub struct Toast { pub title: String, pub sub: String, pub t: f32 }
+
+pub struct App {
+    pub gx: Gfx, pub rd: Rd, pub g: Game, pub ui: Ui, pub au: Audio,
+    pub scr: Scr, pub scr_t: f32, pub back_to: Scr, pub intro: Intro, pub end: End, pub joy: Joy, pub ads: Ads,
+    pub cards: Vec<usize>, pub cards_t: f32, pub earned: u32, pub rec: bool, pub over_t: f32, pub revive_n: f32,
+    pub shop_tab: u8, pub toasts: Vec<Toast>, pub save_t: f32, pub safe: [f32; 4], pub now: f64, pub was_paused: bool,
+    pub test: Vec<(f64, String)>, pub bot: bool, pub shot: Option<String>, pub fps_acc: f32, pub fps_n: u32, pub fps: f32, pub slow_t: f32, pub q_auto: u8, pub last_land: bool, pub orient_set: u8, pub fps_set: u32,
+}
+
+pub const GIFT_R: u32 = 30; pub const GIFT_MAX: u32 = 5;
+
+fn track_for(g: &Game) -> Option<usize> {
+    match g.state {
+        State::Title | State::Intro | State::Menu => Some(0),
+        State::Ending => Some(9),
+        State::Over => if g.victory { Some(0) } else { Some(8) },
+        _ => {
+            if g.victory && g.ending_t > 0. { return Some(9); }
+            if let Some(b) = g.boss_idx() { use crate::data::K; return Some(match g.en.items[b].kind { K::Boss1 | K::KingCrab => 5, K::Boss2 | K::Queen => 6, _ => 7 }); }
+            let z = g.zone; Some(if z <= 5 { 1 } else if z <= 10 { 2 } else if z <= 15 { 3 } else { 4 })
+        }
+    }
+}
+
+impl App {
+    pub async fn new() -> App {
+        // экран загрузки
+        clear_background(Color::from_rgba(2, 8, 20, 255)); next_frame().await;
+        let data = load_string("data.json").await.unwrap_or_default();
+        let manifest = load_string("manifest.json").await.unwrap_or_default();
+        // сохранение: файл, иначе перенос из прежней (HTML) версии
+        let mut s = platform::read_save().map(|j| Save::from_json(&j));
+        if s.is_none() {
+            platform::migrate(); let t0 = get_time();
+            while get_time() - t0 < 2.5 { let mut got = None; for e in platform::poll() { if let Ev::Save(j) = e { got = Some(j); } }
+                if let Some(j) = got { if !j.trim().is_empty() { let mut sv = Save::from_json(&j); sv.migrated = true; platform::write_save(&sv.to_json()); s = Some(sv); } break; }
+                if cfg!(not(target_os = "android")) { break; }
+                clear_background(Color::from_rgba(2, 8, 20, 255)); next_frame().await; }
+        }
+        let s = s.unwrap_or_default();
+        i18n::init(&data, s.set.lang == "en");
+        let gx = Gfx::load(&manifest, &mut |_| {}).await;
+        let mut au = Audio::new(platform::NATIVE_MUSIC).await; au.sound_on = s.set.sound; au.music_on = s.set.music;
+        let mut g = Game::new(s);
+        g.quality = match g.s.set.quality.as_str() { "low" => 0, _ => 2 };
+        let full = !g.s.seen_intro;
+        let now = get_time();
+        let mut app = App { gx, rd: Rd::new(), g, ui: Ui::new(), au, scr: Scr::None, scr_t: 0., back_to: Scr::Title,
+            intro: Intro { t: 0., dur: if full { 5.8 } else { 1.5 }, full, ig: if full { 3.7 } else { 0.08 }, revealed: false }, end: End { t: 0., show: 7.4, shown: false, first: false },
+            joy: Joy::default(), ads: Ads { cb: None, wd: 0., wd_len: 0., last: -1e9, t0: now, over_n: 0, back_t: 0. }, cards: vec![], cards_t: 0., earned: 0, rec: false, over_t: 0., revive_n: 0.,
+            shop_tab: 0, toasts: vec![], save_t: 0., safe: [0.; 4], now, was_paused: false, test: std::env::var("SVET_TEST").unwrap_or_default().split(';').filter_map(|c| c.split_once(':').map(|(t, c)| (t.trim().parse().unwrap_or(0.), c.trim().to_string()))).collect(), bot: false, shot: None, fps_acc: 0., fps_n: 0, fps: 60., slow_t: 0., q_auto: 2, last_land: false, orient_set: 99, fps_set: 0 };
+        app.g.state = State::Intro;
+        if let Some(crate::flow::DailyMsg::Login(d, r)) = app.g.daily_check() { app.toast_later(tf("loginT", &[&d.to_string()]), format!("+{r} {}", t("pearlsGen"))); }
+        app.persist();
+        app
+    }
+    fn toast_later(&mut self, title: String, sub: String) { self.toasts.push(Toast { title, sub, t: -1.8 }); }
+    pub fn toast(&mut self, title: String, sub: String) { self.toasts.push(Toast { title, sub, t: 0. }); }
+    pub fn persist(&mut self) { platform::write_save(&self.g.s.to_json()); self.g.dirty = false; self.save_t = 0.; }
+    pub fn show(&mut self, s: Scr) { if s != self.scr { self.scr = s; self.scr_t = 0.; self.ui.lock = 0.12; self.ui.reset(); } }
+    pub fn click(&mut self) { self.au.play(Sfx::Click); }
+    pub fn landscape(&self) -> bool { self.gx.w > self.gx.h * 1.15 }
+
+    // ---------- реклама ----------
+    pub fn ad_ready(&self) -> bool { self.ads.cb.is_none() && platform::ad_ready(0) }
+    pub fn ad_show(&mut self, place: &str, cb: AdCb) -> bool {
+        if self.ads.cb.is_some() || !platform::ad_ready(0) { self.ad_result(cb, false); return false; }
+        self.ads.cb = Some(cb); self.ads.wd = self.now; self.ads.wd_len = 70.; platform::ad_show(0, place); true
+    }
+    /// Межстраничная реклама между забегами — бережно: не новичкам, не чаще раза в 4 мин, после каждой второй гибели
+    pub fn between(&mut self, next: Next) {
+        self.ads.over_n += 1;
+        let ok = self.ads.cb.is_none() && self.g.s.runs >= 4 && self.ads.over_n % 2 == 0 && self.g.run_t >= 90. && self.now - self.ads.last >= cfg::INTER_GAP
+            && self.now - self.ads.t0 >= 90. && platform::ad_ready(1);
+        if !ok { self.do_next(next); return; }
+        self.ads.cb = Some(AdCb::Inter(next)); self.ads.wd = self.now; self.ads.wd_len = 35.; platform::ad_show(1, "inter");
+    }
+    fn do_next(&mut self, n: Next) { match n { Next::Again => self.start_run(self.g.run_mode), Next::Menu => self.to_title() } }
+    fn ad_result(&mut self, cb: AdCb, ok: bool) {
+        if ok { self.ads.last = self.now; }
+        match cb {
+            AdCb::Inter(n) => self.do_next(n),
+            AdCb::Revive => { if self.g.state != State::Revive { return; } if !ok { self.game_over(); return; } self.g.revive_ad(); self.show(Scr::None); }
+            AdCb::Double => { if !ok || self.g.ad_doubled || self.g.state != State::Over { return; } self.g.ad_doubled = true; let e = self.g.last_earned; self.g.s.pearls += e; self.g.s.total_pearls += e as u64;
+                self.persist(); self.au.play(Sfx::PickCard); platform::vibrate(30); }
+            AdCb::Reroll => { if ok && self.g.ad_rerolls < 2 { self.g.ad_rerolls += 1; self.roll_cards(); } }
+            AdCb::Gift => { if !ok || self.g.s.daily.gift >= GIFT_MAX { return; } self.g.s.daily.gift += 1; self.g.s.pearls += GIFT_R; self.g.s.total_pearls += GIFT_R as u64; self.persist();
+                self.au.play(Sfx::PickCard); platform::vibrate(30); self.toast(t("giftT"), format!("+{GIFT_R} {}", t("pearlsGen"))); }
+        }
+    }
+    fn ads_tick(&mut self, events: &mut Vec<Ev>) {
+        for e in events.drain(..) { match e {
+            Ev::Ad(_, ok) => { if let Some(cb) = self.ads.cb.take() { self.ad_result(cb, ok); } }
+            Ev::MusicDone(i) => self.au.track_done(i), Ev::Save(_) => {} } }
+        // страховка: реклама не ответила — игра не должна висеть
+        if let Some(cb) = self.ads.cb { if self.now - self.ads.wd > self.ads.wd_len || (self.ads.back_t > 0. && self.now - self.ads.back_t > 3.) { self.ads.cb = None; self.ads.back_t = 0.; self.ad_result(cb, false); } }
+    }
+
+    // ---------- переходы ----------
+    pub fn start_run(&mut self, mode: RunMode) {
+        self.g.start_run(mode); self.show(Scr::None); self.joy = Joy::default(); self.g.touch = true;
+    }
+    pub fn to_title(&mut self) { self.g.state = State::Title; self.show(Scr::Title); }
+    pub fn pause(&mut self) { if self.g.state != State::Play || self.g.dying > 0. { return; } self.g.state = State::Pause; self.joy = Joy::default(); self.show(Scr::Pause); self.persist(); }
+    pub fn resume(&mut self) { self.g.state = State::Play; self.show(Scr::None); self.joy = Joy::default(); }
+    pub fn roll_cards(&mut self) { self.cards = self.g.roll_choices(); self.cards_t = 0.; self.ui.lock = 0.48; }
+    pub fn open_level_up(&mut self) { self.g.open_level_up(); self.joy = Joy::default(); self.roll_cards(); self.show(Scr::Level); self.ui.lock = 0.48; }
+    pub fn take_card(&mut self, k: usize) {
+        let Some(&i) = self.cards.get(k) else { return };
+        if self.g.take_upgrade(i) { self.roll_cards(); } else { self.show(Scr::None); self.joy = Joy::default(); }
+        let _ = U_HEAL;
+    }
+    pub fn game_over(&mut self) {
+        let (e, rec) = self.g.game_over(); self.earned = e; self.rec = rec; self.over_t = 0.; self.joy = Joy::default(); self.show(Scr::Over); self.persist();
+    }
+    fn offer_revive(&mut self) -> bool {
+        if self.g.ad_revived || self.g.victory || !self.ad_ready() { return false; }
+        self.g.state = State::Revive; self.joy = Joy::default(); self.revive_n = 5.; self.show(Scr::Revive); true
+    }
+
+    // ---------- кадр ----------
+    pub async fn frame(&mut self) {
+        let raw = get_frame_time(); let rdt = raw.clamp(0., 0.05); self.now = get_time();
+        let px = platform::density();
+        let (vw, vh) = self.gx.frame(px, self.g.cam_x, self.g.cam_y, 0., 0.); self.g.vw = vw; self.g.vh = vh;
+        let ins = platform::insets(); self.safe = [ins[0] / px, ins[1] / px, ins[2] / px, ins[3] / px];
+        self.gx.safe_t = self.safe[0]; self.gx.safe_b = self.safe[1];
+        // настройки, которые применяет система
+        if self.orient_set != self.g.s.set.orient { self.orient_set = self.g.s.set.orient; platform::set_orient(self.orient_set); }
+        if self.fps_set != self.g.s.set.fps { self.fps_set = self.g.s.set.fps; platform::set_fps(self.fps_set); }
+        let land = self.landscape(); if land != self.last_land { self.last_land = land; if self.g.state == State::Play { self.pause(); } } // поворот посреди забега — пауза
+        self.ui.begin(px, rdt);
+        let mut evs = platform::poll(); self.ads_tick(&mut evs);
+        // свернули приложение
+        let paused = platform::paused();
+        if paused && !self.was_paused { if self.g.state == State::Play { self.pause(); } self.persist(); }
+        if !paused && self.was_paused && self.ads.cb.is_some() { self.ads.back_t = self.now; }
+        self.was_paused = paused;
+        if self.ui.back { self.back(); }
+        if !self.test.is_empty() || self.bot { self.test_tick(); }
+
+        // ---- логика ----
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.update(rdt)));
+        if res.is_err() { self.fault("update"); }
+        // события игры
+        for s in std::mem::take(&mut self.g.sfx) { self.au.play(s); }
+        for v in std::mem::take(&mut self.g.vib) { platform::vibrate(v); }
+        for tt in std::mem::take(&mut self.g.toasts) { self.toast(tt.title, tt.sub); }
+        if self.g.dirty { self.save_t += rdt; if self.save_t > 0.6 { self.persist(); } }
+        self.au.sound_on = self.g.s.set.sound; self.au.music_on = self.g.s.set.music;
+        let tr = track_for(&self.g); self.au.tick(tr, rdt, paused).await;
+        for (i, op, v) in std::mem::take(&mut self.au.cmds) { platform::music(i, op, v); }
+
+        // ---- отрисовка ----
+        let sh = self.g.shake; let (shx, shy) = if sh > 0.3 { (rand::gen_range(-1f32, 1.) * sh, rand::gen_range(-1f32, 1.) * sh) } else { (0., 0.) };
+        self.gx.frame(px, self.g.cam_x, self.g.cam_y, shx, shy);
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.draw(rdt)));
+        if res.is_err() { self.fault("draw"); gl_use_default_material(); }
+        if let Some(p) = self.shot.take() { let img = get_screen_data(); let (w, h) = (img.width as usize, img.height as usize);
+            let mut img = img; for px in img.bytes.chunks_mut(4) { px[3] = 255; } img.export_png(&p); let _ = (w, h); }
+        // частота кадров и автоподстройка качества
+        self.fps_acc += raw; self.fps_n += 1; if self.fps_acc >= 1. { let avg = self.fps_acc / self.fps_n as f32; self.fps = 1. / avg; self.fps_acc = 0.; self.fps_n = 0;
+            if self.g.s.set.quality == "auto" && self.g.state == State::Play { if avg > 0.024 { self.slow_t += 1.; if self.slow_t >= 3. && self.q_auto > 0 { self.q_auto -= 1; self.slow_t = 0.; } } else { self.slow_t = 0.; } }
+            self.g.quality = match self.g.s.set.quality.as_str() { "low" => 0, "high" => 2, _ => self.q_auto };
+            self.g.max_part = match self.g.quality { 2 => cfg::MAX_PART_HI, 1 => 420, _ => cfg::MAX_PART_LO }; }
+    }
+    /// Автотест: команды по времени из SVET_TEST ("2:play;5:shot a.png;...")
+    fn test_tick(&mut self) {
+        let now = self.now;
+        while let Some(i) = self.test.iter().position(|(t, _)| *t <= now) {
+            let (_, cmd) = self.test.remove(i); let mut it = cmd.split_whitespace(); let c = it.next().unwrap_or(""); let arg = it.next().unwrap_or("");
+            let n: f32 = arg.parse().unwrap_or(1.);
+            match c {
+                "play" => self.start_run(RunMode::Normal), "daily" => self.start_run(RunMode::Daily),
+                "title" => { self.g.state = State::Title; self.intro.revealed = true; self.show(Scr::Title); }
+                "shop" => { self.back_to = Scr::Title; self.shop_tab = n as u8; self.show(Scr::Shop); } "ach" => self.show(Scr::Ach), "set" => { self.back_to = Scr::Title; self.show(Scr::Set); }
+                "quest" => self.show(Scr::Quest), "best" => self.show(Scr::Best), "how" => self.show(Scr::How),
+                "xp" => self.g.add_xp(n), "zone" => { self.g.zone = n as u32 - 1; self.g.zone_t = cfg::ZONE_TIME; }
+                "god" => self.g.god = true, "bot" => self.bot = true, "pause" => self.pause(), "over" => self.game_over(), "lvl" => self.open_level_up(),
+                "pearls" => { self.g.s.pearls += n as u32; } "seen" => { for e in crate::data::ET.iter() { self.g.s.seen.insert(e.key.into(), 1); } }
+                "ending" => { self.g.zone = 15; self.g.victory = true; self.end.first = self.g.start_ending(); self.end.t = 0.; self.end.shown = false; self.show(Scr::None); }
+                "endt" => { self.end.t = n; } "skin" => { let k = n as usize % crate::data::SKINS.len(); self.g.s.skins.insert(crate::data::SKINS[k].id.into(), 1); self.g.pick_skin(k); }
+                "spawn" => { let k = crate::data::K_ALL[n as usize % 23]; let (x, y) = (self.g.p.x + 160., self.g.p.y - 60.); if let Some(i) = self.g.spawn_enemy(k, x, y, false) { if crate::data::ET[k as usize].boss { self.g.boss = self.g.en.items[i].uid as i32; } } }
+                "lang" => { self.g.s.set.lang = arg.into(); i18n::set_en(arg == "en"); }
+                "shot" => { self.shot = Some(arg.to_string()); }
+                "fps" => { eprintln!("fps {:.1} enemies {} parts {} ebul {}", self.fps, self.g.en.n, self.g.parts.n, self.g.eb.n); }
+                "quit" => std::process::exit(0),
+                _ => {}
+            }
+        }
+        if self.bot && self.g.state == State::Play { // бот: держится подальше от ближайших врагов, кружит по арене
+            let (px, py) = (self.g.p.x, self.g.p.y); let (mut fx, mut fy) = (0f32, 0f32);
+            for i in 0..self.g.en.n { let e = &self.g.en.items[i]; if e.dead { continue; } let (dx, dy) = (px - e.x, py - e.y); let d2 = (dx * dx + dy * dy).max(100.); if d2 < 300. * 300. { fx += dx / d2 * 900.; fy += dy / d2 * 900.; } }
+            for i in 0..self.g.eb.n { let b = &self.g.eb.items[i]; let (dx, dy) = (px - b.x, py - b.y); let d2 = (dx * dx + dy * dy).max(50.); if d2 < 120. * 120. { fx += dx / d2 * 1500.; fy += dy / d2 * 1500.; } }
+            let a = self.now as f32 * 0.4; fx += -py * 0.0015 + a.cos() * 0.4; fy += px * 0.0015 + a.sin() * 0.4; let l = (fx * fx + fy * fy).sqrt().max(1e-3); self.g.jx = fx / l; self.g.jy = fy / l;
+            if self.g.p.flare >= 100. { self.g.flare_q = true; } if self.g.p.dash_cd <= 0. && fx * fx + fy * fy > 30. { self.g.dash_q = true; }
+        }
+        if self.bot && self.scr == Scr::Level && self.ui.lock <= 0. && self.cards_t > 0.6 { self.take_card(0); }
+        if self.bot && self.g.state == State::Revive { self.game_over(); }
+    }
+    fn fault(&mut self, where_: &str) {
+        let g = &mut self.g;
+        for p in [&mut g.en.n, &mut g.pb.n, &mut g.eb.n, &mut g.parts.n, &mut g.rings.n, &mut g.texts.n, &mut g.bolts.n, &mut g.picks.n, &mut g.mines.n] { let _ = p; }
+        g.en.n = g.en.n.min(g.en.cap()); g.pb.n = g.pb.n.min(g.pb.cap()); g.eb.n = g.eb.n.min(g.eb.cap()); g.parts.n = g.parts.n.min(g.parts.cap());
+        g.rings.n = g.rings.n.min(g.rings.cap()); g.texts.n = g.texts.n.min(g.texts.cap()); g.bolts.n = g.bolts.n.min(g.bolts.cap()); g.picks.n = g.picks.n.min(g.picks.cap()); g.mines.n = g.mines.n.min(g.mines.cap());
+        let msg = format!("{where_} @{}m", g.zone * 100); g.s.err_log.insert(0, msg); g.s.err_log.truncate(5); g.dirty = true;
+    }
+
+    fn back(&mut self) {
+        match self.scr {
+            Scr::None => match self.g.state { State::Play => self.pause(), State::Intro => self.skip_intro(), State::Ending => self.skip_ending(), _ => {} },
+            Scr::Pause => self.resume(),
+            Scr::Title => { self.persist(); platform::quit(); }
+            Scr::Shop | Scr::Set => { let b = self.back_to; self.show(b); }
+            Scr::Ach | Scr::Quest | Scr::Best | Scr::How => self.show(Scr::Title),
+            Scr::Over => self.between(Next::Menu),
+            Scr::Revive => { if self.ads.cb.is_none() { self.game_over(); } }
+            _ => {}
+        }
+        self.click();
+    }
+    pub fn skip_intro(&mut self) { if self.intro.full && self.intro.t < self.intro.ig - 0.05 { self.intro.t = self.intro.ig - 0.05; } else { self.end_intro(); } }
+    fn reveal_title(&mut self) { if self.intro.revealed { return; } self.intro.revealed = true; if !self.g.s.seen_intro { self.g.s.seen_intro = true; self.persist(); } self.show(Scr::Title); }
+    fn end_intro(&mut self) { self.reveal_title(); if self.g.state == State::Intro { self.g.state = State::Title; } }
+    pub fn skip_ending(&mut self) { if !self.end.shown && self.end.t < self.end.show - 0.3 { self.end.t = self.end.show - 0.3; } }
+
+    fn update(&mut self, rdt: f32) {
+        let g = &mut self.g; self.scr_t += rdt; self.cards_t += rdt;
+        for tt in self.toasts.iter_mut() { tt.t += rdt; } self.toasts.retain(|t| t.t < 3.4);
+        match g.state {
+            State::Play => {
+                // ввод: игровые кнопки, затем джойстик
+                crate::hud::input(self);
+                let g = &mut self.g;
+                let mut dt = rdt;
+                if g.hit_stop > 0. { g.hit_stop -= rdt; dt = rdt * 0.06; }
+                if g.dying > 0. { g.dying -= rdt; dt = rdt * 0.35; if g.dying <= 0. { g.update_run(dt, rdt); if !self.offer_revive() { self.game_over(); } return; } }
+                let g = &mut self.g;
+                if g.state == State::Play { g.update_run(dt, rdt); }
+                if g.want_levelup && g.state == State::Play && g.dying <= 0. { self.open_level_up(); }
+                else if g.want_ending && g.state == State::Play { self.end.first = self.g.start_ending(); self.end.t = 0.; self.end.shown = false; self.joy = Joy::default(); self.show(Scr::None); self.persist(); }
+            }
+            State::Intro => { g.t += rdt; g.cam_x = (g.t * 0.045).sin() * 420.; g.cam_y = (g.t * 0.031 + 1.3).sin() * 380.;
+                self.intro.t += rdt; if self.ui.tap_any() { self.skip_intro(); }
+                if self.intro.t >= self.intro.ig + if self.intro.full { 0.55 } else { 0.05 } { self.reveal_title(); }
+                if self.intro.t >= self.intro.dur { self.end_intro(); } }
+            State::Title | State::Menu => { g.t += rdt; g.cam_x = (g.t * 0.045).sin() * 420.; g.cam_y = (g.t * 0.031 + 1.3).sin() * 380.; }
+            State::Ending => { g.t += rdt; self.end.t += rdt; g.update_fx_only(rdt); if !self.end.shown { if self.ui.tap_any() { self.skip_ending(); } if self.end.t >= self.end.show { self.end.shown = true; self.au.play(Sfx::Ach); self.show(Scr::End); } } }
+            State::Over => { g.t += rdt; g.update_fx_only(rdt); self.over_t += rdt; }
+            State::Revive => { g.t += rdt; if self.ads.cb.is_none() { self.revive_n -= rdt; if self.revive_n <= 0. { self.game_over(); } } }
+            State::Pause | State::LevelUp => {}
+        }
+        let g = &mut self.g;
+        g.banner.t += rdt;
+        if g.shake > 0. { g.shake *= (-rdt * 9.).exp(); if g.shake < 0.3 { g.shake = 0.; } }
+        if g.flash > 0. { g.flash -= rdt * 2.4; } if g.hurt_flash > 0. { g.hurt_flash -= rdt * 2.5; }
+    }
+
+    fn draw(&mut self, rdt: f32) {
+        let st = self.g.state;
+        let intro_dark = st == State::Intro && self.intro.t < self.intro.ig;
+        let end_lit = st == State::Ending && self.end.t > 4.15;
+        if intro_dark { clear_background(Color::from_rgba(0, 2, 7, 255)); }
+        else if !end_lit { render::background(&mut self.gx, &mut self.rd, &mut self.g, rdt, !(st == State::Intro && self.intro.t <= self.intro.ig)); }
+        else { clear_background(Color::from_rgba(6, 48, 90, 255)); }
+        if intro_dark || end_lit {}
+        else if matches!(st, State::Title | State::Intro | State::Menu) { let t = self.g.t; render::title_demo(&mut self.gx, &mut self.rd, t, rdt, 1.); }
+        else { render::world(&mut self.gx, &mut self.g, rdt); }
+        if st == State::Ending { crate::hud::ending(self, rdt); }
+        if !intro_dark { render::overlay(&mut self.gx, &self.g); crate::hud::hud(self); }
+        if st == State::Intro { crate::hud::intro(self); }
+        crate::screens::draw(self);
+        crate::hud::toasts(self);
+        self.gx.set_add(false);
+    }
+}
