@@ -259,6 +259,10 @@ public class MainActivity extends Activity {
 
     // ===== Мост для Rust (вызывается из нативного кода через JNI по объекту активности) =====
     private RewardedAds ads;
+    private BannerAds banner;
+    /** Баннер внизу (только в меню) */
+    public void setBanner(boolean on) { try { if (banner != null) banner.show(on); } catch (Throwable t) {} }
+    public float bannerHeight() { try { return banner != null ? banner.height() : 0; } catch (Throwable t) { return 0; } }
     private InterstitialAds inter;
     private static final java.util.concurrent.ConcurrentLinkedQueue<String> AD_RESULTS = new java.util.concurrent.ConcurrentLinkedQueue<>();
     /** Итог показа рекламы: «место:1» или «место:0». Rust забирает через adPoll(). */
@@ -376,6 +380,7 @@ public class MainActivity extends Activity {
         requestMaxRefreshRate();
         setFullScreen(true);
         try { ads = new RewardedAds(this); inter = new InterstitialAds(this); } catch (Throwable t) { Log.w("SvetAds", "ads init failed", t); }
+        try { banner = new BannerAds(this); } catch (Throwable t) { Log.w("SvetAds", "banner init failed", t); }
 
 
     }

@@ -6,10 +6,10 @@ import android.os.Handler;
 import android.os.Looper;
 
 import com.yandex.mobile.ads.common.AdError;
-import com.yandex.mobile.ads.common.AdRequestConfiguration;
+import com.yandex.mobile.ads.common.AdRequest;
 import com.yandex.mobile.ads.common.AdRequestError;
 import com.yandex.mobile.ads.common.ImpressionData;
-import com.yandex.mobile.ads.common.MobileAds;
+import com.yandex.mobile.ads.common.YandexAds;
 import com.yandex.mobile.ads.rewarded.Reward;
 import com.yandex.mobile.ads.rewarded.RewardedAd;
 import com.yandex.mobile.ads.rewarded.RewardedAdEventListener;
@@ -28,6 +28,7 @@ public class RewardedAds {
     private final Activity activity;
     private final Handler web = new Handler(Looper.getMainLooper()); // бывший WebView: только для отложенных задач
     private final RewardedAdLoader loader;
+    private RewardedAdLoadListener listener;
     private volatile RewardedAd ad;
     private volatile boolean showing = false;
     private volatile boolean rewarded = false;
@@ -36,21 +37,21 @@ public class RewardedAds {
 
     public RewardedAds(Activity activity) {
         this.activity = activity;
-        MobileAds.initialize(activity, () -> Log.d(TAG, "Yandex Mobile Ads ready"));
+        YandexAds.initialize(activity, () -> Log.d(TAG, "Yandex Mobile Ads ready"));
         loader = new RewardedAdLoader(activity);
-        loader.setAdLoadListener(new RewardedAdLoadListener() {
+        listener = new RewardedAdLoadListener() {
             @Override public void onAdLoaded(RewardedAd loaded) { ad = loaded; }
             @Override public void onAdFailedToLoad(AdRequestError error) {
                 Log.w(TAG, "load failed: " + error.getDescription());
                 web.postDelayed(RewardedAds.this::load, RETRY_MS);
             }
-        });
+        };
         load();
     }
 
     private void load() {
         if (ad != null) return;
-        loader.loadAd(new AdRequestConfiguration.Builder(BuildConfig.YANDEX_REWARDED_ID).build());
+        loader.loadAd(new AdRequest.Builder(BuildConfig.YANDEX_REWARDED_ID).build(), listener);
     }
 
     public boolean isReady() { return ad != null && !showing; }
@@ -96,7 +97,7 @@ public class RewardedAds {
     }
 
     public void destroy() {
-        loader.setAdLoadListener(null);
+        loader.cancelLoading();
         if (ad != null) ad.setAdEventListener(null);
         ad = null;
     }

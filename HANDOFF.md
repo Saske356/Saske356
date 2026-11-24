@@ -349,3 +349,10 @@ DECOR`. Проверять оба языка (locale ru-RU / en-US) и perf по
   «Другие реликвии» на экране реликвий (1 раз за выбор), «▶ ×2» за задание, подарок +30 — 8 раз в день (было 5).
   Межстраничная без изменений: после забега ≥60 с, не чаще раза в 3 мин, не после рекламы за награду, с 3-го забега.
   Тест на ПК: `SVET_FAKE_ADS=1`, команды `boost`, `relicad`.
+
+### Версия 3.9.2 — баннер и SDK 8
+- Баннер Яндекса `R-M-20345698-3` (`yandexBannerId` в gradle.properties, `BannerAds.java`): липкий, внизу, только в меню
+  (Title/Shop/Ach/Quest/Best/Set/How вне забега). Rust: `platform::set_banner`, `banner_h()` → `safe[1]` поднимает кнопки.
+  На ПК с `SVET_FAKE_ADS=1` баннер имитируется полосой 60 dp.
+- Yandex Mobile Ads SDK 7.18.8 → 8.6.0 (8.7.0 из Партнёров ещё нет на Maven Central). В SDK 8 изменился API:
+  `YandexAds.initialize`, `loader.loadAd(new AdRequest.Builder(ID).build(), listener)`, `BannerAdSize.sticky`, id блока — в AdRequest.

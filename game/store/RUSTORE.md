@@ -16,7 +16,7 @@
 | Исходник иконки | `game-rs/art_src/icon.webp` | — |
 | Как пересоздать скриншоты, обложку, трейлер | `game-rs/tools/store/make_store.sh` | одна команда, снимает с текущей версии игры |
 | Код игры (Rust) | `game-rs/` | сборка APK: `game-rs/build-apk.sh` |
-| Рекламные блоки Яндекса | `game-rs/android/gradle.properties` | `R-M-20345698-1` (за награду), `R-M-20345698-2` (межстраничная) |
+| Рекламные блоки Яндекса | `game-rs/android/gradle.properties` | `R-M-20345698-1` (за награду), `R-M-20345698-2` (межстраничная), `R-M-20345698-3` (баннер в меню) |
 
 **APK в репозитории не хранится** (больше 50 МБ). Его присылают файлом в чат: `LightOfTheAbyss-3.9.apk`, ~95 МБ,
 пакет `com.svetbezdny.game`, versionCode 30, versionName 3.9, подписан ключом `svetbezdny`

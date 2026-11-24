@@ -6,7 +6,7 @@ import android.os.Handler;
 import android.os.Looper;
 
 import com.yandex.mobile.ads.common.AdError;
-import com.yandex.mobile.ads.common.AdRequestConfiguration;
+import com.yandex.mobile.ads.common.AdRequest;
 import com.yandex.mobile.ads.common.AdRequestError;
 import com.yandex.mobile.ads.common.ImpressionData;
 import com.yandex.mobile.ads.interstitial.InterstitialAd;
@@ -27,6 +27,7 @@ public class InterstitialAds {
     private final Activity activity;
     private final Handler web = new Handler(Looper.getMainLooper()); // бывший WebView: только для отложенных задач
     private final InterstitialAdLoader loader;
+    private InterstitialAdLoadListener listener;
     private volatile InterstitialAd ad;
     private volatile boolean showing = false;
     private boolean shown = false;
@@ -34,19 +35,19 @@ public class InterstitialAds {
     public InterstitialAds(Activity activity) {
         this.activity = activity;
         loader = new InterstitialAdLoader(activity);
-        loader.setAdLoadListener(new InterstitialAdLoadListener() {
+        listener = new InterstitialAdLoadListener() {
             @Override public void onAdLoaded(InterstitialAd loaded) { ad = loaded; }
             @Override public void onAdFailedToLoad(AdRequestError error) {
                 Log.w(TAG, "load failed: " + error.getDescription());
                 web.postDelayed(InterstitialAds.this::load, RETRY_MS);
             }
-        });
+        };
         load();
     }
 
     private void load() {
         if (ad != null) return;
-        loader.loadAd(new AdRequestConfiguration.Builder(BuildConfig.YANDEX_INTERSTITIAL_ID).build());
+        loader.loadAd(new AdRequest.Builder(BuildConfig.YANDEX_INTERSTITIAL_ID).build(), listener);
     }
 
     public boolean isReady() { return ad != null && !showing; }
@@ -83,7 +84,7 @@ public class InterstitialAds {
     }
 
     public void destroy() {
-        loader.setAdLoadListener(null);
+        loader.cancelLoading();
         if (ad != null) ad.setAdEventListener(null);
         ad = null;
     }

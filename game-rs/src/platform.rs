@@ -43,6 +43,8 @@ mod imp {
     pub fn quit() { call_v("quit", "()V", |env, m| unsafe { (**env).CallVoidMethod.unwrap()(env, ACTIVITY, m); }) }
     pub fn migrate() { call_v("migrate", "()V", |env, m| unsafe { (**env).CallVoidMethod.unwrap()(env, ACTIVITY, m); }) }
     pub fn paused() -> bool { call_b("isPaused", "()Z", None) }
+    pub fn set_banner(on: bool) { call_v("setBanner", "(Z)V", |env, m| unsafe { (**env).CallVoidMethod.unwrap()(env, ACTIVITY, m, on as u32); }) }
+    pub fn banner_h() -> f32 { unsafe { with(|env| { let m = mid(env, "bannerHeight", "()F"); if m.is_null() { return 0.; } (**env).CallFloatMethod.unwrap()(env, ACTIVITY, m) }) } }
     pub fn density() -> f32 { unsafe { with(|env| { let m = mid(env, "density", "()F"); if m.is_null() { return 2.5; } (**env).CallFloatMethod.unwrap()(env, ACTIVITY, m) }) } }
     pub fn set_fps(f: u32) { call_v("setFps", "(I)V", |env, m| unsafe { (**env).CallVoidMethod.unwrap()(env, ACTIVITY, m, f as i32); }) }
     pub fn files_dir() -> String { call_s("filesDir") }
@@ -73,6 +75,10 @@ mod imp {
     pub fn quit() { std::process::exit(0); }
     pub fn migrate() {}
     pub fn paused() -> bool { false }
+    static BANNER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    pub fn set_banner(on: bool) { BANNER.store(on, std::sync::atomic::Ordering::Relaxed); }
+    /// на ПК баннер имитируется полосой 60 dp при SVET_FAKE_ADS=1
+    pub fn banner_h() -> f32 { if fake() && BANNER.load(std::sync::atomic::Ordering::Relaxed) { 60. * density() } else { 0. } }
     pub fn density() -> f32 { std::env::var("SVET_DPI").ok().and_then(|v| v.parse().ok()).unwrap_or(macroquad::window::screen_dpi_scale().max(1.)) }
     pub fn set_fps(_f: u32) {}
     pub fn files_dir() -> String { std::env::var("SVET_DATA").unwrap_or_else(|_| ".".into()) }
