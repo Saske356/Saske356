@@ -95,8 +95,9 @@ impl App {
     /// Межстраничная реклама между забегами — бережно: не новичкам, не чаще раза в 4 мин, после каждой второй гибели
     pub fn between(&mut self, next: Next) {
         self.ads.over_n += 1;
-        let ok = self.ads.cb.is_none() && self.g.s.runs >= 4 && self.ads.over_n % 2 == 0 && self.g.run_t >= 90. && self.now - self.ads.last >= cfg::INTER_GAP
-            && self.now - self.ads.t0 >= 90. && platform::ad_ready(1);
+        // межстраничная: после забега от минуты, не чаще раза в 3 минуты, не новичкам
+        let ok = self.ads.cb.is_none() && self.g.s.runs >= 2 && self.g.run_t >= 60. && self.now - self.ads.last >= 180.
+            && self.now - self.ads.t0 >= 60. && platform::ad_ready(1);
         if !ok { self.do_next(next); return; }
         self.ads.cb = Some(AdCb::Inter(next)); self.ads.wd = self.now; self.ads.wd_len = 35.; platform::ad_show(1, "inter");
     }
@@ -185,9 +186,6 @@ impl App {
             let mut img = img; for px in img.bytes.chunks_mut(4) { px[3] = 255; } img.export_png(&p); let _ = (w, h); }
         // частота кадров и автоподстройка качества
         self.fps_acc += raw; self.fps_n += 1; if self.fps_acc >= 1. { let avg = self.fps_acc / self.fps_n as f32; self.fps = 1. / avg; self.fps_acc = 0.; self.fps_n = 0;
-            // подсветка сама выключается, если телефон не держит ~50 кадров
-            if self.g.s.set.fx && !self.glow_auto_off && self.g.state == State::Play { if avg > 0.021 { self.glow_slow += 1.; if self.glow_slow >= 3. { self.glow_auto_off = true;
-                self.toast(if i18n::is_en() { "GLOW OFF".into() } else { "ПОДСВЕТКА ВЫКЛЮЧЕНА".into() }, if i18n::is_en() { "for a smoother game".into() } else { "ради плавности".into() }); } } else { self.glow_slow = 0.; } }
             if self.g.s.set.quality == "auto" && self.g.state == State::Play { if avg > 0.024 { self.slow_t += 1.; if self.slow_t >= 3. && self.q_auto > 0 { self.q_auto -= 1; self.slow_t = 0.; } } else { self.slow_t = 0.; } }
             self.g.quality = match self.g.s.set.quality.as_str() { "low" => 0, "high" => 2, _ => self.q_auto };
             self.g.max_part = match self.g.quality { 2 => cfg::MAX_PART_HI, 1 => 420, _ => cfg::MAX_PART_LO }; }

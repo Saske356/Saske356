@@ -19,7 +19,7 @@ impl Rd {
     pub fn new() -> Rd {
         let r = || rand::gen_range(0f32, 1.);
         let snow = [(0..SNOW_N[0]).map(|_| (r(), r())).collect(), (0..SNOW_N[1]).map(|_| (r(), r())).collect(), (0..SNOW_N[2]).map(|_| (r(), r())).collect()];
-        let kinds = ["jelly", "drifter", "squid", "jelly", "dart", "bomber", "drifter", "urchin"];
+        let kinds = ["jelly", "drifter", "squid", "jelly", "dart", "bomber", "drifter", "urchin", "jelly_t1", "squid_t2", "drifter_t1", "ray", "lantern", "jelly_t2", "dart_t2", "eel"];
         let demo = kinds.iter().map(|k| Demo { k, x: r(), y: r(), s: rand::gen_range(0.8, 1.5), sp: rand::gen_range(8., 22.), p: r() * TAU }).collect();
         // мягкая тень у основания декораций
         let n = 64u16; let mut px = vec![0u8; n as usize * n as usize * 4];
@@ -143,7 +143,8 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
         gx.glow_world(true, if e.elite { c::GOLD } else { e.col }, e.x, e.y, e.r * e.scale * if e.elite { 3.4 } else { 2.6 } * (1. + 0.06 * (t * 2.2 + e.phase).sin()), 0.4 + 0.1 * (t * 2.2 + e.phase).sin()); } } // свечение существ дышит
     // телеграфы атак
     for i in 0..g.en.n { let e = g.en.items[i].clone(); if e.dead || !in_view(e.x, e.y, 300.) { continue; } telegraph(gx, g, &e); }
-    // враги: тела
+    // враги: тела (вспышки попаданий — одним проходом после)
+    gx.defer_white = true;
     for i in 0..g.en.n {
         if g.en.items[i].dead { continue; }
         let (ex, ey, er, kind) = { let e = &g.en.items[i]; (e.x, e.y, e.r, e.kind) };
@@ -186,9 +187,7 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
                 let drift = (t * 1.7 + e.phase).sin() * 1.4; let wob = (t * 2.1 + e.phase).sin() * 0.07; let p = ph(gx, key);
                 gx.spr_world(key, e.x, e.y + drift, e.ang + wob, sc * breathe, alpha, wht, p, false); }
         }
-        gx.sqx = 1.; gx.sqy = 1.;
-        if e.freeze > 0. { gx.glow_world(true, c::ICE, e.x, e.y, e.r * e.scale * 2., 0.7); }
-        else if e.slow > 0. && hi { gx.glow_world(true, c::ICE, e.x, e.y, e.r * e.scale * 1.6, 0.35); }
+        gx.sqx = 1.; gx.sqy = 1.; gx.jaw = 0.;
         if g.p.mark_uid != 0 && e.uid == g.p.mark_uid { let rr = e.r * e.scale * 1.6 + 6.; let col = with_a(hex(PAL_HEX[c::CRAB as usize]), 0.75 + 0.25 * (t * 6.).sin());
             for q in 0..4 { let a0 = t * 1.5 + q as f32 * std::f32::consts::FRAC_PI_2; gx.arc_world(e.x, e.y, rr, a0, a0 + 0.9, 2.5, col, true); } }
         if e.elite { gx.arc_world(e.x, e.y, e.r * e.scale * 1.35, t * 2., t * 2. + 4.6, 2., with_a(hex(PAL_HEX[c::GOLD as usize]), 0.8), false); }
@@ -198,9 +197,12 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
             gx.rect_rot_world(e.x - bw / 2., by + 1.75, 0., 0., bw * (e.hp / e.max_hp).clamp(0., 1.), 3.5, with_a(if e.elite { hex(PAL_HEX[c::GOLD as usize]) } else { hex(0xff779b) }, a), None);
         }
     }
+    gx.defer_white = false; gx.flush_white();
+    for i in 0..g.en.n { let e = &g.en.items[i]; if e.dead || !in_view(e.x, e.y, e.r * 3.) { continue; }
+        if e.freeze > 0. { gx.glow_world(true, c::ICE, e.x, e.y, e.r * e.scale * 2., 0.7); } else if e.slow > 0. && hi { gx.glow_world(true, c::ICE, e.x, e.y, e.r * e.scale * 1.6, 0.35); } }
     // гибель: белые силуэты
     for gh in g.ghosts.iter() { if !gh.on { continue; } let k = gh.t / 0.2; if k >= 1. { continue; }
-        let key = spr_key(gh.kind, if gh.bare { 0. } else { 1. }, gh.tier); gx.spr_ghost(&key, gh.x, gh.y, gh.a, gh.s * (1. + k * 0.6), (1. - k) * (1. - k) * 0.6); }
+        let key = spr_key(gh.kind, if gh.bare { 0. } else { 1. }, gh.tier); gx.spr_ghost(&key, gh.x, gh.y, gh.a, gh.s * (1. + k * 0.6), (1. - k) * (1. - k) * 0.3); }
     new_upg(gx, g);
     if !g.p.dead { player(gx, g, rdt); }
     // снаряды игрока
@@ -255,7 +257,7 @@ fn boss1(gx: &mut Gfx, g: &Game, e: &Enemy, sc: f32, wht: bool) {
     let t = g.t; let lure = e.state == 1; let lt = if lure { ((3. - e.st) / 1.1).min(1.) } else { 0. };
     let bob = (t * 3.).sin() * 6.; let flip = e.ang.cos() < 0.;
     let (lx, ly) = local(e, e.r * 1.55, (-e.r * 1.15 + bob) * if flip { -1. } else { 1. });
-    let tk = tkey("boss1", e.tier); gx.spr_world(&tk, e.x, e.y, e.ang, sc, 1., wht, anim_ph(gx, &tk, e), false);
+    gx.jaw = if e.state == 1 || e.state == 2 { 0.6 + 0.4 * (t * 9.).sin().abs() } else { (0.35 * (t * 2.3 + e.phase).sin()).max(0.) }; let tk = tkey("boss1", e.tier); gx.spr_world(&tk, e.x, e.y, e.ang, sc, 1., wht, anim_ph(gx, &tk, e), false);
     gx.glow_world(false, if lure { c::GOLD } else { c::CYAN }, lx, ly, 18. + lt * 50. + (t * 8.).sin() * 3., 1.);
     if lure && e.st < 1.9 { gx.glow_world(true, c::GOLD, lx, ly, 160., 0.25 + 0.15 * (t * 20.).sin()); }
 }
@@ -287,7 +289,7 @@ fn boss4(gx: &mut Gfx, g: &Game, e: &Enemy, sc: f32, wht: bool) {
         let sw = phase.sin() * (12. + kf * 5.); gx.glow_world(true, c::EEL, bx + nx * sw, by + ny * sw, e.r * (0.95 - kf * 0.12), (1. - kf / 4.) * 0.23); }
     gx.glow_world(true, c::EEL, e.x, e.y, e.r * 2.2, 0.48 + 0.18 * (t * 7.).sin());
     let lunge = e.state == 1 && (e.p3 % 1.7) > 1.; let pulse = 1. + (t * 5.2).sin() * 0.025 + if lunge { 0.045 } else { 0. };
-    let tk = tkey("boss4", e.tier); gx.spr_world(&tk, e.x, e.y, e.ang + (t * 2.4).sin() * 0.035, sc * pulse, 1., wht, anim_ph(gx, &tk, e), false);
+    gx.jaw = if lunge { 0.9 } else { (0.4 * (t * 2.8 + e.phase).sin()).max(0.) + 0.08 }; let tk = tkey("boss4", e.tier); gx.spr_world(&tk, e.x, e.y, e.ang + (t * 2.4).sin() * 0.035, sc * pulse, 1., wht, anim_ph(gx, &tk, e), false);
     let flip = if e.ang.cos() < 0. { -1. } else { 1. };
     for k in 0..4 { let kf = k as f32; let (gx_, gy) = local(e, -e.r * (0.52 + kf * 0.12) * sc, e.r * (0.22 + kf * 0.08) * sc * flip); gx.glow_world(false, c::ICE, gx_, gy, 4.5, 0.38 + 0.22 * (t * 6. + kf * 0.8).sin()); }
 }
@@ -312,7 +314,7 @@ fn queen(gx: &mut Gfx, g: &Game, e: &Enemy, sc: f32, wht: bool) {
         for i in 0..qz.rn { let a = qz.ra + i as f32 * TAU / qz.rn as f32; gx.line_world(e.x + a.cos() * e.r, e.y + a.sin() * e.r, e.x + a.cos() * 620., e.y + a.sin() * 620., 1.5 + 2. * k, col, false); } }
     gx.glow_world(true, c::ICE, e.x, e.y, e.r * 2.6, 0.4 + 0.2 * (t * 5.).sin());
     let pul = 1. + (t * 2.6).sin() * 0.05;
-    let tk = tkey("queen", e.tier); gx.spr_world(&tk, e.x, e.y, 0., sc * pul, 1., wht, anim_ph(gx, &tk, e), false);
+    let qa = if g.p.x < e.x { std::f32::consts::PI } else { 0. }; let tk = tkey("queen", e.tier); gx.spr_world(&tk, e.x, e.y, qa, sc * pul, 1., wht, anim_ph(gx, &tk, e), false);
 }
 
 fn new_upg(gx: &mut Gfx, g: &Game) {
@@ -378,6 +380,6 @@ pub fn title_demo(gx: &mut Gfx, rd: &mut Rd, t: f32, dt: f32, am: f32) {
 pub fn overlay(gx: &mut Gfx, g: &Game) {
     let v = gx.vign.clone(); gx.tex_full(&v, WHITE);
     let lh = low_hp(g);
-    if g.hurt_flash > 0. || lh { let a = g.hurt_flash.max(if lh { 0.35 + 0.25 * (g.t * 6.).sin() } else { 0. }).min(1.); let h = gx.hurt.clone(); gx.tex_full(&h, Color::new(1., 1., 1., a)); }
+    if g.hurt_flash > 0. || lh { let a = (g.hurt_flash * 0.7).max(if lh { 0.16 + 0.1 * (g.t * 6.).sin() } else { 0. }).min(0.7); let h = gx.hurt.clone(); gx.tex_full(&h, Color::new(1., 1., 1., a)); }
     if g.flash > 0. { gx.fill_screen(Color::new(1., 0.95, 0.8, g.flash * 0.6), true); }
 }

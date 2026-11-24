@@ -24,7 +24,7 @@ pub struct Gfx {
     pub font_b: Font, pub font_k: Font, pub font_m: Font, pub add: Material, pub wmat: Material, pub wadd: Material, pub vign: Texture2D, pub hurt: Texture2D, pub white: Texture2D,
     /// Физических пикселей на логический пиксель (как devicePixelRatio)
     pub px: f32, pub w: f32, pub h: f32, pub ws: f32, pub ox: f32, pub oy: f32, pub safe_t: f32, pub safe_b: f32,
-    pub sqx: f32, pub sqy: f32, pub additive: bool, pub mat: u8 /* 0 обычный, 1 свет, 2 белый силуэт, 3 белый свет */,
+    pub sqx: f32, pub sqy: f32, pub jaw: f32, pub defer_white: bool, pub white_q: Vec<(Texture2D, f32, f32, f32, f32, bool, f32, f32, Option<Anim>, f32, f32, f32)>, pub additive: bool, pub mat: u8 /* 0 обычный, 1 свет, 2 белый силуэт, 3 белый свет */,
 }
 
 const VS: &str = r#"#version 100
@@ -71,7 +71,7 @@ impl Gfx {
         let mut g = Gfx { spr: HashMap::new(), glow: vec![], soft: vec![], bul: vec![], icon: HashMap::new(), ground: vec![], font_b, font_k, font_m, add, wmat, wadd,
             vign: radial_tex(128, &[(0.0, [0., 0., 0.03, 0.]), (0.62, [0., 0., 0.03, 0.]), (1.0, [0., 0., 0.03, 0.78])]),
             hurt: radial_tex(128, &[(0.0, [1., 0., 0.16, 0.]), (0.62, [1., 0., 0.16, 0.]), (1.0, [1., 0.08, 0.24, 0.85])]),
-            white: Texture2D::from_rgba8(1, 1, &[255, 255, 255, 255]), px: 1., w: 390., h: 844., ws: 1., ox: 0., oy: 0., safe_t: 0., safe_b: 0., sqx: 1., sqy: 1., additive: false, mat: 0 };
+            white: Texture2D::from_rgba8(1, 1, &[255, 255, 255, 255]), px: 1., w: 390., h: 844., ws: 1., ox: 0., oy: 0., safe_t: 0., safe_b: 0., sqx: 1., sqy: 1., jaw: 0., defer_white: false, white_q: vec![], additive: false, mat: 0 };
         let meta = man["meta"].as_object().cloned().unwrap_or_default();
         let npal = crate::data::PAL_HEX.len();
         let total = (meta.len() + npal * 3 + 50 + 15) as f32; let mut done = 0f32;
@@ -112,15 +112,25 @@ impl Gfx {
         let Some(s) = self.spr.get(key) else { return };
         let half = s.h * k; let flip = (s.fl || force_fl) && ang.cos() < 0.; let (sqx, sqy) = (self.sqx, self.sqy);
         let tex = s.tex.clone(); let anim = s.anim;
+        let jaw = self.jaw;
+        if self.defer_white { // тело сейчас, белую вспышку — одним проходом потом (меньше переключений шейдера)
+            self.set_mat(0); draw_warp_j(&tex, sx, sy, half, ang, flip, sqx, sqy, anim, ph, Color::new(1., 1., 1., alpha), jaw);
+            if white { self.white_q.push((tex, sx, sy, half, ang, flip, sqx, sqy, anim, ph, alpha, jaw)); } return; }
         let was = self.mat;
         self.set_mat(if white { 2 } else { 0 });
-        draw_warp(&tex, sx, sy, half, ang, flip, sqx, sqy, anim, ph, Color::new(1., 1., 1., alpha));
+        draw_warp_j(&tex, sx, sy, half, ang, flip, sqx, sqy, anim, ph, Color::new(1., 1., 1., alpha), jaw);
         self.set_mat(was);
     }
     /// Белый светящийся силуэт (вспышка гибели)
     pub fn spr_ghost(&mut self, key: &str, x: f32, y: f32, ang: f32, sc: f32, alpha: f32) {
         let Some(s) = self.spr.get(key) else { return }; let half = s.h * sc * self.ws; let flip = s.fl && ang.cos() < 0.; let tex = s.tex.clone();
         let (sx, sy) = (self.sx(x), self.sy(y)); self.set_mat(3); draw_warp(&tex, sx, sy, half, ang, flip, 1., 1., None, 0., Color::new(1., 1., 1., alpha));
+    }
+    /// Нарисовать отложенные вспышки попаданий (полупрозрачный белый — не «призраки»)
+    pub fn flush_white(&mut self) {
+        let q = std::mem::take(&mut self.white_q); if q.is_empty() { return; } self.set_mat(2);
+        for (t, sx, sy, half, ang, flip, sqx, sqy, an, ph, a, jaw) in q.iter() { draw_warp_j(t, *sx, *sy, *half, *ang, *flip, *sqx, *sqy, *an, *ph, Color::new(1., 1., 1., 0.3 * a), *jaw); }
+        self.white_q = q; self.white_q.clear(); self.set_mat(0);
     }
     pub fn spr_half(&self, key: &str) -> f32 { self.spr.get(key).map(|s| s.h).unwrap_or(20.) }
     pub fn spr_anim(&self, key: &str) -> Option<Anim> { self.spr.get(key).and_then(|s| s.anim) }
@@ -235,8 +245,11 @@ pub fn font_bucket(px: f32) -> (u16, f32) {
 }
 /// Рисует текстуру сеткой и деформирует её по виду анимации (хвост, щупальца, купол, ножки…).
 /// half — половина размера в пикселях, (sqx,sqy) — сжатие вдоль/поперёк тела.
-pub fn draw_warp(t: &Texture2D, sx: f32, sy: f32, half: f32, ang: f32, flip: bool, sqx: f32, sqy: f32, anim: Option<Anim>, ph: f32, col: Color) {
+pub fn draw_warp(t: &Texture2D, sx: f32, sy: f32, half: f32, ang: f32, flip: bool, sqx: f32, sqy: f32, anim: Option<Anim>, ph: f32, col: Color) { draw_warp_j(t, sx, sy, half, ang, flip, sqx, sqy, anim, ph, col, 0.) }
+/// То же, плюс jaw — раскрытие пасти (у боссов вида сбоку: нижняя челюсть у головы отходит вниз)
+pub fn draw_warp_j(t: &Texture2D, sx: f32, sy: f32, half: f32, ang: f32, flip: bool, sqx: f32, sqy: f32, anim: Option<Anim>, ph: f32, col: Color, jaw: f32) {
     let (ca, sa) = (ang.cos(), ang.sin());
+    let anim = if jaw > 0.01 && anim.is_none() { Some(Anim::Fin) } else { anim };
     let Some(an) = anim else {
         draw_texture_ex(t, sx - half * sqx, sy - half * sqy, col, DrawTextureParams { dest_size: Some(vec2(half * 2. * sqx, half * 2. * sqy)), rotation: ang, flip_y: flip, ..Default::default() });
         return;
@@ -245,11 +258,12 @@ pub fn draw_warp(t: &Texture2D, sx: f32, sy: f32, half: f32, ang: f32, flip: boo
     let (mut kx, mut ky, mut rot) = (1f32, 1f32, 0f32);
     match an { Anim::Pulse => { kx = 1. + 0.07 * ph.sin(); ky = 1. + 0.07 * (ph + 1.1).sin(); rot = (ph * 0.5).sin() * 0.06; }
         Anim::Flap => { ky = 1. - 0.22 * ph.sin(); } Anim::Orb => { kx = 1. + 0.035 * ph.sin(); ky = 2. - kx; } _ => {} }
-    if matches!(an, Anim::Pulse | Anim::Flap | Anim::Orb) {
+    if matches!(an, Anim::Pulse | Anim::Flap | Anim::Orb) && jaw <= 0.01 {
         draw_texture_ex(t, sx - half * sqx * kx, sy - half * sqy * ky, col, DrawTextureParams { dest_size: Some(vec2(half * 2. * sqx * kx, half * 2. * sqy * ky)), rotation: ang + rot, flip_y: flip, ..Default::default() });
         return;
     }
-    const NX: usize = 14; const NY: usize = 8;
+    // мелким на экране существам хватает грубой сетки — втрое меньше вершин
+    let (NX, NY) = if half < 45. { (7usize, 4usize) } else if half < 110. { (10, 6) } else { (14, 8) };
     let mut verts: Vec<Vertex> = Vec::with_capacity((NX + 1) * (NY + 1)); let mut idx: Vec<u16> = Vec::with_capacity(NX * NY * 6);
     let c8 = [(col.r * 255.) as u8, (col.g * 255.) as u8, (col.b * 255.) as u8, (col.a * 255.) as u8];
     for j in 0..=NY { let v = j as f32 / NY as f32;
@@ -267,6 +281,7 @@ pub fn draw_warp(t: &Texture2D, sx: f32, sy: f32, half: f32, ang: f32, flip: boo
                 Anim::Crab => { let leg = (((v - 0.5).abs() - 0.12) * 4.).clamp(0., 1.); du = leg * (ph + if v < 0.5 { 0. } else { std::f32::consts::PI } + v * 5.).sin() * 0.032; }
                 _ => {}
             }
+            if jaw > 0.01 && u > 0.62 { let k = ((u - 0.62) / 0.38).min(1.); if v > 0.5 { dv += jaw * 0.16 * k * ((v - 0.5) * 2.).min(1.); } else { dv -= jaw * 0.04 * k * ((0.5 - v) * 2.).min(1.); } }
             let lx = ((u + du) * 2. - 1.) * half * sqx; let mut ly = ((v + dv) * 2. - 1.) * half * sqy; if flip { ly = -ly; }
             verts.push(Vertex::new(sx + lx * ca - ly * sa, sy + lx * sa + ly * ca, 0., u, v, Color::from_rgba(c8[0], c8[1], c8[2], c8[3])));
         } }

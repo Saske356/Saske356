@@ -105,6 +105,7 @@ upgs! {
     THORNS = "thorns", 3, c::AMBER; GREED = "greed", 3, c::GOLD;
     SALVO = "salvo", 3, c::CYAN; SEEKER = "seeker", 3, c::FIRE; CALIBER = "caliber", 3, c::WHITE; EXECUTE = "execute", 3, c::CORAL;
     CHILL = "chill", 2, c::ICE; DASHNOVA = "dashnova", 2, c::JELLY; MARK = "mark", 3, c::CRAB; FORTUNE = "fortune", 3, c::GOLD;
+    FRENZY = "frenzy", 3, c::FIRE; SHARDS = "shards", 3, c::WHITE; VACUUM = "vacuum", 2, c::EMER; THUNDER = "thunder", 3, c::GOLD;
     STORM = "storm", 1, c::GOLD, syn(ORBIT, 2, CHAIN, 2); SUPERNOVA = "supernova", 1, c::GOLD, syn(NOVA, 2, CRIT, 2);
     PRISM = "prism", 1, c::GOLD, syn(MULTI, 2, BOUNCE, 1); ABYSSICE = "abyssice", 1, c::GOLD, syn(FROST, 1, MINE, 2);
     HUNTER = "hunter", 1, c::GOLD, syn(HOMING, 1, PIERCE, 2); TIDE = "tide", 1, c::GOLD, syn(DASH, 2, SPEED, 2);
@@ -115,6 +116,7 @@ upgs! {
     KRAKEN = "kraken", 1, c::GOLD, syn(INK, 1, THORNS, 2);
     HURRICANE = "hurricane", 1, c::GOLD, syn(SALVO, 2, MULTI, 2); BOMBARD = "bombard", 1, c::GOLD, syn(SEEKER, 2, NOVA, 1);
     REAPER = "reaper", 1, c::GOLD, syn(EXECUTE, 2, CRIT, 2); BLIZZARD = "blizzard", 1, c::GOLD, syn(CHILL, 1, FROST, 2);
+    STORMLORD = "stormlord", 1, c::GOLD, syn(THUNDER, 2, CHAIN, 2); SHARDSTORM = "shardstorm", 1, c::GOLD, syn(SHARDS, 2, SALVO, 1);
 }
 /// Особая карта «Чистый свет», когда улучшения кончились
 pub const U_HEAL: usize = usize::MAX;

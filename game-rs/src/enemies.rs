@@ -32,7 +32,7 @@ impl Game {
                     else if e.state == 2 { e.st -= dt; trail = q > 0; if e.st <= 0. { e.state = 3; e.st = 0.9; } }
                     else { steer(e, 0., 0., 2.5, dt); e.st -= dt; if e.st <= 0. { e.state = 0; e.st = 0.6; } } }
                     if trail && self.rng.next() < 0.5 { let (x, y) = (self.en.items[i].x, self.en.items[i].y); self.part(x, y, 0., 0., 0.25, 7., c::DART, 0.); } }
-                K::Jelly => { let shoot; { let e = &mut self.en.items[i]; steer(e, ux * sp, uy * sp, 1., dt); e.ang = 0.; shoot = e.t >= 3.3 && !fz && d < 700.; if shoot { e.t = 0.; e.p1 += 0.35; } }
+                K::Jelly => { let shoot; { let e = &mut self.en.items[i]; steer(e, ux * sp, uy * sp, 1., dt); if e.vx * e.vx + e.vy * e.vy > 4. { let ta = e.vy.atan2(e.vx); e.ang += ang_diff(e.ang, ta) * (dt * 2.5).min(1.); } shoot = e.t >= 3.3 && !fz && d < 700.; if shoot { e.t = 0.; e.p1 += 0.35; } }
                     if shoot { let (x, y, p1) = (self.en.items[i].x, self.en.items[i].y, self.en.items[i].p1); let n = if self.zone >= 6 { 12 } else { 8 };
                         for k in 0..n { self.e_shoot(x, y, p1 + k as f32 * TAU / n as f32, 115. + self.zone as f32 * 3., 5., 9. * self.dmg_scale, c::JELLY, 0.); }
                         self.ring(x, y, 5., 40., 0.3, c::JELLY, 2.); self.snd(Sfx::Shot2); } }

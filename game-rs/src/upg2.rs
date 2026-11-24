@@ -40,6 +40,23 @@ impl Game {
                     if (e.x - self.cam_x).abs() > self.vw || (e.y - self.cam_y).abs() > self.vh { continue; } if e.hp > best.1 { best = (e.uid, e.hp); } }
                 self.p.mark_uid = best.0; } }
     }
+    /// Вакуум и Гром
+    pub fn update_upg3(&mut self, dt: f32) {
+        let vl = self.lv(u::VACUUM);
+        if vl > 0 { self.p.vac_t -= dt; if self.p.vac_t <= 0. { self.p.vac_t = 11. - 3. * vl as f32;
+            let (cx, cy, vw, vh) = (self.cam_x, self.cam_y, self.vw, self.vh);
+            for k in 0..self.picks.n { let pk = &mut self.picks.items[k]; if pk.kind <= 2 && (pk.x - cx).abs() < vw + 60. && (pk.y - cy).abs() < vh + 60. { pk.mag = true; pk.t = 0.; } }
+            self.ring(self.p.x, self.p.y, 5., 220., 0.5, c::EMER, 3.); } }
+        let tl = self.lv(u::THUNDER);
+        if tl > 0 { self.p.thun_t -= dt; if self.p.thun_t <= 0. { self.p.thun_t = 4.2 - 0.6 * tl as f32;
+            let (cx, cy, vw, vh) = (self.cam_x, self.cam_y, self.vw, self.vh);
+            let vis: Vec<usize> = (0..self.en.n).filter(|&i| { let e = &self.en.items[i]; !e.dead && e.kind != K::Crystal && (e.x - cx).abs() < vw && (e.y - cy).abs() < vh }).collect();
+            if !vis.is_empty() { let lord = self.lv(u::STORMLORD) > 0;
+                for _ in 0..(1 + tl) { let i = vis[(self.rng.next() * vis.len() as f32) as usize % vis.len()]; if self.en.items[i].dead { continue; } let (x, y) = (self.en.items[i].x, self.en.items[i].y);
+                    let ox = self.rr(-30., 30.); self.bolt(x + ox, y - 240., x, y, c::GOLD); self.ring(x, y, 4., 40., 0.25, c::GOLD, 3.);
+                    self.damage_enemy(i, self.st.dmg * 3., true, f32::NAN, 0., 0., Src::Static); if lord && !self.en.items[i].dead { self.chain_from(i, self.st.dmg * 1.5, 3); } }
+                self.snd(Sfx::Boom(false)); } } }
+    }
     /// Множитель урона по врагу от новых улучшений
     pub fn upg2_mul(&mut self, i: usize) -> f32 {
         let e = &self.en.items[i]; let mut m = 1.;
@@ -59,6 +76,9 @@ impl Game {
     }
     /// Удача: шанс дополнительной жемчужины
     pub fn upg2_kill(&mut self, e: &Enemy) {
+        let sl = self.lv(u::SHARDS);
+        if sl > 0 && !e.kind.d().boss && self.pb.n < self.pb.cap() - 40 { let st = self.lv(u::SHARDSTORM) > 0; let n = 1 + sl + if st { 2 } else { 0 }; let o = self.rng.next() * TAU;
+            for k in 0..n { if let Some(b) = self.fire_pb(e.x, e.y, o + k as f32 * TAU / n as f32, self.st.dmg * 0.5, false) { let bb = &mut self.pb.items[b]; bb.last_uid = e.uid; bb.life = 0.45; bb.r = 3.; bb.bounce = 0; bb.pierce = if st { 2 } else { 0 }; } } }
         let l = self.lv(u::FORTUNE); if l == 0 || e.kind.d().boss { return; }
         if self.rng.next() < 0.008 * l as f32 * if e.elite { 6. } else { 1. } { self.drop_pick(e.x, e.y, 3, 1.); }
     }

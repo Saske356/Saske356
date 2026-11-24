@@ -18,7 +18,7 @@ impl Game {
     pub fn apply_tier(&mut self, i: usize, tier: u8) {
         if tier == 0 { return; }
         let e = &mut self.en.items[i]; let boss = e.kind.d().boss; e.tier = tier;
-        let (hp, dm, xp) = if boss { if tier == 1 { (1.25, 1.15, 1.4) } else { (1.5, 1.3, 1.8) } } else if tier == 1 { (1.45, 1.15, 1.3) } else { (2.1, 1.3, 1.6) };
+        let (hp, dm, xp) = if boss { if tier == 1 { (1.25, 1.15, 1.4) } else { (1.5, 1.3, 1.8) } } else if tier == 1 { (1.15, 1.1, 1.3) } else { (1.35, 1.2, 1.6) };
         e.max_hp *= hp; e.hp = e.max_hp; e.dmg *= dm; e.xp *= xp; e.score *= xp; e.spd *= if tier == 1 { 1.06 } else { 1.12 };
         if e.kind == K::Crab { e.sh = e.max_hp * crate::data::cfg::CRAB_SHIELD; }
         e.col = tier_col(e.col, tier); e.tt = 1. + self.rng.next() * 2.;
@@ -54,7 +54,7 @@ impl Game {
             K::Crab => { let (sh, mh) = (self.en.items[i].sh, self.en.items[i].max_hp); if sh <= 0. && self.en.items[i].tt < -6. { self.en.items[i].sh = mh * 0.3; self.en.items[i].tt = 0.; self.ring(x, y, 5., 40., 0.3, col, 3.); }
                 if sh > 0. && fire { next = 3.2; if d < 200. { let n = if tier == 2 { 12 } else { 8 }; for k in 0..n { self.e_shoot(x, y, face + (k as f32 - n as f32 / 2.) * 0.12, 200., 5., 9. * dsc, col, 0.); } self.shake(3.); } } }
             // целитель: заодно даёт соседям щит
-            K::Mender => if fire { next = 4.; let q = self.qb(x, y, 170.); for &k in &q { let o = &mut self.en.items[k]; if !o.dead && !o.kind.d().boss && k != i { o.inv_t = 2.; } } self.qb_back(q); self.ring(x, y, 8., 170., 0.4, col, 2.); },
+            K::Mender => if fire { next = 4.; let q = self.qb(x, y, 170.); for &k in &q { let o = &mut self.en.items[k]; if !o.dead && !o.kind.d().boss && k != i { o.hp = (o.hp + o.max_hp * 0.15).min(o.max_hp); } } self.qb_back(q); self.ring(x, y, 8., 170., 0.4, col, 2.); },
             // бомбер: по пути сеет мины-пули
             K::Bomber => if fire { next = if tier == 2 { 0.9 } else { 1.4 }; if let Some(b) = self.e_shoot(x, y, 0., 0., 6., 10. * dsc, col, 0.) { self.eb.items[b].life = 4.; } },
             // скат: рывок оставляет полосу пуль по бокам
@@ -145,7 +145,7 @@ pub fn foe_desc(k: K, tier: u8, en: bool) -> &'static str {
         (K::Squid, false) => "Плюётся самонаводящимися сгустками.", (K::Squid, true) => "Spits homing blobs.",
         (K::Eel, false) => "Хвост оставляет жгучие искры.", (K::Eel, true) => "Its tail leaves burning sparks.",
         (K::Crab, false) => "Щит отрастает заново, вблизи бьёт волной.", (K::Crab, true) => "Its shield regrows; slams a wave up close.",
-        (K::Mender, false) => "Даёт соседям неуязвимость. Убивай первым!", (K::Mender, true) => "Makes neighbors invulnerable. Kill it first!",
+        (K::Mender, false) => "Подлечивает соседей чаще. Убивай первым!", (K::Mender, true) => "Heals neighbors more often. Kill it first!",
         (K::Bomber, false) => "Сеет за собой мины.", (K::Bomber, true) => "Drops mines behind it.",
         (K::Ray, false) => "Рывок оставляет полосу пуль.", (K::Ray, true) => "Its charge leaves a stripe of bullets.",
         (K::Lantern, false) => "Залп из трёх огней.", (K::Lantern, true) => "Fires volleys of three flames.",

@@ -69,7 +69,7 @@ pub struct Player {
     pub skin: usize, pub pal: u8, pub dead: bool, pub shield: i32, pub shield_t: f32, pub beat_t: f32, pub hb: f32, pub shot_n: u32,
     pub harp_t: f32, pub beam_t: f32, pub aura_t: f32, pub tw_t: f32, pub tw_x: f32, pub tw_y: f32, pub vort_t: f32, pub static_c: u32,
     pub beam_tg: i32, pub beam_tg2: i32, pub ink_t: f32, pub ink_x: f32, pub ink_y: f32, pub ink_d: f32, pub ink_q: bool, pub a_t: f32,
-    pub salvo_n: u32, pub seek_t: f32, pub was_dash: bool, pub mark_uid: u32, pub mark_t: f32,
+    pub salvo_n: u32, pub seek_t: f32, pub vac_t: f32, pub thun_t: f32, pub was_dash: bool, pub mark_uid: u32, pub mark_t: f32,
 }
 #[derive(Default, Clone)]
 pub struct Stats {
@@ -246,7 +246,7 @@ impl Game {
     pub fn spawn_enemy(&mut self, kind: K, x: f32, y: f32, elite: bool) -> Option<usize> {
         let i = self.en.spawn()?;
         let d = kind.d(); let z = (self.zone - 1) as f32; let lt = (z - 6.).max(0.);
-        let hp_mul = (1. + 0.26 * z + 0.032 * z * z + 0.07 * lt * lt) * if d.boss { self.hp_scale } else { 1. + 0.06 * self.lv(u::GREED) as f32 } * if self.hard { 1.3 } else { 1. };
+        let hp_mul = (1. + 0.26 * z + 0.03 * z * z + 0.045 * lt * lt) * if d.boss { self.hp_scale } else { 1. + 0.06 * self.lv(u::GREED) as f32 } * if self.hard { 1.3 } else { 1. };
         let uid = self.uid; self.uid += 1;
         let ang = (self.p.y - y).atan2(self.p.x - x); let t0 = self.rand() * 2.; let phase = self.rand() * TAU; let p3 = if self.rand() < 0.5 { 1. } else { -1. };
         let mut e = Enemy { kind, x, y, r: d.r, max_hp: if d.boss { d.hp * self.hp_scale * if self.hard { 1.3 } else { 1. } } else { d.hp * hp_mul },
@@ -398,14 +398,14 @@ impl Game {
         if self.p.hp < self.p.max_hp * 0.3 { self.p.beat_t -= dt; if self.p.beat_t <= 0. { self.p.beat_t = 0.9; self.snd(Sfx::Beat); } }
         if self.st.regen > 0. && self.p.hp < self.p.max_hp { self.p.hp = (self.p.hp + self.st.regen * dt).min(self.p.max_hp); }
         self.p.hb = (self.p.max_hp * cfg::HEAL_RATE * 2.).min(self.p.hb + self.p.max_hp * cfg::HEAL_RATE * dt);
-        self.update_new_upg(dt); self.update_upg2(dt);
+        self.update_new_upg(dt); self.update_upg2(dt); self.update_upg3(dt);
         if self.st.barrier_max > 0 && self.p.shield < self.st.barrier_max { self.p.shield_t -= dt; if self.p.shield_t <= 0. { self.p.shield += 1; self.p.shield_t = self.st.barrier_cd; self.ring(self.p.x, self.p.y, self.p.r, self.p.r + 14., 0.4, c::WHITE, 3.); self.snd(Sfx::Graze); } }
         self.p.trail_t -= dt; if self.p.trail_t <= 0. { self.p.trail_t = 0.035; self.trail[self.trail_head * 2] = self.p.x; self.trail[self.trail_head * 2 + 1] = self.p.y; self.trail_head = (self.trail_head + 1) % 12; }
         // стрельба
         self.p.fire_t -= dt;
         if self.p.fire_t <= 0. {
             let tg = self.nearest_enemy(self.p.x, self.p.y, self.st.range);
-            if tg >= 0 { self.p.fire_t += 1. / self.st.rate; if self.p.fire_t < 0. { self.p.fire_t = 0.; }
+            if tg >= 0 { self.p.fire_t += 1. / (self.st.rate * (1. + (self.lv(u::FRENZY) as f32 * 0.04 * (self.combo as f32 / 10.)).min(0.4 * self.lv(u::FRENZY) as f32 / 3.))); if self.p.fire_t < 0. { self.p.fire_t = 0.; }
                 let e = &self.en.items[tg as usize]; let a = (e.y - self.p.y).atan2(e.x - self.p.x); let n = self.st.multi; let sp = 0.15; let (px, py) = (self.p.x, self.p.y);
                 for i in 0..n { self.fire_pb(px + a.cos() * 14., py + a.sin() * 14., a + (i as f32 - (n - 1) as f32 / 2.) * sp, self.st.dmg, true); }
                 if self.st.echo_ch > 0. && self.rand() < self.st.echo_ch { for i in 0..n { let j = self.rr(-0.05, 0.05); self.fire_pb(px + a.cos() * 14., py + a.sin() * 14., a + (i as f32 - (n - 1) as f32 / 2.) * sp + j, self.st.dmg * 0.8, true); } self.part(px, py, 0., 0., 0.2, 14., c::ICE, 1.); }
@@ -537,7 +537,7 @@ impl Game {
         let (uid, txt, ex, ey, er, sc) = { let e = &self.en.items[i]; (e.uid, e.txt, e.x, e.y, e.r, e.scale) };
         if txt >= 0 && (txt as usize) < self.texts.n { let tt = &mut self.texts.items[txt as usize];
             if tt.owner == uid && tt.life > tt.max * 0.35 { tt.val += dmg; tt.s = num_str(tt.val); tt.life = tt.life.max(tt.max * 0.7); if crit && !tt.crit { tt.crit = true; tt.col = 0xffd54f; } return; } }
-        if !crit && self.texts.n >= 26 { return; }
+        if !crit && self.texts.n >= 16 { return; }
         let n = self.text(ex, ey - er * sc - 4., num_str(dmg), if crit { 0xffd54f } else { 0xffffff }, crit, false);
         self.texts.items[n].owner = uid; self.texts.items[n].val = dmg; self.en.items[i].txt = n as i32;
     }

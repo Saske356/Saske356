@@ -44,8 +44,16 @@ fn logo(gx: &mut Gfx, cx: f32, y: f32, k: f32, al: f32, tm: f32) {
 fn title_scene(gx: &mut Gfx, tm: f32, w: f32, h: f32, hero_c: (f32, f32), hero_r: (f32, f32), skin: &str, pal_i: u8, al: f32) {
     let p = gx.px; gx.set_add(true);
     // свет сверху
-    let top = Color::new(0.35, 0.85, 1., 0.20 * al); let bot = Color::new(0.35, 0.85, 1., 0.);
+    let top = Color::new(0.35, 0.85, 1., 0.30 * al); let bot = Color::new(0.35, 0.85, 1., 0.);
     draw_mesh(&Mesh { vertices: vec![Vertex::new(0., 0., 0., 0., 0., top), Vertex::new(w * p, 0., 0., 0., 0., top), Vertex::new(w * p, h * 0.5 * p, 0., 0., 0., bot), Vertex::new(0., h * 0.5 * p, 0., 0., 0., bot)], indices: vec![0, 1, 2, 0, 2, 3], texture: None });
+    // «северное сияние» — цветные волнистые ленты в верхней половине
+    for (bi, (cr, cg, cb)) in [(0.25f32, 0.95f32, 1f32), (1., 0.35, 0.85), (1., 0.8, 0.3)].iter().enumerate() {
+        let n = 40; let base = h * (0.12 + bi as f32 * 0.1); let amp = 28. + bi as f32 * 12.; let thick = 46. + bi as f32 * 10.; let mut v = vec![]; let mut idx = vec![];
+        for q in 0..=n { let x = q as f32 / n as f32 * w; let y = base + (x * 0.012 + tm * (0.35 + bi as f32 * 0.12) + bi as f32 * 2.).sin() * amp + (x * 0.031 - tm * 0.5).sin() * 9.;
+            let a = 0.22 * al * (0.6 + 0.4 * (x * 0.02 + tm * 0.8 + bi as f32).sin());
+            v.push(Vertex::new(x * p, (y - thick) * p, 0., 0., 0., Color::new(*cr, *cg, *cb, 0.))); v.push(Vertex::new(x * p, y * p, 0., 0., 0., Color::new(*cr, *cg, *cb, a))); v.push(Vertex::new(x * p, (y + thick * 0.6) * p, 0., 0., 0., Color::new(*cr, *cg, *cb, 0.)));
+            if q > 0 { let b0 = ((q - 1) * 3) as u16; let b1 = (q * 3) as u16; idx.extend_from_slice(&[b0, b1, b0 + 1, b1, b1 + 1, b0 + 1, b0 + 1, b1 + 1, b0 + 2, b1 + 1, b1 + 2, b0 + 2]); } }
+        draw_mesh(&Mesh { vertices: v, indices: idx, texture: None }); }
     // веер лучей от поверхности
     for i in 0..7 { let a = -0.55 + i as f32 * 0.18 + (tm * 0.21 + i as f32 * 1.7).sin() * 0.05; let len = h * 1.05; let wd = 0.035 + 0.02 * ((i * 37) % 5) as f32 / 5.;
         let (ox, oy) = (w * 0.5 + (tm * 0.13).sin() * 30., -h * 0.08); let k = 0.07 + 0.05 * (tm * 0.7 + i as f32 * 2.3).sin().max(0.);
@@ -54,7 +62,7 @@ fn title_scene(gx: &mut Gfx, tm: f32, w: f32, h: f32, hero_c: (f32, f32), hero_r
         draw_mesh(&Mesh { vertices: vec![Vertex::new(ox * p, oy * p, 0., 0., 0., c0), Vertex::new((ox + s0 * len) * p, (oy + q0 * len) * p, 0., 0., 0., c1), Vertex::new((ox + s1 * len) * p, (oy + q1 * len) * p, 0., 0., 0., c1)], indices: vec![0, 1, 2], texture: None }); }
     // пузырьки
     for i in 0..34 { let fi = i as f32; let sp = 18. + (i * 13 % 7) as f32 * 7.; let y = h + 20. - ((tm * sp + fi * 97.) % (h + 40.)); let x = ((fi * 0.618 + 0.13) % 1.) * w + (tm * 0.9 + fi).sin() * 10.;
-        let r = 1.5 + (i % 4) as f32 * 1.1; gx.ring(x, y, r, 1., Color::new(0.75, 0.95, 1., 0.35 * al)); gx.glow_scr(false, c::ICE, (x - r * 0.4) * p, (y - r * 0.4) * p, r * 1.2 * p, 0.5 * al); }
+        let r = 1.5 + (i % 4) as f32 * 1.1; gx.ring(x, y, r, 1., Color::new(0.75, 0.95, 1., 0.45 * al)); gx.glow_scr(false, [c::ICE, c::JELLY, c::GOLD, c::EMER][i % 4], (x - r * 0.4) * p, (y - r * 0.4) * p, r * 1.2 * p, 0.5 * al); }
     // искра-герой плывёт восьмёркой, за ней шлейф
     let pos = |t: f32| (hero_c.0 + (t * 0.42).sin() * hero_r.0, hero_c.1 + (t * 0.84).sin() * hero_r.1);
     for k in (1..16).rev() { let (x, y) = pos(tm - k as f32 * 0.07); gx.glow_scr(true, pal_i, x * p, y * p, (26. - k as f32 * 1.3) * p, (1. - k as f32 / 16.) * 0.5 * al); }
