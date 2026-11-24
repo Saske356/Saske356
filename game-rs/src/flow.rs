@@ -37,7 +37,7 @@ impl Game {
             while pick.len() < 3 { let id = QDEF_ORDER[(rnd() * 8.) as usize % 8]; if !pick.contains(&id) { pick.push(id); } }
             d.quests = pick.iter().map(|id| { let tier = (rnd() * 3.) as usize % 3; let q = qdef.iter().find(|q| q.0 == *id).unwrap();
                 Quest { id: id.to_string(), need: q.1[tier], r: q.2[tier], p: 0, done: false, got: false } }).collect();
-            d.day = today.clone(); d.gift = 0; d.boost = 0; d.ch_best = 0; d.ch_done = false;
+            d.day = today.clone(); d.gift = 0; d.boost = 0; d.wheel = 0; d.wheel_ad = 0; d.ch_best = 0; d.ch_done = false;
         }
         if d.last != today {
             d.streak = if d.last == yest { d.streak + 1 } else { 1 }; d.last = today;
@@ -72,6 +72,11 @@ impl Game {
         self.banner(format!("100 {}", t("m")), i18n::zone(0), 0x8fd8ff, 2.6);
         self.tut = Tut { on: !self.s.tut, ..Default::default() };
         for _ in 0..6 { let (x, y) = self.offscreen_point(); self.spawn_enemy(K::Drifter, x, y, false); }
+        self.event = crate::extras::event_today().map(|i| i as u8 + 1).unwrap_or(0);
+        self.pet = PetState { x: self.p.x - 40., y: self.p.y + 30., t: 2., ..Default::default() };
+        if self.s.tok_relic > 0 { self.s.tok_relic -= 1; self.relic_pending += 1; self.level_delay = 0.8; self.dirty = true; }
+        if self.s.tok_reroll > 0 { self.rerolls += self.s.tok_reroll; self.s.tok_reroll = 0; self.dirty = true; }
+        if self.event_on() > 0 { let (n, d) = crate::extras::event_txt(self.event as usize - 1); self.banner(n.to_uppercase(), d.into(), crate::extras::EVENTS[self.event as usize - 1].col, 3.); }
         if self.daily { let m = daily_muts(); let names: Vec<String> = m.iter().map(|&i| i18n::mutator(MUTS[i]).0).collect(); self.banner(t("dailyT"), names.join(" + "), 0xffd54f, 3.); }
     }
 
@@ -112,7 +117,8 @@ impl Game {
         self.state = State::Over;
         // 3.7: жемчуг копится медленно — за очки корень, а не линейно (иначе миллионы очков давали тысячи жемчуга)
         let earned = ((self.run_pearls as f32 + (self.score.max(0.).sqrt() / 30.).floor() as f32 + (self.zone as f32 - 1.) * 2. + self.bosses_killed as f32 * 10.)
-            * (1. + 0.1 * self.lv(u::GREED) as f32) * if self.hard { 1.5 } else { 1. } * (1. + 0.1 * self.tl("t_pearl")) * if self.daily { 2. } else { 1. } * if self.rel(crate::content::R_CROWN) { 1.5 } else { 1. } * (1. + 0.02 * self.s.shop_lv("luck") as f32)).round() as u32;
+            * (1. + 0.1 * self.lv(u::GREED) as f32) * if self.hard { 1.5 } else { 1. } * (1. + 0.1 * self.tl("t_pearl")) * if self.daily { 2. } else { 1. } * if self.rel(crate::content::R_CROWN) { 1.5 } else { 1. } * (1. + 0.02 * self.s.shop_lv("luck") as f32) * self.event_pearl_mul()).round() as u32;
+        if let Some(l) = self.mastery_gain() { let nm = i18n::chr(&self.s.ch).0; self.toast(if i18n::is_en() { format!("Mastery {l}") } else { format!("Мастерство {l}") }, format!("{nm}: {}", crate::extras::mastery_desc(l))); }
         self.last_earned = earned;
         if self.daily { let z = self.zone; let d = &mut self.s.daily; d.ch_best = d.ch_best.max(z * 100);
             if z >= 5 && !d.ch_done { d.ch_done = true; self.s.pearls += 150; self.toast(t("dailyWin"), format!("+150 {}", t("pearlsGen"))); } }

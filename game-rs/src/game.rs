@@ -72,7 +72,7 @@ pub struct Player {
     pub beam_tg: i32, pub beam_tg2: i32, pub ink_t: f32, pub ink_x: f32, pub ink_y: f32, pub ink_d: f32, pub ink_q: bool, pub a_t: f32,
     pub salvo_n: u32, pub seek_t: f32, pub vac_t: f32, pub thun_t: f32, pub was_dash: bool, pub mark_uid: u32, pub mark_t: f32,
     pub form: u8 /* индекс искры: своя форма снарядов */,
-    pub evo: u16 /* взятые эволюции (биты) */,
+    pub evo: u16 /* взятые эволюции (биты) */, pub mast_n: u32,
 }
 #[derive(Default, Clone)]
 pub struct Stats {
@@ -112,8 +112,10 @@ pub struct Game {
     pub sfx: Vec<Sfx>, pub toasts: Vec<Toast>, pub vib: Vec<u32>, pub want_levelup: bool, pub want_over: bool, pub want_ending: bool, pub dirty: bool, pub run_mode: RunMode,
     pub vw: f32, pub vh: f32, pub static_q: u32, pub tut: Tut, pub touch: bool,
     // реликвии
+    pub event: u8, pub pet: PetState,
     pub relics: Vec<u8>, pub relic_pending: u32, pub want_relic: bool, pub path: u8, pub path_pending: bool, pub want_path: bool, pub rel_lives: u32, pub rel_kills: u32, pub rel_blood: f32, pub rel_blood_t: f32, pub rel_ward_t: f32, pub rel_storm_t: f32,
 }
+#[derive(Default, Clone, Copy)] pub struct PetState { pub x: f32, pub y: f32, pub ang: f32, pub t: f32, pub dash: f32, pub tx: f32, pub ty: f32 }
 #[derive(Default, Clone, Copy)] pub struct Tut { pub on: bool, pub step: usize, pub v: f32, pub base: u32, pub ok: f32, pub t: f32, pub fin: f32 }
 pub const TUT_NEED: [f32; 5] = [300., 3., 6., 1., 1.];
 
@@ -141,7 +143,7 @@ impl Game {
             decor: vec![], decor_zone: 99, floor: vec![], qz: Qz::default(), jx: 0., jy: 0., dash_q: false, flare_q: false,
             sfx: vec![], toasts: vec![], vib: vec![], want_levelup: false, want_over: false, want_ending: false, dirty: false, run_mode: RunMode::Normal,
             vw: 200., vh: 400., static_q: 0, tut: Tut::default(), touch: true,
-            relics: vec![], relic_pending: 0, want_relic: false, path: 0, path_pending: false, want_path: false, rel_lives: 0, rel_kills: 0, rel_blood: 0., rel_blood_t: 0., rel_ward_t: 0., rel_storm_t: 0.,
+            event: 0, pet: PetState::default(), relics: vec![], relic_pending: 0, want_relic: false, path: 0, path_pending: false, want_path: false, rel_lives: 0, rel_kills: 0, rel_blood: 0., rel_blood_t: 0., rel_ward_t: 0., rel_storm_t: 0.,
         };
         g.p.skin = data::SKINS.iter().position(|k| k.id == g.s.skin).unwrap_or(0); g.p.pal = data::SKINS[g.p.skin].pal;
         g.init_floor(); g.build_decor(0);
@@ -321,10 +323,10 @@ impl Game {
         let max_alive = (cfg::MAX_ENEMIES - 20).min(48 + self.zone as usize * 9);
         self.spawn_acc += rate * dt;
         while self.spawn_acc >= 1. { self.spawn_acc -= 1.; if self.en.n >= max_alive { continue; }
-            let (x, y) = self.offscreen_point(); let k = self.pick_kind(); let el = z >= 3. && self.rand() < (0.03 + z * 0.004 + (z - 15.).max(0.) * 0.006) * if self.path == crate::content::P_HUNT { 3. } else { 1. } * if self.muts[3] { 3. } else { 1. };
+            let (x, y) = self.offscreen_point(); let k = self.pick_kind(); let k = self.event_kind(k); let el = z >= 3. && self.rand() < (0.03 + z * 0.004 + (z - 15.).max(0.) * 0.006) * if self.path == crate::content::P_HUNT || self.event_on() == crate::extras::EV_ELITE { 3. } else { 1. } * if self.muts[3] { 3. } else { 1. };
             self.spawn_enemy(k, x, y, el); }
         if self.boss < 0 { self.pack_t -= dt; if self.pack_t <= 0. { self.pack_t = self.rr(13., 18.); self.spawn_pack(); } }
-        if self.boss < 0 && self.boss_clear_t <= 0. && self.chal.is_none() { self.ev_t -= dt; if self.ev_t <= 0. { self.ev_t = self.rr(26., 36.); self.start_run_event(); } }
+        if self.boss < 0 && self.boss_clear_t <= 0. && self.chal.is_none() { self.ev_t -= dt; if self.ev_t <= 0. { self.ev_t = self.rr(26., 36.) * if self.event_on() == crate::extras::EV_GOLD { 0.6 } else { 1. }; self.start_run_event(); } }
         if let Some(mut ch) = self.chal { ch.t -= dt;
             if ch.got >= ch.need { let a = self.rand() * TAU; self.spawn_chest(self.p.x + a.cos() * 170., self.p.y + a.sin() * 170.); self.run_pearls += 5;
                 self.banner(t("chalWin"), t("chalWinS"), 0x5fffb0, 2.2); self.snd(Sfx::Level); self.chal = None; }
@@ -431,7 +433,7 @@ impl Game {
                 if self.st.echo_ch > 0. && self.rand() < self.st.echo_ch { for i in 0..n { let j = self.rr(-0.05, 0.05); self.fire_pb(px + a.cos() * 14., py + a.sin() * 14., a + (i as f32 - (n - 1) as f32 / 2.) * sp + j, self.st.dmg * 0.8, true); } self.part(px, py, 0., 0., 0.2, 14., c::ICE, 1.); }
                 if self.st.over > 0 { self.p.shot_n += 1; if self.p.shot_n % self.st.over == 0 { if let Some(hb) = self.fire_pb(px + a.cos() * 16., py + a.sin() * 16., a, self.st.dmg * 4., false) { self.pb.items[hb].pierce += 4; self.pb.items[hb].r = 7.; } self.snd(Sfx::Nova); self.ring(px, py, 6., 40., 0.25, c::GOLD, 4.); } }
                 self.part(px + a.cos() * 18., py + a.sin() * 18., a.cos() * 60., a.sin() * 60., 0.12, 10., self.p.pal, 0.);
-                self.snd(Sfx::Shoot); self.on_shot(px, py, a);
+                self.snd(Sfx::Shoot); self.on_shot(px, py, a); self.mastery_shot(px, py);
             } else { self.p.fire_t = 0.05; }
         }
         // споры-спутники
@@ -591,7 +593,7 @@ impl Game {
         self.burst(e.x, e.y, (8. + sz * 0.6).min(26.) as u32, e.col, 90. + sz * 6., 6. + sz * 0.3, 0.55); self.burst(e.x, e.y, 4, c::WHITE, 60., 5., 0.3);
         self.ring(e.x, e.y, sz * 0.5, sz * 2.4, 0.35, e.col, 2.5); self.shake(1.5 + sz * 0.06); self.snd(Sfx::Kill(self.combo));
         let mut xp = e.xp; while xp > 0. { let v = if xp >= 10. { 10. } else if xp >= 3. { 3. } else { 1. }; xp -= v; let (a, b) = (self.rr(-8., 8.), self.rr(-8., 8.)); self.drop_pick(e.x + a, e.y + b, if v >= 10. { 2 } else if v >= 3. { 1 } else { 0 }, v); }
-        if e.elite { let n = self.rng.int(1, 2) + if self.path == crate::content::P_HUNT { 2 } else { 0 }; for _ in 0..n { let (a, b) = (self.rr(-12., 12.), self.rr(-12., 12.)); self.drop_pick(e.x + a, e.y + b, 3, 1.); } } else if self.rand() < 0.006 * if self.path == crate::content::P_DANGER { 2. } else { 1. } { self.drop_pick(e.x, e.y, 3, 1.); }
+        if e.elite { let n = self.rng.int(1, 2) + if self.path == crate::content::P_HUNT { 2 } else { 0 } + if self.event_on() == crate::extras::EV_ELITE { 2 } else { 0 }; for _ in 0..n { let (a, b) = (self.rr(-12., 12.), self.rr(-12., 12.)); self.drop_pick(e.x + a, e.y + b, 3, 1.); } } else if self.rand() < 0.006 * if self.path == crate::content::P_DANGER { 2. } else { 1. } { self.drop_pick(e.x, e.y, 3, 1.); }
         if self.rand() < 0.01 && self.p.hp < self.p.max_hp * 0.8 { self.drop_pick(e.x, e.y, 4, 25.); }
         if self.rand() < 0.004 { self.drop_pick(e.x, e.y, 5, 0.); }
         if e.kind == K::Urchin { for k in 0..3 { let a = k as f32 / 3. * TAU + self.rand(); if let Some(s) = self.spawn_enemy(K::Spikelet, e.x + a.cos() * 10., e.y + a.sin() * 10., false) { let ss = &mut self.en.items[s]; ss.spawn_t = 0.; ss.vx = a.cos() * 260.; ss.vy = a.sin() * 260.; } } }
@@ -812,7 +814,7 @@ impl Game {
     pub fn update_run(&mut self, dt: f32, real_dt: f32) {
         self.t += dt; self.run_t += dt;
         if self.combo_t > 0. { self.combo_t -= dt; if self.combo_t <= 0. { self.combo = 0; self.mult = 1.; self.combo_milestone = 0; } }
-        if !self.p.dead { self.update_player(dt); }
+        if !self.p.dead { self.update_player(dt); self.pet_tick(dt); }
         if self.tut.on { self.update_tut(dt); }
         self.update_director(dt);
         self.update_enemies(dt);

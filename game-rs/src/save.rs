@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 pub struct Quest { pub id: String, pub need: u32, pub r: u32, pub p: u32, pub done: bool, pub got: bool }
 
 #[derive(Clone, Debug, Default)]
-pub struct Daily { pub day: String, pub quests: Vec<Quest>, pub streak: u32, pub last: String, pub gift: u32, pub ch_best: u32, pub ch_done: bool, pub boost: u32 }
+pub struct Daily { pub day: String, pub quests: Vec<Quest>, pub streak: u32, pub last: String, pub gift: u32, pub ch_best: u32, pub ch_done: bool, pub boost: u32, pub wheel: u32, pub wheel_ad: u32 }
 
 #[derive(Clone, Debug)]
 pub struct Settings { pub sound: bool, pub music: bool, pub vibro: bool, pub quality: String, pub nums: bool, pub shake: bool, pub lang: String,
@@ -21,6 +21,8 @@ pub struct Save {
     pub foe_seen: BTreeMap<String, u8>, pub seen: BTreeMap<String, u8>, pub mode_best: BTreeMap<String, u8> /* лучшая зона в режиме */, pub tut: bool, pub wins: u32, pub daily: Daily,
     pub best_kills: u32, pub best_combo: u32, pub best_level: u32, pub best_syn: u32, pub crab_hint: bool, pub set: Settings,
     pub err_log: Vec<String>, pub migrated: bool,
+    // 4.1: питомцы, мастерство искр, жетоны колеса удачи
+    pub pets: BTreeMap<String, u8>, pub pet: String, pub mastery: BTreeMap<String, u32>, pub tok_relic: u32, pub tok_reroll: u32,
 }
 
 pub fn default_lang() -> String { "ru".into() }
@@ -33,7 +35,7 @@ impl Default for Save {
             chars, ch: "lumen".into(), skins, skin: "azure".into(), ach: BTreeMap::new(), seen_how: false, seen_intro: false, foe_seen: BTreeMap::new(),
             seen: BTreeMap::new(), mode_best: BTreeMap::new(), tut: false, wins: 0, daily: Daily::default(), best_kills: 0, best_combo: 0, best_level: 0, best_syn: 0, crab_hint: false,
             set: Settings { sound: true, music: true, vibro: true, quality: "auto".into(), nums: true, shake: true, lang: default_lang(), fps: 120, fx: true, hard: false, orient: 0, vsfx: 10, vmus: 8 },
-            err_log: vec![], migrated: false }
+            err_log: vec![], migrated: false, pets: BTreeMap::new(), pet: String::new(), mastery: BTreeMap::new(), tok_relic: 0, tok_reroll: 0 }
     }
 }
 
@@ -59,12 +61,15 @@ impl Save {
         n!(best_level, "bestLevel", u32); n!(best_syn, "bestSyn", u32);
         for (k, dst) in [("shop", &mut d.shop), ("tal", &mut d.tal), ("chars", &mut d.chars), ("skins", &mut d.skins), ("ach", &mut d.ach), ("foeSeen", &mut d.foe_seen), ("seen", &mut d.seen), ("modeBest", &mut d.mode_best)] {
             let m = map(&o, k); for (kk, vv) in m { dst.insert(kk, vv); } }
+        d.pets = map(&o, "pets"); if let Some(x) = s(&o, "pet") { d.pet = x; }
+        if let Some(Value::Object(m)) = o.get("mastery") { for (k, v) in m { if let Some(n) = v.as_f64() { if n.is_finite() && n > 0. { d.mastery.insert(k.clone(), n as u32); } } } }
+        if let Some(x) = num(&o, "tokRelic") { d.tok_relic = x as u32; } if let Some(x) = num(&o, "tokReroll") { d.tok_reroll = x as u32; }
         if let Some(x) = s(&o, "char") { d.ch = x; } if let Some(x) = s(&o, "skin") { d.skin = x; }
         d.seen_how = flag(&o, "seenHow", false); d.seen_intro = flag(&o, "seenIntro", false); d.tut = flag(&o, "tut", false); d.crab_hint = flag(&o, "crabHint", false);
         d.migrated = flag(&o, "migrated", false);
         if let Some(da) = o.get("daily") {
             d.daily.day = s(da, "day").unwrap_or_default(); d.daily.last = s(da, "last").unwrap_or_default();
-            d.daily.streak = num(da, "streak").unwrap_or(0.) as u32; d.daily.gift = num(da, "gift").unwrap_or(0.) as u32; d.daily.boost = num(da, "boost").unwrap_or(0.) as u32;
+            d.daily.streak = num(da, "streak").unwrap_or(0.) as u32; d.daily.gift = num(da, "gift").unwrap_or(0.) as u32; d.daily.boost = num(da, "boost").unwrap_or(0.) as u32; d.daily.wheel = num(da, "wheel").unwrap_or(0.) as u32; d.daily.wheel_ad = num(da, "wheelAd").unwrap_or(0.) as u32;
             d.daily.ch_best = num(da, "chBest").unwrap_or(0.) as u32; d.daily.ch_done = flag(da, "chDone", false);
             if let Some(Value::Array(q)) = da.get("quests") { for x in q { if let Some(id) = s(x, "id") {
                 d.daily.quests.push(Quest { id, need: num(x, "need").unwrap_or(1.) as u32, r: num(x, "r").unwrap_or(0.) as u32, p: num(x, "p").unwrap_or(0.) as u32, done: flag(x, "done", false), got: flag(x, "got", false) }); } } }
@@ -90,17 +95,20 @@ impl Save {
     pub fn to_json(&self) -> String {
         let q: Vec<Value> = self.daily.quests.iter().map(|q| json!({"id": q.id, "need": q.need, "r": q.r, "p": q.p, "done": q.done as u8, "got": q.got as u8})).collect();
         let t = &self.set;
-        json!({
+        let v = json!({
             "pearls": self.pearls, "best": self.best, "bestDepth": self.best_depth, "totalKills": self.total_kills, "totalPearls": self.total_pearls,
             "runs": self.runs, "flares": self.flares, "shop": mapv(&self.shop), "tal": mapv(&self.tal), "chars": mapv(&self.chars), "char": self.ch,
             "skins": mapv(&self.skins), "skin": self.skin, "ach": mapv(&self.ach), "seenHow": self.seen_how as u8, "seenIntro": self.seen_intro as u8,
             "foeSeen": mapv(&self.foe_seen), "seen": mapv(&self.seen), "modeBest": mapv(&self.mode_best), "tut": self.tut as u8, "wins": self.wins, "crabHint": self.crab_hint as u8, "migrated": self.migrated as u8,
-            "daily": {"day": self.daily.day, "quests": q, "streak": self.daily.streak, "last": self.daily.last, "gift": self.daily.gift, "boost": self.daily.boost, "chBest": self.daily.ch_best, "chDone": self.daily.ch_done as u8},
+            "daily": {"day": self.daily.day, "quests": q, "streak": self.daily.streak, "last": self.daily.last, "gift": self.daily.gift, "boost": self.daily.boost, "wheel": self.daily.wheel, "wheelAd": self.daily.wheel_ad, "chBest": self.daily.ch_best, "chDone": self.daily.ch_done as u8},
             "bestKills": self.best_kills, "bestCombo": self.best_combo, "bestLevel": self.best_level, "bestSyn": self.best_syn,
             "set": {"sound": t.sound as u8, "music": t.music as u8, "vibro": t.vibro as u8, "quality": t.quality, "nums": t.nums as u8, "shake": t.shake as u8, "qv": 1,
                 "lang": t.lang, "fps": t.fps, "glow2": t.fx as u8, "hard": t.hard as u8, "orient": t.orient, "vsfx": t.vsfx, "vmus": t.vmus},
             "errLog": self.err_log,
-        }).to_string()
+        });
+        let mut v = v; let mut ms = Map::new(); for (k, x) in &self.mastery { ms.insert(k.clone(), json!(x)); }
+        v["pets"] = mapv(&self.pets); v["pet"] = json!(self.pet); v["mastery"] = Value::Object(ms); v["tokRelic"] = json!(self.tok_relic); v["tokReroll"] = json!(self.tok_reroll);
+        v.to_string()
     }
     pub fn lv(&self, m: &BTreeMap<String, u8>, k: &str) -> u8 { *m.get(k).unwrap_or(&0) }
     pub fn shop_lv(&self, k: &str) -> u8 { *self.shop.get(k).unwrap_or(&0) }

@@ -11,10 +11,10 @@ use crate::ui::Ui;
 use macroquad::prelude::*;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub enum Scr { None, Title, How, Level, Pause, Revive, Over, Shop, Ach, Set, Quest, Best, End, Modes }
+pub enum Scr { None, Title, How, Level, Pause, Revive, Over, Shop, Ach, Set, Quest, Best, End, Modes, Wheel }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub enum AdCb { Revive, Double, Reroll, Gift, Inter(Next), Boost, RelicReroll, Quest(usize) }
+pub enum AdCb { Revive, Double, Reroll, Gift, Inter(Next), Boost, RelicReroll, Quest(usize), Wheel }
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Next { Again, Menu }
 
@@ -22,12 +22,14 @@ pub struct Intro { pub t: f32, pub dur: f32, pub full: bool, pub ig: f32, pub re
 pub struct End { pub t: f32, pub show: f32, pub shown: bool, pub first: bool }
 #[derive(Default)] pub struct Joy { pub id: Option<u64>, pub ox: f32, pub oy: f32, pub jx: f32, pub jy: f32 }
 pub struct Ads { pub place: String, pub cb: Option<AdCb>, pub wd: f64, pub wd_len: f64, pub last: f64, pub t0: f64, pub over_n: u32, pub back_t: f64 }
+/// Колесо удачи: угол, скорость вращения, выпавший сектор
+#[derive(Default, Clone, Copy)] pub struct WheelSt { pub ang: f32, pub spin: f32, pub from: f32, pub to: f32, pub prize: usize, pub shown: f32 }
 pub struct Toast { pub title: String, pub sub: String, pub t: f32 }
 
 pub struct App {
     pub gx: Gfx, pub bloom: Option<crate::gfx::Bloom>, pub rd: Rd, pub g: Game, pub ui: Ui, pub au: Audio,
     pub scr: Scr, pub scr_t: f32, pub back_to: Scr, pub intro: Intro, pub end: End, pub joy: Joy, pub ads: Ads,
-    pub cards: Vec<usize>, pub cards_t: f32, pub relic_mode: bool, pub path_mode: bool, pub best_sel: Option<(usize, u8)>, pub relic_rerolled: bool, pub earned: u32, pub rec: bool, pub over_t: f32, pub revive_n: f32,
+    pub cards: Vec<usize>, pub cards_t: f32, pub relic_mode: bool, pub path_mode: bool, pub best_sel: Option<(usize, u8)>, pub wheel: WheelSt, pub relic_rerolled: bool, pub earned: u32, pub rec: bool, pub over_t: f32, pub revive_n: f32,
     pub shop_tab: u8, pub toasts: Vec<Toast>, pub save_t: f32, pub safe: [f32; 4], pub now: f64, pub was_paused: bool,
     pub glow_auto_off: bool, pub banner_on: bool, pub glow_slow: f32, pub test: Vec<(f64, String)>, pub bot: bool, pub shot: Option<String>, pub fps_acc: f32, pub fps_n: u32, pub fps: f32, pub slow_t: f32, pub q_auto: u8, pub last_land: bool, pub orient_set: u8, pub fps_set: u32,
 }
@@ -72,7 +74,7 @@ impl App {
         let now = get_time();
         let mut app = App { gx, bloom: None, rd: Rd::new(), g, ui: Ui::new(), au, scr: Scr::None, scr_t: 0., back_to: Scr::Title,
             intro: Intro { t: 0., dur: if full { 5.8 } else { 1.5 }, full, ig: if full { 3.7 } else { 0.08 }, revealed: false }, end: End { t: 0., show: 7.4, shown: false, first: false },
-            joy: Joy::default(), ads: Ads { place: String::new(), cb: None, wd: 0., wd_len: 0., last: -1e9, t0: now, over_n: 0, back_t: 0. }, cards: vec![], cards_t: 0., relic_mode: false, path_mode: false, best_sel: None, relic_rerolled: false, earned: 0, rec: false, over_t: 0., revive_n: 0.,
+            joy: Joy::default(), ads: Ads { place: String::new(), cb: None, wd: 0., wd_len: 0., last: -1e9, t0: now, over_n: 0, back_t: 0. }, cards: vec![], cards_t: 0., relic_mode: false, path_mode: false, best_sel: None, wheel: WheelSt::default(), relic_rerolled: false, earned: 0, rec: false, over_t: 0., revive_n: 0.,
             shop_tab: 0, toasts: vec![], save_t: 0., safe: [0.; 4], now, was_paused: false, glow_auto_off: false, banner_on: false, glow_slow: 0., test: std::env::var("SVET_TEST").unwrap_or_default().split(';').filter_map(|c| c.split_once(':').map(|(t, c)| (t.trim().parse().unwrap_or(0.), c.trim().to_string()))).collect(), bot: false, shot: None, fps_acc: 0., fps_n: 0, fps: 60., slow_t: 0., q_auto: 2, last_land: false, orient_set: 99, fps_set: 0 };
         app.g.state = State::Intro;
         if let Some(crate::flow::DailyMsg::Login(d, r)) = app.g.daily_check() { app.toast_later(tf("loginT", &[&d.to_string()]), format!("+{r} {}", t("pearlsGen"))); }
@@ -121,6 +123,7 @@ impl App {
             // награда за задание ×2
             AdCb::Quest(k) => { if !ok { return; } let r = self.g.s.daily.quests.get(k).filter(|q| q.done && !q.got).map(|q| q.r);
                 if let Some(r) = r { self.g.s.pearls += r; self.g.claim_quest(k); self.persist(); self.toast(t("giftT"), format!("+{} {}", r * 2, t("pearlsGen"))); } }
+            AdCb::Wheel => { if !ok || self.g.s.daily.wheel_ad >= crate::extras::WHEEL_AD_MAX { return; } self.g.s.daily.wheel_ad += 1; self.wheel_start(); }
             AdCb::Gift => { if !ok || self.g.s.daily.gift >= GIFT_MAX { return; } self.g.s.daily.gift += 1; self.g.s.pearls += GIFT_R; self.g.s.total_pearls += GIFT_R as u64; self.persist();
                 self.au.play(Sfx::PickCard); platform::vibrate(30); self.toast(t("giftT"), format!("+{GIFT_R} {}", t("pearlsGen"))); }
         }
@@ -152,6 +155,23 @@ impl App {
         let c = self.g.roll_relics(); if c.is_empty() { return; }
         self.g.state = State::LevelUp; self.g.snd(Sfx::Ach); self.joy = Joy::default(); self.relic_mode = true; self.path_mode = false; self.relic_rerolled = false;
         self.cards = c; self.cards_t = 0.; self.show(Scr::Level); self.ui.lock = 0.6;
+    }
+    /// Запустить вращение: приз выбирается сразу (по весам), колесо докручивается к нему
+    pub fn wheel_start(&mut self) {
+        let tot: f32 = crate::extras::WHEEL.iter().map(|w| w.2).sum(); let mut r = self.g.rand() * tot; let mut k = 0;
+        for (i, w) in crate::extras::WHEEL.iter().enumerate() { r -= w.2; if r <= 0. { k = i; break; } }
+        let n = crate::extras::WHEEL.len() as f32; let seg = std::f32::consts::TAU / n;
+        // сектор k под стрелкой (сверху): угол колеса = -(k+0.5)·seg − π/2, плюс 5 полных оборотов
+        let target = -(k as f32 + 0.5) * seg - std::f32::consts::FRAC_PI_2; let base = self.wheel.ang - self.wheel.ang.rem_euclid(std::f32::consts::TAU);
+        self.wheel = WheelSt { ang: self.wheel.ang, spin: 3.6, from: self.wheel.ang, to: base + std::f32::consts::TAU * 6. + target.rem_euclid(std::f32::consts::TAU), prize: k, shown: 0. };
+        self.au.play(Sfx::Level);
+    }
+    pub fn wheel_award(&mut self) {
+        let (ty, n, _) = crate::extras::WHEEL[self.wheel.prize]; let en = crate::i18n::is_en();
+        match ty { 0 => { self.g.s.pearls += n; self.g.s.total_pearls += n as u64; self.toast(if en { "Wheel of fortune".into() } else { "Колесо удачи".into() }, format!("+{n} {}", t("pearlsGen"))); }
+            1 => { self.g.s.tok_relic += 1; self.toast(if en { "Wheel of fortune".into() } else { "Колесо удачи".into() }, if en { "A relic at the start of your next run".into() } else { "Реликвия на старте следующего забега".into() }); }
+            _ => { self.g.s.tok_reroll += 1; self.toast(if en { "Wheel of fortune".into() } else { "Колесо удачи".into() }, if en { "+1 reroll in your next run".into() } else { "+1 перевыбор в следующем забеге".into() }); } }
+        self.au.play(Sfx::Ach); platform::vibrate(40); self.persist();
     }
     /// Развилка путей после босса
     pub fn open_path(&mut self) {
@@ -251,6 +271,7 @@ impl App {
                 "addrel" => { let r = n as u8; if !self.g.relics.contains(&r) { self.g.relics.push(r); self.g.compute_stats(); } }
                 "modes" => { self.show(Scr::Modes); } "mode" => { let m = [RunMode::Daily, RunMode::Time, RunMode::NoUp, RunMode::Dash][n as usize % 4]; self.start_run(m); }
                 "bestsel" => { self.show(Scr::Best); self.best_sel = Some((n as usize % crate::data::K_ALL.len(), 0)); }
+                "wheel" => { self.show(Scr::Wheel); } "spin" => { self.wheel_start(); } "shop4" => { self.shop_tab = 4; self.show(Scr::Shop); } "pet" => { let k = n as usize % 3; self.g.s.pets.insert(crate::extras::PETS[k].id.into(), 3); self.g.s.pet = crate::extras::PETS[k].id.into(); self.g.compute_stats(); }
                 "path" => { self.g.path_pending = true; }
                 "relic" => { self.g.relic_pending += 1; self.g.level_delay = 0.; }
                 "elite" => { let k = crate::data::K_ALL[n as usize % crate::data::K_ALL.len()]; for q in 0..6 { let (x, y) = (self.g.p.x - 150. + q as f32 * 60., self.g.p.y - 200.); if let Some(i) = self.g.spawn_enemy(k, x, y, true) { self.g.en.items[i].aff = 1 + q as u8; if q == 0 { self.g.en.items[i].ash = self.g.en.items[i].max_hp * 0.45; } } } }
@@ -286,6 +307,7 @@ impl App {
             Scr::Shop | Scr::Set => { let b = self.back_to; self.show(b); }
             Scr::Best if self.best_sel.is_some() => self.best_sel = None,
             Scr::Ach | Scr::Quest | Scr::Best | Scr::How | Scr::Modes => self.show(Scr::Title),
+            Scr::Wheel => { if self.wheel.spin <= 0. { self.show(Scr::Title); } }
             Scr::Over => self.between(Next::Menu),
             Scr::Revive => { if self.ads.cb.is_none() { self.game_over(); } }
             _ => {}
@@ -298,6 +320,9 @@ impl App {
     pub fn skip_ending(&mut self) { if !self.end.shown && self.end.t < self.end.show - 0.3 { self.end.t = self.end.show - 0.3; } }
 
     fn update(&mut self, rdt: f32) {
+        if self.wheel.spin > 0. { self.wheel.spin -= rdt; let k = 1. - (self.wheel.spin / 3.6).max(0.); let e = 1. - (1. - k).powi(4); self.wheel.ang = self.wheel.from + (self.wheel.to - self.wheel.from) * e;
+            if self.wheel.spin <= 0. { self.wheel.ang = self.wheel.to; self.wheel.shown = 2.5; self.wheel_award(); } }
+        if self.wheel.shown > 0. { self.wheel.shown -= rdt; }
         let g = &mut self.g; self.scr_t += rdt; self.cards_t += rdt;
         for tt in self.toasts.iter_mut() { tt.t += rdt; } self.toasts.retain(|t| t.t < 3.4);
         match g.state {

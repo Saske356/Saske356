@@ -142,7 +142,7 @@ impl Game {
         if self.relics.contains(&R_DEAL) { st.xp_mul *= 1.35; }
         match self.path { P_DANGER => st.xp_mul *= 1.3, P_CALM => st.xp_mul *= 0.8, P_HEAL => st.regen += 1., _ => {} }
         st.orb_dmg = st.dmg * 0.9;
-        self.evo_stats();
+        self.evo_stats(); self.mastery_stats(); self.pet_stats(); if self.event_on() == crate::extras::EV_CRAB { self.st.xp_mul *= 1.3; }
         { let st = &mut self.st; match self.run_mode {
             crate::game::RunMode::Dash => { st.dash_cd = 0.38; st.dash_dmg = st.dmg * 9.; }
             crate::game::RunMode::NoUp => { let n = self.p.level.saturating_sub(1) as f32; st.dmg *= 1. + 0.08 * n; st.rate *= 1. + 0.03 * n; st.speed *= 1. + 0.01 * n.min(30.); }

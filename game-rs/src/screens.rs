@@ -18,7 +18,7 @@ pub fn draw(a: &mut App) {
     if a.scr != Scr::Title { let light = matches!(a.scr, Scr::Level | Scr::Pause | Scr::Revive); let tm = a.g.t; menu_backdrop(&mut a.gx, tm, al, light); }
     match a.scr {
         Scr::Title => title(a), Scr::How => how(a), Scr::Level => level(a), Scr::Pause => pause(a), Scr::Revive => revive(a), Scr::Over => over(a),
-        Scr::Shop => shop(a), Scr::Ach => ach(a), Scr::Set => settings(a), Scr::Quest => quests(a), Scr::Best => best(a), Scr::Modes => modes(a), Scr::End => end(a), Scr::None => {}
+        Scr::Shop => shop(a), Scr::Ach => ach(a), Scr::Set => settings(a), Scr::Quest => quests(a), Scr::Best => best(a), Scr::Modes => modes(a), Scr::Wheel => wheel(a), Scr::End => end(a), Scr::None => {}
     }
     a.ui.alpha = 1.;
 }
@@ -147,6 +147,15 @@ fn title_portrait(a: &mut App) {
       gx.rrect_line(bx, y0, rw, ph, 15., 1., Color::new(1., 0.84, 0.4, 0.45 * al)); gx.text(&rec, bx + 12., y0 + ph / 2., 13., with_alpha(hex(0xffe08a), al), 0, 1);
       let pw = gx.text_w(&pearls_s, 15., 2) + 44.; let px0 = bx + bw - pw; ui::rrect_grad(gx, px0, y0, pw, ph, 15., Color::new(0.10, 0.04, 0.16, 0.6 * al), Color::new(0.06, 0.02, 0.12, 0.5 * al));
       gx.rrect_line(px0, y0, pw, ph, 15., 1., Color::new(1., 0.6, 0.95, 0.5 * al)); pearl(gx, px0 + 16., y0 + ph / 2., 6.5, al); gx.text(&pearls_s, px0 + 30., y0 + ph / 2., 15., Color::new(1., 0.93, 1., al), 0, 2); }
+    // ---- колесо удачи (кнопка под рекордом) и событие выходных ----
+    { let free = a.g.s.daily.wheel == 0; let (wx, wy) = (bx + 26., tp + 62.); let p = a.gx.px;
+      a.gx.glow_scr(true, c::GOLD, wx * p, wy * p, 30. * p, if free { 0.5 + 0.3 * (tm * 4.).sin() } else { 0.2 } * al);
+      a.gx.circle(wx, wy, 22., Color::new(0.2, 0.12, 0.02, 0.85 * al)); a.gx.ring(wx, wy, 22., 2., with_alpha(hex(0xffd54f), al));
+      if let Some(tx) = a.gx.icon.get("fortune").cloned() { a.gx.tex_ui(&tx, wx - 15., wy - 15., 30., 30., Color::new(1., 1., 1., al)); }
+      if free { a.gx.circle(wx + 15., wy - 15., 6., with_alpha(hex(0xff4f6f), al)); }
+      if a.ui.tap(Rect::new(wx - 26., wy - 26., 52., 52.)) { a.click(); a.show(Scr::Wheel); return; }
+      if let Some(ev) = crate::extras::event_today() { let (n, d) = crate::extras::event_txt(ev); let col = hex(crate::extras::EVENTS[ev].col);
+          a.gx.text(&format!("★ {}", n), bx + 58., wy - 8., 14., with_alpha(col, al), 0, 2); a.gx.text(d, bx + 58., wy + 10., 11., Color::new(1., 1., 1., 0.8 * al), 0, 0); } }
     // ---- нижний блок (снизу вверх) ----
     let gift_left = GIFT_MAX.saturating_sub(a.g.s.daily.gift); let gift = gift_left > 0 && a.ad_ready();
     let (bh_play, tile_h, row_h) = if sm { (58., 66., 46.) } else { (68., 78., 52.) }; let gap = if sm { 8. } else { 10. };
@@ -493,10 +502,10 @@ fn shop(a: &mut App) {
     // кошелёк и вкладки
     let wy = tp + 50.; let ws = format!("{} {}", a.g.s.pearls, t("pearlsGen")); let tw = a.gx.text_w(&ws, 18., 1);
     pearl(&mut a.gx, w / 2. - tw / 2. - 10., wy, 7., al); a.gx.text(&ws, w / 2. + 6., wy, 18., with_alpha(hex(0xffe9fb), al), 1, 1);
-    let tabs = [t("tabUp"), t("tabChars"), t("tabSkins"), t("tabTal")]; let tw_ = (f.w - 18.) / 4.;
+    let tabs = [t("tabUp"), t("tabChars"), t("tabSkins"), t("tabTal"), if i18n::is_en() { "Pets".to_string() } else { "Питомцы".to_string() }]; let tw_ = (f.w - 24.) / 5.;
     for (i, l) in tabs.iter().enumerate() { let r = Rect::new(f.x + i as f32 * (tw_ + 6.), wy + 18., tw_, 40.);
         let sel = a.shop_tab as usize == i; let a0 = a.ui.alpha; if !sel { a.ui.alpha = a0 * 0.6; }
-        if a.ui.btn(&mut a.gx, r, l, St::Cyan, 14., true) && !sel { a.click(); a.shop_tab = i as u8; a.ui.scroll_reset(1); } a.ui.alpha = a0; }
+        if a.ui.btn(&mut a.gx, r, l, St::Cyan, 12.5, true) && !sel { a.click(); a.shop_tab = i as u8; a.ui.scroll_reset(1); } a.ui.alpha = a0; }
     let area = Rect::new(f.x - 4., f.y0, f.w + 8., f.y1 - f.y0);
     // содержимое: собираем высоты
     let tab = a.shop_tab;
@@ -506,8 +515,9 @@ fn shop(a: &mut App) {
     let dsw = |a: &App, s: &str, sw: bool| a.gx.wrap(s, iw - 24. - bw - 10. - if sw { 46. } else { 0. }, 12.5, 0).len() as f32 * 16.;
     match tab {
         0 => for i in 0..SHOP.len() { let d = i18n::shop(SHOP[i].id).1; items.push(It { kind: 0, i, h: (30. + dsw(a, &d, true) + 12.).max(64.) }); },
-        1 => for i in 0..CHARS.len() { let (_, d) = i18n::chr(CHARS[i].id); let d = d + &tf("healthW", &[&CHARS[i].hp.to_string()]) + " " + crate::content::char_attack(i) + "."; items.push(It { kind: 1, i, h: (30. + dsw(a, &d, true) + 12.).max(64.) }); },
+        1 => for i in 0..CHARS.len() { let (_, d) = i18n::chr(CHARS[i].id); let d = d + " "; let _m = 0; let d = d + &tf("healthW", &[&CHARS[i].hp.to_string()]) + " " + crate::content::char_attack(i) + "."; items.push(It { kind: 1, i, h: (30. + dsw(a, &d, true) + 12.).max(64.) + 18. }); },
         2 => for i in 0..SKINS.len() { items.push(It { kind: 2, i, h: 64. }); },
+        4 => for i in 0..crate::extras::PETS.len() { let d = crate::extras::pet_txt(i).1; items.push(It { kind: 5, i, h: (30. + dsw(a, d, true) + 30.).max(80.) }); },
         _ => for br in 0..3 { items.push(It { kind: 4, i: br, h: 34. }); for (i, tl) in TALENTS.iter().enumerate() { if tl.br as usize != br { continue; } let d = i18n::talent(i).1; items.push(It { kind: 3, i, h: (30. + dsw(a, &d, true) + 12.).max(64.) }); } },
     }
     let content: f32 = items.iter().map(|i| i.h + 9.).sum();
@@ -530,6 +540,10 @@ fn shop(a: &mut App) {
                   let ph = a.gx.spr_anim(&key).map(|an| a.g.t * an.freq() * std::f32::consts::TAU + it.i as f32).unwrap_or(0.);
                   a.gx.spr_screen(&key, cx * p, cy * p, -0.3, 1.2 * p, al, false, ph, false); }
                 a.gx.text(&nm, f.x + 58., y + 20., 16., Color::new(1., 1., 1., al), 0, 1); a.gx.text_wrap(&d, f.x + 58., y + 40., iw - 24. - bw - 10. - 46., 12.5, 16., Color::new(1., 1., 1., 0.75 * al), 0, 0);
+                { let pts = a.g.s.mastery.get(ch.id).copied().unwrap_or(0); let ml = crate::extras::mastery_lvl(pts); let nx = crate::extras::mastery_next(ml);
+                  let lbl = if i18n::is_en() { format!("Mastery {ml}/10") } else { format!("Мастерство {ml}/10") }; let my = y + it.h - 14.;
+                  a.gx.text(&lbl, f.x + 58., my, 11.5, with_alpha(hex(0xffe08a), al), 0, 1); let k = if ml >= 10 { 1. } else { pts as f32 / nx as f32 };
+                  pbar(&mut a.gx, f.x + 58. + 96., my - 3., (iw - 24. - bw - 10. - 46. - 100.).max(30.), 5., k, hex(0xffd54f), al); }
                 if sel { a.ui.btn(&mut a.gx, br, &t("chosen"), St::Cyan, 15., false); } else if own { if a.ui.btn(&mut a.gx, br, &t("choose"), St::Cyan, 15., true) { a.g.pick_char(it.i); } }
                 else if price_btn(a, br, &ch.cost.to_string(), true, a.g.s.pearls >= ch.cost, St::Cyan) { a.g.pick_char(it.i); } }
             2 => { let sk = &SKINS[it.i]; let own = a.g.s.skins.contains_key(sk.id); let sel = a.g.s.skin == sk.id;
@@ -543,6 +557,18 @@ fn shop(a: &mut App) {
                 if sel { a.ui.btn(&mut a.gx, br, &t("worn"), St::Cyan, 15., false); } else if own { if a.ui.btn(&mut a.gx, br, &t("wear"), St::Cyan, 15., true) { a.g.pick_skin(it.i); } }
                 else if sk.win { a.ui.btn(&mut a.gx, br, &t("winBtn"), St::Gold, 15., false); }
                 else if price_btn(a, br, &sk.cost.to_string(), true, a.g.s.pearls >= sk.cost, St::Cyan) { a.g.pick_skin(it.i); } }
+            5 => { let pd = &crate::extras::PETS[it.i]; let lvl = a.g.s.pets.get(pd.id).copied().unwrap_or(0); let act = a.g.s.pet == pd.id && lvl > 0; let (nm, d) = crate::extras::pet_txt(it.i);
+                item_card(&mut a.gx, r, pal(pd.col), act, al);
+                { let p = a.gx.px; let (cx, cy) = (f.x + 34., y + it.h / 2.); a.gx.glow_scr(true, pd.col, cx * p, cy * p, 32. * p, 0.6 * al);
+                  let half = a.gx.spr_half(pd.spr); let ph = a.gx.spr_anim(pd.spr).map(|an| a.g.t * an.freq() * std::f32::consts::TAU).unwrap_or(0.);
+                  a.gx.spr_screen(pd.spr, cx * p, cy * p, 0., 28. / half * p, al, false, ph, false); }
+                let nw = a.gx.text(&nm, f.x + 64., y + 20., 16., Color::new(1., 1., 1., al), 0, 1); if lvl > 0 { pips(&mut a.gx, f.x + 64. + nw + 8., y + 21., lvl, crate::extras::PET_MAX, al); }
+                a.gx.text_wrap(d, f.x + 64., y + 40., iw - 76. - bw - 10., 12.5, 16., Color::new(1., 1., 1., 0.8 * al), 0, 0);
+                let b2 = Rect::new(br.x, br.y + 24., br.w, 34.); let b1 = Rect::new(br.x, br.y - 16., br.w, 34.);
+                if lvl == 0 { if price_btn(a, br, &crate::extras::pet_cost(it.i, 0).to_string(), true, a.g.s.pearls >= crate::extras::pet_cost(it.i, 0), St::Cyan) { a.g.buy_pet(it.i); } }
+                else { if a.ui.btn(&mut a.gx, b1, if act { if i18n::is_en() { "Active" } else { "С тобой" } } else if i18n::is_en() { "Take" } else { "Взять" }, if act { St::Gold } else { St::Cyan }, 13., true) { a.g.pick_pet(it.i); }
+                    if lvl >= crate::extras::PET_MAX { a.ui.btn(&mut a.gx, b2, &t("max"), St::Cyan, 13., false); }
+                    else { let c_ = crate::extras::pet_cost(it.i, lvl); if price_btn(a, b2, &c_.to_string(), true, a.g.s.pearls >= c_, St::Cyan) { a.g.buy_pet(it.i); } } } }
             3 => { let tl = &TALENTS[it.i]; let own = a.g.s.tal(tl.id); let open = a.g.tal_open(it.i); let (nm, d) = i18n::talent(it.i);
                 let aa = if !open && !own { al * 0.6 } else { al }; let (acc, pi) = branch_col(tl.br); item_card(&mut a.gx, r, acc, own, aa); icon_tile(&mut a.gx, tal_icon(tl.id), f.x + 34., y + it.h / 2., acc, pi, aa);
                 a.gx.text(&format!("{}{}", if open || own { "" } else { "✗ " }, nm), f.x + 64., y + 20., 16., Color::new(1., 1., 1., aa), 0, 1);
@@ -633,6 +659,33 @@ fn best_card(a: &mut App, i: usize, tr: u8) {
     if !where_.is_empty() { a.gx.text(&where_, w / 2., y + 8., 15., with_alpha(hex(0xffe08a), al), 1, 2); }
     a.gx.text(if en { "Tap to close" } else { "Нажми, чтобы закрыть" }, w / 2., cy0 + ch - 18., 12., Color::new(1., 1., 1., 0.5 * al), 1, 0);
     if a.ui.tap_any() { a.best_sel = None; }
+}
+/// Колесо удачи: раз в день бесплатно, ещё 3 раза — за рекламу
+fn wheel(a: &mut App) {
+    let (w, h) = (a.gx.w, a.gx.h); let al = a.ui.alpha; let en = i18n::is_en(); let p = a.gx.px; let tp = top(a);
+    ui::h2c(&mut a.gx, if en { "WHEEL OF FORTUNE" } else { "КОЛЕСО УДАЧИ" }, w / 2., tp + 22., 28., al, c::GOLD, hex(0xfff2c0));
+    let n = crate::extras::WHEEL.len(); let seg = std::f32::consts::TAU / n as f32; let rr = (w * 0.42).min(h * 0.28); let (cx, cy) = (w / 2., tp + 70. + rr);
+    a.gx.glow_scr(true, c::GOLD, cx * p, cy * p, rr * 1.5 * p, 0.35 * al);
+    let cols = [hex(0x2a7fd4), hex(0x8a3fd0), hex(0xd0a030), hex(0x2aa79b), hex(0xd04a7a), hex(0x3f6fd0), hex(0xe0b040), hex(0x7a3fb0)];
+    a.gx.set_add(false);
+    for k in 0..n { let a0 = a.wheel.ang + k as f32 * seg; let a1 = a0 + seg; let mut v = vec![Vertex::new(cx * p, cy * p, 0., 0., 0., with_alpha(cols[k], al))]; let mut idx = vec![];
+        for q in 0..=12 { let aa = a0 + (a1 - a0) * q as f32 / 12.; let c2 = Color::new(cols[k].r * 0.75, cols[k].g * 0.75, cols[k].b * 0.75, al); v.push(Vertex::new((cx + aa.cos() * rr) * p, (cy + aa.sin() * rr) * p, 0., 0., 0., c2)); if q > 0 { idx.extend_from_slice(&[0, q as u16, q as u16 + 1]); } }
+        draw_mesh(&Mesh { vertices: v, indices: idx, texture: None });
+        let am = a0 + seg / 2.; let (lx, ly) = (cx + am.cos() * rr * 0.64, cy + am.sin() * rr * 0.64); let (ty, _, _) = crate::extras::WHEEL[k];
+        if ty == 0 { pearl(&mut a.gx, lx, ly - 11., 6., al); } a.gx.text(&crate::extras::wheel_label(k), lx, ly + if ty == 0 { 6. } else { 0. }, if ty == 0 { 17. } else { 12. }, Color::new(1., 1., 1., al), 1, 2); }
+    for k in 0..n { let aa = a.wheel.ang + k as f32 * seg; draw_line(cx * p, cy * p, (cx + aa.cos() * rr) * p, (cy + aa.sin() * rr) * p, 2. * p, Color::new(1., 1., 1., 0.35 * al)); }
+    a.gx.ring(cx, cy, rr, 4., with_alpha(hex(0xffd54f), al)); a.gx.circle(cx, cy, rr * 0.16, with_alpha(hex(0x1a1030), al)); a.gx.ring(cx, cy, rr * 0.16, 3., with_alpha(hex(0xffd54f), al));
+    // стрелка сверху
+    a.gx.set_add(false); let (ax, ay) = (cx, cy - rr - 6.); draw_triangle(vec2((ax - 14.) * p, (ay - 18.) * p), vec2((ax + 14.) * p, (ay - 18.) * p), vec2(ax * p, (ay + 12.) * p), with_alpha(hex(0xff4f6f), al));
+    let mut y = cy + rr + 30.;
+    if a.wheel.shown > 0. { let (ty, nn, _) = crate::extras::WHEEL[a.wheel.prize]; let s_ = match ty { 0 => format!("+{nn} {}", t("pearlsGen")), 1 => if en { "Relic for the next run!".into() } else { "Реликвия на следующий забег!".into() }, _ => if en { "+1 reroll next run!".into() } else { "+1 перевыбор в следующем забеге!".into() } };
+        ui::h2c(&mut a.gx, &s_, w / 2., y, 22., al, c::GOLD, hex(0xfff2c0)); }
+    y += 34.; let (bx, bw) = col(a); let d = &a.g.s.daily; let free = d.wheel == 0; let ads_left = crate::extras::WHEEL_AD_MAX.saturating_sub(d.wheel_ad); let busy = a.wheel.spin > 0.;
+    if free { if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, 60.), if en { "Spin — free" } else { "Крутить бесплатно" }, St::Gold, 20., !busy) { a.click(); a.g.s.daily.wheel = 1; a.g.dirty = true; a.wheel_start(); } }
+    else { let ready = a.ad_ready() && ads_left > 0; let l = if ads_left == 0 { if en { "Come back tomorrow".to_string() } else { "Приходи завтра".to_string() } } else { format!("▶ {} ({ads_left})", if en { "Spin again" } else { "Ещё раз" }) };
+        if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, 60.), &l, St::Gold, 19., ready && !busy) { a.click(); a.ad_show("wheel", AdCb::Wheel); } }
+    y += 70.; let _ = y;
+    let by = bottom(a) - 56.; if a.ui.btn(&mut a.gx, Rect::new(bx, by, bw, 56.), &t("back"), St::Cyan, 20., !busy) { a.click(); a.show(Scr::Title); }
 }
 fn modes(a: &mut App) {
     let al = a.ui.alpha; let en = i18n::is_en();

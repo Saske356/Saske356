@@ -247,6 +247,9 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
     for gh in g.ghosts.iter() { if !gh.on { continue; } let k = gh.t / 0.2; if k >= 1. { continue; }
         let key = spr_key(gh.kind, if gh.bare { 0. } else { 1. }, gh.tier); gx.spr_ghost(&key, gh.x, gh.y, gh.a, gh.s * (1. + k * 0.6), (1. - k) * (1. - k) * 0.3); }
     new_upg(gx, g);
+    if let Some(pi) = g.pet_idx() { let pd = &crate::extras::PETS[pi]; let (x, y) = (g.pet.x, g.pet.y);
+        gx.glow_world(true, pd.col, x, y, 26., 0.45 + 0.15 * (t * 4.).sin()); let ph = gx.spr_anim(pd.spr).map(|a| t * a.freq() * TAU).unwrap_or(0.);
+        let sc = match pi { 0 => 1.7, 1 => 1.6, _ => 0.85 } * (1. + 0.04 * g.pet_lvl() as f32); gx.spr_world(pd.spr, x, y + (t * 2.).sin() * 2., g.pet.ang, sc, 1., false, ph, true); }
     if !g.p.dead { player(gx, g, rdt); }
     // снаряды игрока
     let pc = g.p.pal; let ac = crate::data::SKIN_ACC.get(g.p.skin).copied().unwrap_or(c::WHITE);
