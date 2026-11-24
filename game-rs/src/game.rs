@@ -39,7 +39,7 @@ pub struct Enemy {
     pub hx: f32, pub hy: f32, pub th_t: f32, pub txt: i32, pub a_t: f32 /* часы анимации */, pub tier: u8, pub tt: f32, pub tt2: f32, pub inv_t: f32,
     pub aff: u8 /* свойство элиты */, pub ash: f32 /* панцирь */, pub aff_t: f32,
 }
-#[derive(Clone, Default)] pub struct PBul { pub x: f32, pub y: f32, pub vx: f32, pub vy: f32, pub dmg: f32, pub pierce: i32, pub bounce: i32, pub life: f32, pub crit: bool, pub last_uid: u32, pub hom_t: f32, pub tgt: i32, pub tgt_uid: u32, pub split: bool, pub r: f32, pub boom: f32 }
+#[derive(Clone, Default)] pub struct PBul { pub x: f32, pub y: f32, pub vx: f32, pub vy: f32, pub dmg: f32, pub pierce: i32, pub bounce: i32, pub life: f32, pub crit: bool, pub last_uid: u32, pub hom_t: f32, pub tgt: i32, pub tgt_uid: u32, pub split: bool, pub r: f32, pub boom: f32, pub form: u8 /* форма атаки искры */, pub t: f32 }
 #[derive(Clone, Default)] pub struct EBul { pub x: f32, pub y: f32, pub vx: f32, pub vy: f32, pub r: f32, pub dmg: f32, pub life: f32, pub col: u8, pub spin: f32, pub acc: f32, pub grazed: bool }
 #[derive(Clone, Default)] pub struct Part { pub x: f32, pub y: f32, pub vx: f32, pub vy: f32, pub life: f32, pub max: f32, pub size: f32, pub col: u8, pub drag: f32 }
 #[derive(Clone, Default)] pub struct Ring { pub x: f32, pub y: f32, pub r0: f32, pub r1: f32, pub life: f32, pub max: f32, pub col: u8, pub w: f32 }
@@ -71,6 +71,7 @@ pub struct Player {
     pub harp_t: f32, pub beam_t: f32, pub aura_t: f32, pub tw_t: f32, pub tw_x: f32, pub tw_y: f32, pub vort_t: f32, pub static_c: u32,
     pub beam_tg: i32, pub beam_tg2: i32, pub ink_t: f32, pub ink_x: f32, pub ink_y: f32, pub ink_d: f32, pub ink_q: bool, pub a_t: f32,
     pub salvo_n: u32, pub seek_t: f32, pub vac_t: f32, pub thun_t: f32, pub was_dash: bool, pub mark_uid: u32, pub mark_t: f32,
+    pub form: u8 /* индекс искры: своя форма снарядов */,
 }
 #[derive(Default, Clone)]
 pub struct Stats {
@@ -154,21 +155,21 @@ impl Game {
 
     // ---------- характеристики ----------
     pub fn compute_stats(&mut self) {
-        let chi = data::CHARS.iter().position(|x| x.id == self.s.ch).unwrap_or(0); let ch = &data::CHARS[chi];
+        let chi = data::CHARS.iter().position(|x| x.id == self.s.ch).unwrap_or(0); let ch = &data::CHARS[chi]; self.p.form = chi as u8;
         let sh = |k: &str| self.s.shop_lv(k) as f32; let lv = |i: usize| self.p.up[i] as f32;
         let st = &mut self.st;
-        st.dmg = 10. * (1. + 0.25 * lv(u::DMG)) * (1. + 0.06 * sh("dmg")) * if lv(u::HUNTER) > 0. { 1.4 } else { 1. } * ch.dmg;
-        st.rate = 3.4 * (1. + 0.18 * lv(u::RATE)) * ch.rate;
-        st.multi = 1 + lv(u::MULTI) as u32; st.pierce = (lv(u::PIERCE) + ch.pierce as f32) as i32; st.bounce = lv(u::BOUNCE) as i32;
-        st.crit = 0.05 + 0.1 * lv(u::CRIT); st.crit_mul = if lv(u::CRIT) > 0. { 2.2 } else { 2. };
+        st.dmg = 10. * (1. + 0.25 * lv(u::DMG)) * (1. + 0.03 * sh("dmg")) * if lv(u::HUNTER) > 0. { 1.4 } else { 1. } * ch.dmg;
+        st.rate = 3.4 * (1. + 0.18 * lv(u::RATE)) * (1. + 0.02 * sh("rate")) * ch.rate;
+        st.multi = 1 + lv(u::MULTI) as u32; st.pierce = (lv(u::PIERCE) + ch.pierce as f32) as i32; st.bounce = lv(u::BOUNCE) as i32 + if chi == 8 { 2 } else { 0 };
+        st.crit = 0.05 + 0.1 * lv(u::CRIT) + 0.01 * sh("crit") + if chi == 9 { 0.1 } else { 0. }; st.crit_mul = if lv(u::CRIT) > 0. { 2.2 } else { 2. };
         st.chain_ch = if lv(u::CHAIN) > 0. { 0.14 + 0.08 * lv(u::CHAIN) } else { 0. }; st.chain_n = 1 + lv(u::CHAIN) as u32;
         st.orb_n = (lv(u::ORBIT) as u32 + ch.orb as u32).min(8); st.orb_dmg = st.dmg * 0.9;
         st.nova_lv = lv(u::NOVA) as u32; st.nova_cd = 4.4 - 0.5 * lv(u::NOVA); st.nova_r = (135. + 18. * lv(u::NOVA)) * if lv(u::SUPERNOVA) > 0. { 1.4 } else { 1. };
         st.mine_lv = lv(u::MINE) as u32; st.mine_cd = 3.2 - 0.45 * lv(u::MINE); st.frost = lv(u::FROST) as u32; st.homing = lv(u::HOMING) as u32;
-        st.speed = 200. * (1. + 0.1 * lv(u::SPEED)) * (1. + 0.04 * sh("spd")) * ch.speed;
-        st.magnet = 85. * (1. + 0.4 * lv(u::MAGNET)) * (1. + 0.15 * sh("mag"));
-        st.armor_pct = 0.07 * lv(u::ARMOR); st.armor = ch.armor; st.regen = 0.5 * lv(u::REGEN);
-        st.dash_cd = (2.3 * (1. - 0.2 * lv(u::DASH)) * ch.dash_cd).max(1.2); st.dash_dmg = if lv(u::DASH) > 0. { st.dmg * 2.5 } else { 0. };
+        st.speed = 200. * (1. + 0.1 * lv(u::SPEED)) * (1. + 0.02 * sh("spd")) * ch.speed;
+        st.magnet = 85. * (1. + 0.4 * lv(u::MAGNET)) * (1. + 0.08 * sh("mag"));
+        st.armor_pct = 0.07 * lv(u::ARMOR) + 0.01 * sh("armor"); st.armor = ch.armor; st.regen = 0.5 * lv(u::REGEN) + 0.08 * sh("regen");
+        st.dash_cd = (2.3 * (1. - 0.2 * lv(u::DASH)) * (1. - 0.03 * sh("dash")) * ch.dash_cd).max(1.0); st.dash_dmg = if lv(u::DASH) > 0. { st.dmg * 2.5 } else { 0. };
         st.flare_mul = 1. + 0.3 * lv(u::FLARE);
         st.burn = if lv(u::BURN) > 0. { st.dmg * (0.14 + 0.1 * lv(u::BURN)) * if lv(u::WILDFIRE) > 0. { 1.3 } else { 1. } } else { 0. };
         st.wildfire = lv(u::WILDFIRE) > 0.; st.siphon_ch = if lv(u::SIPHON) > 0. { 0.1 + 0.07 * lv(u::SIPHON) } else { 0. }; st.leech = lv(u::LEECH) > 0.;
@@ -182,11 +183,12 @@ impl Game {
         st.static_lv = lv(u::STATIC) as u32; st.static_n = (14. - 3. * lv(u::STATIC)) as u32; st.static_k = ((2. + lv(u::STATIC)) * if lv(u::TEMPEST) > 0. { 2. } else { 1. }) as u32;
         st.rage = 0.12 * lv(u::RAGE); st.ink_lv = lv(u::INK) as u32; st.vortex_lv = lv(u::VORTEX) as u32;
         st.thorns = if lv(u::THORNS) > 0. { st.dmg * (2.5 + 1.5 * lv(u::THORNS)) } else { 0. };
-        st.xp_mul = (1. + 0.08 * sh("xp")) * (1. + 0.1 * lv(u::GREED)); st.bspd = 640. * if lv(u::HUNTER) > 0. { 1.15 } else { 1. }; st.range = 540.;
+        st.xp_mul = (1. + 0.03 * sh("xp")) * (1. + 0.1 * lv(u::GREED)); st.bspd = 640. * if lv(u::HUNTER) > 0. { 1.15 } else { 1. }; st.range = 540.;
         { let cl = self.p.up[u::CALIBER] as f32; self.st.dmg *= 1. + 0.12 * cl; self.st.rate *= 1. - 0.04 * cl; self.st.xp_mul *= 1. + 0.05 * self.p.up[u::FORTUNE] as f32; }
         let glass = self.mutf("glass");
         let st = &mut self.st;
         st.dmg *= (1. + 0.05 * if self.s.tal("t_dmg") { 1. } else { 0. }) * if glass { 1.5 } else { 1. };
+        if chi == 7 && st.burn <= 0. { st.burn = st.dmg * 0.28; } // Уголёк — всё поджигает
         st.orb_dmg = st.dmg * 0.9;
         st.rate *= 1. + 0.06 * if self.s.tal("t_rate") { 1. } else { 0. }; st.crit += 0.05 * if self.s.tal("t_crit") { 1. } else { 0. };
         st.armor_pct += 0.05 * if self.s.tal("t_arm") { 1. } else { 0. }; st.regen += 0.3 * if self.s.tal("t_regen") { 1. } else { 0. };
@@ -194,7 +196,7 @@ impl Game {
         st.xp_mul *= (1. + 0.08 * if self.s.tal("t_xp") { 1. } else { 0. }) * if self.muts[6] { 2. } else { 1. };
         if self.muts[5] { st.flare_mul *= 0.5; }
         let old = self.p.max_hp;
-        self.p.max_hp = ((ch.hp + 10. * sh("hp") + 25. * lv(u::HP) + 15. * if self.s.tal("t_hp") { 1. } else { 0. }) * if glass { 0.5 } else { 1. }).round();
+        self.p.max_hp = ((ch.hp + 6. * sh("hp") + 25. * lv(u::HP) + 15. * if self.s.tal("t_hp") { 1. } else { 0. }) * if glass { 0.5 } else { 1. }).round();
         if self.p.max_hp > old && self.state != State::Title { self.p.hp += self.p.max_hp - old; }
         self.p.hp = self.p.hp.min(self.p.max_hp);
         self.relic_stats();
@@ -367,7 +369,10 @@ impl Game {
     }
     pub fn fire_pb(&mut self, x: f32, y: f32, a: f32, dmg: f32, split: bool) -> Option<usize> {
         let i = self.pb.spawn()?; let s = self.st.bspd; let crit = self.rand() < self.st.crit;
-        self.pb.items[i] = PBul { x, y, vx: a.cos() * s, vy: a.sin() * s, dmg, pierce: self.st.pierce, bounce: self.st.bounce, life: 1.1, crit, tgt: -1, split, r: 4. + 2. * self.lv(u::CALIBER) as f32, ..Default::default() };
+        let f = self.p.form; let r0 = 4. + 2. * self.lv(u::CALIBER) as f32;
+        // форма атаки искры: (скорость, радиус, время жизни)
+        let (ks, kr, life) = match f { 1 => (1.35, 0.8, 0.95), 2 => (0.72, 1.7, 1.5), 3 => (1.1, 0.9, 0.5), 4 => (0.85, 1.5, 1.2), 5 => (1.05, 1.0, 1.05), 6 => (1.0, 1.1, 1.3), 7 => (0.8, 1.4, 0.4), 8 => (0.95, 1.2, 1.4), 9 => (1.1, 1.1, 1.15), _ => (1., 1., 1.1) };
+        self.pb.items[i] = PBul { x, y, vx: a.cos() * s * ks, vy: a.sin() * s * ks, dmg, pierce: self.st.pierce, bounce: self.st.bounce, life, crit, tgt: -1, split, r: r0 * kr, form: f, ..Default::default() };
         Some(i)
     }
     pub fn e_shoot(&mut self, x: f32, y: f32, a: f32, mut spd: f32, r: f32, dmg: f32, col: u8, spin: f32) -> Option<usize> {
@@ -413,7 +418,10 @@ impl Game {
             let tg = self.nearest_enemy(self.p.x, self.p.y, self.st.range);
             if tg >= 0 { self.p.fire_t += 1. / (self.st.rate * (1. + self.rel_blood) * (1. + (self.lv(u::FRENZY) as f32 * 0.04 * (self.combo as f32 / 10.)).min(0.4 * self.lv(u::FRENZY) as f32 / 3.))); if self.p.fire_t < 0. { self.p.fire_t = 0.; }
                 let e = &self.en.items[tg as usize]; let a = (e.y - self.p.y).atan2(e.x - self.p.x); let n = self.st.multi; let sp = 0.15; let (px, py) = (self.p.x, self.p.y);
+                let sp = match self.p.form { 3 => 0.26, 7 => 0.2 + self.rr(-0.08, 0.08), _ => sp };
                 for i in 0..n { self.fire_pb(px + a.cos() * 14., py + a.sin() * 14., a + (i as f32 - (n - 1) as f32 / 2.) * sp, self.st.dmg, true); }
+                // Шквал — дробь: ещё два коротких снаряда веером
+                if self.p.form == 3 { for k in [-1f32, 1.] { let j = self.rr(-0.06, 0.06); self.fire_pb(px + a.cos() * 14., py + a.sin() * 14., a + k * (sp * (n as f32) * 0.5 + 0.2) + j, self.st.dmg * 0.6, false); } }
                 if self.st.echo_ch > 0. && self.rand() < self.st.echo_ch { for i in 0..n { let j = self.rr(-0.05, 0.05); self.fire_pb(px + a.cos() * 14., py + a.sin() * 14., a + (i as f32 - (n - 1) as f32 / 2.) * sp + j, self.st.dmg * 0.8, true); } self.part(px, py, 0., 0., 0.2, 14., c::ICE, 1.); }
                 if self.st.over > 0 { self.p.shot_n += 1; if self.p.shot_n % self.st.over == 0 { if let Some(hb) = self.fire_pb(px + a.cos() * 16., py + a.sin() * 16., a, self.st.dmg * 4., false) { self.pb.items[hb].pierce += 4; self.pb.items[hb].r = 7.; } self.snd(Sfx::Nova); self.ring(px, py, 6., 40., 0.25, c::GOLD, 4.); } }
                 self.part(px + a.cos() * 18., py + a.sin() * 18., a.cos() * 60., a.sin() * 60., 0.12, 10., self.p.pal, 0.);
@@ -729,7 +737,16 @@ impl Game {
                     if ok { let (ex, ey) = (self.en.items[tg as usize].x, self.en.items[tg as usize].y); let b = &mut self.pb.items[i]; let a = b.vy.atan2(b.vx); let ta = (ey - b.y).atan2(ex - b.x); let s = hypot(b.vx, b.vy);
                         let lim = if b.boom > 0. { 7. } else { 3. + self.st.homing as f32 * 2.5 } * dt; let na = a + clamp(ang_diff(a, ta), -lim, lim); b.vx = na.cos() * s; b.vy = na.sin() * s; } else { self.pb.items[i].tgt = -1; } } }
             if self.lv(u::HUNTER) > 0 { let b = &mut self.pb.items[i]; let f = 1. + dt * 0.9; if b.vx * b.vx + b.vy * b.vy < 1400. * 1400. { b.vx *= f; b.vy *= f; } }
-            { let b = &mut self.pb.items[i]; b.x += b.vx * dt; b.y += b.vy * dt; }
+            { let b = &mut self.pb.items[i]; b.t += dt;
+                match b.form {
+                    5 => { let s = hypot(b.vx, b.vy).max(1.); let (nx, ny) = (-b.vy / s, b.vx / s); let w = (b.t * 34.).cos() * 34. * 9. * dt; b.x += nx * w; b.y += ny * w; } // Буря — зигзаг
+                    2 => { let f = 1. - dt * 0.35; b.vx *= f; b.vy *= f; } // Панцирь — тяжёлые шары тормозят
+                    _ => {} }
+                b.x += b.vx * dt; b.y += b.vy * dt; }
+            if self.pb.items[i].form == 6 && self.pb.items[i].tgt < 0 && self.st.homing == 0 { // Призрак — лёгкое самонаведение
+                let (bx, by) = (self.pb.items[i].x, self.pb.items[i].y); let tg = self.nearest_enemy(bx, by, 170.);
+                if tg >= 0 { let (ex, ey) = (self.en.items[tg as usize].x, self.en.items[tg as usize].y); let b = &mut self.pb.items[i]; let a = b.vy.atan2(b.vx); let ta = (ey - by).atan2(ex - bx); let s = hypot(b.vx, b.vy);
+                    let na = a + clamp(ang_diff(a, ta), -3. * dt, 3. * dt); b.vx = na.cos() * s; b.vy = na.sin() * s; } }
             let b = self.pb.items[i].clone();
             if b.life <= 0. || b.x * b.x + b.y * b.y > r2 { self.pb.kill(i); continue; }
             let q = self.qa(b.x, b.y, 72.);

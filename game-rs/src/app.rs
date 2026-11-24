@@ -180,7 +180,8 @@ impl App {
         for s in std::mem::take(&mut self.g.sfx) { self.au.play(s); }
         for v in std::mem::take(&mut self.g.vib) { platform::vibrate(v); }
         for tt in std::mem::take(&mut self.g.toasts) { self.toast(tt.title, tt.sub); }
-        if self.g.dirty { self.save_t += rdt; if self.save_t > 0.6 { self.persist(); } }
+        // во время забега — не чаще раза в 20 с (и при паузе/сворачивании/конце забега), в меню — сразу
+        if self.g.dirty { self.save_t += rdt; if self.save_t > if self.g.state == State::Play { 20. } else { 0.6 } { self.persist(); } }
         self.au.sound_on = self.g.s.set.sound; self.au.music_on = self.g.s.set.music;
         let tr = track_for(&self.g); self.au.tick(tr, rdt, paused).await;
         for (i, op, v) in std::mem::take(&mut self.au.cmds) { platform::music(i, op, v); }
@@ -217,6 +218,7 @@ impl App {
                 "spawn" => { let k = crate::data::K_ALL[n as usize % 23]; let (x, y) = (self.g.p.x + 160., self.g.p.y - 60.); if let Some(i) = self.g.spawn_enemy(k, x, y, false) { if crate::data::ET[k as usize].boss { self.g.boss = self.g.en.items[i].uid as i32; } } }
                 "lang" => { self.g.s.set.lang = arg.into(); i18n::set_en(arg == "en"); }
                 "shot" => { self.shot = Some(arg.to_string()); }
+                "char" => { let k = n as usize % crate::data::CHARS.len(); self.g.s.ch = crate::data::CHARS[k].id.into(); self.g.compute_stats(); }
                 "relic" => { self.g.relic_pending += 1; self.g.level_delay = 0.; }
                 "elite" => { let k = crate::data::K_ALL[n as usize % 23]; for q in 0..6 { let (x, y) = (self.g.p.x - 150. + q as f32 * 60., self.g.p.y - 200.); if let Some(i) = self.g.spawn_enemy(k, x, y, true) { self.g.en.items[i].aff = 1 + q as u8; if q == 0 { self.g.en.items[i].ash = self.g.en.items[i].max_hp * 0.45; } } } }
                 "fps" => { eprintln!("fps {:.1} enemies {} parts {} ebul {}", self.fps, self.g.en.n, self.g.parts.n, self.g.eb.n); }
@@ -247,7 +249,7 @@ impl App {
         match self.scr {
             Scr::None => match self.g.state { State::Play => self.pause(), State::Intro => self.skip_intro(), State::Ending => self.skip_ending(), _ => {} },
             Scr::Pause => self.resume(),
-            Scr::Title => { self.persist(); platform::quit(); }
+            Scr::Title => { platform::write_save_now(&self.g.s.to_json()); platform::quit(); }
             Scr::Shop | Scr::Set => { let b = self.back_to; self.show(b); }
             Scr::Ach | Scr::Quest | Scr::Best | Scr::How => self.show(Scr::Title),
             Scr::Over => self.between(Next::Menu),

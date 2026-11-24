@@ -189,7 +189,7 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
                 for s in (1..=8).rev() { let k = s * 3; if k >= e.hn { continue; } let j = ((e.hh as i32 - k as i32) % 32 + 32) as usize % 32; let j2 = (j + 2) % 32;
                     let sa = (e.hist[j2 * 2 + 1] - e.hist[j * 2 + 1]).atan2(e.hist[j2 * 2] - e.hist[j * 2]);
                     gx.spr_world(&tkey("eelseg", e.tier), e.hist[j * 2], e.hist[j * 2 + 1], sa, sc * (1. - s as f32 * 0.06), alpha, false, 0., false); }
-                let p = ph(gx, key); gx.spr_world(key, e.x, e.y, e.ang, sc, alpha, wht, p, false); }
+                let p = ph(gx, key); let jr = 0.12 + 0.16 * (t * 5.5 + e.phase).sin().max(-0.6); gx.spr_jaw_a(key, e.x, e.y, e.ang, sc, alpha, wht, p, jr); }
             K::Squid => { let p = ph(gx, key); gx.spr_world(key, e.x, e.y, e.ang, sc, alpha, wht, p, false);
                 if e.state == 1 { let k = 1. - e.st / 0.55; let (lx, ly) = local(&e, 22., 0.); gx.glow_world(false, c::SQUID, lx, ly, 10. + k * 16., k); } }
             K::Boss1 => boss1(gx, g, &e, sc, wht),
@@ -204,10 +204,12 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
                 gx.spr_world(key, e.x, e.y + (t * 1.7 + e.phase).sin() * 1.4, e.ang, sc * pul, alpha, wht, p, false);
                 if ch > 0. { gx.glow_world(false, c::EEL, e.x, e.y, e.r * (0.8 + ch * 0.6), ch * 0.7); } }
             K::Lantern => { let ch = if e.state == 1 { 1. - e.st / 0.8 } else { 0. }; let p = ph(gx, key); let yy = e.y + (t * 1.7 + e.phase).sin() * 1.4;
-                gx.spr_world(key, e.x, yy, e.ang, sc, alpha, wht, p, false);
+                let jr = if ch > 0. { 0.1 + 0.3 * ch } else { 0.06 + 0.08 * (t * 2.4 + e.phase).sin() }; gx.spr_jaw_a(key, e.x, yy, e.ang, sc, alpha, wht, p, jr);
                 let (lx, ly) = (e.x + e.ang.cos() * e.r * 1.25 + e.ang.sin() * e.r * 0.05, yy + e.ang.sin() * e.r * 1.25 - e.ang.cos() * e.r * 0.05);
                 gx.glow_world(false, c::AMBER, lx, ly, 8. + ch * 16. + (t * 7.).sin() * 1.5, 0.55 + 0.45 * ch); }
             K::Crystal => gx.spr_world(key, e.x, e.y, t * 2., sc, alpha, wht, ph(gx, key), false),
+            K::Crab => { let p = ph(gx, key); let jr = 0.13 * (t * 4.2 + e.phase).sin() + 0.04; let wob = (t * 2.1 + e.phase).sin() * 0.05;
+                gx.spr_jaw_a(key, e.x, e.y, e.ang + wob, sc, alpha, wht, p, jr); }
             _ => { let breathe = 1. + (t * if e.elite { 3.1 } else { 2.35 } + e.phase).sin() * if e.elite { 0.045 } else { 0.025 };
                 let drift = (t * 1.7 + e.phase).sin() * 1.4; let wob = (t * 2.1 + e.phase).sin() * 0.07; let p = ph(gx, key);
                 gx.spr_world(key, e.x, e.y + drift, e.ang + wob, sc * breathe, alpha, wht, p, false); }
@@ -244,10 +246,26 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
     new_upg(gx, g);
     if !g.p.dead { player(gx, g, rdt); }
     // снаряды игрока
-    let pc = g.p.pal;
+    let pc = g.p.pal; let ac = crate::data::SKIN_ACC.get(g.p.skin).copied().unwrap_or(c::WHITE);
     for i in 0..g.pb.n { let b = &g.pb.items[i]; if !in_view(b.x, b.y, 10.) { continue; } let a = b.vy.atan2(b.vx);
         if b.boom > 0. { gx.glow_stretch(c::FIRE, b.x, b.y, a, -30., 40., 16., 0.7); gx.glow_world(true, c::FIRE, b.x, b.y, 16., 0.9); gx.glow_world(false, c::WHITE, b.x, b.y, 6., 1.); continue; }
-        gx.glow_stretch(pc, b.x, b.y, a, -24., 34., 14., 0.52); gx.glow_stretch(pc, b.x, b.y, a, -10., 22., 12., 1.); gx.glow_stretch(c::WHITE, b.x, b.y, a, 0., 10., 7., 1.);
+        let k = b.r / 4.;
+        match b.form {
+            1 => { gx.glow_stretch(pc, b.x, b.y, a, -40., 52., 8., 0.6); gx.glow_stretch(ac, b.x, b.y, a, -16., 28., 5., 1.); gx.glow_stretch(c::WHITE, b.x, b.y, a, -2., 14., 3.5, 1.); } // игла
+            2 => { gx.glow_world(true, pc, b.x, b.y, 15. * k, 0.8); gx.glow_world(false, ac, b.x, b.y, 8. * k, 1.); gx.glow_world(false, c::WHITE, b.x, b.y, 4. * k, 1.); } // шар
+            3 => { gx.glow_stretch(pc, b.x, b.y, a, -12., 18., 12., 0.7); gx.glow_world(false, ac, b.x, b.y, 6. * k, 1.); gx.glow_world(false, c::WHITE, b.x, b.y, 3., 1.); } // дробь
+            4 => { let (nx, ny) = (-a.sin(), a.cos()); for q in -2..=2 { let o = q as f32 * 5. * k; let bk = (q as f32).abs() * 3.;
+                    gx.glow_world(false, if q == 0 { c::WHITE } else { ac }, b.x + nx * o - a.cos() * bk, b.y + ny * o - a.sin() * bk, (5. - (q as f32).abs()) * k, 1.); }
+                   gx.glow_world(true, pc, b.x, b.y, 14. * k, 0.6); } // полумесяц
+            5 => { gx.glow_world(true, pc, b.x, b.y, 12., 0.6); gx.glow_stretch(ac, b.x, b.y, a + (b.t * 34.).sin() * 0.7, -8., 16., 5., 1.); gx.glow_world(false, c::WHITE, b.x, b.y, 3.5, 1.); } // молния
+            6 => { for q in 1..4 { let d = q as f32 * 9.; gx.glow_world(true, pc, b.x - a.cos() * d, b.y - a.sin() * d, (9. - q as f32 * 2.) * k, 0.35 / q as f32); }
+                   gx.glow_world(true, pc, b.x, b.y, 12. * k, 0.7); gx.glow_world(false, ac, b.x, b.y, 5. * k, 1.); } // призрак
+            7 => { let g_ = 1. + b.t * 3.; gx.glow_world(true, c::FIRE, b.x, b.y, 13. * k * g_, 0.6); gx.glow_world(true, pc, b.x, b.y, 8. * k * g_, 0.8); gx.glow_world(false, c::GOLD, b.x, b.y, 4. * k, 1.); } // пламя
+            8 => { gx.glow_stretch(pc, b.x, b.y, a, -14., 22., 13. * k, 0.6); gx.glow_world(false, ac, b.x, b.y, 6. * k, 1.); gx.glow_world(false, c::WHITE, b.x - a.sin() * 1.5, b.y + a.cos() * 1.5, 2.5, 1.); } // капля
+            9 => { let sa = b.t * 16.; gx.glow_world(true, pc, b.x, b.y, 12. * k, 0.6); for q in 0..2 { let aa = sa + q as f32 * std::f32::consts::FRAC_PI_2; gx.glow_stretch(ac, b.x, b.y, aa, -9. * k, 18. * k, 4., 1.); }
+                   gx.glow_world(false, c::WHITE, b.x, b.y, 3.5, 1.); } // звезда
+            _ => { gx.glow_stretch(pc, b.x, b.y, a, -24., 34., 14., 0.52); gx.glow_stretch(ac, b.x, b.y, a, -10., 22., 12., 1.); gx.glow_stretch(c::WHITE, b.x, b.y, a, 0., 10., 7., 1.); }
+        }
         if b.crit { gx.glow_world(false, c::GOLD, b.x, b.y, 11., 1.); } }
     // частицы
     for i in 0..g.parts.n { let p = &g.parts.items[i]; if !in_view(p.x, p.y, 20.) { continue; } let k = p.life / p.max; let s = p.size * (0.35 + 0.65 * k); gx.glow_world(false, p.col, p.x, p.y, s, k); }
@@ -346,7 +364,7 @@ fn king(gx: &mut Gfx, g: &Game, e: &Enemy, sc: f32, wht: bool) {
         gx.arc_world(e.x, e.y, KING_SLAM, 0., TAU, 3., with_a(hex(0xffd54f), 0.5 + 0.4 * k), false); }
     let key_s = tkey(if e.sh <= 0. { "kingcrab_bare" } else { "kingcrab" }, e.tier); let key = key_s.as_str();
     let pul = 1. + (t * 2.2).sin() * 0.02 + if e.state == 3 { (1. - e.st / 0.9) * 0.08 } else { 0. } + if e.state == 6 { (t * 30.).sin() * 0.02 } else { 0. };
-    gx.spr_world(key, e.x, e.y, e.ang, sc * pul, 1., wht, anim_ph(gx, key, e), false);
+    let jr = if e.state == 3 { -0.15 } else { 0.11 * (t * 3.1 + e.phase).sin() + 0.05 }; gx.spr_jaw(key, e.x, e.y, e.ang, sc * pul, wht, anim_ph(gx, key, e), jr);
     if e.sh > 0. && e.tx > 0. { gx.arc_world(e.x, e.y, e.r * 1.15, e.ang - 0.95, e.ang + 0.95, 4., with_a(hex(0xfff0b0), 0.25 + 0.6 * (e.sh / e.tx)), true); }
 }
 fn queen(gx: &mut Gfx, g: &Game, e: &Enemy, sc: f32, wht: bool) {

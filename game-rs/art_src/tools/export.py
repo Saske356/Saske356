@@ -50,11 +50,17 @@ def _shift(im, dh, sat, val):
 man = json.load(open('/home/user/game/game-rs/assets/manifest.json'))
 done = []
 ROT = {'jelly': -90}
+FILL = {'pl_amethyst', 'pl_void', 'pl_azure', 'pl_ember', 'pl_emerald', 'queen', 'pl_frost', 'pl_coral', 'pl_ghost', 'pl_inferno', 'pl_aurora', 'pl_royal'}
 for f in sorted(os.listdir(CUT)):
     name = f[:-4]
     if not os.path.exists(f'{OLD}/{name}.png'): continue
-    TH = {'boss4': (90, 170)}
+    TH = {'boss4': (90, 170), 'pl_azure': (3, 20), 'pl_amethyst': (3, 20), 'pl_void': (2, 14), 'queen': (4, 24), 'pl_solar': (3, 20), 'pl_ember': (4, 26), 'pl_emerald': (4, 26)}
     im = solid(Image.open(f'{CUT}/{f}').convert('RGBA'), *TH.get(name, (10, 70)))
+    if name in FILL:   # дыры в плавниках (там, где на чёрном фоне был тёмный цвет) — заполнить
+        from scipy import ndimage as nd
+        a = np.asarray(im).copy(); m = nd.binary_closing(a[..., 3] > 40, iterations=4); m = nd.binary_fill_holes(m)
+        mm = np.asarray(Image.fromarray((m * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.2))).astype(np.float32)
+        a[..., 3] = np.maximum(a[..., 3], mm).astype(np.uint8); im = Image.fromarray(a)
     if name in ROT: im = im.rotate(ROT[name], expand=True, resample=Image.BICUBIC)
     size = Image.open(f'{OLD}/{name}.png').size[0]
     ratio = min(0.97, fill_ratio(f'{OLD}/{name}.png'))
@@ -66,13 +72,17 @@ for f in sorted(os.listdir(CUT)):
 # облики Люмена без своих картинок — перекраски новых
 def sk(src, name, fn):
     out = fn(Image.open(f'{SPR}/{src}.png').convert('RGBA')); out.save(f'{SPR}/{name}.png'); done.append(name)
-sk('pl_solar', 'pl_abyss', lambda i: i)                        # синий с золотом — «бездна»
+# лучшая модель (сине-золотая, на прозрачном фоне) — основной облик; бледная голубая — «бездна»
+import shutil; shutil.copy(f'{SPR}/pl_azure.png', f'{SPR}/pl_abyss.png'); shutil.copy(f'{SPR}/pl_solar.png', f'{SPR}/pl_azure.png'); done.append('pl_abyss')
+sk('pl_abyss', 'pl_abyss', lambda i: _shift(i, 0.03, 1.3, 1.2))
+sk('pl_amethyst', 'pl_amethyst', lambda i: _shift(i, 0.0, 1.45, 1.4))
+sk('queen', 'queen', lambda i: _shift(i, 0.0, 1.3, 1.25))
 sk('pl_ember', 'pl_solar', lambda i: hue_to(i, 0.13, 0.9, 1.0, 1.08))
-sk('pl_azure', 'pl_amber', lambda i: hue_to(i, 0.09, 1.0, 1.25, 1.0))
+sk('pl_abyss', 'pl_amber', lambda i: hue_to(i, 0.09, 1.0, 1.25, 1.0))
 sk('pl_emerald', 'pl_venom', lambda i: hue_to(i, 0.24, 0.9, 1.3, 1.05))
 sk('pl_emerald', 'pl_jade', lambda i: hue_to(i, 0.45, 0.85, 0.9, 1.0))
 sk('pl_amethyst', 'pl_nebula', lambda i: _shift(i, -0.12, 1.1, 1.0))
-sk('pl_azure', 'pl_cyber', lambda i: hue_to(i, 0.86, 1.0, 1.35, 1.05))
+sk('pl_abyss', 'pl_cyber', lambda i: hue_to(i, 0.86, 1.0, 1.35, 1.05))
 sk('pl_frost', 'pl_lunar', lambda i: hue_to(i, 0.62, 1.0, 0.25, 1.05))
 sk('pl_aurora', 'pl_prism', lambda i: _shift(i, 0.33, 1.15, 1.05))
 sk('pl_coral', 'pl_dawn', lambda i: hue_to(i, 0.08, 0.6, 1.1, 1.05))

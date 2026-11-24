@@ -22,6 +22,16 @@ BOSSES = {
     'boss4': dict(hinge=(356, 226),
                   jaw=[(352, 222), (472, 230), (472, 305), (420, 312), (380, 292), (342, 252)],
                   mouth=[(362, 196), (438, 194), (454, 214), (444, 244), (382, 250), (354, 226)]),
+    # мобы: челюсти
+    'eel': dict(hinge=(290, 285), jaw=[(285, 282), (440, 272), (440, 352), (360, 362), (300, 345), (275, 305)],
+                mouth=[(300, 262), (415, 258), (425, 290), (405, 320), (320, 318), (295, 290)]),
+    'lantern': dict(hinge=(380, 300), jaw=[(375, 298), (462, 292), (462, 348), (400, 348), (368, 322)],
+                    mouth=[(385, 280), (448, 276), (454, 300), (430, 316), (390, 312)]),
+    # крабы: клешня на шарнире (рта нет)
+    'crab': dict(hinge=(165, 250), jaw=[(36, 116), (178, 116), (190, 250), (152, 366), (36, 366)], mouth=None),
+    'crab_bare': dict(hinge=(340, 282), jaw=[(334, 212), (474, 212), (474, 384), (328, 384), (318, 300)], mouth=None),
+    'kingcrab': dict(hinge=(192, 262), jaw=[(46, 214), (204, 214), (218, 300), (172, 376), (46, 376)], mouth=None),
+    'kingcrab_bare': dict(hinge=(380, 262), jaw=[(368, 212), (484, 212), (484, 390), (358, 390), (352, 290)], mouth=None),
 }
 MOUTH_COL = {'': (40, 6, 18), '_t1': (48, 4, 8), '_t2': (22, 6, 36)}
 
@@ -48,6 +58,11 @@ def main():
             jaw = a.copy(); jaw[..., 3] *= jm
             Image.fromarray(body.astype(np.uint8)).save(os.path.join(SPR, name + '_body.png'))
             Image.fromarray(jaw.astype(np.uint8)).save(os.path.join(SPR, name + '_jaw.png'))
+            meta = man['meta'][name]
+            if cfg['mouth'] is None:
+                for suf in ('_body', '_jaw'):
+                    m = dict(meta); m['hinge'] = [cfg['hinge'][0] / 512, cfg['hinge'][1] / 512]; man['meta'][name + suf] = m
+                man['meta'].pop(name + '_mouth', None); print('ok', name); continue
             # глотка: тёмная, к центру ещё темнее, мягкий край
             mm = np.asarray(mask(n, cfg['mouth'], 6)).astype(np.float32) / 255
             r, g, b = MOUTH_COL[tier]

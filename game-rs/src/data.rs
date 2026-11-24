@@ -122,7 +122,7 @@ upgs! {
 pub const U_HEAL: usize = usize::MAX;
 
 pub struct CharDef { pub id: &'static str, pub cost: u32, pub hp: f32, pub speed: f32, pub rate: f32, pub dmg: f32, pub pierce: u8, pub orb: u8, pub armor: f32, pub dash_cd: f32, pub col: u8 }
-pub static CHARS: [CharDef; 7] = [
+pub static CHARS: [CharDef; 10] = [
     CharDef { id: "lumen", cost: 0, hp: 100., speed: 1., rate: 1., dmg: 1., pierce: 0, orb: 0, armor: 0., dash_cd: 1., col: c::CYAN },
     CharDef { id: "needle", cost: 250, hp: 70., speed: 1.15, rate: 1.2, dmg: 1., pierce: 1, orb: 0, armor: 0., dash_cd: 0.65, col: c::EMER },
     CharDef { id: "shell", cost: 400, hp: 160., speed: 0.88, rate: 0.9, dmg: 1.1, pierce: 0, orb: 2, armor: 2., dash_cd: 1.2, col: c::AMBER },
@@ -130,6 +130,9 @@ pub static CHARS: [CharDef; 7] = [
     CharDef { id: "warden", cost: 800, hp: 230., speed: 0.82, rate: 0.85, dmg: 1., pierce: 0, orb: 1, armor: 4., dash_cd: 1.3, col: c::CORAL },
     CharDef { id: "storm", cost: 950, hp: 80., speed: 1.1, rate: 1.5, dmg: 0.78, pierce: 0, orb: 0, armor: 0., dash_cd: 0.9, col: c::ICE },
     CharDef { id: "phantom", cost: 1200, hp: 85., speed: 1.25, rate: 1., dmg: 1.15, pierce: 2, orb: 0, armor: 0., dash_cd: 0.45, col: c::GHOST },
+    CharDef { id: "ember", cost: 1500, hp: 95., speed: 1.05, rate: 1.7, dmg: 0.62, pierce: 0, orb: 0, armor: 0., dash_cd: 0.9, col: c::CRAB },
+    CharDef { id: "tide", cost: 1800, hp: 110., speed: 1., rate: 1., dmg: 0.95, pierce: 0, orb: 0, armor: 1., dash_cd: 1., col: c::DRIFT },
+    CharDef { id: "star", cost: 2200, hp: 90., speed: 1.1, rate: 1.1, dmg: 1.05, pierce: 0, orb: 0, armor: 0., dash_cd: 0.8, col: c::GOLD },
 ];
 
 pub struct SkinDef { pub id: &'static str, pub pal: u8, pub cost: u32, pub win: bool }
@@ -147,13 +150,19 @@ pub static SKINS: [SkinDef; 21] = [
     SkinDef { id: "jade", pal: 29, cost: 820, win: false }, SkinDef { id: "prism", pal: 30, cost: 900, win: false },
 ];
 
+/// Второй цвет атак облика (ядро снаряда), по порядку SKINS
+pub static SKIN_ACC: [u8; 21] = [c::GOLD, c::GOLD, c::JELLY, c::GOLD, c::WHITE, c::ICE, c::GOLD, c::WHITE, c::GOLD,
+    c::JELLY, c::EMER, c::WHITE, c::GOLD, c::GOLD, c::JELLY, c::CYAN, c::ICE, c::GOLD, c::GOLD, c::GOLD, c::WHITE];
 pub struct ShopDef { pub id: &'static str, pub max: u8, pub base: f32 }
-pub static SHOP: [ShopDef; 8] = [
-    ShopDef { id: "hp", max: 5, base: 30. }, ShopDef { id: "dmg", max: 5, base: 40. }, ShopDef { id: "spd", max: 4, base: 30. },
-    ShopDef { id: "mag", max: 4, base: 25. }, ShopDef { id: "xp", max: 4, base: 35. }, ShopDef { id: "reroll", max: 3, base: 70. },
-    ShopDef { id: "flare", max: 1, base: 150. }, ShopDef { id: "revive", max: 1, base: 400. },
+/// Постоянные усиления (3.6: длинные линейки — по 10–20 уровней)
+pub static SHOP: [ShopDef; 14] = [
+    ShopDef { id: "hp", max: 20, base: 25. }, ShopDef { id: "dmg", max: 20, base: 30. }, ShopDef { id: "rate", max: 15, base: 35. },
+    ShopDef { id: "crit", max: 10, base: 40. }, ShopDef { id: "spd", max: 10, base: 25. }, ShopDef { id: "armor", max: 10, base: 40. },
+    ShopDef { id: "regen", max: 10, base: 45. }, ShopDef { id: "dash", max: 10, base: 35. }, ShopDef { id: "mag", max: 10, base: 20. },
+    ShopDef { id: "xp", max: 15, base: 30. }, ShopDef { id: "luck", max: 15, base: 50. }, ShopDef { id: "reroll", max: 5, base: 70. },
+    ShopDef { id: "flare", max: 4, base: 120. }, ShopDef { id: "revive", max: 1, base: 400. },
 ];
-pub fn shop_cost(i: usize, lvl: u8) -> u32 { (SHOP[i].base * ((lvl as f32 + 1.0).powf(1.55))).round() as u32 }
+pub fn shop_cost(i: usize, lvl: u8) -> u32 { (SHOP[i].base * ((lvl as f32 + 1.0).powf(1.35))).round() as u32 }
 
 pub struct TalDef { pub id: &'static str, pub br: u8, pub cost: u32 }
 pub static TALENTS: [TalDef; 12] = [

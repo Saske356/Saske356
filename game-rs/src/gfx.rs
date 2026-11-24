@@ -133,13 +133,15 @@ impl Gfx {
     }
     /// Босс с настоящей пастью: глотка, нижняя челюсть на шарнире (поворот jrot, + раскрывает), тело.
     /// Если нарезки нет — обычный спрайт.
-    pub fn spr_jaw(&mut self, key: &str, x: f32, y: f32, ang: f32, sc: f32, white: bool, ph: f32, jrot: f32) {
+    pub fn spr_jaw(&mut self, key: &str, x: f32, y: f32, ang: f32, sc: f32, white: bool, ph: f32, jrot: f32) { self.spr_jaw_a(key, x, y, ang, sc, 1., white, ph, jrot) }
+    /// То же с прозрачностью. Подвижная часть (_jaw) — челюсть или клешня; глотка (_mouth) — если есть
+    pub fn spr_jaw_a(&mut self, key: &str, x: f32, y: f32, ang: f32, sc: f32, alpha: f32, white: bool, ph: f32, jrot: f32) {
         let body = format!("{key}_body");
-        if !self.spr.contains_key(&body) { self.jaw = jrot.max(0.) * 2.; self.spr_world(key, x, y, ang, sc, 1., white, ph, false); self.jaw = 0.; return; }
+        if !self.spr.contains_key(&body) { self.spr_world(key, x, y, ang, sc, alpha, white, ph, false); return; }
         self.jaw = 0.;
-        self.spr_world(&format!("{key}_mouth"), x, y, ang, sc, 1., false, ph, false);
-        self.jrot = jrot; self.spr_world(&format!("{key}_jaw"), x, y, ang, sc, 1., white, ph, false); self.jrot = 0.;
-        self.spr_world(&body, x, y, ang, sc, 1., white, ph, false);
+        let mouth = format!("{key}_mouth"); if self.spr.contains_key(&mouth) { self.spr_world(&mouth, x, y, ang, sc, alpha, false, ph, false); }
+        self.jrot = jrot; self.spr_world(&format!("{key}_jaw"), x, y, ang, sc, alpha, white, ph, false); self.jrot = 0.;
+        self.spr_world(&body, x, y, ang, sc, alpha, white, ph, false);
     }
     /// Белый светящийся силуэт (вспышка гибели)
     pub fn spr_ghost(&mut self, key: &str, x: f32, y: f32, ang: f32, sc: f32, alpha: f32) {
@@ -286,7 +288,7 @@ pub fn draw_warp_h(t: &Texture2D, sx: f32, sy: f32, half: f32, ang: f32, flip: b
         return;
     }
     // мелким на экране существам хватает грубой сетки — втрое меньше вершин
-    let (NX, NY) = if half < 45. { (7usize, 4usize) } else if half < 110. { (10, 6) } else { (14, 8) };
+    let (NX, NY) = if half < 45. { (8usize, 5usize) } else if half < 110. { (12, 8) } else { (16, 10) };
     let mut verts: Vec<Vertex> = Vec::with_capacity((NX + 1) * (NY + 1)); let mut idx: Vec<u16> = Vec::with_capacity(NX * NY * 6);
     let c8 = [(col.r * 255.) as u8, (col.g * 255.) as u8, (col.b * 255.) as u8, (col.a * 255.) as u8];
     for j in 0..=NY { let v = j as f32 / NY as f32;
@@ -294,8 +296,11 @@ pub fn draw_warp_h(t: &Texture2D, sx: f32, sy: f32, half: f32, ang: f32, flip: b
             // смещение в долях картинки (du по x, dv по y)
             let (mut du, mut dv) = (0f32, 0f32);
             match an {
-                Anim::Swim => { let tt = (1. - u).powf(1.7); dv = (ph - u * 5.2).sin() * 0.12 * tt; }
-                Anim::Fin => { let tt = (1. - u).powf(2.2); dv = (ph - u * 4.).sin() * 0.085 * tt; }
+                // хвост сильнее изгибается, а края (плавники сверху и снизу) трепещут своей волной
+                Anim::Swim => { let tt = (1. - u).powf(1.5); dv = (ph - u * 5.2).sin() * 0.14 * tt; let ed = ((v - 0.5).abs() * 2.).powi(2);
+                    dv += (ph * 1.9 - u * 9. + v * 3.).sin() * 0.035 * ed * (0.4 + 0.6 * tt); du = (ph - u * 5.2).cos() * 0.025 * tt; }
+                Anim::Fin => { let tt = (1. - u).powf(2.); dv = (ph - u * 4.).sin() * 0.1 * tt; let ed = ((v - 0.5).abs() * 2.).powi(2);
+                    dv += (ph * 2.2 - u * 10.).sin() * 0.03 * ed; }
                 Anim::Tent => { let tt = ((0.58 - u) / 0.58).max(0.); dv = (ph - u * 9.).sin() * 0.16 * tt * tt; let syk = 1. - 0.03 * ph.sin() * (1. - tt); dv += (v - 0.5) * (syk - 1.); }
                 Anim::Jelly => { let bell = if u > 0.5 { (u - 0.5) / 0.5 } else { 0. }; let tt = ((0.62 - u) / 0.62).max(0.);
                     let syk = 1. + 0.14 * ph.sin() * bell - 0.07 * (ph - 1.3).sin() * tt; du = (u - 0.75) * 0.06 * ph.sin() * bell; dv = (ph - u * 10.).sin() * 0.13 * tt + (v - 0.5) * (syk - 1.); }

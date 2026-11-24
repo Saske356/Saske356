@@ -328,6 +328,7 @@ impl Game {
     // ---------- мир: рифы, поляны, стена по краю ----------
     pub fn build_decor(&mut self, zi: usize) {
         self.decor_zone = zi; self.decor.clear();
+        if true { return; } // 3.6: декор отключён — детали теперь нарисованы на самих фонах
         let th: Vec<usize> = DECOR_THEMES[zi % 15].iter().map(|k| DECOR_KEYS.iter().position(|x| x == k).unwrap()).collect();
         let r = cfg::ARENA_R;
         let size = |k: usize| -> f32 { match decor_role(DECOR_KEYS[k]) { 2 => 150., 1 => 105., _ => 55. } };

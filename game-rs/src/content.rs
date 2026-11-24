@@ -52,6 +52,16 @@ pub static RELICS: [RelicDef; 16] = [
 ];
 pub fn relic_txt(id: u8) -> (&'static str, &'static str) { let r = &RELICS[id as usize]; if i18n::is_en() { r.en } else { r.ru } }
 
+/// Форма атаки искры (подпись в магазине)
+pub fn char_attack(i: usize) -> &'static str {
+    let en = i18n::is_en();
+    match (i, en) { (1, false) => "Атака: быстрые иглы", (1, true) => "Attack: swift needles", (2, false) => "Атака: тяжёлые шары", (2, true) => "Attack: heavy orbs",
+        (3, false) => "Атака: дробь веером", (3, true) => "Attack: spread shot", (4, false) => "Атака: световые полумесяцы", (4, true) => "Attack: light crescents",
+        (5, false) => "Атака: молнии-зигзаги", (5, true) => "Attack: zigzag bolts", (6, false) => "Атака: призрачные снаряды с наведением", (6, true) => "Attack: homing ghost shots", (7, false) => "Атака: струя пламени, всё поджигает", (7, true) => "Attack: flame stream that ignites",
+        (8, false) => "Атака: капли, отскакивают от врагов", (8, true) => "Attack: bouncing droplets", (9, false) => "Атака: вращающиеся звёзды, +10% крита", (9, true) => "Attack: spinning stars, +10% crit",
+        (_, false) => "Атака: лучи света", (_, true) => "Attack: light bolts" }
+}
+
 impl Game {
     #[inline] pub fn rel(&self, id: u8) -> bool { self.relics.contains(&id) }
 

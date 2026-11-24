@@ -60,7 +60,7 @@ impl Game {
         if self.hard { self.dmg_scale = 1.35; }
         self.rerolls = self.s.shop_lv("reroll") as u32; self.build_decor(0); self.start_best = self.s.best_depth; self.rec_shown = false;
         let skin = SKINS.iter().position(|k| k.id == self.s.skin).unwrap_or(0);
-        self.p = Player { r: 13., ang: -std::f32::consts::FRAC_PI_2, inv: 1.5, fire_t: 0.3, flare: if self.s.shop_lv("flare") > 0 { 50. } else { 0. }, level: 1, xp_next: xp_need(1),
+        self.p = Player { r: 13., ang: -std::f32::consts::FRAC_PI_2, inv: 1.5, fire_t: 0.3, flare: 25. * self.s.shop_lv("flare") as f32, level: 1, xp_next: xp_need(1),
             nova_t: 2., mine_t: 1.5, harp_t: 2., tw_t: 1., vort_t: 20., beam_tg: -1, beam_tg2: -1, skin, pal: SKINS[skin].pal, ..Default::default() };
         self.trail = [0.; 24];
         self.state = State::Play;
@@ -101,8 +101,8 @@ impl Game {
     pub fn game_over(&mut self) -> (u32, bool) {
         self.quest_add("runs", 1);
         self.state = State::Over;
-        let earned = ((self.run_pearls as f32 + (self.score / 1500.).floor() as f32 + (self.zone as f32 - 1.) * 2. + self.bosses_killed as f32 * 15.)
-            * (1. + 0.25 * self.lv(u::GREED) as f32) * if self.hard { 1.5 } else { 1. } * (1. + 0.1 * self.tl("t_pearl")) * if self.daily { 2. } else { 1. } * if self.rel(crate::content::R_CROWN) { 1.5 } else { 1. }).round() as u32;
+        let earned = ((self.run_pearls as f32 + (self.score / 1200.).floor() as f32 + (self.zone as f32 - 1.) * 3. + self.bosses_killed as f32 * 20.)
+            * (1. + 0.25 * self.lv(u::GREED) as f32) * if self.hard { 1.5 } else { 1. } * (1. + 0.1 * self.tl("t_pearl")) * if self.daily { 2. } else { 1. } * if self.rel(crate::content::R_CROWN) { 1.5 } else { 1. } * (1. + 0.03 * self.s.shop_lv("luck") as f32)).round() as u32;
         self.last_earned = earned;
         if self.daily { let z = self.zone; let d = &mut self.s.daily; d.ch_best = d.ch_best.max(z * 100);
             if z >= 5 && !d.ch_done { d.ch_done = true; self.s.pearls += 150; self.toast(t("dailyWin"), format!("+150 {}", t("pearlsGen"))); } }

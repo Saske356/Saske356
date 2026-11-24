@@ -5,7 +5,9 @@ src = Image.open('in/bg_sheet.png').convert('RGB'); W, H = src.size; cw, ch = W 
 for z in range(15):
     cx, cy = z % 5, z // 5
     cell = src.crop((round(cx * cw) + m, round(cy * ch) + m, round((cx + 1) * cw) - m, round((cy + 1) * ch) - m))
-    tw = 400; th = round(tw * cell.height / cell.width)
+    # GLES2 повторяет только текстуры со сторонами 2^n: обрезаем до 1:2 и делаем 512×1024
+    cw2 = cell.height // 2; x0 = (cell.width - cw2) // 2; cell = cell.crop((x0, 0, x0 + cw2, cell.height))
+    tw, th = 512, 1024
     t = np.asarray(cell.resize((tw, th), Image.LANCZOS)).astype(np.float32)
     r = np.roll(np.roll(t, th // 2, 0), tw // 2, 1)
     yy, xx = np.mgrid[0:th, 0:tw].astype(np.float32)

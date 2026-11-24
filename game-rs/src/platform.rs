@@ -86,7 +86,18 @@ mod imp {
 pub use imp::*;
 
 /// Сохранение в файл с атомарной заменой (сбой посреди записи не портит прогресс)
+/// Запись сохранения в фоновом потоке: запись на флеш-память бывает медленной (десятки мс) и давала фризы.
+/// Последнее состояние кладётся в ячейку; поток пишет самое свежее и засыпает.
+static SAVE_SLOT: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+static SAVE_CV: std::sync::Condvar = std::sync::Condvar::new();
+static SAVE_THREAD: std::sync::Once = std::sync::Once::new();
 pub fn write_save(json: &str) {
+    SAVE_THREAD.call_once(|| { std::thread::spawn(|| loop {
+        let job = { let mut g = SAVE_SLOT.lock().unwrap(); while g.is_none() { g = SAVE_CV.wait(g).unwrap(); } g.take() };
+        if let Some(j) = job { write_save_now(&j); } }); });
+    *SAVE_SLOT.lock().unwrap() = Some(json.to_string()); SAVE_CV.notify_one();
+}
+pub fn write_save_now(json: &str) {
     let dir = files_dir(); let path = format!("{dir}/save.json"); let tmp = format!("{dir}/save.json.tmp");
     if std::fs::write(&tmp, json).is_ok() { let _ = std::fs::rename(&tmp, &path); }
 }

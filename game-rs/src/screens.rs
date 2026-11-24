@@ -408,7 +408,7 @@ fn icon_tile(gx: &mut Gfx, key: &str, cx: f32, cy: f32, acc: Color, pal_i: u8, a
     gx.circle(cx, cy, 21., Color::new(acc.r * 0.25, acc.g * 0.25, acc.b * 0.3 + 0.05, 0.9 * al)); gx.ring(cx, cy, 21., 1.5, with_alpha(acc, 0.7 * al));
     if let Some(t_) = gx.icon.get(key).cloned() { gx.tex_ui(&t_, cx - 17., cy - 17., 34., 34., Color::new(1., 1., 1., al)); }
 }
-fn shop_icon(id: &str) -> &'static str { match id { "hp" => "hp", "dmg" => "dmg", "spd" => "speed", "mag" => "magnet", "xp" => "fortune", "reroll" => "prism", "flare" => "flare", _ => "heal" } }
+fn shop_icon(id: &str) -> &'static str { match id { "hp" => "hp", "dmg" => "dmg", "spd" => "speed", "mag" => "magnet", "xp" => "fortune", "reroll" => "prism", "flare" => "flare", "rate" => "rate", "crit" => "crit", "armor" => "armor", "regen" => "regen", "dash" => "dash", "luck" => "greed", _ => "heal" } }
 fn tal_icon(id: &str) -> &'static str { match id { "t_dmg" => "dmg", "t_rate" => "rate", "t_crit" => "crit", "t_first" => "salvo", "t_hp" => "hp", "t_arm" => "armor", "t_regen" => "regen", "t_ward" => "aegis",
     "t_pearl" => "greed", "t_xp" => "echo", "t_mag" => "magnet", _ => "multi" } }
 fn branch_col(br: u8) -> (Color, u8) { match br { 0 => (hex(0xff7a5c), c::FIRE), 1 => (hex(0x4fffb0), c::EMER), _ => (hex(0xffd54f), c::GOLD) } }
@@ -441,7 +441,7 @@ fn shop(a: &mut App) {
     let dsw = |a: &App, s: &str, sw: bool| a.gx.wrap(s, iw - 24. - bw - 10. - if sw { 46. } else { 0. }, 12.5, 0).len() as f32 * 16.;
     match tab {
         0 => for i in 0..SHOP.len() { let d = i18n::shop(SHOP[i].id).1; items.push(It { kind: 0, i, h: (30. + dsw(a, &d, true) + 12.).max(64.) }); },
-        1 => for i in 0..CHARS.len() { let (_, d) = i18n::chr(CHARS[i].id); let d = d + &tf("healthW", &[&CHARS[i].hp.to_string()]); items.push(It { kind: 1, i, h: (30. + dsw(a, &d, true) + 12.).max(64.) }); },
+        1 => for i in 0..CHARS.len() { let (_, d) = i18n::chr(CHARS[i].id); let d = d + &tf("healthW", &[&CHARS[i].hp.to_string()]) + " " + crate::content::char_attack(i) + "."; items.push(It { kind: 1, i, h: (30. + dsw(a, &d, true) + 12.).max(64.) }); },
         2 => for i in 0..SKINS.len() { items.push(It { kind: 2, i, h: 64. }); },
         _ => for br in 0..3 { items.push(It { kind: 4, i: br, h: 34. }); for (i, tl) in TALENTS.iter().enumerate() { if tl.br as usize != br { continue; } let d = i18n::talent(i).1; items.push(It { kind: 3, i, h: (30. + dsw(a, &d, true) + 12.).max(64.) }); } },
     }
@@ -454,15 +454,16 @@ fn shop(a: &mut App) {
         match it.kind {
             0 => { let s = &SHOP[it.i]; let l = a.g.s.shop_lv(s.id); let mx = l >= s.max; let cost = data::shop_cost(it.i, l); let (nm, d) = i18n::shop(s.id);
                 let acc = hex(0x5fe9ff); item_card(&mut a.gx, r, acc, mx, al); icon_tile(&mut a.gx, shop_icon(s.id), f.x + 34., y + it.h / 2., acc, c::CYAN, al);
-                let nw = a.gx.text(&nm, f.x + 64., y + 20., 16., Color::new(1., 1., 1., al), 0, 1); pips(&mut a.gx, f.x + 64. + nw + 8., y + 21., l, s.max, al);
+                let nw = a.gx.text(&nm, f.x + 64., y + 20., 16., Color::new(1., 1., 1., al), 0, 1);
+                if s.max <= 6 { pips(&mut a.gx, f.x + 64. + nw + 8., y + 21., l, s.max, al); } else { let lx = f.x + 64. + nw + 10.; a.gx.text(&format!("{l}/{}", s.max), lx, y + 21., 12., with_alpha(hex(0x8fe8ff), al), 0, 1); pbar(&mut a.gx, lx + 38., y + 18., 48., 5., l as f32 / s.max as f32, hex(0x5fe9ff), al); }
                 a.gx.text_wrap(&d, f.x + 64., y + 40., iw - 76. - bw - 10., 12.5, 16., Color::new(1., 1., 1., 0.8 * al), 0, 0);
                 if mx { a.ui.btn(&mut a.gx, br, &t("max"), St::Cyan, 15., false); } else if price_btn(a, br, &cost.to_string(), true, a.g.s.pearls >= cost, St::Cyan) { a.g.buy_shop(it.i); } }
-            1 => { let ch = &CHARS[it.i]; let own = a.g.s.chars.contains_key(ch.id); let sel = a.g.s.ch == ch.id; let (nm, d) = i18n::chr(ch.id); let d = d + &tf("healthW", &[&ch.hp.to_string()]);
+            1 => { let ch = &CHARS[it.i]; let own = a.g.s.chars.contains_key(ch.id); let sel = a.g.s.ch == ch.id; let (nm, d) = i18n::chr(ch.id); let d = d + &tf("healthW", &[&ch.hp.to_string()]) + " " + crate::content::char_attack(it.i) + ".";
                 item_card(&mut a.gx, r, pal(ch.col), sel, al);
-                { let sk = match ch.col { c::EMER => "emerald", c::AMBER => "amber", c::FIRE => "ember", c::CORAL => "coral", c::ICE => "frost", c::GHOST => "ghost", _ => "azure" };
+                { let sk = match ch.col { c::EMER => "emerald", c::AMBER => "amber", c::FIRE => "ember", c::CORAL => "coral", c::ICE => "frost", c::GHOST => "ghost", c::CRAB => "inferno", c::DRIFT => "jade", c::GOLD => "solar", _ => "azure" };
                   let p = a.gx.px; let key = format!("pl_{sk}"); let (cx, cy) = (f.x + 30., y + it.h / 2.); a.gx.glow_scr(true, ch.col, cx * p, cy * p, 32. * p, 0.6 * al);
                   let ph = a.gx.spr_anim(&key).map(|an| a.g.t * an.freq() * std::f32::consts::TAU + it.i as f32).unwrap_or(0.);
-                  a.gx.spr_screen(&key, cx * p, cy * p, -0.3, 0.8 * p, al, false, ph, false); }
+                  a.gx.spr_screen(&key, cx * p, cy * p, -0.3, 1.2 * p, al, false, ph, false); }
                 a.gx.text(&nm, f.x + 58., y + 20., 16., Color::new(1., 1., 1., al), 0, 1); a.gx.text_wrap(&d, f.x + 58., y + 40., iw - 24. - bw - 10. - 46., 12.5, 16., Color::new(1., 1., 1., 0.75 * al), 0, 0);
                 if sel { a.ui.btn(&mut a.gx, br, &t("chosen"), St::Cyan, 15., false); } else if own { if a.ui.btn(&mut a.gx, br, &t("choose"), St::Cyan, 15., true) { a.g.pick_char(it.i); } }
                 else if price_btn(a, br, &ch.cost.to_string(), true, a.g.s.pearls >= ch.cost, St::Cyan) { a.g.pick_char(it.i); } }
