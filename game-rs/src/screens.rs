@@ -8,6 +8,8 @@ use crate::ui::{self, h2, panel, pbar, pearl, pips, with_alpha, St};
 use macroquad::prelude::*;
 
 fn pal(i: u8) -> Color { hex(PAL_HEX[i as usize % PAL_HEX.len()]) }
+fn vol_l(on: bool, v: u8) -> String { if !on || v == 0 { t("off") } else { format!("{}%", v as u32 * 10) } }
+fn vol_next(on: bool, v: u8) -> u8 { if !on || v == 0 { 10 } else if v > 8 { 8 } else if v > 2 { v - 2 } else { 0 } }
 fn on_off(v: bool) -> String { if v { t("on") } else { t("off") } }
 
 pub fn draw(a: &mut App) {
@@ -158,7 +160,12 @@ fn title_portrait(a: &mut App) {
       let ly = ay + art - logo_h * 0.18; logo(gx, cx, ly, logo_k, al, tm); logo_shine(gx, cx, ly, logo_k, tm, al); }
     // ---- кнопки ----
     let mut y = yb;
-    if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, bh_play), &t("play"), St::Cyan, if sm { 24. } else { 28. }, true) { a.click(); a.g.s.seen_how = true; a.start_run(RunMode::Normal); return; }
+    // «Играть» и рядом — забег с реликвией за рекламу (до 5 в день)
+    let boost_left = BOOST_MAX.saturating_sub(a.g.s.daily.boost); let boost = boost_left > 0 && a.g.s.runs >= 1 && a.ad_ready();
+    let pw = if boost { bw * 0.6 } else { bw };
+    if a.ui.btn(&mut a.gx, Rect::new(bx, y, pw, bh_play), &t("play"), St::Cyan, if sm { 24. } else { 28. }, true) { a.click(); a.g.s.seen_how = true; a.start_run(RunMode::Normal); return; }
+    if boost { let l = format!("▶ {}\n{} ({})", if i18n::is_en() { "Play" } else { "Играть" }, if i18n::is_en() { "with a relic" } else { "с реликвией" }, boost_left);
+        if a.ui.btn(&mut a.gx, Rect::new(bx + pw + gap, y, bw - pw - gap, bh_play), &l, St::Gold, 17., true) { a.click(); a.ad_show("boost", AdCb::Boost); return; } }
     y += bh_play + gap;
     let muts = crate::flow::daily_muts(); let mn: Vec<String> = muts.iter().map(|&i| i18n::mutator(data::MUTS[i]).0).collect(); let d = a.g.s.daily.clone();
     let qd = d.quests.iter().filter(|q| q.done).count(); let qr = a.g.quests_ready();
@@ -321,7 +328,9 @@ fn level(a: &mut App) {
     }
     if let Some(k) = chosen { if a.ui.lock <= 0. { a.take_card(k); return; } }
     let by = if land { y + total + 12. } else { y + total + 12. };
-    if rm { return; }
+    if rm { if !a.relic_rerolled && a.ad_ready() { let by = y + total + 12.; let l = if i18n::is_en() { "▶ Other relics".to_string() } else { "▶ Другие реликвии".to_string() };
+            let bw = a.gx.text_w(&l, 16., 2) + 30.; if a.ui.btn(&mut a.gx, Rect::new(w / 2. - bw / 2., by, bw, 44.), &l, St::Gold, 16., true) { a.click(); a.ad_show("relic", AdCb::RelicReroll); } }
+        return; }
     let mut bx_ = w / 2.; let rr = a.g.rerolls; let can_ad = rr == 0 && a.g.ad_rerolls < 2 && a.ad_ready();
     if rr > 0 { let l = tf("reroll2", &[&rr.to_string()]); let bw = a.gx.text_w(&l, 16., 2) + 30.; if a.ui.btn(&mut a.gx, Rect::new(bx_ - bw / 2., by, bw, 44.), &l, St::Cyan, 16., true) { a.click(); a.g.rerolls -= 1; a.roll_cards(); } bx_ += 0.; }
     else if can_ad { let l = t("adReroll"); let bw = a.gx.text_w(&l, 16., 2) + 30.; if a.ui.btn(&mut a.gx, Rect::new(bx_ - bw / 2., by, bw, 44.), &l, St::Gold, 16., true) { a.click(); a.ad_show("reroll", AdCb::Reroll); } }
@@ -590,7 +599,11 @@ fn quests(a: &mut App) {
         pbar(&mut a.gx, f.x + 12., y + 32., iw - 24. - bw - 10., 6., q.p as f32 / q.need as f32, if q.done { pal(c::GOLD) } else { pal(c::CYAN) }, al);
         let pv = format!("{} / {} · +{}", i18n::fmt_num(q.p as i64), i18n::fmt_num(q.need as i64), q.r); a.gx.text(&pv, f.x + 12., y + 54., 11., Color::new(1., 1., 1., 0.7 * al), 0, 0);
         let br = Rect::new(f.x + iw - 12. - bw, y + h / 2. - 22., bw, 44.);
-        if q.got { a.ui.btn(&mut a.gx, br, &t("claimed"), St::Cyan, 15., false); } else if a.ui.btn(&mut a.gx, br, &t("claim"), St::Gold, 15., q.done) { a.g.claim_quest(k); }
+        if q.got { a.ui.btn(&mut a.gx, br, &t("claimed"), St::Cyan, 15., false); }
+        else if q.done && a.ad_ready() { let b1 = Rect::new(br.x - br.w * 0.35, br.y, br.w * 0.62, br.h); let b2 = Rect::new(br.x + br.w * 0.32, br.y, br.w * 0.68, br.h);
+            if a.ui.btn(&mut a.gx, b1, &t("claim"), St::Cyan, 13., true) { a.g.claim_quest(k); }
+            if a.ui.btn(&mut a.gx, b2, "▶ ×2", St::Gold, 15., true) { a.click(); a.ad_show("quest", AdCb::Quest(k)); } }
+        else if a.ui.btn(&mut a.gx, br, &t("claim"), St::Gold, 15., q.done) { a.g.claim_quest(k); }
         y += h + 9.; }
 }
 
@@ -636,7 +649,7 @@ fn settings(a: &mut App) {
     let orient = match s.orient { 1 => if i18n::is_en() { "LANDSCAPE" } else { "ГОРИЗОНТАЛЬНО" }, 2 => if i18n::is_en() { "AUTO" } else { "АВТО" }, _ => if i18n::is_en() { "PORTRAIT" } else { "ВЕРТИКАЛЬНО" } };
     let orient_l = if i18n::is_en() { "Orientation" } else { "Экран" };
     let rows: Vec<(String, u8)> = vec![
-        (format!("{}: {}", t("sound"), on_off(s.sound)), 0), (format!("{}: {}", t("music"), on_off(s.music)), 1), (format!("{}: {}", t("vibro"), on_off(s.vibro)), 2),
+        (format!("{}: {}", t("sound"), vol_l(s.sound, s.vsfx)), 0), (format!("{}: {}", t("music"), vol_l(s.music, s.vmus)), 1), (format!("{}: {}", t("vibro"), on_off(s.vibro)), 2),
         (format!("{}: {}", t("graphics"), match s.quality.as_str() { "high" => t("gHigh"), "low" => t("gLow"), _ => t("gAuto") }), 3),
         (format!("{}: {}", t("nums"), on_off(s.nums)), 4), (format!("{}: {}", t("shake"), on_off(s.shake)), 5),
         (format!("{orient_l}: {orient}"), 8), (format!("{}: {}", if i18n::is_en() { "Glow" } else { "Подсветка" }, on_off(s.fx)), 9), (format!("{}: {}", t("lang"), if s.lang == "en" { "English" } else { "Русский" }), 6), (format!("{}: {}", t("fps"), s.fps), 7) ];
@@ -651,7 +664,8 @@ fn settings(a: &mut App) {
     y += nrow as f32 * (bh + gap) + 4.;
     if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, bh), &t("back"), St::Pink, 18., true) { a.click(); let b = a.back_to; a.show(b); return; }
     if let Some(id) = act { a.click(); let s = &mut a.g.s.set;
-        match id { 0 => s.sound = !s.sound, 1 => s.music = !s.music, 2 => { s.vibro = !s.vibro; if s.vibro { crate::platform::vibrate(30); } },
+        // громкость по кругу: 100 → 80 → 60 → 40 → 20 → выкл → 100
+        match id { 0 => { s.vsfx = vol_next(s.sound, s.vsfx); s.sound = s.vsfx > 0; } 1 => { s.vmus = vol_next(s.music, s.vmus); s.music = s.vmus > 0; } 2 => { s.vibro = !s.vibro; if s.vibro { crate::platform::vibrate(30); } },
             3 => s.quality = match s.quality.as_str() { "auto" => "high".into(), "high" => "low".into(), _ => "auto".into() }, 4 => s.nums = !s.nums, 5 => s.shake = !s.shake,
             6 => { s.lang = if s.lang == "en" { "ru".into() } else { "en".into() }; i18n::set_en(s.lang == "en"); }, 7 => s.fps = if s.fps == 120 { 60 } else { 120 },
             9 => { s.fx = !s.fx; a.glow_auto_off = false; a.glow_slow = 0.; } _ => s.orient = (s.orient + 1) % 3 }

@@ -7,11 +7,11 @@ use std::collections::BTreeMap;
 pub struct Quest { pub id: String, pub need: u32, pub r: u32, pub p: u32, pub done: bool, pub got: bool }
 
 #[derive(Clone, Debug, Default)]
-pub struct Daily { pub day: String, pub quests: Vec<Quest>, pub streak: u32, pub last: String, pub gift: u32, pub ch_best: u32, pub ch_done: bool }
+pub struct Daily { pub day: String, pub quests: Vec<Quest>, pub streak: u32, pub last: String, pub gift: u32, pub ch_best: u32, pub ch_done: bool, pub boost: u32 }
 
 #[derive(Clone, Debug)]
 pub struct Settings { pub sound: bool, pub music: bool, pub vibro: bool, pub quality: String, pub nums: bool, pub shake: bool, pub lang: String,
-    pub fps: u32, pub fx: bool, pub hard: bool, pub orient: u8 /* 0 — вертикаль, 1 — горизонталь, 2 — авто */ }
+    pub fps: u32, pub fx: bool, pub hard: bool, pub orient: u8 /* 0 — вертикаль, 1 — горизонталь, 2 — авто */, pub vsfx: u8, pub vmus: u8 /* громкость 0..10 */ }
 
 #[derive(Clone, Debug)]
 pub struct Save {
@@ -32,7 +32,7 @@ impl Default for Save {
         Save { pearls: 0, best: 0, best_depth: 0, total_kills: 0, total_pearls: 0, runs: 0, flares: 0, shop: BTreeMap::new(), tal: BTreeMap::new(),
             chars, ch: "lumen".into(), skins, skin: "azure".into(), ach: BTreeMap::new(), seen_how: false, seen_intro: false, foe_seen: BTreeMap::new(),
             seen: BTreeMap::new(), tut: false, wins: 0, daily: Daily::default(), best_kills: 0, best_combo: 0, best_level: 0, best_syn: 0, crab_hint: false,
-            set: Settings { sound: true, music: true, vibro: true, quality: "auto".into(), nums: true, shake: true, lang: default_lang(), fps: 120, fx: true, hard: false, orient: 0 },
+            set: Settings { sound: true, music: true, vibro: true, quality: "auto".into(), nums: true, shake: true, lang: default_lang(), fps: 120, fx: true, hard: false, orient: 0, vsfx: 10, vmus: 8 },
             err_log: vec![], migrated: false }
     }
 }
@@ -64,7 +64,7 @@ impl Save {
         d.migrated = flag(&o, "migrated", false);
         if let Some(da) = o.get("daily") {
             d.daily.day = s(da, "day").unwrap_or_default(); d.daily.last = s(da, "last").unwrap_or_default();
-            d.daily.streak = num(da, "streak").unwrap_or(0.) as u32; d.daily.gift = num(da, "gift").unwrap_or(0.) as u32;
+            d.daily.streak = num(da, "streak").unwrap_or(0.) as u32; d.daily.gift = num(da, "gift").unwrap_or(0.) as u32; d.daily.boost = num(da, "boost").unwrap_or(0.) as u32;
             d.daily.ch_best = num(da, "chBest").unwrap_or(0.) as u32; d.daily.ch_done = flag(da, "chDone", false);
             if let Some(Value::Array(q)) = da.get("quests") { for x in q { if let Some(id) = s(x, "id") {
                 d.daily.quests.push(Quest { id, need: num(x, "need").unwrap_or(1.) as u32, r: num(x, "r").unwrap_or(0.) as u32, p: num(x, "p").unwrap_or(0.) as u32, done: flag(x, "done", false), got: flag(x, "got", false) }); } } }
@@ -75,7 +75,9 @@ impl Save {
             if let Some(q) = s(st, "quality") { if ["auto", "high", "low"].contains(&q.as_str()) { t.quality = q; } }
             if let Some(l) = s(st, "lang") { if l == "ru" || l == "en" { t.lang = l; } }
             t.fps = if num(st, "fps") == Some(60.0) { 60 } else { 120 };
-            t.fx = flag(st, "glow2", true); // лёгкая подсветка, сама отключается на слабом телефоне t.hard = flag(st, "hard", false); t.orient = num(st, "orient").unwrap_or(0.).min(2.) as u8;
+            t.fx = flag(st, "glow2", true); // свечение
+            t.hard = flag(st, "hard", false); t.orient = num(st, "orient").unwrap_or(0.).min(2.) as u8;
+            t.vsfx = num(st, "vsfx").map(|v| v.clamp(0., 10.) as u8).unwrap_or(if t.sound { 10 } else { 0 }); t.vmus = num(st, "vmus").map(|v| v.clamp(0., 10.) as u8).unwrap_or(if t.music { 8 } else { 0 });
         }
         if let Some(Value::Array(a)) = o.get("errLog") { d.err_log = a.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).take(5).collect(); }
         // проверки, как в веб-версии
@@ -93,10 +95,10 @@ impl Save {
             "runs": self.runs, "flares": self.flares, "shop": mapv(&self.shop), "tal": mapv(&self.tal), "chars": mapv(&self.chars), "char": self.ch,
             "skins": mapv(&self.skins), "skin": self.skin, "ach": mapv(&self.ach), "seenHow": self.seen_how as u8, "seenIntro": self.seen_intro as u8,
             "foeSeen": mapv(&self.foe_seen), "seen": mapv(&self.seen), "tut": self.tut as u8, "wins": self.wins, "crabHint": self.crab_hint as u8, "migrated": self.migrated as u8,
-            "daily": {"day": self.daily.day, "quests": q, "streak": self.daily.streak, "last": self.daily.last, "gift": self.daily.gift, "chBest": self.daily.ch_best, "chDone": self.daily.ch_done as u8},
+            "daily": {"day": self.daily.day, "quests": q, "streak": self.daily.streak, "last": self.daily.last, "gift": self.daily.gift, "boost": self.daily.boost, "chBest": self.daily.ch_best, "chDone": self.daily.ch_done as u8},
             "bestKills": self.best_kills, "bestCombo": self.best_combo, "bestLevel": self.best_level, "bestSyn": self.best_syn,
             "set": {"sound": t.sound as u8, "music": t.music as u8, "vibro": t.vibro as u8, "quality": t.quality, "nums": t.nums as u8, "shake": t.shake as u8, "qv": 1,
-                "lang": t.lang, "fps": t.fps, "glow2": t.fx as u8, "hard": t.hard as u8, "orient": t.orient},
+                "lang": t.lang, "fps": t.fps, "glow2": t.fx as u8, "hard": t.hard as u8, "orient": t.orient, "vsfx": t.vsfx, "vmus": t.vmus},
             "errLog": self.err_log,
         }).to_string()
     }

@@ -150,6 +150,8 @@ class QuadSurface
     @SuppressWarnings("deprecation")
     @Override
     public boolean onKey(View v, int keyCode, KeyEvent event) {
+        // кнопки громкости — системе (раньше игра их «съедала», и звук нельзя было убавить)
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN || keyCode == KeyEvent.KEYCODE_VOLUME_MUTE) return false;
         if (event.getAction() == KeyEvent.ACTION_DOWN && keyCode != 0) {
             QuadNative.surfaceOnKeyDown(keyCode);
         }
@@ -369,6 +371,7 @@ public class MainActivity extends Activity {
         setContentView(layout);
 
         QuadNative.activityOnCreate(this);
+        setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC); // кнопки громкости управляют звуком игры
         getWindow().addFlags(LayoutParams.FLAG_KEEP_SCREEN_ON);
         requestMaxRefreshRate();
         setFullScreen(true);

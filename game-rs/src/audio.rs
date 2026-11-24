@@ -84,7 +84,7 @@ fn synth(k: Key, seed: &mut u32) -> Buf {
 pub const TRACKS: [&str; 10] = ["menu", "zone1", "zone2", "zone3", "zone4", "boss1", "boss2", "boss3", "gameover", "victory"];
 
 pub struct Audio {
-    sfx: HashMap<Key, Sound>, last: HashMap<u8, f64>, pub sound_on: bool, pub music_on: bool,
+    sfx: HashMap<Key, Sound>, last: HashMap<u8, f64>, pub sound_on: bool, pub music_on: bool, pub vol_sfx: f32, pub vol_mus: f32, last_mus: f32,
     /// уровень каждого трека в кроссфейде 0..1
     vol: [f32; 10], playing: [bool; 10], done_once: [bool; 10], pub want: Option<usize>, desk: HashMap<usize, Sound>, pub native_music: bool, t: f64,
     pub cmds: Vec<(usize, i32, f32)> /* для платформы: (трек, 1 старт/0 громкость/-1 стоп, громкость) */,
@@ -92,7 +92,7 @@ pub struct Audio {
 
 impl Audio {
     pub async fn new(native_music: bool) -> Audio {
-        let mut a = Audio { sfx: HashMap::new(), last: HashMap::new(), sound_on: true, music_on: true, vol: [0.; 10], playing: [false; 10], done_once: [false; 10], want: None,
+        let mut a = Audio { sfx: HashMap::new(), last: HashMap::new(), sound_on: true, music_on: true, vol_sfx: 1., vol_mus: 1., last_mus: 1., vol: [0.; 10], playing: [false; 10], done_once: [false; 10], want: None,
             desk: HashMap::new(), native_music, t: 0., cmds: vec![] };
         let mut keys = vec![Key::Hit, Key::Clink, Key::Boom(true), Key::Boom(false), Key::Pearl, Key::Level, Key::PickCard, Key::Hurt, Key::Dash, Key::Nova, Key::Flare, Key::Warn, Key::Click, Key::Ach, Key::Graze, Key::Beat, Key::Shot2];
         for i in 0..4 { keys.push(Key::Shoot(i)); } for i in 0..12 { keys.push(Key::Kill(i)); } for i in 0..15 { keys.push(Key::Pick(i)); }
@@ -102,7 +102,7 @@ impl Audio {
     }
     fn thr(&mut self, id: u8, ms: f64) -> bool { let now = macroquad::time::get_time() * 1000.; let l = self.last.get(&id).copied().unwrap_or(-1e9); if now - l < ms { return false; } self.last.insert(id, now); true }
     pub fn play(&mut self, e: Sfx) {
-        if !self.sound_on { return; }
+        if !self.sound_on || self.vol_sfx <= 0.01 { return; }
         let (k, th): (Key, Option<(u8, f64)>) = match e {
             Sfx::Shoot => (Key::Shoot(macroquad::rand::gen_range(0u8, 4)), Some((0, 75.))), Sfx::Hit => (Key::Hit, Some((1, 45.))), Sfx::Clink => (Key::Clink, Some((2, 70.))),
             Sfx::Kill(c) => (Key::Kill((c.min(36) % 12) as u8), Some((3, 40.))), Sfx::Boom(b) => (Key::Boom(b), if b { None } else { Some((4, 60.)) }),
@@ -112,26 +112,26 @@ impl Audio {
             Sfx::Graze => (Key::Graze, Some((7, 90.))), Sfx::Beat => (Key::Beat, None), Sfx::Shot2 => (Key::Shot2, Some((8, 110.))),
         };
         if let Some((id, ms)) = th { if !self.thr(id, ms) { return; } }
-        if let Some(s) = self.sfx.get(&k) { play_sound(s, PlaySoundParams { looped: false, volume: 1. }); }
+        if let Some(s) = self.sfx.get(&k) { play_sound(s, PlaySoundParams { looped: false, volume: self.vol_sfx }); }
     }
     pub fn once(i: usize) -> bool { i >= 8 }
     /// Кроссфейд: вызывается каждый кадр с нужным треком (None — тишина)
     pub async fn tick(&mut self, want: Option<usize>, dt: f32, paused: bool) {
         let want = if self.music_on { want } else { None };
         if want != self.want { if let Some(w) = want { if Self::once(w) || self.vol[w] <= 0.01 { self.done_once[w] = false; if self.playing[w] { self.stop(w); } } } self.want = want; }
-        let step = dt / 1.5;
+        let step = dt / 1.5; let vm = self.vol_mus; let vm_changed = (vm - self.last_mus).abs() > 1e-3; self.last_mus = vm;
         for i in 0..10 {
             let target = if Some(i) == self.want && !paused { 1. } else { 0. };
             let v0 = self.vol[i]; self.vol[i] = if target > v0 { (v0 + step).min(target) } else { (v0 - step).max(target) };
-            let gain = self.vol[i] * self.vol[i] * 0.6;
+            let gain = self.vol[i] * self.vol[i] * 0.6 * vm;
             if self.vol[i] > 0. && !self.playing[i] && !(Self::once(i) && self.done_once[i]) { self.start(i).await; }
-            if self.playing[i] { if self.vol[i] <= 0. { self.stop(i); } else if (gain - v0 * v0 * 0.6).abs() > 1e-4 { self.set_vol(i, gain); } }
+            if self.playing[i] { if self.vol[i] <= 0. { self.stop(i); } else if vm_changed || (self.vol[i] - v0).abs() > 1e-5 { self.set_vol(i, gain); } }
         }
         self.t += dt as f64;
     }
     pub fn track_done(&mut self, i: usize) { self.done_once[i] = true; self.playing[i] = false; }
     async fn start(&mut self, i: usize) {
-        self.playing[i] = true; let v = self.vol[i] * self.vol[i] * 0.6;
+        self.playing[i] = true; let v = self.vol[i] * self.vol[i] * 0.6 * self.vol_mus;
         if self.native_music { self.cmds.push((i, 1, v)); return; }
         if !self.desk.contains_key(&i) { if let Ok(s) = macroquad::audio::load_sound(&format!("audio/{}.ogg", TRACKS[i])).await { self.desk.insert(i, s); } }
         if let Some(s) = self.desk.get(&i) { play_sound(s, PlaySoundParams { looped: !Self::once(i), volume: v }); }

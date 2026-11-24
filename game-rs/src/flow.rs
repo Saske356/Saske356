@@ -35,7 +35,7 @@ impl Game {
             while pick.len() < 3 { let id = QDEF_ORDER[(rnd() * 8.) as usize % 8]; if !pick.contains(&id) { pick.push(id); } }
             d.quests = pick.iter().map(|id| { let tier = (rnd() * 3.) as usize % 3; let q = qdef.iter().find(|q| q.0 == *id).unwrap();
                 Quest { id: id.to_string(), need: q.1[tier], r: q.2[tier], p: 0, done: false, got: false } }).collect();
-            d.day = today.clone(); d.gift = 0; d.ch_best = 0; d.ch_done = false;
+            d.day = today.clone(); d.gift = 0; d.boost = 0; d.ch_best = 0; d.ch_done = false;
         }
         if d.last != today {
             d.streak = if d.last == yest { d.streak + 1 } else { 1 }; d.last = today;

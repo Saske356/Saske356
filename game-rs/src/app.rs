@@ -14,7 +14,7 @@ use macroquad::prelude::*;
 pub enum Scr { None, Title, How, Level, Pause, Revive, Over, Shop, Ach, Set, Quest, Best, End }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub enum AdCb { Revive, Double, Reroll, Gift, Inter(Next) }
+pub enum AdCb { Revive, Double, Reroll, Gift, Inter(Next), Boost, RelicReroll, Quest(usize) }
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Next { Again, Menu }
 
@@ -27,12 +27,12 @@ pub struct Toast { pub title: String, pub sub: String, pub t: f32 }
 pub struct App {
     pub gx: Gfx, pub bloom: Option<crate::gfx::Bloom>, pub rd: Rd, pub g: Game, pub ui: Ui, pub au: Audio,
     pub scr: Scr, pub scr_t: f32, pub back_to: Scr, pub intro: Intro, pub end: End, pub joy: Joy, pub ads: Ads,
-    pub cards: Vec<usize>, pub cards_t: f32, pub relic_mode: bool, pub earned: u32, pub rec: bool, pub over_t: f32, pub revive_n: f32,
+    pub cards: Vec<usize>, pub cards_t: f32, pub relic_mode: bool, pub relic_rerolled: bool, pub earned: u32, pub rec: bool, pub over_t: f32, pub revive_n: f32,
     pub shop_tab: u8, pub toasts: Vec<Toast>, pub save_t: f32, pub safe: [f32; 4], pub now: f64, pub was_paused: bool,
     pub glow_auto_off: bool, pub glow_slow: f32, pub test: Vec<(f64, String)>, pub bot: bool, pub shot: Option<String>, pub fps_acc: f32, pub fps_n: u32, pub fps: f32, pub slow_t: f32, pub q_auto: u8, pub last_land: bool, pub orient_set: u8, pub fps_set: u32,
 }
 
-pub const GIFT_R: u32 = 30; pub const GIFT_MAX: u32 = 5;
+pub const GIFT_R: u32 = 30; pub const GIFT_MAX: u32 = 8; pub const BOOST_MAX: u32 = 5;
 
 fn track_for(g: &Game) -> Option<usize> {
     match g.state {
@@ -72,7 +72,7 @@ impl App {
         let now = get_time();
         let mut app = App { gx, bloom: None, rd: Rd::new(), g, ui: Ui::new(), au, scr: Scr::None, scr_t: 0., back_to: Scr::Title,
             intro: Intro { t: 0., dur: if full { 5.8 } else { 1.5 }, full, ig: if full { 3.7 } else { 0.08 }, revealed: false }, end: End { t: 0., show: 7.4, shown: false, first: false },
-            joy: Joy::default(), ads: Ads { place: String::new(), cb: None, wd: 0., wd_len: 0., last: -1e9, t0: now, over_n: 0, back_t: 0. }, cards: vec![], cards_t: 0., relic_mode: false, earned: 0, rec: false, over_t: 0., revive_n: 0.,
+            joy: Joy::default(), ads: Ads { place: String::new(), cb: None, wd: 0., wd_len: 0., last: -1e9, t0: now, over_n: 0, back_t: 0. }, cards: vec![], cards_t: 0., relic_mode: false, relic_rerolled: false, earned: 0, rec: false, over_t: 0., revive_n: 0.,
             shop_tab: 0, toasts: vec![], save_t: 0., safe: [0.; 4], now, was_paused: false, glow_auto_off: false, glow_slow: 0., test: std::env::var("SVET_TEST").unwrap_or_default().split(';').filter_map(|c| c.split_once(':').map(|(t, c)| (t.trim().parse().unwrap_or(0.), c.trim().to_string()))).collect(), bot: false, shot: None, fps_acc: 0., fps_n: 0, fps: 60., slow_t: 0., q_auto: 2, last_land: false, orient_set: 99, fps_set: 0 };
         app.g.state = State::Intro;
         if let Some(crate::flow::DailyMsg::Login(d, r)) = app.g.daily_check() { app.toast_later(tf("loginT", &[&d.to_string()]), format!("+{r} {}", t("pearlsGen"))); }
@@ -113,6 +113,14 @@ impl App {
             AdCb::Double => { if !ok || self.g.ad_doubled || self.g.state != State::Over { return; } self.g.ad_doubled = true; let e = self.g.last_earned; self.g.s.pearls += e; self.g.s.total_pearls += e as u64;
                 self.persist(); self.au.play(Sfx::PickCard); platform::vibrate(30); }
             AdCb::Reroll => { if ok && self.g.ad_rerolls < 2 { self.g.ad_rerolls += 1; self.roll_cards(); } }
+            // забег с реликвией на старте (до 5 в день)
+            AdCb::Boost => { if !ok || self.g.s.daily.boost >= BOOST_MAX { return; } self.g.s.daily.boost += 1; self.persist(); self.start_run(RunMode::Normal);
+                self.g.relic_pending += 1; self.g.level_delay = 0.8; }
+            // другие три реликвии
+            AdCb::RelicReroll => { if !ok || !self.relic_mode { return; } self.relic_rerolled = true; let c = self.g.roll_relics(); if !c.is_empty() { self.cards = c; self.cards_t = 0.; self.ui.lock = 0.4; } }
+            // награда за задание ×2
+            AdCb::Quest(k) => { if !ok { return; } let r = self.g.s.daily.quests.get(k).filter(|q| q.done && !q.got).map(|q| q.r);
+                if let Some(r) = r { self.g.s.pearls += r; self.g.claim_quest(k); self.persist(); self.toast(t("giftT"), format!("+{} {}", r * 2, t("pearlsGen"))); } }
             AdCb::Gift => { if !ok || self.g.s.daily.gift >= GIFT_MAX { return; } self.g.s.daily.gift += 1; self.g.s.pearls += GIFT_R; self.g.s.total_pearls += GIFT_R as u64; self.persist();
                 self.au.play(Sfx::PickCard); platform::vibrate(30); self.toast(t("giftT"), format!("+{GIFT_R} {}", t("pearlsGen"))); }
         }
@@ -142,7 +150,7 @@ impl App {
     pub fn open_relic(&mut self) {
         self.g.want_relic = false; self.g.relic_pending = self.g.relic_pending.saturating_sub(1);
         let c = self.g.roll_relics(); if c.is_empty() { return; }
-        self.g.state = State::LevelUp; self.g.snd(Sfx::Ach); self.joy = Joy::default(); self.relic_mode = true;
+        self.g.state = State::LevelUp; self.g.snd(Sfx::Ach); self.joy = Joy::default(); self.relic_mode = true; self.relic_rerolled = false;
         self.cards = c; self.cards_t = 0.; self.show(Scr::Level); self.ui.lock = 0.6;
     }
     pub fn take_card(&mut self, k: usize) {
@@ -189,7 +197,7 @@ impl App {
         for tt in std::mem::take(&mut self.g.toasts) { self.toast(tt.title, tt.sub); }
         // во время забега — не чаще раза в 20 с (и при паузе/сворачивании/конце забега), в меню — сразу
         if self.g.dirty { self.save_t += rdt; if self.save_t > if self.g.state == State::Play { 20. } else { 0.6 } { self.persist(); } }
-        self.au.sound_on = self.g.s.set.sound; self.au.music_on = self.g.s.set.music;
+        self.au.sound_on = self.g.s.set.sound; self.au.music_on = self.g.s.set.music; self.au.vol_sfx = self.g.s.set.vsfx as f32 / 10.; self.au.vol_mus = (self.g.s.set.vmus as f32 / 10.).powf(1.5);
         let tr = track_for(&self.g); self.au.tick(tr, rdt, paused).await;
         for (i, op, v) in std::mem::take(&mut self.au.cmds) { platform::music(i, op, v); }
 
@@ -228,6 +236,7 @@ impl App {
                 "char" => { let k = n as usize % crate::data::CHARS.len(); self.g.s.ch = crate::data::CHARS[k].id.into(); self.g.compute_stats(); }
                 "die" => { self.g.give_up(); }
                 "tap" => { if self.scr == Scr::Revive { self.ad_show("revive", AdCb::Revive); } }
+                "boost" => { self.ad_show("boost", AdCb::Boost); } "relicad" => { self.ad_show("relic", AdCb::RelicReroll); }
                 "relic" => { self.g.relic_pending += 1; self.g.level_delay = 0.; }
                 "elite" => { let k = crate::data::K_ALL[n as usize % 23]; for q in 0..6 { let (x, y) = (self.g.p.x - 150. + q as f32 * 60., self.g.p.y - 200.); if let Some(i) = self.g.spawn_enemy(k, x, y, true) { self.g.en.items[i].aff = 1 + q as u8; if q == 0 { self.g.en.items[i].ash = self.g.en.items[i].max_hp * 0.45; } } } }
                 "fps" => { eprintln!("fps {:.1} enemies {} parts {} ebul {}", self.fps, self.g.en.n, self.g.parts.n, self.g.eb.n); }
