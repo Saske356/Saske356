@@ -347,7 +347,7 @@ impl Game {
         if !self.rec_shown && self.start_best >= 200 && depth > self.start_best { self.rec_shown = true; let (x, y) = (self.p.x, self.p.y - 64.); self.text(x, y, t("newRec"), 0xffd54f, true, true); self.snd(Sfx::Level); self.ring(self.p.x, self.p.y, 10., 160., 0.6, c::GOLD, 5.); }
         self.s.best_depth = self.s.best_depth.max(depth);
         if self.zone % 5 == 0 { let k = boss_at(self.zone); self.start_boss(k, ((self.zone - 5) / 20) as f32); let tr = boss_tier(self.zone); if let Some(b) = self.boss_idx() { self.apply_tier(b, tr); if tr > 0 { self.banner(crate::tiers::boss_name(k, tr, i18n::is_en()).unwrap_or("").to_string(), format!("{} · {} {}", t("lord"), self.zone * 100, t("m")), 0xff4f8f, 3.4); } } }
-        else if !self.try_guardian() { self.banner(format!("{} {}", depth, t("m")), i18n::zone((self.zone as usize - 1) % 15), 0x8fd8ff, 2.6); self.snd(Sfx::Nova); }
+        else if !self.try_guardian() { self.banner(format!("{} {}", depth, t("m")), i18n::zone((self.zone as usize - 1) % 30), 0x8fd8ff, 2.6); self.snd(Sfx::Nova); }
     }
     fn start_boss(&mut self, k: K, cyc: f32) {
         self.hp_scale = 1. + cyc * 1.3;
@@ -621,7 +621,7 @@ impl Game {
                 if self.zone % 5 != 0 { self.unlock("guard"); self.spawn_chest(e.x, e.y); self.boss_clear_t = 0.; self.zone_t = self.zone_t.max(cfg::ZONE_TIME * 0.45); } }
             _ => { self.unlock("boss3");
                 for k in 0..self.en.n { if !self.en.items[k].dead && self.en.items[k].kind == K::Crystal { self.kill_enemy(k, Src::None); } }
-                if !self.endless && !self.victory { self.victory = true; self.boss_clear_t = 0.; self.ending_t = 2.6; self.level_delay = 99.; self.p.inv = 99.;
+                if !self.endless && !self.victory && self.zone >= 30 { self.victory = true; self.boss_clear_t = 0.; self.ending_t = 2.6; self.level_delay = 99.; self.p.inv = 99.;
                     for k in 0..self.en.n { if self.en.items[k].dead || k == i { continue; } let o = self.en.items[k].clone(); self.burst(o.x, o.y, 6, o.col, 160., 8., 0.6); self.en.items[k].dead = true; }
                     self.banner(t("heartOut"), String::new(), 0xffd54f, 2.4);
                 } else { let (a, b) = i18n::pair("bossDie", 2); self.banner(a, b, 0xffd54f, 3.); } }
@@ -843,5 +843,6 @@ impl Game {
 #[derive(Clone, Copy, PartialEq, Debug)] pub enum Src { None, Chain, Burn, Nova, Static, Cleanup }
 /// Ярус владыки: в бесконечном спуске боссы возвращаются новыми
 pub fn boss_tier(z: u32) -> u8 { if z <= 20 { 0 } else if z <= 40 { 1 } else { 2 } }
-pub fn boss_at(z: u32) -> K { let n = z / 5; if n <= 3 { [K::Boss1, K::Boss2, K::Boss3][(n - 1) as usize] } else { [K::Boss4, K::Boss1, K::Boss2, K::Boss3][((n - 4) % 4) as usize] } }
+/// 3.7: сюжет на 30 зон (3000 м): Удильщик, Матерь, Левиафан, Удильщик и Матерь яруса, финал — Сердце Бездны на 3000 м; дальше круг
+pub fn boss_at(z: u32) -> K { let n = z / 5; if n <= 6 { [K::Boss1, K::Boss2, K::Boss4, K::Boss1, K::Boss2, K::Boss3][(n - 1) as usize] } else { [K::Boss4, K::Boss1, K::Boss2, K::Boss3][((n - 7) % 4) as usize] } }
 pub fn num_str(v: f32) -> String { let n = v.round() as i64; if n >= 10000 { format!("{:.1}k", n as f32 / 1000.) } else { n.to_string() } }

@@ -73,7 +73,7 @@ mod imp {
     pub fn quit() { std::process::exit(0); }
     pub fn migrate() {}
     pub fn paused() -> bool { false }
-    pub fn density() -> f32 { macroquad::window::screen_dpi_scale().max(1.) }
+    pub fn density() -> f32 { std::env::var("SVET_DPI").ok().and_then(|v| v.parse().ok()).unwrap_or(macroquad::window::screen_dpi_scale().max(1.)) }
     pub fn set_fps(_f: u32) {}
     pub fn files_dir() -> String { std::env::var("SVET_DATA").unwrap_or_else(|_| ".".into()) }
     pub fn insets() -> [f32; 4] { [0.; 4] }

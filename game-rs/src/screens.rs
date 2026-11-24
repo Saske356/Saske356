@@ -387,7 +387,7 @@ fn over(a: &mut App) {
     let total = 40. + 22. + if land { 40. } else { 62. } + 26. + stats_h + 12. + q_h + if dbl { 60. } else { 0. } + bh + 8. + 54.;
     let mut y = ((h - total) / 2.).max(tp);
     h2(&mut a.gx, &if a.g.victory { t("overWin") } else { t("overLose") }, w / 2., y + 14., if land { 21. } else { 28. }, al); y += if land { 30. } else { 40. };
-    let sub = format!("{} {} · {}", a.g.zone * 100, t("m"), i18n::zone((a.g.zone as usize).saturating_sub(1) % 15)); a.gx.text(&sub, w / 2., y, 14., Color::new(1., 1., 1., 0.75 * al), 1, 0); y += 22.;
+    let sub = format!("{} {} · {}", a.g.zone * 100, t("m"), i18n::zone((a.g.zone as usize).saturating_sub(1) % 30)); a.gx.text(&sub, w / 2., y, 14., Color::new(1., 1., 1., 0.75 * al), 1, 0); y += 22.;
     let k = (a.over_t / 0.9).min(1.); let sc = (a.g.score as f32 * (1. - (1. - k).powi(3))) as i64;
     let bs = if land { 34. } else if sm { 44. } else { 54. }; let p = a.gx.px;
     a.gx.glow_scr(true, c::CYAN, w / 2. * p, (y + bs * 0.55) * p, bs * 1.6 * p, 0.45 * al); a.gx.text(&i18n::fmt_num(sc), w / 2., y + bs * 0.55, bs, Color::new(1., 1., 1., al), 1, 2); y += bs * 1.15;

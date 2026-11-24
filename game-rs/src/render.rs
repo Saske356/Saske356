@@ -40,32 +40,37 @@ pub fn tkey(b: &str, tier: u8) -> String { if tier > 0 { format!("{b}_t{tier}") 
 fn ease_out(t: f32) -> f32 { 1. - (1. - t).powi(3) }
 pub fn low_hp(g: &Game) -> bool { !g.p.dead && g.p.hp < g.p.max_hp * 0.3 && matches!(g.state, State::Play | State::Pause | State::LevelUp) }
 
+/// Заполнить экран плитками текстуры (каждая — отдельный прямоугольник, без повтора на GPU). off — сдвиг узора в мире
+fn tile_grid(gx: &Gfx, t: &Texture2D, tw: f32, th: f32, offx: f32, offy: f32, col: Color) {
+    let (sw, sh) = (screen_width(), screen_height()); let ws = gx.ws;
+    let (wx0, wy0) = ((0. - gx.ox) / ws - offx, (0. - gx.oy) / ws - offy); let (wx1, wy1) = ((sw - gx.ox) / ws - offx, (sh - gx.oy) / ws - offy);
+    let (i0, i1, j0, j1) = ((wx0 / tw).floor() as i32, (wx1 / tw).floor() as i32, (wy0 / th).floor() as i32, (wy1 / th).floor() as i32);
+    for j in j0..=j1 { for i in i0..=i1 {
+        let (x, y) = (gx.ox + (i as f32 * tw + offx) * ws, gx.oy + (j as f32 * th + offy) * ws);
+        // с запасом в пиксель внахлёст — без щелей между плитками
+        draw_texture_ex(t, x.floor(), y.floor(), col, DrawTextureParams { dest_size: Some(vec2((tw * ws).ceil() + 1., (th * ws).ceil() + 1.)), ..Default::default() }); } }
+}
 /// Фон: цвет зоны, дно-плитка, декорации, лучи света с поверхности, морской снег
 pub fn background(gx: &mut Gfx, rd: &mut Rd, g: &mut Game, dt: f32, show_decor: bool) {
     let hi = g.quality >= 1;
-    let zi = if g.state == State::Title || g.state == State::Intro { 0 } else { (g.zone as usize).saturating_sub(1).min(ZONE_COLS.len() - 1) };
+    let zi = if g.state == State::Title || g.state == State::Intro { 0 } else { (g.zone as usize).saturating_sub(1) % ZONE_COLS.len() };
     clear_background(hex(ZONE_COLS[zi]));
-    // дно: плитка 512 пикселей, 1 пиксель = 0.9 единицы мира
+    // дно: сетка отдельных плиток (uv 0..1 у каждой). Повтор текстуры (REPEAT) на части телефонов не включается —
+    // тогда картинка за краем растягивалась в полосы и дно выглядело «склеенным из двух».
+    let tint = if g.zone > 15 && g.state != State::Title { Color::new(0.92, 0.74, 0.8, 1.) } else { WHITE };
     if let Some(t) = gx.ground.get(zi).cloned() {
-        gx.set_add(false);
-        // плитка дна: ширина 560 единиц мира, высота — по пропорциям картинки
-        let (sw, sh) = (screen_width(), screen_height()); let tile = 560.; let tile_h = tile * t.height() / t.width().max(1.);
-        let wx = |sx: f32| (sx - gx.ox) / gx.ws; let wy = |sy: f32| (sy - gx.oy) / gx.ws;
-        let v = |sx: f32, sy: f32| Vertex::new(sx, sy, 0., wx(sx) / tile, wy(sy) / tile_h, WHITE);
-        draw_mesh(&Mesh { vertices: vec![v(0., 0.), v(sw, 0.), v(sw, sh), v(0., sh)], indices: vec![0, 1, 2, 0, 2, 3], texture: Some(t) });
+        gx.set_add(false); let tile = 560.; let tile_h = tile * t.height() / t.width().max(1.);
+        tile_grid(gx, &t, tile, tile_h, 0., 0., tint);
     }
     // бегущие блики света по дну (каустика): два слоя с разным масштабом и сносом
     if let Some(ct) = gx.caustic.clone() {
-        let (sw, sh) = (screen_width(), screen_height()); let depth = if g.state == State::Title || g.state == State::Intro { 0. } else { (g.zone as f32 - 1.) / 14. };
-        let acc = hex(crate::data::ZONE_ACCENTS[zi]); let base = (0.06 - depth * 0.03) * if g.boss >= 0 { 0.6 } else { 1. };
+        let depth = if g.state == State::Title || g.state == State::Intro { 0. } else { (g.zone as f32 - 1.) / 14. };
+        let acc = hex(crate::data::ZONE_ACCENTS[zi]); let base = ((0.06 - depth * 0.03) * if g.boss >= 0 { 0.6 } else { 1. }).max(0.012);
         let layers: &[(f32, f32, f32, f32)] = if hi { &[(210., 9., 4., 1.0), (310., -6., 7., 0.75)] } else { &[(240., 8., 5., 1.0)] };
         gx.set_add(true);
         for &(tile, vx, vy, k) in layers {
-            let (ox, oy) = (g.t * vx, g.t * vy); let a = base * k;
-            let col = Color::new(0.55 + acc.r * 0.45, 0.55 + acc.g * 0.45, 0.55 + acc.b * 0.45, a);
-            let wx = |sx: f32| (sx - gx.ox) / gx.ws; let wy = |sy: f32| (sy - gx.oy) / gx.ws;
-            let v = |sx: f32, sy: f32| Vertex::new(sx, sy, 0., (wx(sx) + ox) / tile, (wy(sy) + oy) / tile, col);
-            draw_mesh(&Mesh { vertices: vec![v(0., 0.), v(sw, 0.), v(sw, sh), v(0., sh)], indices: vec![0, 1, 2, 0, 2, 3], texture: Some(ct.clone()) });
+            let col = Color::new(0.55 + acc.r * 0.45, 0.55 + acc.g * 0.45, 0.55 + acc.b * 0.45, base * k);
+            tile_grid(gx, &ct, tile, tile, (g.t * vx) % tile, (g.t * vy) % tile, col);
         }
         gx.set_add(false);
     }

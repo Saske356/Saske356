@@ -70,7 +70,7 @@ impl App {
         g.quality = match g.s.set.quality.as_str() { "low" => 0, _ => 2 };
         let full = !g.s.seen_intro;
         let now = get_time();
-        let mut app = App { gx, bloom: crate::gfx::Bloom::new(), rd: Rd::new(), g, ui: Ui::new(), au, scr: Scr::None, scr_t: 0., back_to: Scr::Title,
+        let mut app = App { gx, bloom: None, rd: Rd::new(), g, ui: Ui::new(), au, scr: Scr::None, scr_t: 0., back_to: Scr::Title,
             intro: Intro { t: 0., dur: if full { 5.8 } else { 1.5 }, full, ig: if full { 3.7 } else { 0.08 }, revealed: false }, end: End { t: 0., show: 7.4, shown: false, first: false },
             joy: Joy::default(), ads: Ads { cb: None, wd: 0., wd_len: 0., last: -1e9, t0: now, over_n: 0, back_t: 0. }, cards: vec![], cards_t: 0., relic_mode: false, earned: 0, rec: false, over_t: 0., revive_n: 0.,
             shop_tab: 0, toasts: vec![], save_t: 0., safe: [0.; 4], now, was_paused: false, glow_auto_off: false, glow_slow: 0., test: std::env::var("SVET_TEST").unwrap_or_default().split(';').filter_map(|c| c.split_once(':').map(|(t, c)| (t.trim().parse().unwrap_or(0.), c.trim().to_string()))).collect(), bot: false, shot: None, fps_acc: 0., fps_n: 0, fps: 60., slow_t: 0., q_auto: 2, last_land: false, orient_set: 99, fps_set: 0 };
@@ -303,7 +303,9 @@ impl App {
         let st = self.g.state;
         let intro_dark = st == State::Intro && self.intro.t < self.intro.ig;
         let end_lit = st == State::Ending && self.end.t > 4.15;
-        let use_bloom = self.g.s.set.fx && !self.glow_auto_off && self.bloom.is_some() && !intro_dark;
+        // 3.8: полноэкранная подсветка (рендер в текстуру + размытие) лагала на телефонах — выключена навсегда.
+        // «Свечение» в настройках теперь просто усиливает собственный свет существ и снарядов (почти бесплатно).
+        let use_bloom = false; self.gx.glow_boost = if self.g.s.set.fx { 1.35 } else { 1. };
         if use_bloom { if let Some(b) = self.bloom.as_mut() { b.begin(&mut self.gx); } }
         if intro_dark { clear_background(Color::from_rgba(0, 2, 7, 255)); }
         else if !end_lit { render::background(&mut self.gx, &mut self.rd, &mut self.g, rdt, !(st == State::Intro && self.intro.t <= self.intro.ig)); }

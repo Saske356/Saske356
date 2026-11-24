@@ -67,7 +67,7 @@ pub fn hud(a: &mut App) {
     if g.endless { gx.text("∞", l + 104., top + 38., 13., pal(c::GOLD), 0, 1); }
     if g.boss < 0 {
         gx.rect(l, top + 49., hw, 3., Color::new(1., 1., 1., 0.1)); gx.rect(l, top + 49., hw * (g.zone_t / cfg::ZONE_TIME).min(1.), 3., hex(0x8fd8ff));
-        let zl = format!("{}{}", if g.hard { "☠ " } else if g.daily { "☀ " } else { "" }, i18n::zone((g.zone as usize).saturating_sub(1).min(14)).to_uppercase());
+        let zl = format!("{}{}", if g.hard { "☠ " } else if g.daily { "☀ " } else { "" }, i18n::zone((g.zone as usize).saturating_sub(1) % 30).to_uppercase());
         gx.text(&zl, l, top + 64., 11., Color::new(200. / 255., 232. / 255., 245. / 255., 0.85), 0, 1);
         if g.boss_clear_t <= 0. { let rem = (cfg::ZONE_TIME * if g.mutf("rush") { 0.5 } else { 1. } - g.zone_t).ceil().max(0.);
             gx.text(&tf("nextDepth", &[&((g.zone + 1) * 100).to_string(), &(rem as i32).to_string()]), l, top + 79., 11., Color::new(143. / 255., 216. / 255., 1., 0.9), 0, 1); }
