@@ -18,7 +18,7 @@ pub fn draw(a: &mut App) {
     if a.scr != Scr::Title { let light = matches!(a.scr, Scr::Level | Scr::Pause | Scr::Revive); let tm = a.g.t; menu_backdrop(&mut a.gx, tm, al, light); }
     match a.scr {
         Scr::Title => title(a), Scr::How => how(a), Scr::Level => level(a), Scr::Pause => pause(a), Scr::Revive => revive(a), Scr::Over => over(a),
-        Scr::Shop => shop(a), Scr::Ach => ach(a), Scr::Set => settings(a), Scr::Quest => quests(a), Scr::Best => best(a), Scr::End => end(a), Scr::None => {}
+        Scr::Shop => shop(a), Scr::Ach => ach(a), Scr::Set => settings(a), Scr::Quest => quests(a), Scr::Best => best(a), Scr::Modes => modes(a), Scr::End => end(a), Scr::None => {}
     }
     a.ui.alpha = 1.;
 }
@@ -170,8 +170,8 @@ fn title_portrait(a: &mut App) {
     let muts = crate::flow::daily_muts(); let mn: Vec<String> = muts.iter().map(|&i| i18n::mutator(data::MUTS[i]).0).collect(); let d = a.g.s.daily.clone();
     let qd = d.quests.iter().filter(|q| q.done).count(); let qr = a.g.quests_ready();
     let en = i18n::is_en(); let n = if gift { 3. } else { 2. }; let tw_ = (bw - gap * (n - 1.)) / n;
-    let daily_l = format!("☀ {}{}\n{}", if en { "Daily" } else { "Испытание" }, if d.ch_done { " ✓" } else { "" }, mn.join(" + "));
-    if a.ui.btn(&mut a.gx, Rect::new(bx, y, tw_, tile_h), &daily_l, St::Gold, 15., true) { a.click(); a.start_run(RunMode::Daily); return; }
+    let _ = &mn; let daily_l = format!("{}\n{}{}", if en { "Modes" } else { "Режимы" }, if en { "daily · time · more" } else { "испытание · на время…" }, if d.ch_done { " ✓" } else { "" });
+    if a.ui.btn(&mut a.gx, Rect::new(bx, y, tw_, tile_h), &daily_l, St::Gold, 16., true) { a.click(); a.ui.scroll_reset(5); a.show(Scr::Modes); return; }
     let q_l = format!("{}\n{}/{}{}", t("quests"), qd, d.quests.len(), if qr > 0 { format!(" · {}", t("claim")) } else { String::new() });
     if a.ui.btn(&mut a.gx, Rect::new(bx + tw_ + gap, y, tw_, tile_h), &q_l, if qr > 0 { St::Gold } else { St::Cyan }, 15., true) { a.click(); a.ui.scroll_reset(3); a.show(Scr::Quest); }
     if gift { let g_l = format!("▶ +{}\n{} ({})", GIFT_R, if en { "for an ad" } else { "за рекламу" }, gift_left);
@@ -276,8 +276,8 @@ fn level(a: &mut App) {
     let n = a.cards.len(); let mut y = if land { tp + 22. } else { 0. };
     // высоты карт
     let cwid = if land { ((w - 40.) / n as f32 - 12.).min(240.) } else { (w - 32.).min(420.) };
-    let rm = a.relic_mode;
-    let infos: Vec<(String, String, bool, u8, u8, u8)> = a.cards.iter().map(|&i| if rm { let (n, d) = crate::content::relic_txt(i as u8); (n.to_string(), d.to_string(), true, 0, 1, crate::content::RELICS[i].col) } else if i == U_HEAL { ("Чистый свет".to_string(), "Восстановить 50% здоровья и +1000 очков".to_string(), false, 0, 1, c::EMER) }
+    let rm = a.relic_mode || a.path_mode; let pm = a.path_mode;
+    let infos: Vec<(String, String, bool, u8, u8, u8)> = a.cards.iter().map(|&i| if pm { let (n, d) = crate::content::path_txt(i as u8); (n.to_string(), d.to_string(), true, 0, 1, crate::content::PATHS[i - 1].col) } else if i >= crate::content::EVO_BASE && i != U_HEAL { let (n, d) = crate::content::evo_txt(i - crate::content::EVO_BASE); (n.to_string(), d.to_string(), true, 0, 1, c::GOLD) } else if rm { let (n, d) = crate::content::relic_txt(i as u8); (n.to_string(), d.to_string(), true, 0, 1, crate::content::RELICS[i].col) } else if i == U_HEAL { ("Чистый свет".to_string(), "Восстановить 50% здоровья и +1000 очков".to_string(), false, 0, 1, c::EMER) }
         else { let (nm, d) = i18n::upg(UPG[i].id); (nm, d, UPG[i].syn.is_some(), a.g.p.up[i], UPG[i].max, UPG[i].col) }).collect();
     let heal_en = i18n::is_en();
     let hs: Vec<f32> = infos.iter().map(|inf| { let dw = if land { cwid - 24. } else { cwid - 28. - 68. }; let dh = a.gx.wrap(&inf.1, dw, 13.5, 0).len() as f32 * 17.;
@@ -286,10 +286,12 @@ fn level(a: &mut App) {
     let total: f32 = if land { hs.iter().cloned().fold(0., f32::max) } else { hs.iter().sum::<f32>() + gap * (n as f32 - 1.) };
     let head = 28. + 14. + 24. + 14.; let foot = 12. + 44. + 50.;
     if !land { y = ((h - head - total - foot) / 2.).max(tp) + 14.; }
-    if rm { ui::h2c(&mut a.gx, if i18n::is_en() { "RELIC" } else { "РЕЛИКВИЯ" }, w / 2., y + 14., if land { 21. } else { 30. }, al, c::GOLD, hex(0xffe9a8)); }
+    if pm { ui::h2c(&mut a.gx, if i18n::is_en() { "CHOOSE A PATH" } else { "РАЗВИЛКА" }, w / 2., y + 14., if land { 21. } else { 30. }, al, c::ICE, hex(0xd8f6ff)); }
+    else if rm { ui::h2c(&mut a.gx, if i18n::is_en() { "RELIC" } else { "РЕЛИКВИЯ" }, w / 2., y + 14., if land { 21. } else { 30. }, al, c::GOLD, hex(0xffe9a8)); }
     else { h2(&mut a.gx, &format!("{}{}", t("lvlUp"), a.g.p.level), w / 2., y + 14., if land { 21. } else { 28. }, al); }
     y += if land { 34. } else { 42. };
-    let sub = if rm { if i18n::is_en() { "A powerful artifact for the whole run — pick one".to_string() } else { "Сильный предмет на весь забег — выбери один".to_string() } }
+    let sub = if pm { if i18n::is_en() { "How will you descend to the next lord?".to_string() } else { "Каким путём плыть до следующего владыки?".to_string() } }
+        else if rm { if i18n::is_en() { "A powerful artifact for the whole run — pick one".to_string() } else { "Сильный предмет на весь забег — выбери один".to_string() } }
         else if a.g.level_pending > 0 { tf("lvSubMore", &[&a.g.level_pending.to_string()]) } else { t("lvSub") };
     a.gx.text(&sub, w / 2., y, 14., Color::new(1., 1., 1., 0.75 * al), 1, 0); y += 24.;
     let x0 = if land { (w - (cwid + 12.) * n as f32 + 12.) / 2. } else { (w - cwid) / 2. };
@@ -305,13 +307,13 @@ fn level(a: &mut App) {
             else { (Color::new(ac.r * 0.34 + 0.04, ac.g * 0.34 + 0.06, ac.b * 0.34 + 0.12, 0.88), Color::new(ac.r * 0.1 + 0.02, ac.g * 0.1 + 0.03, ac.b * 0.1 + 0.09, 0.92), Color::new(ac.r, ac.g, ac.b, 0.7)) };
         for q in (1..=3).rev() { let o = q as f32 * 3.; gx.rrect_line(r2.x - o, r2.y - o, r2.w + o * 2., r2.h + o * 2., 18. + o, 3., with_alpha(bord, ca * if syn { 0.2 } else { 0.1 } / q as f32)); }
         ui::rrect_grad(gx, r2.x, r2.y, r2.w, r2.h, 18., with_alpha(c1, ca), with_alpha(c2, ca)); gx.rrect_line(r2.x, r2.y, r2.w, r2.h, 18., 2., with_alpha(bord, ca));
-        let icon_key = if rm { crate::content::RELICS[a.cards[k]].icon.to_string() } else if a.cards[k] == U_HEAL { "heal".to_string() } else { UPG[a.cards[k]].id.to_string() };
+        let icon_key = if pm { crate::content::PATHS[a.cards[k] - 1].icon.to_string() } else if a.cards[k] >= crate::content::EVO_BASE && a.cards[k] != U_HEAL { crate::content::EVOS[a.cards[k] - crate::content::EVO_BASE].icon.to_string() } else if rm { crate::content::RELICS[a.cards[k]].icon.to_string() } else if a.cards[k] == U_HEAL { "heal".to_string() } else { UPG[a.cards[k]].id.to_string() };
         let ic = gx.icon.get(&icon_key).cloned();
         let name = if rm { inf.0.clone() } else if a.cards[k] == U_HEAL && heal_en { "Pure Light".to_string() } else { inf.0.clone() };
         let desc = if rm { inf.1.clone() } else if a.cards[k] == U_HEAL && heal_en { "Restore 50% health and +1000 points".to_string() } else { inf.1.clone() };
         if land {
             let mut yy = r2.y + 12.; if let Some(t_) = ic { gx.tex_ui(&t_, r2.x + r2.w / 2. - 28., yy, 56., 56., Color::new(1., 1., 1., ca)); } yy += 64.;
-            if syn && !rm { tag(gx, r2.x + r2.w / 2., yy + 6., ca); yy += 18.; }
+            if syn && !rm { if a.cards[k] >= crate::content::EVO_BASE && a.cards[k] != U_HEAL { tag_l(gx, r2.x + r2.w / 2., yy + 6., ca, if i18n::is_en() { "EVOLUTION" } else { "ЭВОЛЮЦИЯ" }); } else { tag(gx, r2.x + r2.w / 2., yy + 6., ca); } yy += 18.; }
             gx.text(&name, r2.x + r2.w / 2., yy + 8., 17., Color::new(1., 1., 1., ca), 1, 2); yy += 18.;
             if max > 1 { let pw = max as f32 * 10.; pips(gx, r2.x + r2.w / 2. - pw / 2., yy + 4., lvl + 1, max, ca); } yy += 12.;
             gx.text_wrap(&desc, r2.x + r2.w / 2., yy + 8., r2.w - 24., 13., 17., Color::new(1., 1., 1., 0.85 * ca), 1, 0);
@@ -319,7 +321,7 @@ fn level(a: &mut App) {
             let p = gx.px; gx.glow_scr(true, colr, (r2.x + 14. + 28.) * p, (r2.y + r2.h / 2.) * p, 36. * p, 0.25 * ca);
             if let Some(t_) = ic { gx.tex_ui(&t_, r2.x + 14., r2.y + r2.h / 2. - 28., 56., 56., Color::new(1., 1., 1., ca)); }
             let tx = r2.x + 14. + 56. + 12.; let mut yy = r2.y + 14.;
-            if syn && !rm { tag(gx, tx + 34., yy + 6., ca); yy += 18.; }
+            if syn && !rm { if a.cards[k] >= crate::content::EVO_BASE && a.cards[k] != U_HEAL { tag_l(gx, tx + 38., yy + 6., ca, if i18n::is_en() { "EVOLUTION" } else { "ЭВОЛЮЦИЯ" }); } else { tag(gx, tx + 34., yy + 6., ca); } yy += 18.; }
             let nw = gx.text(&name, tx, yy + 8., 18., Color::new(1., 1., 1., ca), 0, 2);
             if max > 1 { pips(gx, tx + nw + 8., yy + 9., lvl + 1, max, ca); }
             yy += 22.; gx.text_wrap(&desc, tx, yy + 8., r2.w - (tx - r2.x) - 12., 13.5, 17., Color::new(1., 1., 1., 0.85 * ca), 0, 0);
@@ -328,6 +330,7 @@ fn level(a: &mut App) {
     }
     if let Some(k) = chosen { if a.ui.lock <= 0. { a.take_card(k); return; } }
     let by = if land { y + total + 12. } else { y + total + 12. };
+    if pm { return; }
     if rm { if !a.relic_rerolled && a.ad_ready() { let by = y + total + 12.; let l = if i18n::is_en() { "▶ Other relics".to_string() } else { "▶ Другие реликвии".to_string() };
             let bw = a.gx.text_w(&l, 16., 2) + 30.; if a.ui.btn(&mut a.gx, Rect::new(w / 2. - bw / 2., by, bw, 44.), &l, St::Gold, 16., true) { a.click(); a.ad_show("relic", AdCb::RelicReroll); } }
         return; }
@@ -335,7 +338,8 @@ fn level(a: &mut App) {
     if rr > 0 { let l = tf("reroll2", &[&rr.to_string()]); let bw = a.gx.text_w(&l, 16., 2) + 30.; if a.ui.btn(&mut a.gx, Rect::new(bx_ - bw / 2., by, bw, 44.), &l, St::Cyan, 16., true) { a.click(); a.g.rerolls -= 1; a.roll_cards(); } bx_ += 0.; }
     else if can_ad { let l = t("adReroll"); let bw = a.gx.text_w(&l, 16., 2) + 30.; if a.ui.btn(&mut a.gx, Rect::new(bx_ - bw / 2., by, bw, 44.), &l, St::Gold, 16., true) { a.click(); a.ad_show("reroll", AdCb::Reroll); } }
 }
-fn tag(gx: &mut Gfx, cx: f32, cy: f32, al: f32) { let s = t("synergy"); let w = gx.text_w(&s, 10., 2) + 14.; gx.rrect(cx - w / 2., cy - 8., w, 16., 6., with_alpha(pal(c::GOLD), al)); gx.text(&s, cx, cy, 10., Color::new(32. / 255., 20. / 255., 0., al), 1, 2); }
+fn tag(gx: &mut Gfx, cx: f32, cy: f32, al: f32) { tag_l(gx, cx, cy, al, &t("synergy")) }
+fn tag_l(gx: &mut Gfx, cx: f32, cy: f32, al: f32, s: &str) { let s = s.to_string(); let w = gx.text_w(&s, 10., 2) + 14.; gx.rrect(cx - w / 2., cy - 8., w, 16., 6., with_alpha(pal(c::GOLD), al)); gx.text(&s, cx, cy, 10., Color::new(32. / 255., 20. / 255., 0., al), 1, 2); }
 
 fn pause(a: &mut App) {
     let sm = small(a); let tp = top(a); let _ = (sm, tp); let _gh = a.gx.h;
@@ -571,8 +575,11 @@ fn ach(a: &mut App) {
         let done = a.g.s.ach.contains_key(id); let aa = if done { al } else { al * 0.78 }; let (nm, d) = i18n::ach(id); let r = Rect::new(f.x, y, iw, h); let gx = &mut a.gx;
         item_panel(gx, r, done, aa);
         let (ix, iy) = (f.x + 12. + 17., y + 28.);
-        if done { let p = gx.px; gx.glow_scr(true, c::GOLD, ix * p, iy * p, 26. * p, 0.6 * aa); gx.circle(ix, iy, 17., with_alpha(pal(c::GOLD), aa)); gx.text("★", ix, iy, 17., Color::new(58. / 255., 38. / 255., 0., aa), 1, 2); }
-        else { gx.ring(ix, iy, 16., 2., Color::new(1., 1., 1., 0.25 * aa)); gx.rrect(ix - 6., iy - 2., 12., 9., 2., Color::new(1., 1., 1., 0.45 * aa)); gx.arc(ix, iy - 3., 4.5, std::f32::consts::PI, std::f32::consts::TAU, 2., Color::new(1., 1., 1., 0.45 * aa)); }
+        let ik = ach_icon(id);
+        if done { let p = gx.px; gx.glow_scr(true, c::GOLD, ix * p, iy * p, 28. * p, 0.6 * aa); gx.circle(ix, iy, 18., Color::new(0.30, 0.20, 0.04, 0.95 * aa)); gx.ring(ix, iy, 18., 2., with_alpha(pal(c::GOLD), aa));
+            if let Some(tx) = gx.icon.get(ik).cloned() { gx.tex_ui(&tx, ix - 14., iy - 14., 28., 28., Color::new(1., 1., 1., aa)); } }
+        else { gx.circle(ix, iy, 17., Color::new(0.05, 0.08, 0.14, 0.8 * aa)); gx.ring(ix, iy, 17., 1.5, Color::new(1., 1., 1., 0.22 * aa));
+            if let Some(tx) = gx.icon.get(ik).cloned() { gx.tex_ui(&tx, ix - 12., iy - 12., 24., 24., Color::new(0.35, 0.4, 0.5, 0.55 * aa)); } }
         let tx = f.x + 12. + 44.; gx.text(&nm, tx, y + 18., 16., if done { Color::new(1., 1., 1., aa) } else { with_alpha(hex(0xbbccdd), aa) }, 0, 1);
         let dh = gx.text_wrap(&d, tx, y + 37., iw - 24. - 44. - 70., 12.5, 16., Color::new(1., 1., 1., 0.75 * aa), 0, 0);
         if let Some((cur, mx)) = a.g.ach_progress(id) { let v = if done { mx } else { cur.min(mx) }; let gx = &mut a.gx;
@@ -584,6 +591,77 @@ fn ach(a: &mut App) {
     a.ui.clip_off();
 }
 
+/// Режимы: испытание дня, на время, без улучшений, только рывок
+/// Значок награды
+fn ach_icon(id: &str) -> &'static str { match id { "first" => "flare", "kill100" => "dmg", "kill500" => "reaper", "kill5k" => "supernova", "kill20k" => "tempest", "combo50" => "chain", "combo150" => "storm",
+    "depth300" => "barrier", "depth500" => "speed", "deep1100" => "vortex", "endless2000" => "maelstrom", "boss1" => "hunter", "boss2" => "kraken", "boss3" => "lighthouse", "guard" => "aegis",
+    "syn" => "prism", "syn3" => "choir", "lvl20" => "echo", "flare10" => "nova", "rich" => "greed", "lord" => "overcharge", _ => "multi" } }
+/// Карточка существа (бестиарий): большая живая модель, описание и характеристики
+fn best_card(a: &mut App, i: usize, tr: u8) {
+    let (w, h) = (a.gx.w, a.gx.h); let al = a.ui.alpha; let en = i18n::is_en(); let p = a.gx.px; let tm = a.g.t;
+    a.gx.fill_screen(Color::new(0.01, 0.03, 0.08, 0.78 * al), false);
+    let (bx, bw) = col(a); let ch = (h * 0.78).min(640.); let cy0 = (h - ch) / 2.; let r = Rect::new(bx - 8., cy0, bw + 16., ch);
+    let d = &ET[i]; let k = crate::data::K_ALL[i]; let acc = crate::tiers::tier_col(d.col, tr);
+    item_card(&mut a.gx, r, pal(acc), d.boss, al);
+    // модель
+    let key_s = crate::render::tkey(d.key, tr); let key = key_s.as_str(); let half = a.gx.spr_half(key); let sz = (bw * 0.42).min(ch * 0.26); let kk = sz / half;
+    let (mx, my) = (w / 2., cy0 + 30. + sz); a.gx.glow_scr(true, acc, mx * p, my * p, sz * 1.5 * p, 0.55 * al);
+    let ph = a.gx.spr_anim(key).map(|an| tm * an.freq() * std::f32::consts::TAU).unwrap_or(0.);
+    let jaw = if a.gx.spr.contains_key(&format!("{key}_body")) { 0.1 + 0.18 * (tm * 1.6).sin().max(-0.3) } else { 0. };
+    if jaw != 0. { let half_b = a.gx.spr_half(&format!("{key}_body")); let kb = sz / half_b; a.gx.jaw = 0.;
+        let mouth = format!("{key}_mouth"); if a.gx.spr.contains_key(&mouth) { a.gx.spr_screen(&mouth, mx * p, my * p, 0., kb * p, al, false, ph, false); }
+        a.gx.jrot = jaw; a.gx.spr_screen(&format!("{key}_jaw"), mx * p, my * p, 0., kb * p, al, false, ph, false); a.gx.jrot = 0.;
+        a.gx.spr_screen(&format!("{key}_body"), mx * p, my * p, 0., kb * p, al, false, ph, false); }
+    else { a.gx.spr_screen(key, mx * p, my * p, 0., kk * p, al, false, ph, false); }
+    // имя и описание
+    let mut y = my + sz + 22.;
+    let nm = if tr > 0 { if d.boss { crate::tiers::boss_name(k, tr, en).unwrap_or("").to_string() } else { crate::tiers::foe_name(k, tr, en).unwrap_or("").to_string() } }
+        else if d.boss { i18n::boss(d.key) } else { let n = i18n::best(d.key).0; if n.is_empty() { d.key.to_string() } else { n } };
+    ui::h2c(&mut a.gx, &nm, w / 2., y, 22., al, acc, WHITE); y += 26.;
+    y += a.gx.text_wrap(&i18n::best(d.key).1, w / 2., y, bw - 20., 14., 19., Color::new(1., 1., 1., 0.85 * al), 1, 0) + 14.;
+    // характеристики: полоски относительно самых сильных в своей группе
+    let tierk = [1., 1.6, 2.4][tr as usize];
+    let (mhp, mdmg, mspd) = if d.boss { (17000., 28., 150.) } else { (100., 18., 150.) };
+    let rows = [(if en { "Health" } else { "Здоровье" }, (d.hp * tierk / mhp).min(1.), hex(0xff6f91)), (if en { "Damage" } else { "Урон" }, (d.dmg * tierk / mdmg).min(1.), hex(0xffb340)),
+        (if en { "Speed" } else { "Скорость" }, (d.spd / mspd).min(1.), hex(0x5fe9ff))];
+    for (l, v, c_) in rows.iter() { a.gx.text(l, bx + 12., y + 6., 14., Color::new(1., 1., 1., 0.8 * al), 0, 1); pbar(&mut a.gx, bx + 110., y + 1., bw - 130., 9., v.max(0.05), *c_, al); y += 26.; }
+    // где встречается
+    let mut where_ = String::new();
+    if d.boss { for z in 1..=30u32 { if z % 5 == 0 && crate::game::boss_at(z) == k { where_ = format!("{} {} {}", if en { "Lord of" } else { "Владыка" }, z * 100, t("m")); break; }
+            if let Some((g, _)) = crate::game::Game::guardian_for(z) { if g == k { where_ = format!("{} {} {}", if en { "Guardian of" } else { "Страж" }, z * 100, t("m")); break; } } } }
+    else if tr == 1 { where_ = if en { "600 m and deeper".into() } else { "600 м и глубже".into() }; } else if tr == 2 { where_ = if en { "1100 m and deeper".into() } else { "1100 м и глубже".into() }; }
+    if !where_.is_empty() { a.gx.text(&where_, w / 2., y + 8., 15., with_alpha(hex(0xffe08a), al), 1, 2); }
+    a.gx.text(if en { "Tap to close" } else { "Нажми, чтобы закрыть" }, w / 2., cy0 + ch - 18., 12., Color::new(1., 1., 1., 0.5 * al), 1, 0);
+    if a.ui.tap_any() { a.best_sel = None; }
+}
+fn modes(a: &mut App) {
+    let al = a.ui.alpha; let en = i18n::is_en();
+    let (f, back) = list_frame(a, if en { "MODES" } else { "РЕЖИМЫ" }, 0.);
+    if back { a.click(); a.show(Scr::Title); return; }
+    let muts = crate::flow::daily_muts(); let mn: Vec<String> = muts.iter().map(|&i| i18n::mutator(data::MUTS[i]).0).collect(); let d = a.g.s.daily.clone();
+    let rec = |k: &str| a.g.s.mode_best.get(k).copied().unwrap_or(0) as u32 * 100;
+    let items: [(RunMode, &str, String, String, Color, &str); 4] = [
+        (RunMode::Daily, "flare", if en { "Daily challenge".into() } else { "Испытание дня".into() },
+            format!("{} · {}{}", mn.join(" + "), if en { "pearls ×2" } else { "жемчуг ×2" }, if d.ch_best > 0 { format!(" · {} {} {}", t("best"), d.ch_best, t("m")) } else { String::new() }), hex(0xffd54f), "daily"),
+        (RunMode::Time, "rate", if en { "Time attack".into() } else { "На время".into() },
+            if en { format!("10 minutes, zones twice as fast — dive as deep as you can. Best: {} m", rec("time")) } else { format!("10 минут, зоны вдвое быстрее — нырни как можно глубже. Лучшее: {} м", rec("time")) }, hex(0x5fe9ff), "time"),
+        (RunMode::NoUp, "dmg", if en { "No upgrades".into() } else { "Без улучшений".into() },
+            if en { format!("No cards: each level heals and makes you stronger. Relics still drop. Best: {} m", rec("noup")) } else { format!("Никаких карт: каждый уровень лечит и усиливает. Реликвии остаются. Лучшее: {} м", rec("noup")) }, hex(0xff7a5c), "noup"),
+        (RunMode::Dash, "dash", if en { "Dash only".into() } else { "Только рывок".into() },
+            if en { format!("You can't shoot — dash through foes, it recharges fast and hits hard. Best: {} m", rec("dash")) } else { format!("Стрелять нельзя — тарань врагов рывком, он быстрый и мощный. Лучшее: {} м", rec("dash")) }, hex(0xc59bff), "dash"),
+    ];
+    let iw = f.w; let bw = 96.; let mut y = f.y0 + 4.;
+    for (m, icon, nm, desc, acc, _k) in items.iter() {
+        let dh = a.gx.wrap(desc, iw - 76. - bw - 10., 12.5, 0).len() as f32 * 16.; let h = (34. + dh + 12.).max(74.);
+        let r = Rect::new(f.x, y, iw, h); item_card(&mut a.gx, r, *acc, false, al);
+        let pc = if *m == RunMode::Daily { c::GOLD } else { c::CYAN }; icon_tile(&mut a.gx, icon, f.x + 34., y + h / 2., *acc, pc, al);
+        a.gx.text(nm, f.x + 64., y + 20., 17., Color::new(1., 1., 1., al), 0, 2);
+        a.gx.text_wrap(desc, f.x + 64., y + 40., iw - 76. - bw - 10., 12.5, 16., Color::new(1., 1., 1., 0.82 * al), 0, 0);
+        let br = Rect::new(f.x + iw - 12. - bw, y + h / 2. - 22., bw, 44.);
+        if a.ui.btn(&mut a.gx, br, if en { "Play" } else { "Играть" }, St::Gold, 16., true) { a.click(); a.start_run(*m); return; }
+        y += h + 10.;
+    }
+}
 fn quests(a: &mut App) {
     let sm = small(a); let tp = top(a); let _ = (sm, tp); let _gh = a.gx.h;
     let al = a.ui.alpha; let w = a.gx.w;
@@ -610,6 +688,7 @@ fn quests(a: &mut App) {
 fn best(a: &mut App) {
     let sm = small(a); let tp = top(a); let _ = (sm, tp); let _gh = a.gx.h;
     let al = a.ui.alpha; let w = a.gx.w;
+    if let Some((i, tr)) = a.best_sel { let (_f, back) = list_frame(a, &t("bestT"), 30.); if back { a.best_sel = None; } else { best_card(a, i, tr); } return; }
     let (f, back) = list_frame(a, &t("bestT"), 30.);
     if back { a.click(); a.show(Scr::Title); return; }
     let en = i18n::is_en();
@@ -639,6 +718,7 @@ fn best(a: &mut App) {
         let (nm, ds) = info(i, tr);
         a.gx.text(&if ok { nm } else { "???".into() }, f.x + 78., y + 20., 16., if tr == 1 { Color::new(1., 0.7, 0.7, al) } else if tr == 2 { Color::new(0.85, 0.75, 1., al) } else { Color::new(1., 1., 1., al) }, 0, 1);
         a.gx.text_wrap(&if ok { ds } else { t("bestLocked") }, f.x + 78., y + 40., iw - 24. - 66., 12.5, 16., Color::new(1., 1., 1., 0.75 * al), 0, 0);
+        if ok && r.y >= f.y0 - 2. && r.y + r.h <= f.y1 + 2. && a.ui.tap(r) { a.click(); a.best_sel = Some((i, tr)); a.ui.lock = 0.25; }
         y += h + 9.; }
     a.ui.clip_off();
 }

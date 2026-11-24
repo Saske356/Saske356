@@ -48,14 +48,14 @@ pub mod c {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 #[repr(u8)]
 pub enum K { #[default] Drifter, Dart, Jelly, Urchin, Spikelet, Eel, Squid, Crab, Mender, Bomber, Chest, Boss1, Boss2, Boss3, Boss4, Crystal,
-    Ray, Lantern, Wisp, Spawner, Fry, KingCrab, Queen }
-pub const K_ALL: [K; 23] = [K::Drifter, K::Dart, K::Jelly, K::Urchin, K::Spikelet, K::Eel, K::Squid, K::Crab, K::Mender, K::Bomber, K::Chest,
-    K::Boss1, K::Boss2, K::Boss3, K::Boss4, K::Crystal, K::Ray, K::Lantern, K::Wisp, K::Spawner, K::Fry, K::KingCrab, K::Queen];
+    Ray, Lantern, Wisp, Spawner, Fry, KingCrab, Queen, Boss5, Boss6, Boss7, Boss8 }
+pub const K_ALL: [K; 27] = [K::Drifter, K::Dart, K::Jelly, K::Urchin, K::Spikelet, K::Eel, K::Squid, K::Crab, K::Mender, K::Bomber, K::Chest,
+    K::Boss1, K::Boss2, K::Boss3, K::Boss4, K::Crystal, K::Ray, K::Lantern, K::Wisp, K::Spawner, K::Fry, K::KingCrab, K::Queen, K::Boss5, K::Boss6, K::Boss7, K::Boss8];
 
 pub struct EtDef { pub key: &'static str, pub r: f32, pub hp: f32, pub spd: f32, pub dmg: f32, pub xp: f32, pub score: f32, pub col: u8, pub boss: bool, pub guard: bool }
 const fn et(key: &'static str, r: f32, hp: f32, spd: f32, dmg: f32, xp: f32, score: f32, col: u8, boss: bool, guard: bool) -> EtDef {
     EtDef { key, r, hp, spd, dmg, xp, score, col, boss, guard } }
-pub static ET: [EtDef; 23] = [
+pub static ET: [EtDef; 27] = [
     et("drifter", 11., 10., 80., 8., 1., 10., c::DRIFT, false, false),
     et("dart", 12., 14., 70., 14., 2., 20., c::DART, false, false),
     et("jelly", 18., 32., 38., 10., 3., 30., c::JELLY, false, false),
@@ -79,6 +79,10 @@ pub static ET: [EtDef; 23] = [
     et("fry", 7., 5., 150., 6., 1., 5., c::EEL, false, false),
     et("kingcrab", 46., 1500., 72., 20., 60., 3000., c::GOLD, true, true),
     et("queen", 50., 4300., 55., 18., 100., 7000., c::ICE, true, true),
+    et("boss5", 62., 13000., 130., 24., 230., 23000., c::FIRE, true, false),
+    et("boss6", 58., 14500., 150., 25., 250., 25000., c::ICE, true, false),
+    et("boss7", 60., 12000., 90., 22., 220., 22000., c::EMER, true, false),
+    et("boss8", 64., 17000., 110., 28., 280., 28000., c::CYAN, true, false),
 ];
 impl K { pub fn d(self) -> &'static EtDef { &ET[self as usize] } pub fn key(self) -> &'static str { ET[self as usize].key } }
 

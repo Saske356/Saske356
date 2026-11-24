@@ -61,6 +61,7 @@ impl Game {
     pub fn upg2_mul(&mut self, i: usize) -> f32 {
         let e = &self.en.items[i]; let mut m = 1.;
         let cl = self.lv(u::CHILL); if cl > 0 && (e.slow > 0. || e.freeze > 0.) { m *= 1. + 0.2 * cl as f32; }
+        if self.p.evo & crate::content::EV_FROST != 0 && (e.slow > 0. || e.freeze > 0.) { m *= 1.5; }
         let ml = self.lv(u::MARK); if ml > 0 && e.uid == self.p.mark_uid && self.p.mark_uid != 0 { m *= 1.25 + 0.1 * ml as f32; }
         if self.lv(u::BLIZZARD) > 0 && e.slow > 0. && e.freeze <= 0. && !e.kind.d().boss && self.rng.next() < 0.12 { self.en.items[i].freeze = 0.6; }
         m

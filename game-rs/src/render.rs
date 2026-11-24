@@ -198,6 +198,7 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
             K::Boss2 => boss2(gx, g, &e, sc, wht),
             K::Boss3 => boss3(gx, g, &e, sc, wht),
             K::Boss4 => boss4(gx, g, &e, sc, wht),
+            K::Boss5 | K::Boss6 | K::Boss7 | K::Boss8 => boss_new(gx, g, &e, sc, wht),
             K::KingCrab => king(gx, g, &e, sc, wht),
             K::Queen => queen(gx, g, &e, sc, wht),
             K::Wisp => { gx.glow_world(true, c::AMBER, e.x, e.y, 30., 0.7 + 0.3 * (t * 14. + e.phase).sin());
@@ -347,6 +348,15 @@ fn boss3(gx: &mut Gfx, g: &Game, e: &Enemy, sc: f32, wht: bool) {
     if g.crystals > 0 { gx.arc_world(e.x, e.y, e.r * 1.25, 0., TAU, 3., with_a(gc, 0.25), true); }
     let tk = tkey("boss3", e.tier); gx.spr_world(&tk, e.x, e.y, t * 0.3, sc * (1. + beat * 0.07), 1., wht, 0., false);
     if e.state == 1 && e.st > 2.2 { gx.circle_world(e.x, e.y, e.r * 0.9, Color::new(0., 0., 0., ((3.4 - e.st) / 1.2).min(1.) * 0.6), false); }
+}
+/// 4.0: новые владыки — пасть на шарнире (рык в атаке), живые части, сияние своего цвета
+fn boss_new(gx: &mut Gfx, g: &Game, e: &Enemy, sc: f32, wht: bool) {
+    let t = g.t; let col = e.col;
+    gx.glow_world(true, col, e.x, e.y, e.r * 2.3, 0.42 + 0.15 * (t * 3. + e.phase).sin());
+    let attack = e.state == 1 || (e.state == 2 && e.p1 > 0.);
+    let jr = jaw_anim(t * 1.05 + e.phase, attack, wht); let tk = tkey(e.kind.key(), e.tier);
+    let pulse = 1. + (t * 2.2 + e.phase).sin() * 0.02;
+    gx.spr_jaw(&tk, e.x, e.y, e.ang + (t * 1.9).sin() * 0.03, sc * pulse, wht, anim_ph(gx, &tk, e), jr);
 }
 fn boss4(gx: &mut Gfx, g: &Game, e: &Enemy, sc: f32, wht: bool) {
     let t = g.t; let a = e.ang; let (nx, ny) = (-a.sin(), a.cos());

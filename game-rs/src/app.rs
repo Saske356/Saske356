@@ -11,7 +11,7 @@ use crate::ui::Ui;
 use macroquad::prelude::*;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub enum Scr { None, Title, How, Level, Pause, Revive, Over, Shop, Ach, Set, Quest, Best, End }
+pub enum Scr { None, Title, How, Level, Pause, Revive, Over, Shop, Ach, Set, Quest, Best, End, Modes }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum AdCb { Revive, Double, Reroll, Gift, Inter(Next), Boost, RelicReroll, Quest(usize) }
@@ -27,7 +27,7 @@ pub struct Toast { pub title: String, pub sub: String, pub t: f32 }
 pub struct App {
     pub gx: Gfx, pub bloom: Option<crate::gfx::Bloom>, pub rd: Rd, pub g: Game, pub ui: Ui, pub au: Audio,
     pub scr: Scr, pub scr_t: f32, pub back_to: Scr, pub intro: Intro, pub end: End, pub joy: Joy, pub ads: Ads,
-    pub cards: Vec<usize>, pub cards_t: f32, pub relic_mode: bool, pub relic_rerolled: bool, pub earned: u32, pub rec: bool, pub over_t: f32, pub revive_n: f32,
+    pub cards: Vec<usize>, pub cards_t: f32, pub relic_mode: bool, pub path_mode: bool, pub best_sel: Option<(usize, u8)>, pub relic_rerolled: bool, pub earned: u32, pub rec: bool, pub over_t: f32, pub revive_n: f32,
     pub shop_tab: u8, pub toasts: Vec<Toast>, pub save_t: f32, pub safe: [f32; 4], pub now: f64, pub was_paused: bool,
     pub glow_auto_off: bool, pub banner_on: bool, pub glow_slow: f32, pub test: Vec<(f64, String)>, pub bot: bool, pub shot: Option<String>, pub fps_acc: f32, pub fps_n: u32, pub fps: f32, pub slow_t: f32, pub q_auto: u8, pub last_land: bool, pub orient_set: u8, pub fps_set: u32,
 }
@@ -72,7 +72,7 @@ impl App {
         let now = get_time();
         let mut app = App { gx, bloom: None, rd: Rd::new(), g, ui: Ui::new(), au, scr: Scr::None, scr_t: 0., back_to: Scr::Title,
             intro: Intro { t: 0., dur: if full { 5.8 } else { 1.5 }, full, ig: if full { 3.7 } else { 0.08 }, revealed: false }, end: End { t: 0., show: 7.4, shown: false, first: false },
-            joy: Joy::default(), ads: Ads { place: String::new(), cb: None, wd: 0., wd_len: 0., last: -1e9, t0: now, over_n: 0, back_t: 0. }, cards: vec![], cards_t: 0., relic_mode: false, relic_rerolled: false, earned: 0, rec: false, over_t: 0., revive_n: 0.,
+            joy: Joy::default(), ads: Ads { place: String::new(), cb: None, wd: 0., wd_len: 0., last: -1e9, t0: now, over_n: 0, back_t: 0. }, cards: vec![], cards_t: 0., relic_mode: false, path_mode: false, best_sel: None, relic_rerolled: false, earned: 0, rec: false, over_t: 0., revive_n: 0.,
             shop_tab: 0, toasts: vec![], save_t: 0., safe: [0.; 4], now, was_paused: false, glow_auto_off: false, banner_on: false, glow_slow: 0., test: std::env::var("SVET_TEST").unwrap_or_default().split(';').filter_map(|c| c.split_once(':').map(|(t, c)| (t.trim().parse().unwrap_or(0.), c.trim().to_string()))).collect(), bot: false, shot: None, fps_acc: 0., fps_n: 0, fps: 60., slow_t: 0., q_auto: 2, last_land: false, orient_set: 99, fps_set: 0 };
         app.g.state = State::Intro;
         if let Some(crate::flow::DailyMsg::Login(d, r)) = app.g.daily_check() { app.toast_later(tf("loginT", &[&d.to_string()]), format!("+{r} {}", t("pearlsGen"))); }
@@ -145,16 +145,23 @@ impl App {
     pub fn pause(&mut self) { if self.g.state != State::Play || self.g.dying > 0. { return; } self.g.state = State::Pause; self.joy = Joy::default(); self.show(Scr::Pause); self.persist(); }
     pub fn resume(&mut self) { self.g.state = State::Play; self.show(Scr::None); self.joy = Joy::default(); }
     pub fn roll_cards(&mut self) { self.cards = self.g.roll_choices(); self.cards_t = 0.; self.ui.lock = 0.48; }
-    pub fn open_level_up(&mut self) { self.relic_mode = false; self.g.open_level_up(); self.joy = Joy::default(); self.roll_cards(); self.show(Scr::Level); self.ui.lock = 0.48; }
+    pub fn open_level_up(&mut self) { self.relic_mode = false; self.path_mode = false; self.g.open_level_up(); self.joy = Joy::default(); self.roll_cards(); self.show(Scr::Level); self.ui.lock = 0.48; }
     /// Выбор реликвии (после босса или из жемчужницы)
     pub fn open_relic(&mut self) {
         self.g.want_relic = false; self.g.relic_pending = self.g.relic_pending.saturating_sub(1);
         let c = self.g.roll_relics(); if c.is_empty() { return; }
-        self.g.state = State::LevelUp; self.g.snd(Sfx::Ach); self.joy = Joy::default(); self.relic_mode = true; self.relic_rerolled = false;
+        self.g.state = State::LevelUp; self.g.snd(Sfx::Ach); self.joy = Joy::default(); self.relic_mode = true; self.path_mode = false; self.relic_rerolled = false;
         self.cards = c; self.cards_t = 0.; self.show(Scr::Level); self.ui.lock = 0.6;
+    }
+    /// Развилка путей после босса
+    pub fn open_path(&mut self) {
+        self.g.want_path = false; self.g.path_pending = false;
+        let c = self.g.roll_paths(); self.g.state = State::LevelUp; self.g.snd(Sfx::Level); self.joy = Joy::default();
+        self.relic_mode = false; self.path_mode = true; self.cards = c; self.cards_t = 0.; self.show(Scr::Level); self.ui.lock = 0.6;
     }
     pub fn take_card(&mut self, k: usize) {
         let Some(&i) = self.cards.get(k) else { return };
+        if self.path_mode { self.path_mode = false; self.g.take_path(i); self.g.state = State::Play; self.show(Scr::None); self.joy = Joy::default(); return; }
         if self.relic_mode { self.relic_mode = false; self.g.take_relic(i); self.g.state = State::Play; self.show(Scr::None); self.joy = Joy::default(); return; }
         if self.g.take_upgrade(i) { self.roll_cards(); } else { self.show(Scr::None); self.joy = Joy::default(); }
         let _ = U_HEAL;
@@ -174,7 +181,7 @@ impl App {
         let (vw, vh) = self.gx.frame(px, self.g.cam_x, self.g.cam_y, 0., 0.); self.g.vw = vw; self.g.vh = vh;
         let ins = platform::insets(); self.safe = [ins[0] / px, ins[1] / px, ins[2] / px, ins[3] / px];
         // баннер — только в меню вне забега; кнопки поднимаются над ним
-        let menu = matches!(self.g.state, State::Title | State::Menu) && matches!(self.scr, Scr::Title | Scr::Shop | Scr::Ach | Scr::Quest | Scr::Best | Scr::Set | Scr::How);
+        let menu = matches!(self.g.state, State::Title | State::Menu) && matches!(self.scr, Scr::Title | Scr::Shop | Scr::Ach | Scr::Quest | Scr::Best | Scr::Set | Scr::How | Scr::Modes);
         if menu != self.banner_on { self.banner_on = menu; platform::set_banner(menu); }
         if menu { let bh = platform::banner_h() / px; if bh > 0. { self.safe[1] = self.safe[1].max(bh + 4.); } }
         self.gx.safe_t = self.safe[0]; self.gx.safe_b = self.safe[1];
@@ -234,15 +241,19 @@ impl App {
                 "pearls" => { self.g.s.pearls += n as u32; } "seen" => { for e in crate::data::ET.iter() { self.g.s.seen.insert(e.key.into(), 1); } }
                 "ending" => { self.g.zone = 15; self.g.victory = true; self.end.first = self.g.start_ending(); self.end.t = 0.; self.end.shown = false; self.show(Scr::None); }
                 "endt" => { self.end.t = n; } "skin" => { let k = n as usize % crate::data::SKINS.len(); self.g.s.skins.insert(crate::data::SKINS[k].id.into(), 1); self.g.pick_skin(k); }
-                "spawn" => { let k = crate::data::K_ALL[n as usize % 23]; let (x, y) = (self.g.p.x + 160., self.g.p.y - 60.); if let Some(i) = self.g.spawn_enemy(k, x, y, false) { if crate::data::ET[k as usize].boss { self.g.boss = self.g.en.items[i].uid as i32; } } }
+                "spawn" => { let k = crate::data::K_ALL[n as usize % crate::data::K_ALL.len()]; let (x, y) = (self.g.p.x + 160., self.g.p.y - 60.); if let Some(i) = self.g.spawn_enemy(k, x, y, false) { if crate::data::ET[k as usize].boss { self.g.boss = self.g.en.items[i].uid as i32; } } }
                 "lang" => { self.g.s.set.lang = arg.into(); i18n::set_en(arg == "en"); }
                 "shot" => { self.shot = Some(arg.to_string()); }
                 "char" => { let k = n as usize % crate::data::CHARS.len(); self.g.s.ch = crate::data::CHARS[k].id.into(); self.g.compute_stats(); }
                 "die" => { self.g.give_up(); }
                 "tap" => { if self.scr == Scr::Revive { self.ad_show("revive", AdCb::Revive); } }
                 "boost" => { self.ad_show("boost", AdCb::Boost); } "relicad" => { self.ad_show("relic", AdCb::RelicReroll); }
+                "addrel" => { let r = n as u8; if !self.g.relics.contains(&r) { self.g.relics.push(r); self.g.compute_stats(); } }
+                "modes" => { self.show(Scr::Modes); } "mode" => { let m = [RunMode::Daily, RunMode::Time, RunMode::NoUp, RunMode::Dash][n as usize % 4]; self.start_run(m); }
+                "bestsel" => { self.show(Scr::Best); self.best_sel = Some((n as usize % crate::data::K_ALL.len(), 0)); }
+                "path" => { self.g.path_pending = true; }
                 "relic" => { self.g.relic_pending += 1; self.g.level_delay = 0.; }
-                "elite" => { let k = crate::data::K_ALL[n as usize % 23]; for q in 0..6 { let (x, y) = (self.g.p.x - 150. + q as f32 * 60., self.g.p.y - 200.); if let Some(i) = self.g.spawn_enemy(k, x, y, true) { self.g.en.items[i].aff = 1 + q as u8; if q == 0 { self.g.en.items[i].ash = self.g.en.items[i].max_hp * 0.45; } } } }
+                "elite" => { let k = crate::data::K_ALL[n as usize % crate::data::K_ALL.len()]; for q in 0..6 { let (x, y) = (self.g.p.x - 150. + q as f32 * 60., self.g.p.y - 200.); if let Some(i) = self.g.spawn_enemy(k, x, y, true) { self.g.en.items[i].aff = 1 + q as u8; if q == 0 { self.g.en.items[i].ash = self.g.en.items[i].max_hp * 0.45; } } } }
                 "fps" => { eprintln!("fps {:.1} enemies {} parts {} ebul {}", self.fps, self.g.en.n, self.g.parts.n, self.g.eb.n); }
                 "up" => { if let Some(i) = crate::data::UPG.iter().position(|u| u.id == arg) { self.g.p.up[i] = it.next().and_then(|v| v.parse().ok()).unwrap_or(1); self.g.compute_stats(); } }
                 "quit" => std::process::exit(0),
@@ -273,7 +284,8 @@ impl App {
             Scr::Pause => self.resume(),
             Scr::Title => { platform::write_save_now(&self.g.s.to_json()); platform::quit(); }
             Scr::Shop | Scr::Set => { let b = self.back_to; self.show(b); }
-            Scr::Ach | Scr::Quest | Scr::Best | Scr::How => self.show(Scr::Title),
+            Scr::Best if self.best_sel.is_some() => self.best_sel = None,
+            Scr::Ach | Scr::Quest | Scr::Best | Scr::How | Scr::Modes => self.show(Scr::Title),
             Scr::Over => self.between(Next::Menu),
             Scr::Revive => { if self.ads.cb.is_none() { self.game_over(); } }
             _ => {}
@@ -298,7 +310,11 @@ impl App {
                 if g.dying > 0. { g.dying -= rdt; dt = rdt * 0.35; if g.dying <= 0. { g.update_run(dt, rdt); if !self.offer_revive() { self.game_over(); } return; } }
                 let g = &mut self.g;
                 if g.state == State::Play { g.update_run(dt, rdt); }
+                if g.want_over && g.state == State::Play { self.game_over(); return; }
+                if g.want_levelup && g.run_mode == RunMode::NoUp && g.state == State::Play { g.level_noup(); }
+                let g = &mut self.g;
                 if g.want_relic && g.state == State::Play && g.dying <= 0. { self.open_relic(); }
+                else if g.want_path && g.state == State::Play && g.dying <= 0. { self.open_path(); }
                 else if g.want_levelup && g.state == State::Play && g.dying <= 0. { self.open_level_up(); }
                 else if g.want_ending && g.state == State::Play { self.end.first = self.g.start_ending(); self.end.t = 0.; self.end.shown = false; self.joy = Joy::default(); self.show(Scr::None); self.persist(); }
             }

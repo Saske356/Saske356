@@ -18,7 +18,7 @@ pub struct Save {
     pub pearls: u32, pub best: u64, pub best_depth: u32, pub total_kills: u64, pub total_pearls: u64, pub runs: u32, pub flares: u32,
     pub shop: BTreeMap<String, u8>, pub tal: BTreeMap<String, u8>, pub chars: BTreeMap<String, u8>, pub ch: String,
     pub skins: BTreeMap<String, u8>, pub skin: String, pub ach: BTreeMap<String, u8>, pub seen_how: bool, pub seen_intro: bool,
-    pub foe_seen: BTreeMap<String, u8>, pub seen: BTreeMap<String, u8>, pub tut: bool, pub wins: u32, pub daily: Daily,
+    pub foe_seen: BTreeMap<String, u8>, pub seen: BTreeMap<String, u8>, pub mode_best: BTreeMap<String, u8> /* лучшая зона в режиме */, pub tut: bool, pub wins: u32, pub daily: Daily,
     pub best_kills: u32, pub best_combo: u32, pub best_level: u32, pub best_syn: u32, pub crab_hint: bool, pub set: Settings,
     pub err_log: Vec<String>, pub migrated: bool,
 }
@@ -31,7 +31,7 @@ impl Default for Save {
         let mut skins = BTreeMap::new(); skins.insert("azure".into(), 1);
         Save { pearls: 0, best: 0, best_depth: 0, total_kills: 0, total_pearls: 0, runs: 0, flares: 0, shop: BTreeMap::new(), tal: BTreeMap::new(),
             chars, ch: "lumen".into(), skins, skin: "azure".into(), ach: BTreeMap::new(), seen_how: false, seen_intro: false, foe_seen: BTreeMap::new(),
-            seen: BTreeMap::new(), tut: false, wins: 0, daily: Daily::default(), best_kills: 0, best_combo: 0, best_level: 0, best_syn: 0, crab_hint: false,
+            seen: BTreeMap::new(), mode_best: BTreeMap::new(), tut: false, wins: 0, daily: Daily::default(), best_kills: 0, best_combo: 0, best_level: 0, best_syn: 0, crab_hint: false,
             set: Settings { sound: true, music: true, vibro: true, quality: "auto".into(), nums: true, shake: true, lang: default_lang(), fps: 120, fx: true, hard: false, orient: 0, vsfx: 10, vmus: 8 },
             err_log: vec![], migrated: false }
     }
@@ -57,7 +57,7 @@ impl Save {
         n!(pearls, "pearls", u32); n!(best, "best", u64); n!(best_depth, "bestDepth", u32); n!(total_kills, "totalKills", u64); n!(total_pearls, "totalPearls", u64);
         n!(runs, "runs", u32); n!(flares, "flares", u32); n!(wins, "wins", u32); n!(best_kills, "bestKills", u32); n!(best_combo, "bestCombo", u32);
         n!(best_level, "bestLevel", u32); n!(best_syn, "bestSyn", u32);
-        for (k, dst) in [("shop", &mut d.shop), ("tal", &mut d.tal), ("chars", &mut d.chars), ("skins", &mut d.skins), ("ach", &mut d.ach), ("foeSeen", &mut d.foe_seen), ("seen", &mut d.seen)] {
+        for (k, dst) in [("shop", &mut d.shop), ("tal", &mut d.tal), ("chars", &mut d.chars), ("skins", &mut d.skins), ("ach", &mut d.ach), ("foeSeen", &mut d.foe_seen), ("seen", &mut d.seen), ("modeBest", &mut d.mode_best)] {
             let m = map(&o, k); for (kk, vv) in m { dst.insert(kk, vv); } }
         if let Some(x) = s(&o, "char") { d.ch = x; } if let Some(x) = s(&o, "skin") { d.skin = x; }
         d.seen_how = flag(&o, "seenHow", false); d.seen_intro = flag(&o, "seenIntro", false); d.tut = flag(&o, "tut", false); d.crab_hint = flag(&o, "crabHint", false);
@@ -94,7 +94,7 @@ impl Save {
             "pearls": self.pearls, "best": self.best, "bestDepth": self.best_depth, "totalKills": self.total_kills, "totalPearls": self.total_pearls,
             "runs": self.runs, "flares": self.flares, "shop": mapv(&self.shop), "tal": mapv(&self.tal), "chars": mapv(&self.chars), "char": self.ch,
             "skins": mapv(&self.skins), "skin": self.skin, "ach": mapv(&self.ach), "seenHow": self.seen_how as u8, "seenIntro": self.seen_intro as u8,
-            "foeSeen": mapv(&self.foe_seen), "seen": mapv(&self.seen), "tut": self.tut as u8, "wins": self.wins, "crabHint": self.crab_hint as u8, "migrated": self.migrated as u8,
+            "foeSeen": mapv(&self.foe_seen), "seen": mapv(&self.seen), "modeBest": mapv(&self.mode_best), "tut": self.tut as u8, "wins": self.wins, "crabHint": self.crab_hint as u8, "migrated": self.migrated as u8,
             "daily": {"day": self.daily.day, "quests": q, "streak": self.daily.streak, "last": self.daily.last, "gift": self.daily.gift, "boost": self.daily.boost, "chBest": self.daily.ch_best, "chDone": self.daily.ch_done as u8},
             "bestKills": self.best_kills, "bestCombo": self.best_combo, "bestLevel": self.best_level, "bestSyn": self.best_syn,
             "set": {"sound": t.sound as u8, "music": t.music as u8, "vibro": t.vibro as u8, "quality": t.quality, "nums": t.nums as u8, "shake": t.shake as u8, "qv": 1,

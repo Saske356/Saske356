@@ -159,3 +159,4 @@ if __name__ == '__main__':
     for n in names:
         rig(n, man)
         json.dump(man, open(MAN, 'w'), ensure_ascii=False)
+    os.system(f'python3 "{os.path.join(ROOT, "tools", "shrink.py")}"')  # убрать цвет под прозрачностью — иначе APK раздувается

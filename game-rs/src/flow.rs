@@ -22,6 +22,8 @@ const QDEF_ORDER: [&str; 8] = ["kills", "depth", "pearls", "boss", "chest", "fla
 
 pub enum DailyMsg { Login(u32, u32) }
 
+pub fn mode_key(m: RunMode) -> Option<&'static str> { match m { RunMode::Time => Some("time"), RunMode::NoUp => Some("noup"), RunMode::Dash => Some("dash"), _ => None } }
+
 impl Game {
     /// Новые сутки: задания, награда за вход. Возвращает сообщение для всплывашки
     pub fn daily_check(&mut self) -> Option<DailyMsg> {
@@ -56,7 +58,7 @@ impl Game {
         if self.daily { for i in daily_muts() { self.muts[i] = true; } }
         self.endless = false; self.ending_t = 0.; self.ad_revived = false; self.ad_doubled = false; self.ad_rerolls = 0; self.last_earned = 0; self.ev_t = 20.; self.chal = None; self.last_ev = 9; self.chests = 0; self.lv_t = -99.;
         self.want_levelup = false; self.want_ending = false; self.want_over = false; self.crystals = 0; self.qz = Qz::default();
-        self.relics.clear(); self.relic_pending = 0; self.want_relic = false; self.rel_lives = 0; self.rel_kills = 0; self.rel_blood = 0.; self.rel_ward_t = 0.; self.rel_storm_t = 0.;
+        self.relics.clear(); self.relic_pending = 0; self.want_relic = false; self.path = 0; self.path_pending = false; self.want_path = false; self.rel_lives = 0; self.rel_kills = 0; self.rel_blood = 0.; self.rel_ward_t = 0.; self.rel_storm_t = 0.;
         if self.hard { self.dmg_scale = 1.35; }
         self.rerolls = self.s.shop_lv("reroll") as u32; self.build_decor(0); self.start_best = self.s.best_depth; self.rec_shown = false;
         let skin = SKINS.iter().position(|k| k.id == self.s.skin).unwrap_or(0);
@@ -81,12 +83,15 @@ impl Game {
         let n = if self.s.tal("t_four") { 4 } else { 3 }; let mut out = vec![];
         while out.len() < n && !pool.is_empty() { let tot: f32 = pool.iter().map(|p| p.1).sum(); let mut r = self.rand() * tot; let mut k = 0;
             while k < pool.len() - 1 { r -= pool[k].1; if r <= 0. { break; } k += 1; } out.push(pool[k].0); pool.remove(k); }
+        // эволюция — всегда первой картой, если готова
+        let ev = self.evo_ready(); if !ev.is_empty() { let k = ev[(self.rand() * ev.len() as f32) as usize % ev.len()]; out.insert(0, crate::content::EVO_BASE + k); out.truncate(n.max(3)); }
         if out.is_empty() { out.push(U_HEAL); }
         out
     }
     /// Взять улучшение. true — есть ещё выборы
     pub fn take_upgrade(&mut self, i: usize) -> bool {
         self.snd(Sfx::PickCard);
+        if i >= crate::content::EVO_BASE && i != U_HEAL { self.take_evo(i - crate::content::EVO_BASE); return if self.level_pending > 0 { self.level_pending -= 1; true } else { self.state = State::Play; self.lv_t = self.run_t; false }; }
         let syn = i != U_HEAL && UPG[i].syn.is_some();
         if i == U_HEAL { self.p.hp = (self.p.hp + self.p.max_hp * 0.5).min(self.p.max_hp); self.score += 1000.; }
         else { self.p.up[i] += 1; if i == u::HP { self.p.hp += self.p.max_hp * 0.15; }
@@ -95,10 +100,14 @@ impl Game {
         let (x, y) = (self.p.x, self.p.y); self.ring(x, y, 10., 120., 0.5, if syn { c::GOLD } else { c::CYAN }, 5.);
         if self.level_pending > 0 { self.level_pending -= 1; true } else { self.state = State::Play; self.lv_t = self.run_t; false }
     }
+    /// «Без улучшений»: каждый уровень — лечение 20% и рост урона/скорострельности (без выбора карт)
+    pub fn level_noup(&mut self) { self.want_levelup = false; self.level_pending = 0; self.lv_t = self.run_t; self.p.hp = (self.p.hp + self.p.max_hp * 0.2).min(self.p.max_hp); self.compute_stats();
+        let (x, y) = (self.p.x, self.p.y); self.ring(x, y, 10., 110., 0.4, c::GOLD, 4.); self.snd(Sfx::Level); }
     pub fn open_level_up(&mut self) { self.state = State::LevelUp; self.level_pending = self.level_pending.saturating_sub(1); self.want_levelup = false; self.snd(Sfx::Level); self.vibrate(25); }
 
     /// Итог забега: жемчуг, рекорды, награды. Возвращает (заработано, новый рекорд)
     pub fn game_over(&mut self) -> (u32, bool) {
+        if let Some(k) = mode_key(self.run_mode) { let z = self.zone.min(255) as u8; let b = self.s.mode_best.entry(k.into()).or_insert(0); if z > *b { *b = z; } }
         self.quest_add("runs", 1);
         self.state = State::Over;
         // 3.7: жемчуг копится медленно — за очки корень, а не линейно (иначе миллионы очков давали тысячи жемчуга)

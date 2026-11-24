@@ -69,8 +69,10 @@ pub fn hud(a: &mut App) {
         gx.rect(l, top + 49., hw, 3., Color::new(1., 1., 1., 0.1)); gx.rect(l, top + 49., hw * (g.zone_t / cfg::ZONE_TIME).min(1.), 3., hex(0x8fd8ff));
         let zl = format!("{}{}", if g.hard { "☠ " } else if g.daily { "☀ " } else { "" }, i18n::zone((g.zone as usize).saturating_sub(1) % 30).to_uppercase());
         gx.text(&zl, l, top + 64., 11., Color::new(200. / 255., 232. / 255., 245. / 255., 0.85), 0, 1);
+        if g.path != 0 { gx.text(&format!("· {}", crate::content::path_txt(g.path).0), l + gx.text_w(&zl, 11., 1) + 10., top + 64., 11., hex(0xffd27a), 0, 1); }
         if g.boss_clear_t <= 0. { let rem = (cfg::ZONE_TIME * if g.mutf("rush") { 0.5 } else { 1. } - g.zone_t).ceil().max(0.);
             gx.text(&tf("nextDepth", &[&((g.zone + 1) * 100).to_string(), &(rem as i32).to_string()]), l, top + 79., 11., Color::new(143. / 255., 216. / 255., 1., 0.9), 0, 1); }
+        if g.run_mode == RunMode::Time { let rem = (TIME_LIMIT - g.run_t).max(0.); gx.text(&format!("{} {}:{:02}", if i18n::is_en() { "Time" } else { "Время" }, (rem / 60.) as i32, (rem % 60.) as i32), w / 2. + 20., top + 92., 15., if rem < 30. { hex(0xff6f6f) } else { hex(0xffe08a) }, 1, 2); }
     }
     // реликвии — ряд значков под левым блоком
     if !g.relics.is_empty() { let y0 = top + if g.boss < 0 { 96. } else { 60. }; let p = gx.px;

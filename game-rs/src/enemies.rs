@@ -67,6 +67,7 @@ impl Game {
                 K::Boss2 => self.update_boss2(i, dt, d, ux, uy),
                 K::Boss3 => self.update_boss3(i, dt, d, ux, uy),
                 K::Boss4 => self.update_boss4(i, dt, d, ux, uy),
+                K::Boss5 | K::Boss6 | K::Boss7 | K::Boss8 => self.update_boss_new(i, dt, d, ux, uy),
                 K::Ray | K::Lantern | K::Wisp | K::Spawner | K::Fry => { if self.update_new_foe(i, dt, d, ux, uy, sp, fz) { i += 1; continue; } }
                 K::KingCrab => self.update_king(i, dt, d, ux, uy),
                 K::Queen => self.update_queen(i, dt, d, ux, uy),
@@ -236,6 +237,7 @@ impl Game {
     // ---------- стражи ----------
     pub fn guardian_for(z: u32) -> Option<(K, i32)> {
         if z == 3 { return Some((K::KingCrab, 0)); } if z == 8 { return Some((K::Queen, 0)); } if z == 13 { return Some((K::Boss4, 0)); }
+        if z == 18 { return Some((K::Boss7, 0)); } if z == 23 { return Some((K::Boss8, 0)); }
         if z > 15 && z % 5 == 3 { let k = (z - 18) / 5; return Some((if k % 2 == 1 { K::KingCrab } else { K::Queen }, 1 + (k / 2) as i32)); }
         None
     }
@@ -248,8 +250,8 @@ impl Game {
             if kind == K::KingCrab { e.sh = e.max_hp * 0.2; e.tx = e.sh; e.ang = PI / 2.; } else { e.ang = 0.; } }
         self.qz = Qz::default(); self.boss = self.en.items[i].uid as i32;
         // ярус стража: 1300 м — Ледяной Левиафан, дальше стражи возвращаются в облике бездны
-        let tr = if self.zone == 13 { 1 } else if self.zone > 15 { if self.zone > 30 { 2 } else { 1 } } else { 0 }; self.apply_tier(i, tr);
-        if kind == K::Boss4 { let e = &mut self.en.items[i]; e.st = 3.5; e.p1 = 0.8; e.lvl = 0; }
+        let tr = if self.zone == 13 { 1 } else if matches!(kind, K::Boss7 | K::Boss8) && self.zone <= 30 { 0 } else if self.zone > 15 { if self.zone > 30 { 2 } else { 1 } } else { 0 }; self.apply_tier(i, tr);
+        if matches!(kind, K::Boss4 | K::Boss7 | K::Boss8) { let e = &mut self.en.items[i]; e.st = 3.5; e.p1 = 0.8; e.lvl = 0; e.p3 = 1.; }
         let dx = self.rr(-40., 40.); self.drop_pick(self.p.x + dx, self.p.y + 60., 4, 30.);
         let nm = crate::tiers::boss_name(kind, tr, i18n::is_en()).map(|s| s.to_string()).filter(|_| tr > 0).unwrap_or_else(|| i18n::boss(kind.key()));
         self.banner(nm, format!("{} · {} {}", t("guard"), self.zone * 100, t("m")), if kind == K::KingCrab { 0xffd54f } else { 0x8fd8ff }, 3.2);
@@ -356,5 +358,47 @@ impl Game {
         self.floor.clear();
         for i in 0..55 { let a = self.rand() * TAU; let r = self.rand().sqrt() * (cfg::ARENA_R - 30.); let s = self.rr(60., 160.); let p = self.rand() * TAU;
             self.floor.push((a.cos() * r, a.sin() * r, s, if i % 3 > 0 { c::ICE } else { c::CYAN }, p)); }
+    }
+}
+
+// ---------- 4.0: новые владыки (Кракен, Ледяной Змей, Королева-Медуза, Древний Страж) ----------
+impl Game {
+    /// Общий ИИ: кружит вокруг игрока; 4 фазы по кругу — своя для каждого владыки.
+    pub fn update_boss_new(&mut self, i: usize, dt: f32, d: f32, ux: f32, uy: f32) {
+        let kind = self.en.items[i].kind; let face = uy.atan2(ux); let dsc = self.dmg_scale;
+        let (col, alt, minion) = match kind { K::Boss5 => (c::FIRE, c::CRAB, K::Squid), K::Boss6 => (c::ICE, c::CYAN, K::Ray), K::Boss7 => (c::EMER, c::JELLY, K::Jelly), _ => (c::CYAN, c::GOLD, K::Crab) };
+        let (enr, state, ex, ey, st);
+        { let e = &mut self.en.items[i]; enr = e.hp < e.max_hp * 0.5; e.st -= dt; state = e.state; st = e.st;
+            if !(state == 2 && matches!(kind, K::Boss5 | K::Boss6 | K::Boss8)) {   // кружит на дистанции (кроме фазы рывка)
+                let keep = if kind == K::Boss7 { 280. } else { 300. }; let rad = if d < keep - 40. { -1. } else if d > keep + 40. { 1. } else { 0. };
+                let s = e.spd * if kind == K::Boss6 { 1.25 } else { 1. }; steer(e, (ux * rad - uy * 0.55 * e.p3.signum().max(-1.)) * s, (uy * rad + ux * 0.55) * s, 1.8, dt); }
+            if e.vx * e.vx + e.vy * e.vy > 4. { e.ang += ang_diff(e.ang, if state == 2 { face } else { e.vy.atan2(e.vx) }) * (dt * 4.).min(1.); }
+            ex = e.x; ey = e.y; }
+        let (mut p1, mut p2) = (self.en.items[i].p1, self.en.items[i].p2);
+        match state {
+            // 0: спираль / веер
+            0 => { p1 -= dt; if p1 <= 0. { p1 = if enr { 0.1 } else { 0.14 }; p2 += match kind { K::Boss7 => 0.23, K::Boss6 => 0.37, _ => 0.31 };
+                    let n = if enr { 4 } else { 3 }; for k in 0..n { self.e_shoot(ex, ey, p2 + k as f32 * TAU / n as f32, 160. + if kind == K::Boss6 { 40. } else { 0. }, 6., 10. * dsc, col, if kind == K::Boss7 { 0.35 } else { 0. }); } } }
+            // 1: тяжёлый удар — кольцо / прицельный веер / лучи рун
+            1 => { p1 -= dt; if p1 <= 0. { match kind {
+                    K::Boss5 => { p1 = if enr { 0.7 } else { 0.95 }; let n = if enr { 20 } else { 14 }; let o = self.rand() * TAU; for k in 0..n { self.e_shoot(ex, ey, o + k as f32 * TAU / n as f32, 140., 8., 12. * dsc, alt, 0.); } self.ring(ex, ey, 20., 200., 0.5, alt, 6.); self.shake(5.); self.snd(Sfx::Boom(false)); }
+                    K::Boss6 => { p1 = if enr { 0.4 } else { 0.55 }; for k in -3..=3 { self.e_shoot(ex, ey, face + k as f32 * 0.12, 270., 5., 11. * dsc, alt, 0.); } self.snd(Sfx::Shot2); }
+                    K::Boss7 => { p1 = 0.9; let n = 24; for k in 0..n { if k % 4 == 0 { continue; } self.e_shoot(ex, ey, p2 + k as f32 * TAU / n as f32, 120., 7., 11. * dsc, alt, if k % 2 == 0 { 0.4 } else { -0.4 }); } p2 += 0.3; self.snd(Sfx::Shot2); }
+                    _ => { p1 = 0.09; p2 += if enr { 0.09 } else { 0.07 }; for k in 0..4 { self.e_shoot(ex, ey, p2 + k as f32 * TAU / 4., 230., 7., 12. * dsc, alt, 0.); } } } } }
+            // 2: рывок (Кракен, Змей, Страж) или туманная волна (Медуза)
+            2 => { if kind == K::Boss7 { p1 -= dt; if p1 <= 0. { p1 = 0.5; let o = self.rand() * TAU; for k in 0..16 { self.e_shoot(ex, ey, o + k as f32 * TAU / 16., 90., 9., 12. * dsc, c::PURP, 0.); } self.ring(ex, ey, 10., 140., 0.4, c::PURP, 4.); } }
+                else { let e = &mut self.en.items[i]; e.p3 = e.p3.abs() + dt; let cyc = e.p3 % 1.6;
+                    if cyc < 0.95 { steer(e, -ux * 60., -uy * 60., 4., dt); p1 = 0.; }
+                    else if p1 == 0. { p1 = 1.; let sp = if kind == K::Boss6 { 900. } else { 760. }; e.vx = e.ang.cos() * sp; e.vy = e.ang.sin() * sp; let a = e.ang;
+                        self.shake(7.); self.snd(Sfx::Dash); for k in -2..=2 { self.e_shoot(ex, ey, a + k as f32 * 0.2, 220., 6., 11. * dsc, col, 0.); } }
+                    else if self.rand() < 0.6 { self.part(ex, ey, 0., 0., 0.4, 22., col, 0.); } } }
+            // 3: призыв свиты
+            _ => { if p1 == 0. { p1 = 1.; let n = if enr { 4 } else { 3 };
+                    for _ in 0..n { let a = self.rr(0., TAU); if let Some(s) = self.spawn_enemy(minion, ex + a.cos() * 120., ey + a.sin() * 120., false) { self.en.items[s].spawn_t = 0.3; } }
+                    self.ring(ex, ey, 10., 150., 0.5, col, 5.); self.snd(Sfx::Warn); } }
+        }
+        let _ = st;
+        let e = &mut self.en.items[i]; e.p1 = p1; e.p2 = p2;
+        if e.st <= 0. { e.state = (e.state + 1) % 4; e.st = [4.2, 3.2, 3.4, 1.3][e.state as usize]; e.p1 = if e.state == 0 || e.state == 1 { 0.4 } else { 0. }; e.p3 = 0.; }
     }
 }
