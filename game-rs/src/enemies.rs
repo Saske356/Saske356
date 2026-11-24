@@ -75,6 +75,7 @@ impl Game {
                     _ => { self.en.items[i].dead = true; let (x, y) = (self.en.items[i].x, self.en.items[i].y); self.burst(x, y, 10, c::GOLD, 150., 7., 0.4); } } }
             }
             if self.en.items[i].dead { i += 1; continue; }
+            if self.en.items[i].aff > 0 { self.update_affix(i, dt); }
             if self.en.items[i].tier > 0 { self.tier_extra(i, dt, d, ux, uy, fz); if self.en.items[i].inv_t > 0. { self.en.items[i].inv_t -= dt; } }
             { let e = &mut self.en.items[i]; e.x += e.vx * dt; e.y += e.vy * dt;
                 if e.x * e.x + e.y * e.y > r2 { let l = (e.x * e.x + e.y * e.y).sqrt(); let f = (cfg::ARENA_R - 10.) / l; e.x *= f; e.y *= f; e.vx *= -0.3; e.vy *= -0.3; } }

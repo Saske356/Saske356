@@ -48,10 +48,26 @@ pub fn background(gx: &mut Gfx, rd: &mut Rd, g: &mut Game, dt: f32, show_decor: 
     // дно: плитка 512 пикселей, 1 пиксель = 0.9 единицы мира
     if let Some(t) = gx.ground.get(zi).cloned() {
         gx.set_add(false);
-        let (sw, sh) = (screen_width(), screen_height()); let tile = 512. * 0.9;
+        // плитка дна: ширина 560 единиц мира, высота — по пропорциям картинки
+        let (sw, sh) = (screen_width(), screen_height()); let tile = 560.; let tile_h = tile * t.height() / t.width().max(1.);
         let wx = |sx: f32| (sx - gx.ox) / gx.ws; let wy = |sy: f32| (sy - gx.oy) / gx.ws;
-        let v = |sx: f32, sy: f32| Vertex::new(sx, sy, 0., wx(sx) / tile, wy(sy) / tile, WHITE);
+        let v = |sx: f32, sy: f32| Vertex::new(sx, sy, 0., wx(sx) / tile, wy(sy) / tile_h, WHITE);
         draw_mesh(&Mesh { vertices: vec![v(0., 0.), v(sw, 0.), v(sw, sh), v(0., sh)], indices: vec![0, 1, 2, 0, 2, 3], texture: Some(t) });
+    }
+    // бегущие блики света по дну (каустика): два слоя с разным масштабом и сносом
+    if let Some(ct) = gx.caustic.clone() {
+        let (sw, sh) = (screen_width(), screen_height()); let depth = if g.state == State::Title || g.state == State::Intro { 0. } else { (g.zone as f32 - 1.) / 14. };
+        let acc = hex(crate::data::ZONE_ACCENTS[zi]); let base = (0.06 - depth * 0.03) * if g.boss >= 0 { 0.6 } else { 1. };
+        let layers: &[(f32, f32, f32, f32)] = if hi { &[(210., 9., 4., 1.0), (310., -6., 7., 0.75)] } else { &[(240., 8., 5., 1.0)] };
+        gx.set_add(true);
+        for &(tile, vx, vy, k) in layers {
+            let (ox, oy) = (g.t * vx, g.t * vy); let a = base * k;
+            let col = Color::new(0.55 + acc.r * 0.45, 0.55 + acc.g * 0.45, 0.55 + acc.b * 0.45, a);
+            let wx = |sx: f32| (sx - gx.ox) / gx.ws; let wy = |sy: f32| (sy - gx.oy) / gx.ws;
+            let v = |sx: f32, sy: f32| Vertex::new(sx, sy, 0., (wx(sx) + ox) / tile, (wy(sy) + oy) / tile, col);
+            draw_mesh(&Mesh { vertices: vec![v(0., 0.), v(sw, 0.), v(sw, sh), v(0., sh)], indices: vec![0, 1, 2, 0, 2, 3], texture: Some(ct.clone()) });
+        }
+        gx.set_add(false);
     }
     if g.boss >= 0 { gx.fill_screen(Color::new(40. / 255., 0., 30. / 255., 0.32), false); }
     if show_decor { decor(gx, rd, g, dt); }
@@ -93,7 +109,7 @@ fn decor(gx: &mut Gfx, rd: &mut Rd, g: &mut Game, dt: f32) {
         let (sx, sy) = (gx.sx(d.x), gx.sy(d.y)); gx.set_add(false);
         draw_texture_ex(&shadow, sx - dw * 0.42 * k, sy + dw * 0.3 * k, Color::new(1., 1., 1., d.a), DrawTextureParams { dest_size: Some(vec2(dw * 0.84 * k, dw * 0.2 * k)), ..Default::default() });
         let (sqx, sqy) = (gx.sqx, gx.sqy); gx.sqx = 1.; gx.sqy = 1.;
-        gx.spr_screen(key, sx, sy, sw, k, d.a, false, 0., false);
+        gx.tint = Color::new(0.78, 0.82, 0.92, 1.); gx.spr_screen(key, sx, sy, sw, k, d.a, false, 0., false); gx.tint = WHITE;
         gx.sqx = sqx; gx.sqy = sqy;
         if key == "d_vent" && hi && g.state == State::Play && g.t - d.lt > 0.22 { d.lt = g.t; vents.push((d.x, d.y - dw * d.s * 0.3)); }
     }
@@ -109,14 +125,18 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
     // за пределами арены — тьма, граница — светящееся кольцо
     let r = cfg::ARENA_R;
     if hypot(g.cam_x, g.cam_y) + hypot(g.vw, g.vh) > r - 20. {
-        gx.set_add(false); let n = 160; let (cx, cy) = (gx.sx(0.), gx.sy(0.)); let (ri, ro) = (r * gx.ws, (r + 4000.) * gx.ws); let col = Color::new(0., 0., 6. / 255., 0.72);
-        let mut v = Vec::with_capacity(n * 2 + 2); let mut idx = Vec::with_capacity(n * 6);
-        for i in 0..=n { let a = i as f32 / n as f32 * TAU; v.push(Vertex::new(cx + a.cos() * ri, cy + a.sin() * ri, 0., 0., 0., col)); v.push(Vertex::new(cx + a.cos() * ro, cy + a.sin() * ro, 0., 0., 0., col)); }
-        for i in 0..n as u16 { let a = i * 2; idx.extend_from_slice(&[a, a + 1, a + 2, a + 1, a + 3, a + 2]); }
+        // мягкий край: тьма нарастает за 260 единиц до границы, тонкая светящаяся кромка
+        gx.set_add(false); let n = 160; let (cx, cy) = (gx.sx(0.), gx.sy(0.));
+        let rings = [(r - 260., 0.0f32), (r - 90., 0.35), (r, 0.62), (r + 260., 0.86), (r + 4000., 0.9)];
+        let mut v = Vec::with_capacity((n + 1) * rings.len()); let mut idx = Vec::with_capacity(n * 6 * (rings.len() - 1));
+        for i in 0..=n { let a = i as f32 / n as f32 * TAU; let (ca, sa) = (a.cos(), a.sin());
+            for &(rr, al) in rings.iter() { let rs = rr * gx.ws; v.push(Vertex::new(cx + ca * rs, cy + sa * rs, 0., 0., 0., Color::new(0., 0.01, 0.04, al))); } }
+        let m = rings.len() as u16;
+        for i in 0..n as u16 { for j in 0..m - 1 { let a = i * m + j; let b = a + m; idx.extend_from_slice(&[a, b, a + 1, a + 1, b, b + 1]); } }
         draw_mesh(&Mesh { vertices: v, indices: idx, texture: None });
         let cy_ = hex(PAL_HEX[c::CYAN as usize]);
-        gx.arc_world(0., 0., r, 0., TAU, 34., with_a(cy_, 0.04), true); gx.arc_world(0., 0., r, 0., TAU, 12., with_a(cy_, 0.08), true);
-        gx.arc_world(0., 0., r, 0., TAU, 2., with_a(cy_, 0.22 + 0.08 * (t * 2.).sin()), true);
+        gx.arc_world(0., 0., r, 0., TAU, 18., with_a(cy_, 0.035), true);
+        gx.arc_world(0., 0., r, 0., TAU, 1.5, with_a(cy_, 0.12 + 0.05 * (t * 2.).sin()), true);
     }
     // мины
     for i in 0..g.mines.n { let m = g.mines.items[i].clone(); if m.inst { continue; }
@@ -143,6 +163,11 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
         gx.glow_world(true, if e.elite { c::GOLD } else { e.col }, e.x, e.y, e.r * e.scale * if e.elite { 3.4 } else { 2.6 } * (1. + 0.06 * (t * 2.2 + e.phase).sin()), 0.4 + 0.1 * (t * 2.2 + e.phase).sin()); } } // свечение существ дышит
     // телеграфы атак
     for i in 0..g.en.n { let e = g.en.items[i].clone(); if e.dead || !in_view(e.x, e.y, 300.) { continue; } telegraph(gx, g, &e); }
+    // мягкие тени под существами — отделяют их от дна
+    { let sh = gx.shade.clone(); gx.set_add(false);
+      for i in 0..g.en.n { let e = &g.en.items[i]; if e.dead || !in_view(e.x, e.y, e.r * 2.) { continue; } let (rx, ry) = (e.r * e.scale * 1.25, e.r * e.scale * 0.8);
+        let (sx, sy) = (gx.sx(e.x + e.r * 0.25), gx.sy(e.y + e.r * 0.55)); let a = if ET[e.kind as usize].boss { 0.55 } else { 0.45 };
+        draw_texture_ex(&sh, sx - rx * gx.ws, sy - ry * gx.ws, Color::new(1., 1., 1., a), DrawTextureParams { dest_size: Some(vec2(rx * 2. * gx.ws, ry * 2. * gx.ws)), ..Default::default() }); } }
     // враги: тела (вспышки попаданий — одним проходом после)
     gx.defer_white = true;
     for i in 0..g.en.n {
@@ -191,6 +216,19 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
         if g.p.mark_uid != 0 && e.uid == g.p.mark_uid { let rr = e.r * e.scale * 1.6 + 6.; let col = with_a(hex(PAL_HEX[c::CRAB as usize]), 0.75 + 0.25 * (t * 6.).sin());
             for q in 0..4 { let a0 = t * 1.5 + q as f32 * std::f32::consts::FRAC_PI_2; gx.arc_world(e.x, e.y, rr, a0, a0 + 0.9, 2.5, col, true); } }
         if e.elite { gx.arc_world(e.x, e.y, e.r * e.scale * 1.35, t * 2., t * 2. + 4.6, 2., with_a(hex(PAL_HEX[c::GOLD as usize]), 0.8), false); }
+        if e.aff > 0 { use crate::content::*; let rr = e.r * e.scale; let ac = hex(aff_col(e.aff)); let pi = aff_pal(e.aff);
+            match e.aff {
+                AFF_SHIELD if e.ash > 0. => { let k = (e.ash / (e.max_hp * 0.45)).clamp(0., 1.); gx.circle_world(e.x, e.y, rr * 1.5, with_a(ac, 0.10 + 0.08 * k), true);
+                    gx.arc_world(e.x, e.y, rr * 1.5, 0., TAU, 2.5, with_a(ac, 0.35 + 0.4 * k), true); gx.arc_world(e.x, e.y, rr * 1.5, -t * 1.5, -t * 1.5 + 1.2, 4., with_a(WHITE, 0.5 * k), true); }
+                AFF_VAMP => gx.glow_world(true, pi, e.x, e.y, rr * 3.2, 0.35 + 0.15 * (t * 4.).sin()),
+                AFF_RAGE => if e.aff_t < -100. { gx.glow_world(true, pi, e.x, e.y, rr * 3.4, 0.5 + 0.3 * (t * 12.).sin()); } else { gx.glow_world(true, pi, e.x, e.y, rr * 2.4, 0.2); },
+                AFF_BLINK => { gx.glow_world(true, pi, e.x, e.y, rr * 2.8, 0.3 + 0.2 * (t * 3. + e.phase).sin()); }
+                AFF_VOLATILE => { let k = 0.5 + 0.5 * (t * 7.).sin(); gx.glow_world(false, pi, e.x, e.y, rr * (1.6 + 0.4 * k), 0.35 * k + 0.15); }
+                AFF_SPLIT => { gx.arc_world(e.x, e.y, rr * 1.2, t * 3., t * 3. + 1.4, 2.5, with_a(ac, 0.8), true); gx.arc_world(e.x, e.y, rr * 1.2, t * 3. + 3.14, t * 3. + 4.54, 2.5, with_a(ac, 0.8), true); }
+                _ => {}
+            }
+            let (sx, sy) = (gx.sx(e.x), gx.sy(e.y - rr - 20.)); let p = gx.px; gx.text(aff_name(e.aff), sx / p, sy / p, 10., with_a(ac, 0.95), 1, 2);
+        }
         if (e.elite || e.hp < e.max_hp * 0.72) && !ET[e.kind as usize].boss && e.kind != K::Chest {
             let bw = (e.r * e.scale * 2.1).max(22.); let by = e.y - e.r * e.scale - 9.; let a = if e.elite { 0.92 } else { 0.68 };
             gx.rect_rot_world(e.x - bw / 2., by + 1.75, 0., 0., bw, 3.5, Color::new(0., 0., 8. / 255., 0.72 * a), None);
@@ -253,11 +291,18 @@ fn telegraph(gx: &mut Gfx, g: &Game, e: &Enemy) {
 
 fn anim_ph(gx: &Gfx, key: &str, e: &Enemy) -> f32 { gx.spr_anim(key).map(|a| e.a_t * a.freq() * TAU + e.phase).unwrap_or(0.) }
 
+/// Угол нижней челюсти: в покое медленно «дышит», в атаке щёлкает (широко раскрыть — резко захлопнуть),
+/// от попадания чуть вздрагивает. Плюс — раскрыта, минус — сжата.
+fn jaw_anim(t: f32, attack: bool, hit: bool) -> f32 {
+    if attack { let p = (t * 2.6).fract(); return if p < 0.55 { -0.06 + 0.42 * (p / 0.55).powf(0.7) } else { 0.36 - 0.5 * ((p - 0.55) / 0.45).min(1.).powf(0.35) }; }
+    let breath = 0.07 + 0.09 * (t * 1.7).sin() + 0.05 * (t * 0.63).sin();
+    breath + if hit { 0.08 } else { 0. }
+}
 fn boss1(gx: &mut Gfx, g: &Game, e: &Enemy, sc: f32, wht: bool) {
     let t = g.t; let lure = e.state == 1; let lt = if lure { ((3. - e.st) / 1.1).min(1.) } else { 0. };
     let bob = (t * 3.).sin() * 6.; let flip = e.ang.cos() < 0.;
     let (lx, ly) = local(e, e.r * 1.55, (-e.r * 1.15 + bob) * if flip { -1. } else { 1. });
-    gx.jaw = if e.state == 1 || e.state == 2 { 0.6 + 0.4 * (t * 9.).sin().abs() } else { (0.35 * (t * 2.3 + e.phase).sin()).max(0.) }; let tk = tkey("boss1", e.tier); gx.spr_world(&tk, e.x, e.y, e.ang, sc, 1., wht, anim_ph(gx, &tk, e), false);
+    let jr = jaw_anim(t + e.phase, e.state == 1 || e.state == 2, wht); let tk = tkey("boss1", e.tier); gx.spr_jaw(&tk, e.x, e.y, e.ang, sc, wht, anim_ph(gx, &tk, e), jr);
     gx.glow_world(false, if lure { c::GOLD } else { c::CYAN }, lx, ly, 18. + lt * 50. + (t * 8.).sin() * 3., 1.);
     if lure && e.st < 1.9 { gx.glow_world(true, c::GOLD, lx, ly, 160., 0.25 + 0.15 * (t * 20.).sin()); }
 }
@@ -289,7 +334,7 @@ fn boss4(gx: &mut Gfx, g: &Game, e: &Enemy, sc: f32, wht: bool) {
         let sw = phase.sin() * (12. + kf * 5.); gx.glow_world(true, c::EEL, bx + nx * sw, by + ny * sw, e.r * (0.95 - kf * 0.12), (1. - kf / 4.) * 0.23); }
     gx.glow_world(true, c::EEL, e.x, e.y, e.r * 2.2, 0.48 + 0.18 * (t * 7.).sin());
     let lunge = e.state == 1 && (e.p3 % 1.7) > 1.; let pulse = 1. + (t * 5.2).sin() * 0.025 + if lunge { 0.045 } else { 0. };
-    gx.jaw = if lunge { 0.9 } else { (0.4 * (t * 2.8 + e.phase).sin()).max(0.) + 0.08 }; let tk = tkey("boss4", e.tier); gx.spr_world(&tk, e.x, e.y, e.ang + (t * 2.4).sin() * 0.035, sc * pulse, 1., wht, anim_ph(gx, &tk, e), false);
+    let jr = jaw_anim(t * 1.1 + e.phase, lunge, wht); let tk = tkey("boss4", e.tier); gx.spr_jaw(&tk, e.x, e.y, e.ang + (t * 2.4).sin() * 0.035, sc * pulse, wht, anim_ph(gx, &tk, e), jr);
     let flip = if e.ang.cos() < 0. { -1. } else { 1. };
     for k in 0..4 { let kf = k as f32; let (gx_, gy) = local(e, -e.r * (0.52 + kf * 0.12) * sc, e.r * (0.22 + kf * 0.08) * sc * flip); gx.glow_world(false, c::ICE, gx_, gy, 4.5, 0.38 + 0.22 * (t * 6. + kf * 0.8).sin()); }
 }

@@ -37,6 +37,7 @@ pub struct Enemy {
     pub orb_cd: f32, pub dash_hit: u32, pub chain_mark: u32, pub scale: f32, pub next: i32, pub hist: Arr<f32, 64>, pub hh: usize, pub hn: usize, pub phase: f32,
     pub p1: f32, pub p2: f32, pub p3: f32, pub spawn_t: f32, pub lvl: i32, pub tx: f32, pub ty: f32, pub sh: f32, pub burn: f32, pub burn_t: f32, pub burn_acc: f32,
     pub hx: f32, pub hy: f32, pub th_t: f32, pub txt: i32, pub a_t: f32 /* часы анимации */, pub tier: u8, pub tt: f32, pub tt2: f32, pub inv_t: f32,
+    pub aff: u8 /* свойство элиты */, pub ash: f32 /* панцирь */, pub aff_t: f32,
 }
 #[derive(Clone, Default)] pub struct PBul { pub x: f32, pub y: f32, pub vx: f32, pub vy: f32, pub dmg: f32, pub pierce: i32, pub bounce: i32, pub life: f32, pub crit: bool, pub last_uid: u32, pub hom_t: f32, pub tgt: i32, pub tgt_uid: u32, pub split: bool, pub r: f32, pub boom: f32 }
 #[derive(Clone, Default)] pub struct EBul { pub x: f32, pub y: f32, pub vx: f32, pub vy: f32, pub r: f32, pub dmg: f32, pub life: f32, pub col: u8, pub spin: f32, pub acc: f32, pub grazed: bool }
@@ -108,6 +109,8 @@ pub struct Game {
     // события для звука, интерфейса и платформы
     pub sfx: Vec<Sfx>, pub toasts: Vec<Toast>, pub vib: Vec<u32>, pub want_levelup: bool, pub want_over: bool, pub want_ending: bool, pub dirty: bool, pub run_mode: RunMode,
     pub vw: f32, pub vh: f32, pub static_q: u32, pub tut: Tut, pub touch: bool,
+    // реликвии
+    pub relics: Vec<u8>, pub relic_pending: u32, pub want_relic: bool, pub rel_lives: u32, pub rel_kills: u32, pub rel_blood: f32, pub rel_blood_t: f32, pub rel_ward_t: f32, pub rel_storm_t: f32,
 }
 #[derive(Default, Clone, Copy)] pub struct Tut { pub on: bool, pub step: usize, pub v: f32, pub base: u32, pub ok: f32, pub t: f32, pub fin: f32 }
 pub const TUT_NEED: [f32; 5] = [300., 3., 6., 1., 1.];
@@ -134,6 +137,7 @@ impl Game {
             decor: vec![], decor_zone: 99, floor: vec![], qz: Qz::default(), jx: 0., jy: 0., dash_q: false, flare_q: false,
             sfx: vec![], toasts: vec![], vib: vec![], want_levelup: false, want_over: false, want_ending: false, dirty: false, run_mode: RunMode::Normal,
             vw: 200., vh: 400., static_q: 0, tut: Tut::default(), touch: true,
+            relics: vec![], relic_pending: 0, want_relic: false, rel_lives: 0, rel_kills: 0, rel_blood: 0., rel_blood_t: 0., rel_ward_t: 0., rel_storm_t: 0.,
         };
         g.p.skin = data::SKINS.iter().position(|k| k.id == g.s.skin).unwrap_or(0); g.p.pal = data::SKINS[g.p.skin].pal;
         g.init_floor(); g.build_decor(0);
@@ -193,6 +197,7 @@ impl Game {
         self.p.max_hp = ((ch.hp + 10. * sh("hp") + 25. * lv(u::HP) + 15. * if self.s.tal("t_hp") { 1. } else { 0. }) * if glass { 0.5 } else { 1. }).round();
         if self.p.max_hp > old && self.state != State::Title { self.p.hp += self.p.max_hp - old; }
         self.p.hp = self.p.hp.min(self.p.max_hp);
+        self.relic_stats();
     }
 
     // ---------- эффекты ----------
@@ -256,7 +261,8 @@ impl Game {
         if elite { e.elite = true; e.max_hp *= 3.5; e.hp = e.max_hp; e.scale = 1.4; e.xp *= 4.; e.score *= 5.; e.dmg *= 1.3; }
         if kind == K::Crab { e.sh = e.max_hp * cfg::CRAB_SHIELD; }
         if !d.boss { if self.muts[0] { e.spd *= 1.3; } if self.muts[2] { e.max_hp *= 0.7; e.hp = e.max_hp; } if self.muts[6] { e.scale *= 1.25; e.r *= 1.2; e.max_hp *= 1.4; e.hp = e.max_hp; } }
-        self.en.items[i] = e;
+        if !d.boss && self.relics.contains(&crate::content::R_DEAL) { e.max_hp *= 1.15; e.hp = e.max_hp; }
+        self.en.items[i] = e; if elite { self.assign_affix(i); }
         if !self.s.seen.contains_key(kind.key()) { self.s.seen.insert(kind.key().into(), 1); self.dirty = true; }
         if kind == K::Crab && !self.s.crab_hint { self.s.crab_hint = true; self.dirty = true; self.banner(t("crabT"), t("crabS"), 0xff8a9a, 3.); }
         if matches!(kind, K::Ray | K::Lantern | K::Wisp | K::Spawner | K::Fry) { self.init_new_foe(i); }
@@ -405,7 +411,7 @@ impl Game {
         self.p.fire_t -= dt;
         if self.p.fire_t <= 0. {
             let tg = self.nearest_enemy(self.p.x, self.p.y, self.st.range);
-            if tg >= 0 { self.p.fire_t += 1. / (self.st.rate * (1. + (self.lv(u::FRENZY) as f32 * 0.04 * (self.combo as f32 / 10.)).min(0.4 * self.lv(u::FRENZY) as f32 / 3.))); if self.p.fire_t < 0. { self.p.fire_t = 0.; }
+            if tg >= 0 { self.p.fire_t += 1. / (self.st.rate * (1. + self.rel_blood) * (1. + (self.lv(u::FRENZY) as f32 * 0.04 * (self.combo as f32 / 10.)).min(0.4 * self.lv(u::FRENZY) as f32 / 3.))); if self.p.fire_t < 0. { self.p.fire_t = 0.; }
                 let e = &self.en.items[tg as usize]; let a = (e.y - self.p.y).atan2(e.x - self.p.x); let n = self.st.multi; let sp = 0.15; let (px, py) = (self.p.x, self.p.y);
                 for i in 0..n { self.fire_pb(px + a.cos() * 14., py + a.sin() * 14., a + (i as f32 - (n - 1) as f32 / 2.) * sp, self.st.dmg, true); }
                 if self.st.echo_ch > 0. && self.rand() < self.st.echo_ch { for i in 0..n { let j = self.rr(-0.05, 0.05); self.fire_pb(px + a.cos() * 14., py + a.sin() * 14., a + (i as f32 - (n - 1) as f32 / 2.) * sp + j, self.st.dmg * 0.8, true); } self.part(px, py, 0., 0., 0.2, 14., c::ICE, 1.); }
@@ -514,6 +520,7 @@ impl Game {
         let kind = self.en.items[i].kind;
         if self.en.items[i].inv_t > 0. { dmg *= 0.15; } // щит жреца бездны
         dmg *= self.upg2_mul(i);
+        if self.en.items[i].aff == crate::content::AFF_SHIELD { dmg = self.affix_absorb(i, dmg); }
         if kind == K::Crab && self.en.items[i].sh > 0. && !from_ang.is_nan() && ang_diff(self.en.items[i].ang, from_ang).abs() < 1.0 {
             let (ex, ey, ea, er) = { let e = &self.en.items[i]; (e.x, e.y, e.ang, e.r) };
             self.en.items[i].sh -= dmg; dmg *= 1. - cfg::CRAB_BLOCK; let (a, b) = (self.rr(-80., 80.), self.rr(-80., 80.)); self.part(ex + ea.cos() * er, ey + ea.sin() * er, a, b, 0.25, 7., c::WHITE, 2.);
@@ -558,7 +565,7 @@ impl Game {
     pub fn kill_enemy(&mut self, i: usize, src: Src) {
         self.en.items[i].dead = true; self.kills += 1;
         let e = self.en.items[i].clone(); let boss = e.kind.d().boss;
-        self.tier_death(&e); self.upg2_kill(&e);
+        self.tier_death(&e); self.upg2_kill(&e); if e.aff > 0 && src != Src::Cleanup { self.affix_death(&e); } self.relic_kill(boss);
         self.combo += 1; self.combo_t = 2.6; if self.combo > self.max_combo { self.max_combo = self.combo; }
         self.mult = 1. + (self.combo as f32 * 0.05).min(9.); self.score += (e.score * self.mult).round() as f64;
         self.p.flare = (self.p.flare + if boss { 50. } else if e.elite { 6. } else { 0.9 } * self.st.flare_mul).min(100.);
@@ -579,7 +586,7 @@ impl Game {
         if e.kind == K::Spawner && src != Src::Cleanup { self.spawn_fry(i, 4); }
         if src == Src::Nova && self.lv(u::SUPERNOVA) > 0 { if let Some(m) = self.mines.spawn() { self.mines.items[m] = Mine { x: e.x, y: e.y, t: 99., r: 60., dmg: self.st.dmg * 1.5, inst: true, freeze: false }; } }
         if e.kind == K::Chest { let n = 6 + self.zone.min(8); for _ in 0..n { let (a, b) = (self.rr(-26., 26.), self.rr(-26., 26.)); self.drop_pick(e.x + a, e.y + b, 3, 1.); }
-            self.level_pending += 1; self.level_delay = self.level_delay.max(0.5); self.chests += 1; self.quest_add("chest", 1);
+            if self.rand() < 0.35 && self.relics.len() < crate::content::RELICS.len() { self.relic_pending += 1; } else { self.level_pending += 1; } self.level_delay = self.level_delay.max(0.5); self.chests += 1; self.quest_add("chest", 1);
             self.burst(e.x, e.y, 30, c::GOLD, 260., 9., 0.7); self.ring(e.x, e.y, 10., 140., 0.5, c::GOLD, 5.); self.snd(Sfx::Level); self.banner(t("chestOpen"), t("chestOpenS"), 0xffd54f, 2.2); }
         if let Some(ch) = self.chal.as_mut() { if e.kind != K::Chest { ch.got += 1; } }
         self.quest_add("kills", 1); if self.combo >= 10 { self.quest_max("combo", self.combo); }
@@ -626,6 +633,7 @@ impl Game {
         if self.p.shield > 0 { self.p.shield -= 1; self.p.inv = self.p.inv.max(1.); self.snd(Sfx::Clink); self.ring(self.p.x, self.p.y, self.p.r, self.p.r + 30., 0.4, c::WHITE, 5.); self.shake(8.); self.vibrate(25);
             if self.st.aegis { let q = self.qa(self.p.x, self.p.y, 150.); for &i in &q { if !self.en.items[i].dead { self.damage_enemy(i, self.st.dmg * 3., true, f32::NAN, 0., 0., Src::None); } } self.qa_back(q); }
             return; }
+        if self.relic_dodge() { return; }
         let dmg = (dmg * (1. - self.st.armor_pct) - self.st.armor).round().max(1.);
         self.p.hp -= dmg; self.p.inv = 0.9 + 0.3 * self.lv(u::INK) as f32;
         self.no_hit = false; self.hurt_flash = 1.; self.shake(13.); self.hit_stop = 0.06;
@@ -635,8 +643,10 @@ impl Game {
         if self.st.ink_lv > 0 { self.p.ink_q = true; }
         self.burst(self.p.x, self.p.y, 14, c::CRAB, 200., 8., 0.5);
         let (x, y) = (self.p.x, self.p.y - 20.); self.text(x, y, format!("-{}", dmg), 0xff5f6f, true, false);
+        self.relic_hurt();
         if self.p.hp <= 0. {
-            if self.s.shop_lv("revive") > 0 && !self.revived { self.revived = true; self.p.hp = self.p.max_hp * 0.5; self.p.inv = 2.5; self.do_flare(true); self.banner(t("revive"), t("reviveS"), 0x4fff9a, 2.2); }
+            if self.relic_save() {}
+            else if self.s.shop_lv("revive") > 0 && !self.revived { self.revived = true; self.p.hp = self.p.max_hp * 0.5; self.p.inv = 2.5; self.do_flare(true); self.banner(t("revive"), t("reviveS"), 0x4fff9a, 2.2); }
             else { self.p.hp = 0.; self.start_dying(); }
         }
     }
@@ -786,6 +796,9 @@ impl Game {
         // камера плавно следует за игроком
         let (tx, ty) = (self.p.x + self.p.vx * 0.12, self.p.y + self.p.vy * 0.12); let a = 1. - (-real_dt * 6.).exp();
         self.cam_x += (tx - self.cam_x) * a; self.cam_y += (ty - self.cam_y) * a;
+        self.relic_tick(dt);
+        if self.relic_pending > 0 && !self.p.dead && self.dying <= 0. { let bn = &self.banner; let busy = !bn.text.is_empty() && bn.t < bn.dur - 0.5;
+            if self.level_delay <= 0. && !busy && self.boss_clear_t <= 1.5 { self.want_relic = true; } else if self.level_pending == 0 { self.level_delay -= real_dt; } }
         if self.level_pending > 0 && !self.p.dead && self.dying <= 0. { self.level_delay -= real_dt; let bn = &self.banner;
             let busy = !bn.text.is_empty() && bn.t < bn.dur - 0.5 && self.level_delay > -2.5;
             if self.level_delay <= 0. && !busy && self.run_t - self.lv_t >= cfg::LV_GAP { self.want_levelup = true; } }

@@ -56,6 +56,7 @@ impl Game {
         if self.daily { for i in daily_muts() { self.muts[i] = true; } }
         self.endless = false; self.ending_t = 0.; self.ad_revived = false; self.ad_doubled = false; self.ad_rerolls = 0; self.last_earned = 0; self.ev_t = 20.; self.chal = None; self.last_ev = 9; self.chests = 0; self.lv_t = -99.;
         self.want_levelup = false; self.want_ending = false; self.want_over = false; self.crystals = 0; self.qz = Qz::default();
+        self.relics.clear(); self.relic_pending = 0; self.want_relic = false; self.rel_lives = 0; self.rel_kills = 0; self.rel_blood = 0.; self.rel_ward_t = 0.; self.rel_storm_t = 0.;
         if self.hard { self.dmg_scale = 1.35; }
         self.rerolls = self.s.shop_lv("reroll") as u32; self.build_decor(0); self.start_best = self.s.best_depth; self.rec_shown = false;
         let skin = SKINS.iter().position(|k| k.id == self.s.skin).unwrap_or(0);
@@ -101,7 +102,7 @@ impl Game {
         self.quest_add("runs", 1);
         self.state = State::Over;
         let earned = ((self.run_pearls as f32 + (self.score / 1500.).floor() as f32 + (self.zone as f32 - 1.) * 2. + self.bosses_killed as f32 * 15.)
-            * (1. + 0.25 * self.lv(u::GREED) as f32) * if self.hard { 1.5 } else { 1. } * (1. + 0.1 * self.tl("t_pearl")) * if self.daily { 2. } else { 1. }).round() as u32;
+            * (1. + 0.25 * self.lv(u::GREED) as f32) * if self.hard { 1.5 } else { 1. } * (1. + 0.1 * self.tl("t_pearl")) * if self.daily { 2. } else { 1. } * if self.rel(crate::content::R_CROWN) { 1.5 } else { 1. }).round() as u32;
         self.last_earned = earned;
         if self.daily { let z = self.zone; let d = &mut self.s.daily; d.ch_best = d.ch_best.max(z * 100);
             if z >= 5 && !d.ch_done { d.ch_done = true; self.s.pearls += 150; self.toast(t("dailyWin"), format!("+150 {}", t("pearlsGen"))); } }

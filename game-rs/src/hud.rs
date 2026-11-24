@@ -55,21 +55,28 @@ pub fn hud(a: &mut App) {
     // опыт
     gx.rect(0., a.safe[0], w, 5., Color::new(1., 1., 1., 0.08)); gx.rect(0., a.safe[0], w * (g.p.xp / g.p.xp_next).min(1.), 5., pal(c::ICE));
     // здоровье
-    let hw = 150f32.min(w * 0.36); let hp = (g.p.hp / g.p.max_hp).max(0.);
+    let hw = 156f32.min(w * 0.38); let hp = (g.p.hp / g.p.max_hp).max(0.);
+    // стеклянная плашка под левым блоком — всё читается на любом дне
+    { let ph = if g.boss < 0 { 88. } else { 52. }; crate::ui::rrect_grad(gx, l - 7., top + 1., hw + 14., ph, 12., Color::new(0.02, 0.06, 0.14, 0.42), Color::new(0.02, 0.04, 0.10, 0.22)); }
     gx.rrect(l, top + 8., hw, 15., 7., Color::new(10. / 255., 20. / 255., 40. / 255., 0.7)); gx.rrect_line(l, top + 8., hw, 15., 7., 1.5, Color::new(1., 120. / 255., 150. / 255., 0.6));
     if hp > 0. { gx.rrect(l + 2., top + 10., ((hw - 4.) * hp).max(6.), 11., 5., hex(if hp < 0.3 { 0xff3b5c } else { 0xff6f91 })); }
     gx.text(&format!("{} / {}", g.p.hp.ceil().max(0.), g.p.max_hp), l + hw / 2., top + 16., 11., WHITE, 1, 1);
-    let lvs = format!("{} {}", t("lv"), g.p.level); let w0 = gx.text(&lvs, l, top + 38., 13., pal(c::GOLD), 0, 1);
+    let lvs = format!("{} {}", t("lv"), g.p.level); let w0 = gx.text(&lvs, l, top + 38., 14., pal(c::GOLD), 0, 1);
     if g.level_pending > 0 && st == State::Play { gx.text(&format!(" +{}", g.level_pending), l + w0, top + 38., 13., with_alpha(pal(c::GOLD), 0.75 + 0.25 * (tm * 6.).sin()), 0, 1); }
-    gx.text(&format!("{} {}", g.zone * 100, t("m")), l + 48., top + 38., 13., hex(0x8fd8ff), 0, 1);
+    gx.text(&format!("{} {}", g.zone * 100, t("m")), l + 52., top + 38., 14., hex(0x8fd8ff), 0, 1);
     if g.endless { gx.text("∞", l + 104., top + 38., 13., pal(c::GOLD), 0, 1); }
     if g.boss < 0 {
         gx.rect(l, top + 49., hw, 3., Color::new(1., 1., 1., 0.1)); gx.rect(l, top + 49., hw * (g.zone_t / cfg::ZONE_TIME).min(1.), 3., hex(0x8fd8ff));
         let zl = format!("{}{}", if g.hard { "☠ " } else if g.daily { "☀ " } else { "" }, i18n::zone((g.zone as usize).saturating_sub(1).min(14)).to_uppercase());
-        gx.text(&zl, l, top + 63., 9., Color::new(190. / 255., 225. / 255., 238. / 255., 0.66), 0, 1);
+        gx.text(&zl, l, top + 64., 11., Color::new(200. / 255., 232. / 255., 245. / 255., 0.85), 0, 1);
         if g.boss_clear_t <= 0. { let rem = (cfg::ZONE_TIME * if g.mutf("rush") { 0.5 } else { 1. } - g.zone_t).ceil().max(0.);
-            gx.text(&tf("nextDepth", &[&((g.zone + 1) * 100).to_string(), &(rem as i32).to_string()]), l, top + 76., 9., Color::new(143. / 255., 216. / 255., 1., 0.85), 0, 1); }
+            gx.text(&tf("nextDepth", &[&((g.zone + 1) * 100).to_string(), &(rem as i32).to_string()]), l, top + 79., 11., Color::new(143. / 255., 216. / 255., 1., 0.9), 0, 1); }
     }
+    // реликвии — ряд значков под левым блоком
+    if !g.relics.is_empty() { let y0 = top + if g.boss < 0 { 96. } else { 60. }; let p = gx.px;
+        for (k, &r) in g.relics.iter().enumerate() { let x = l + 11. + (k % 8) as f32 * 24.; let y = y0 + 11. + (k / 8) as f32 * 24.; let d = &crate::content::RELICS[r as usize];
+            gx.glow_scr(true, d.col, x * p, y * p, 16. * p, 0.35); gx.circle(x, y, 10.5, Color::new(0.08, 0.05, 0.14, 0.85)); gx.ring(x, y, 10.5, 1.2, Color::new(1., 0.8, 0.35, 0.85));
+            if let Some(tx) = gx.icon.get(d.icon).cloned() { gx.tex_ui(&tx, x - 8., y - 8., 16., 16., WHITE); } } }
     // счёт и комбо
     let cx = w / 2. + 20.; let sc = i18n::fmt_num(g.score as i64);
     gx.text(&sc, cx, top + 21.5, 26., Color::new(63. / 255., 240. / 255., 1., 0.25), 1, 2); gx.text(&sc, cx, top + 20., 26., WHITE, 1, 2);

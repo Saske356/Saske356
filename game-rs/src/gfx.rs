@@ -17,14 +17,14 @@ impl Anim {
     /// Циклов в секунду
     pub fn freq(self) -> f32 { match self { Anim::Swim => 1.7, Anim::Fin => 1.1, Anim::Tent => 1.15, Anim::Jelly | Anim::JellyV => 0.7, Anim::Crab => 2.6, Anim::Pulse => 0.8, Anim::Flap => 1.3, Anim::Orb => 1.6 } }
 }
-pub struct Spr { pub tex: Texture2D, pub h: f32, pub fl: bool, pub anim: Option<Anim> }
+pub struct Spr { pub tex: Texture2D, pub h: f32, pub fl: bool, pub anim: Option<Anim>, pub hinge: Option<(f32, f32)> }
 
 pub struct Gfx {
-    pub spr: HashMap<String, Spr>, pub glow: Vec<Texture2D>, pub soft: Vec<Texture2D>, pub bul: Vec<Texture2D>, pub icon: HashMap<String, Texture2D>, pub ground: Vec<Texture2D>,
+    pub spr: HashMap<String, Spr>, pub glow: Vec<Texture2D>, pub soft: Vec<Texture2D>, pub bul: Vec<Texture2D>, pub icon: HashMap<String, Texture2D>, pub ground: Vec<Texture2D>, pub caustic: Option<Texture2D>, pub shade: Texture2D, pub tint: Color,
     pub font_b: Font, pub font_k: Font, pub font_m: Font, pub add: Material, pub wmat: Material, pub wadd: Material, pub vign: Texture2D, pub hurt: Texture2D, pub white: Texture2D,
     /// Физических пикселей на логический пиксель (как devicePixelRatio)
     pub px: f32, pub w: f32, pub h: f32, pub ws: f32, pub ox: f32, pub oy: f32, pub safe_t: f32, pub safe_b: f32,
-    pub sqx: f32, pub sqy: f32, pub jaw: f32, pub defer_white: bool, pub white_q: Vec<(Texture2D, f32, f32, f32, f32, bool, f32, f32, Option<Anim>, f32, f32, f32)>, pub additive: bool, pub mat: u8 /* 0 обычный, 1 свет, 2 белый силуэт, 3 белый свет */,
+    pub sqx: f32, pub sqy: f32, pub jaw: f32, pub jrot: f32, pub defer_white: bool, pub white_q: Vec<(Texture2D, f32, f32, f32, f32, bool, f32, f32, Option<Anim>, f32, f32, f32, Option<(f32, f32, f32)>)>, pub additive: bool, pub mat: u8 /* 0 обычный, 1 свет, 2 белый силуэт, 3 белый свет */,
 }
 
 const VS: &str = r#"#version 100
@@ -48,6 +48,13 @@ fn radial_tex(n: u16, stops: &[(f32, [f32; 4])]) -> Texture2D {
     let t = Texture2D::from_rgba8(n, n, &px); t.set_filter(FilterMode::Linear); t
 }
 
+/// Мягкое тёмное пятно (тень под существами)
+fn shade_tex() -> Texture2D {
+    let n = 64u16; let mut px = vec![0u8; n as usize * n as usize * 4];
+    for y in 0..n { for x in 0..n { let d = (((x as f32 + 0.5) / n as f32 * 2. - 1.).powi(2) + ((y as f32 + 0.5) / n as f32 * 2. - 1.).powi(2)).sqrt().min(1.);
+        let i = (y as usize * n as usize + x as usize) * 4; px[i] = 2; px[i + 1] = 4; px[i + 2] = 12; px[i + 3] = ((1. - d * d).max(0.).powf(1.4) * 255.) as u8; } }
+    let t = Texture2D::from_rgba8(n, n, &px); t.set_filter(FilterMode::Linear); t
+}
 async fn tex(path: &str) -> Texture2D {
     match load_texture(path).await { Ok(t) => { t.set_filter(FilterMode::Linear); t }, Err(_) => Texture2D::from_rgba8(1, 1, &[255, 255, 255, 0]) }
 }
@@ -68,17 +75,18 @@ impl Gfx {
         let wadd = load_material(ShaderSource::Glsl { vertex: VS, fragment: FSW }, MaterialParams {
             pipeline_params: PipelineParams { color_blend: Some(BlendState::new(Equation::Add, BlendFactor::Value(BlendValue::SourceAlpha), BlendFactor::One)), ..Default::default() },
             ..Default::default() }).expect("white add material");
-        let mut g = Gfx { spr: HashMap::new(), glow: vec![], soft: vec![], bul: vec![], icon: HashMap::new(), ground: vec![], font_b, font_k, font_m, add, wmat, wadd,
+        let mut g = Gfx { spr: HashMap::new(), glow: vec![], soft: vec![], bul: vec![], icon: HashMap::new(), ground: vec![], caustic: None, shade: shade_tex(), tint: WHITE, font_b, font_k, font_m, add, wmat, wadd,
             vign: radial_tex(128, &[(0.0, [0., 0., 0.03, 0.]), (0.62, [0., 0., 0.03, 0.]), (1.0, [0., 0., 0.03, 0.78])]),
             hurt: radial_tex(128, &[(0.0, [1., 0., 0.16, 0.]), (0.62, [1., 0., 0.16, 0.]), (1.0, [1., 0.08, 0.24, 0.85])]),
-            white: Texture2D::from_rgba8(1, 1, &[255, 255, 255, 255]), px: 1., w: 390., h: 844., ws: 1., ox: 0., oy: 0., safe_t: 0., safe_b: 0., sqx: 1., sqy: 1., jaw: 0., defer_white: false, white_q: vec![], additive: false, mat: 0 };
+            white: Texture2D::from_rgba8(1, 1, &[255, 255, 255, 255]), px: 1., w: 390., h: 844., ws: 1., ox: 0., oy: 0., safe_t: 0., safe_b: 0., sqx: 1., sqy: 1., jaw: 0., jrot: 0., defer_white: false, white_q: vec![], additive: false, mat: 0 };
         let meta = man["meta"].as_object().cloned().unwrap_or_default();
         let npal = crate::data::PAL_HEX.len();
         let total = (meta.len() + npal * 3 + 50 + 15) as f32; let mut done = 0f32;
         for (k, m) in meta.iter() {
             let t = tex(&format!("spr/{k}.png")).await;
             let anim = m["anim"].as_str().and_then(Anim::parse);
-            g.spr.insert(k.clone(), Spr { tex: t, h: m["h"].as_f64().unwrap_or(20.) as f32, fl: m["fl"].as_bool().unwrap_or(false), anim });
+            let hinge = m["hinge"].as_array().map(|a| (a[0].as_f64().unwrap_or(0.5) as f32, a[1].as_f64().unwrap_or(0.5) as f32));
+            g.spr.insert(k.clone(), Spr { tex: t, h: m["h"].as_f64().unwrap_or(20.) as f32, fl: m["fl"].as_bool().unwrap_or(false), anim, hinge });
             done += 1.; progress(done / total);
         }
         for i in 0..npal { g.glow.push(tex(&format!("fx/glow{i}.png")).await); g.soft.push(tex(&format!("fx/soft{i}.png")).await); g.bul.push(tex(&format!("fx/bul{i}.png")).await); done += 3.; progress(done / total); }
@@ -87,6 +95,7 @@ impl Gfx {
         for z in 0..15 { let t = tex(&format!("ground/g{z}.png")).await;
             unsafe { let ctx = get_internal_gl().quad_context; ctx.texture_set_wrap(t.raw_miniquad_id(), TextureWrap::Repeat, TextureWrap::Repeat); }
             g.ground.push(t); done += 1.; progress(done / total); }
+        { let t = tex("fx/caustic.png").await; if t.width() > 2. { unsafe { let ctx = get_internal_gl().quad_context; ctx.texture_set_wrap(t.raw_miniquad_id(), TextureWrap::Repeat, TextureWrap::Repeat); } g.caustic = Some(t); } }
         g
     }
     /// Размеры экрана и масштаб мира, как resize() в веб-версии
@@ -112,14 +121,25 @@ impl Gfx {
         let Some(s) = self.spr.get(key) else { return };
         let half = s.h * k; let flip = (s.fl || force_fl) && ang.cos() < 0.; let (sqx, sqy) = (self.sqx, self.sqy);
         let tex = s.tex.clone(); let anim = s.anim;
-        let jaw = self.jaw;
+        let jaw = self.jaw; let hg = s.hinge.map(|(hu, hv)| (hu, hv, self.jrot));
         if self.defer_white { // тело сейчас, белую вспышку — одним проходом потом (меньше переключений шейдера)
-            self.set_mat(0); draw_warp_j(&tex, sx, sy, half, ang, flip, sqx, sqy, anim, ph, Color::new(1., 1., 1., alpha), jaw);
-            if white { self.white_q.push((tex, sx, sy, half, ang, flip, sqx, sqy, anim, ph, alpha, jaw)); } return; }
+            let tn = self.tint; self.set_mat(0); draw_warp_h(&tex, sx, sy, half, ang, flip, sqx, sqy, anim, ph, Color::new(tn.r, tn.g, tn.b, alpha), jaw, hg);
+            if white { self.white_q.push((tex, sx, sy, half, ang, flip, sqx, sqy, anim, ph, alpha, jaw, hg)); } return; }
         let was = self.mat;
         self.set_mat(if white { 2 } else { 0 });
-        draw_warp_j(&tex, sx, sy, half, ang, flip, sqx, sqy, anim, ph, Color::new(1., 1., 1., alpha), jaw);
+        let tn = if white { WHITE } else { self.tint };
+        draw_warp_h(&tex, sx, sy, half, ang, flip, sqx, sqy, anim, ph, Color::new(tn.r, tn.g, tn.b, alpha), jaw, hg);
         self.set_mat(was);
+    }
+    /// Босс с настоящей пастью: глотка, нижняя челюсть на шарнире (поворот jrot, + раскрывает), тело.
+    /// Если нарезки нет — обычный спрайт.
+    pub fn spr_jaw(&mut self, key: &str, x: f32, y: f32, ang: f32, sc: f32, white: bool, ph: f32, jrot: f32) {
+        let body = format!("{key}_body");
+        if !self.spr.contains_key(&body) { self.jaw = jrot.max(0.) * 2.; self.spr_world(key, x, y, ang, sc, 1., white, ph, false); self.jaw = 0.; return; }
+        self.jaw = 0.;
+        self.spr_world(&format!("{key}_mouth"), x, y, ang, sc, 1., false, ph, false);
+        self.jrot = jrot; self.spr_world(&format!("{key}_jaw"), x, y, ang, sc, 1., white, ph, false); self.jrot = 0.;
+        self.spr_world(&body, x, y, ang, sc, 1., white, ph, false);
     }
     /// Белый светящийся силуэт (вспышка гибели)
     pub fn spr_ghost(&mut self, key: &str, x: f32, y: f32, ang: f32, sc: f32, alpha: f32) {
@@ -129,7 +149,7 @@ impl Gfx {
     /// Нарисовать отложенные вспышки попаданий (полупрозрачный белый — не «призраки»)
     pub fn flush_white(&mut self) {
         let q = std::mem::take(&mut self.white_q); if q.is_empty() { return; } self.set_mat(2);
-        for (t, sx, sy, half, ang, flip, sqx, sqy, an, ph, a, jaw) in q.iter() { draw_warp_j(t, *sx, *sy, *half, *ang, *flip, *sqx, *sqy, *an, *ph, Color::new(1., 1., 1., 0.3 * a), *jaw); }
+        for (t, sx, sy, half, ang, flip, sqx, sqy, an, ph, a, jaw, hg) in q.iter() { draw_warp_h(t, *sx, *sy, *half, *ang, *flip, *sqx, *sqy, *an, *ph, Color::new(1., 1., 1., 0.3 * a), *jaw, *hg); }
         self.white_q = q; self.white_q.clear(); self.set_mat(0);
     }
     pub fn spr_half(&self, key: &str) -> f32 { self.spr.get(key).map(|s| s.h).unwrap_or(20.) }
@@ -247,9 +267,12 @@ pub fn font_bucket(px: f32) -> (u16, f32) {
 /// half — половина размера в пикселях, (sqx,sqy) — сжатие вдоль/поперёк тела.
 pub fn draw_warp(t: &Texture2D, sx: f32, sy: f32, half: f32, ang: f32, flip: bool, sqx: f32, sqy: f32, anim: Option<Anim>, ph: f32, col: Color) { draw_warp_j(t, sx, sy, half, ang, flip, sqx, sqy, anim, ph, col, 0.) }
 /// То же, плюс jaw — раскрытие пасти (у боссов вида сбоку: нижняя челюсть у головы отходит вниз)
-pub fn draw_warp_j(t: &Texture2D, sx: f32, sy: f32, half: f32, ang: f32, flip: bool, sqx: f32, sqy: f32, anim: Option<Anim>, ph: f32, col: Color, jaw: f32) {
+pub fn draw_warp_j(t: &Texture2D, sx: f32, sy: f32, half: f32, ang: f32, flip: bool, sqx: f32, sqy: f32, anim: Option<Anim>, ph: f32, col: Color, jaw: f32) { draw_warp_h(t, sx, sy, half, ang, flip, sqx, sqy, anim, ph, col, jaw, None) }
+/// То же, плюс поворот картинки вокруг шарнира (hu, hv) на угол r — для нижней челюсти
+pub fn draw_warp_h(t: &Texture2D, sx: f32, sy: f32, half: f32, ang: f32, flip: bool, sqx: f32, sqy: f32, anim: Option<Anim>, ph: f32, col: Color, jaw: f32, hinge: Option<(f32, f32, f32)>) {
     let (ca, sa) = (ang.cos(), ang.sin());
-    let anim = if jaw > 0.01 && anim.is_none() { Some(Anim::Fin) } else { anim };
+    let hinge = hinge.filter(|h| h.2.abs() > 0.002);
+    let anim = if (jaw > 0.01 || hinge.is_some()) && anim.is_none() { Some(Anim::Fin) } else { anim };
     let Some(an) = anim else {
         draw_texture_ex(t, sx - half * sqx, sy - half * sqy, col, DrawTextureParams { dest_size: Some(vec2(half * 2. * sqx, half * 2. * sqy)), rotation: ang, flip_y: flip, ..Default::default() });
         return;
@@ -258,7 +281,7 @@ pub fn draw_warp_j(t: &Texture2D, sx: f32, sy: f32, half: f32, ang: f32, flip: b
     let (mut kx, mut ky, mut rot) = (1f32, 1f32, 0f32);
     match an { Anim::Pulse => { kx = 1. + 0.07 * ph.sin(); ky = 1. + 0.07 * (ph + 1.1).sin(); rot = (ph * 0.5).sin() * 0.06; }
         Anim::Flap => { ky = 1. - 0.22 * ph.sin(); } Anim::Orb => { kx = 1. + 0.035 * ph.sin(); ky = 2. - kx; } _ => {} }
-    if matches!(an, Anim::Pulse | Anim::Flap | Anim::Orb) && jaw <= 0.01 {
+    if matches!(an, Anim::Pulse | Anim::Flap | Anim::Orb) && jaw <= 0.01 && hinge.is_none() {
         draw_texture_ex(t, sx - half * sqx * kx, sy - half * sqy * ky, col, DrawTextureParams { dest_size: Some(vec2(half * 2. * sqx * kx, half * 2. * sqy * ky)), rotation: ang + rot, flip_y: flip, ..Default::default() });
         return;
     }
@@ -282,6 +305,7 @@ pub fn draw_warp_j(t: &Texture2D, sx: f32, sy: f32, half: f32, ang: f32, flip: b
                 _ => {}
             }
             if jaw > 0.01 && u > 0.62 { let k = ((u - 0.62) / 0.38).min(1.); if v > 0.5 { dv += jaw * 0.16 * k * ((v - 0.5) * 2.).min(1.); } else { dv -= jaw * 0.04 * k * ((0.5 - v) * 2.).min(1.); } }
+            if let Some((hu, hv, r)) = hinge { let (x, y) = (u + du - hu, v + dv - hv); let (c, s_) = (r.cos(), r.sin()); du = hu + x * c - y * s_ - u; dv = hv + x * s_ + y * c - v; }
             let lx = ((u + du) * 2. - 1.) * half * sqx; let mut ly = ((v + dv) * 2. - 1.) * half * sqy; if flip { ly = -ly; }
             verts.push(Vertex::new(sx + lx * ca - ly * sa, sy + lx * sa + ly * ca, 0., u, v, Color::from_rgba(c8[0], c8[1], c8[2], c8[3])));
         } }

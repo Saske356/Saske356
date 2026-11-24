@@ -139,9 +139,9 @@ pub fn rrect_grad(gx: &mut Gfx, x: f32, y: f32, w: f32, h: f32, r: f32, top: Col
 
 pub fn style_cols(st: St) -> (Color, Color, Color) {
     match st {
-        St::Cyan => (Color::new(63. / 255., 240. / 255., 1., 0.22), Color::new(20. / 255., 60. / 255., 110. / 255., 0.35), Color::new(120. / 255., 245. / 255., 1., 0.85)),
-        St::Pink => (Color::new(1., 79. / 255., 216. / 255., 0.25), Color::new(90. / 255., 20. / 255., 90. / 255., 0.35), Color::new(1., 120. / 255., 220. / 255., 0.9)),
-        St::Gold => (Color::new(1., 213. / 255., 79. / 255., 0.25), Color::new(110. / 255., 70. / 255., 10. / 255., 0.35), Color::new(1., 213. / 255., 79. / 255., 0.95)),
+        St::Cyan => (Color::new(0.20, 0.78, 1., 0.55), Color::new(0.06, 0.24, 0.52, 0.70), Color::new(0.55, 0.96, 1., 0.95)),
+        St::Pink => (Color::new(1., 0.36, 0.80, 0.55), Color::new(0.40, 0.08, 0.42, 0.70), Color::new(1., 0.60, 0.90, 0.95)),
+        St::Gold => (Color::new(1., 0.78, 0.25, 0.55), Color::new(0.50, 0.26, 0.04, 0.70), Color::new(1., 0.86, 0.42, 1.)),
         St::Dim => (Color::new(63. / 255., 240. / 255., 1., 0.10), Color::new(20. / 255., 60. / 255., 110. / 255., 0.25), Color::new(120. / 255., 245. / 255., 1., 0.45)),
     }
 }
@@ -151,7 +151,9 @@ pub fn draw_btn(gx: &mut Gfx, r: Rect, st: St, a: f32, held: bool) {
     let g = if held { 0.7 } else { 0.38 };
     for k in (1..=4).rev() { let o = k as f32 * 2.5; gx.rrect_line(r.x - o, r.y - o, r.w + o * 2., r.h + o * 2., rad + o, 2.6, Color::new(bord.r, bord.g, bord.b, a * g * 0.14 / k as f32)); }
     rrect_grad(gx, r.x, r.y, r.w, r.h, rad, with_alpha(Color::new(2. / 255., 8. / 255., 20. / 255., 0.55), a), with_alpha(Color::new(2. / 255., 8. / 255., 20. / 255., 0.55), a));
-    rrect_grad(gx, r.x, r.y, r.w, r.h, rad, with_alpha(top, a * if held { 1.6 } else { 1. }), with_alpha(bot, a));
+    rrect_grad(gx, r.x, r.y, r.w, r.h, rad, with_alpha(top, a * if held { 1.4 } else { 1. }), with_alpha(bot, a));
+    // глянцевый блик по верхней половине
+    rrect_grad(gx, r.x + 3., r.y + 2., r.w - 6., r.h * 0.46, (rad - 2.).max(1.), Color::new(1., 1., 1., 0.20 * a), Color::new(1., 1., 1., 0.02 * a));
     // внутреннее свечение у краёв
     gx.rrect_line(r.x + 3., r.y + 3., r.w - 6., r.h - 6., (rad - 3.).max(1.), 3., with_alpha(Color::new(bord.r, bord.g, bord.b, 0.1), a));
     gx.rrect_line(r.x, r.y, r.w, r.h, rad, 2., with_alpha(bord, a));
