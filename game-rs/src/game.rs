@@ -117,7 +117,7 @@ pub struct Game {
 pub const TUT_NEED: [f32; 5] = [300., 3., 6., 1., 1.];
 
 /// Опыт до следующего уровня: после 15-го уровни заметно дороже, чтобы к глубине не набиралось 70 уровней
-pub fn xp_need(l: u32) -> f32 { let l = l as f32; let late = (l - 25.).max(0.); (6.0 + l * 4.0 + l * l * 0.55 + late * late * 0.5).floor() }
+pub fn xp_need(l: u32) -> f32 { let l = l as f32; let late = (l - 25.).max(0.); ((6.0 + l * 4.0 + l * l * 0.55 + late * late * 0.5) * 1.035f32.powf((l - 40.).max(0.))).floor() }
 
 impl Game {
     pub fn new(s: Save) -> Game {
@@ -253,7 +253,7 @@ impl Game {
     pub fn spawn_enemy(&mut self, kind: K, x: f32, y: f32, elite: bool) -> Option<usize> {
         let i = self.en.spawn()?;
         let d = kind.d(); let z = (self.zone - 1) as f32; let lt = (z - 6.).max(0.);
-        let hp_mul = (1. + 0.26 * z + 0.03 * z * z + 0.045 * lt * lt) * if d.boss { self.hp_scale } else { 1. + 0.06 * self.lv(u::GREED) as f32 } * if self.hard { 1.3 } else { 1. };
+        let hp_mul = (1. + 0.26 * z + 0.03 * z * z + 0.045 * lt * lt) * 1.1f32.powf((z - 9.).max(0.)) * if d.boss { self.hp_scale } else { 1. + 0.06 * self.lv(u::GREED) as f32 } * if self.hard { 1.3 } else { 1. };
         let uid = self.uid; self.uid += 1;
         let ang = (self.p.y - y).atan2(self.p.x - x); let t0 = self.rand() * 2.; let phase = self.rand() * TAU; let p3 = if self.rand() < 0.5 { 1. } else { -1. };
         let mut e = Enemy { kind, x, y, r: d.r, max_hp: if d.boss { d.hp * self.hp_scale * if self.hard { 1.3 } else { 1. } } else { d.hp * hp_mul },
@@ -311,12 +311,12 @@ impl Game {
         else if self.boss_clear_t > 0. { self.boss_clear_t -= dt; if self.boss_clear_t <= 0. { self.next_zone(); } return; }
         else { self.zone_t += dt; if self.zone_t >= cfg::ZONE_TIME * if self.muts[7] { 0.5 } else { 1. } { self.next_zone(); } }
         let z = self.zone as f32;
-        let mut rate = (2.3 + 0.55 * (z - 1.) + 0.35 * (z - 7.).max(0.)) * if self.hard { 1.2 } else { 1. } * if self.muts[2] { 1.5 } else { 1. } * (1. + self.zone_t / cfg::ZONE_TIME * 0.4);
+        let mut rate = (2.3 + 0.55 * (z - 1.) + 0.35 * (z - 7.).max(0.) + 0.3 * (z - 15.).max(0.)) * if self.hard { 1.2 } else { 1. } * if self.muts[2] { 1.5 } else { 1. } * (1. + self.zone_t / cfg::ZONE_TIME * 0.4);
         if self.boss >= 0 { rate *= 0.22; }
         let max_alive = (cfg::MAX_ENEMIES - 20).min(48 + self.zone as usize * 9);
         self.spawn_acc += rate * dt;
         while self.spawn_acc >= 1. { self.spawn_acc -= 1.; if self.en.n >= max_alive { continue; }
-            let (x, y) = self.offscreen_point(); let k = self.pick_kind(); let el = z >= 3. && self.rand() < (0.03 + z * 0.004) * if self.muts[3] { 3. } else { 1. };
+            let (x, y) = self.offscreen_point(); let k = self.pick_kind(); let el = z >= 3. && self.rand() < (0.03 + z * 0.004 + (z - 15.).max(0.) * 0.006) * if self.muts[3] { 3. } else { 1. };
             self.spawn_enemy(k, x, y, el); }
         if self.boss < 0 { self.pack_t -= dt; if self.pack_t <= 0. { self.pack_t = self.rr(13., 18.); self.spawn_pack(); } }
         if self.boss < 0 && self.boss_clear_t <= 0. && self.chal.is_none() { self.ev_t -= dt; if self.ev_t <= 0. { self.ev_t = self.rr(26., 36.); self.start_run_event(); } }
@@ -340,7 +340,7 @@ impl Game {
     }
     pub fn next_zone(&mut self) {
         self.zone += 1; self.zone_t = 0.; self.quest_max("depth", self.zone * 100); self.build_decor((self.zone as usize - 1) % 15);
-        { let z = (self.zone - 1) as f32; let late = (z - 6.).max(0.); self.dmg_scale = (1. + 0.1 * z + 0.006 * z * z + 0.02 * late * late) * if self.hard { 1.35 } else { 1. }; }
+        { let z = (self.zone - 1) as f32; let late = (z - 6.).max(0.); self.dmg_scale = (1. + 0.1 * z + 0.006 * z * z + 0.02 * late * late) * 1.075f32.powf((z - 9.).max(0.)) * if self.hard { 1.35 } else { 1. }; }
         let depth = self.zone * 100;
         if self.zone == 3 && self.no_hit { self.unlock("depth300"); }
         if self.zone >= 5 { self.unlock("depth500"); } if self.zone >= 11 { self.unlock("deep1100"); } if self.zone >= 20 { self.unlock("endless2000"); }
@@ -585,7 +585,7 @@ impl Game {
         self.burst(e.x, e.y, (8. + sz * 0.6).min(26.) as u32, e.col, 90. + sz * 6., 6. + sz * 0.3, 0.55); self.burst(e.x, e.y, 4, c::WHITE, 60., 5., 0.3);
         self.ring(e.x, e.y, sz * 0.5, sz * 2.4, 0.35, e.col, 2.5); self.shake(1.5 + sz * 0.06); self.snd(Sfx::Kill(self.combo));
         let mut xp = e.xp; while xp > 0. { let v = if xp >= 10. { 10. } else if xp >= 3. { 3. } else { 1. }; xp -= v; let (a, b) = (self.rr(-8., 8.), self.rr(-8., 8.)); self.drop_pick(e.x + a, e.y + b, if v >= 10. { 2 } else if v >= 3. { 1 } else { 0 }, v); }
-        if e.elite { let n = self.rng.int(2, 4); for _ in 0..n { let (a, b) = (self.rr(-12., 12.), self.rr(-12., 12.)); self.drop_pick(e.x + a, e.y + b, 3, 1.); } } else if self.rand() < 0.012 { self.drop_pick(e.x, e.y, 3, 1.); }
+        if e.elite { let n = self.rng.int(1, 2); for _ in 0..n { let (a, b) = (self.rr(-12., 12.), self.rr(-12., 12.)); self.drop_pick(e.x + a, e.y + b, 3, 1.); } } else if self.rand() < 0.006 { self.drop_pick(e.x, e.y, 3, 1.); }
         if self.rand() < 0.01 && self.p.hp < self.p.max_hp * 0.8 { self.drop_pick(e.x, e.y, 4, 25.); }
         if self.rand() < 0.004 { self.drop_pick(e.x, e.y, 5, 0.); }
         if e.kind == K::Urchin { for k in 0..3 { let a = k as f32 / 3. * TAU + self.rand(); if let Some(s) = self.spawn_enemy(K::Spikelet, e.x + a.cos() * 10., e.y + a.sin() * 10., false) { let ss = &mut self.en.items[s]; ss.spawn_t = 0.; ss.vx = a.cos() * 260.; ss.vy = a.sin() * 260.; } } }
@@ -593,7 +593,7 @@ impl Game {
             self.ring(e.x, e.y, 6., 70., 0.4, c::CORAL, 4.); self.burst(e.x, e.y, 16, c::CORAL, 220., 8., 0.5); self.snd(Sfx::Boom(false)); self.shake(6.); }
         if e.kind == K::Spawner && src != Src::Cleanup { self.spawn_fry(i, 4); }
         if src == Src::Nova && self.lv(u::SUPERNOVA) > 0 { if let Some(m) = self.mines.spawn() { self.mines.items[m] = Mine { x: e.x, y: e.y, t: 99., r: 60., dmg: self.st.dmg * 1.5, inst: true, freeze: false }; } }
-        if e.kind == K::Chest { let n = 6 + self.zone.min(8); for _ in 0..n { let (a, b) = (self.rr(-26., 26.), self.rr(-26., 26.)); self.drop_pick(e.x + a, e.y + b, 3, 1.); }
+        if e.kind == K::Chest { let n = 3 + (self.zone / 4).min(3); for _ in 0..n { let (a, b) = (self.rr(-26., 26.), self.rr(-26., 26.)); self.drop_pick(e.x + a, e.y + b, 3, 1.); }
             if self.rand() < 0.35 && self.relics.len() < crate::content::RELICS.len() { self.relic_pending += 1; } else { self.level_pending += 1; } self.level_delay = self.level_delay.max(0.5); self.chests += 1; self.quest_add("chest", 1);
             self.burst(e.x, e.y, 30, c::GOLD, 260., 9., 0.7); self.ring(e.x, e.y, 10., 140., 0.5, c::GOLD, 5.); self.snd(Sfx::Level); self.banner(t("chestOpen"), t("chestOpenS"), 0xffd54f, 2.2); }
         if let Some(ch) = self.chal.as_mut() { if e.kind != K::Chest { ch.got += 1; } }

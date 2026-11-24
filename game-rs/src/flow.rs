@@ -101,8 +101,9 @@ impl Game {
     pub fn game_over(&mut self) -> (u32, bool) {
         self.quest_add("runs", 1);
         self.state = State::Over;
-        let earned = ((self.run_pearls as f32 + (self.score / 1200.).floor() as f32 + (self.zone as f32 - 1.) * 3. + self.bosses_killed as f32 * 20.)
-            * (1. + 0.25 * self.lv(u::GREED) as f32) * if self.hard { 1.5 } else { 1. } * (1. + 0.1 * self.tl("t_pearl")) * if self.daily { 2. } else { 1. } * if self.rel(crate::content::R_CROWN) { 1.5 } else { 1. } * (1. + 0.03 * self.s.shop_lv("luck") as f32)).round() as u32;
+        // 3.7: жемчуг копится медленно — за очки корень, а не линейно (иначе миллионы очков давали тысячи жемчуга)
+        let earned = ((self.run_pearls as f32 + (self.score.max(0.).sqrt() / 30.).floor() as f32 + (self.zone as f32 - 1.) * 2. + self.bosses_killed as f32 * 10.)
+            * (1. + 0.1 * self.lv(u::GREED) as f32) * if self.hard { 1.5 } else { 1. } * (1. + 0.1 * self.tl("t_pearl")) * if self.daily { 2. } else { 1. } * if self.rel(crate::content::R_CROWN) { 1.5 } else { 1. } * (1. + 0.02 * self.s.shop_lv("luck") as f32)).round() as u32;
         self.last_earned = earned;
         if self.daily { let z = self.zone; let d = &mut self.s.daily; d.ch_best = d.ch_best.max(z * 100);
             if z >= 5 && !d.ch_done { d.ch_done = true; self.s.pearls += 150; self.toast(t("dailyWin"), format!("+150 {}", t("pearlsGen"))); } }

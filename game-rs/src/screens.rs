@@ -38,7 +38,7 @@ fn menu_backdrop(gx: &mut Gfx, tm: f32, al: f32, light: bool) {
     gx.set_add(true);
     for i in 0..5 { let fi = i as f32; let x = w * (0.1 + fi * 0.22) + (tm * 0.15 + fi * 1.3).sin() * 26.; let wd = 30. + (i * 17 % 5) as f32 * 9.;
         let a0 = (0.05 + 0.035 * (tm * 0.5 + fi * 2.1).sin()).max(0.) * al; let c0 = Color::new(0.6, 0.95, 1., a0); let c1 = Color::new(0.6, 0.95, 1., 0.);
-        draw_mesh(&Mesh { vertices: vec![Vertex::new(x * p, 0., 0., 0., 0., c0), Vertex::new((x + wd) * p, 0., 0., 0., 0., c0), Vertex::new((x + wd - 140.) * p, h * 0.75 * p, 0., 0., 0., c1), Vertex::new((x - 140.) * p, h * 0.75 * p, 0., 0., 0., c1)], indices: vec![0, 1, 2, 0, 2, 3], texture: None }); }
+        let _ = c1; soft_ray(x * p, (x + wd) * p, 0., (x - 140.) * p, (x + wd - 140.) * p, h * 0.75 * p, Color::new(c0.r, c0.g, c0.b, c0.a * 1.6)); }
     // искорки-планктон
     for i in 0..28 { let fi = i as f32; let sp = 10. + (i * 7 % 5) as f32 * 6.; let y = h + 10. - ((tm * sp + fi * 131.) % (h + 20.)); let x = ((fi * 0.618 + 0.21) % 1.) * w + (tm * 0.7 + fi).sin() * 12.;
         gx.glow_scr(false, [c::ICE, c::JELLY, c::GOLD, c::EMER][i % 4], x * p, y * p, (2.5 + (i % 3) as f32) * p, (0.5 + 0.3 * (tm * 2. + fi).sin()) * al); }
@@ -86,7 +86,7 @@ fn title_scene(gx: &mut Gfx, tm: f32, w: f32, h: f32, hero_c: (f32, f32), hero_r
         let (ox, oy) = (w * 0.5 + (tm * 0.13).sin() * 30., -h * 0.08); let k = 0.07 + 0.05 * (tm * 0.7 + i as f32 * 2.3).sin().max(0.);
         let c0 = Color::new(0.6, 0.95, 1., k * al); let c1 = Color::new(0.6, 0.95, 1., 0.);
         let (s0, s1) = ((a - wd).sin(), (a + wd).sin()); let (q0, q1) = ((a - wd).cos(), (a + wd).cos());
-        draw_mesh(&Mesh { vertices: vec![Vertex::new(ox * p, oy * p, 0., 0., 0., c0), Vertex::new((ox + s0 * len) * p, (oy + q0 * len) * p, 0., 0., 0., c1), Vertex::new((ox + s1 * len) * p, (oy + q1 * len) * p, 0., 0., 0., c1)], indices: vec![0, 1, 2], texture: None }); }
+        let _ = c1; soft_ray((ox - 6.) * p, (ox + 6.) * p, oy * p, (ox + s0 * len) * p, (ox + s1 * len) * p, (oy + q0 * len) * p, c0); }
     // пузырьки
     for i in 0..34 { let fi = i as f32; let sp = 18. + (i * 13 % 7) as f32 * 7.; let y = h + 20. - ((tm * sp + fi * 97.) % (h + 40.)); let x = ((fi * 0.618 + 0.13) % 1.) * w + (tm * 0.9 + fi).sin() * 10.;
         let r = 1.5 + (i % 4) as f32 * 1.1; gx.ring(x, y, r, 1., Color::new(0.75, 0.95, 1., 0.45 * al)); gx.glow_scr(false, [c::ICE, c::JELLY, c::GOLD, c::EMER][i % 4], (x - r * 0.4) * p, (y - r * 0.4) * p, r * 1.2 * p, 0.5 * al); }
@@ -132,7 +132,58 @@ fn spaced(gx: &mut Gfx, s: &str, cx: f32, cy: f32, size: f32, sp: f32, col: Colo
     }
 }
 
+/// Главный экран (вертикальный), 3.7: плашки рекорда и жемчуга, арт Люмена, логотип, «Играть», три плитки, нижний ряд
+fn title_portrait(a: &mut App) {
+    let (w, h) = (a.gx.w, a.gx.h); let al = a.ui.alpha; let tm = a.g.t; let tp = top(a); let sm = small(a); let p = a.gx.px;
+    let (bx, bw) = col(a); let cx = w / 2.;
+    // фон: свет, лучи, пузырьки (герой — на арте, поэтому его искру уводим за экран)
+    { let skin = a.g.s.skin.clone(); title_scene(&mut a.gx, tm, w, h, (-400., -400.), (0., 0.), &skin, c::CYAN, al); }
+    // ---- верхние плашки ----
+    let s = &a.g.s; let rec = format!("★ {}  ·  {} {}", i18n::fmt_num(s.best as i64), s.best_depth, t("m")); let pearls_s = i18n::fmt_num(s.pearls as i64);
+    { let gx = &mut a.gx; let y0 = tp; let ph = 30.;
+      let rw = gx.text_w(&rec, 13., 1) + 24.; ui::rrect_grad(gx, bx, y0, rw, ph, 15., Color::new(0.02, 0.08, 0.16, 0.55 * al), Color::new(0.02, 0.05, 0.12, 0.45 * al));
+      gx.rrect_line(bx, y0, rw, ph, 15., 1., Color::new(1., 0.84, 0.4, 0.45 * al)); gx.text(&rec, bx + 12., y0 + ph / 2., 13., with_alpha(hex(0xffe08a), al), 0, 1);
+      let pw = gx.text_w(&pearls_s, 15., 2) + 44.; let px0 = bx + bw - pw; ui::rrect_grad(gx, px0, y0, pw, ph, 15., Color::new(0.10, 0.04, 0.16, 0.6 * al), Color::new(0.06, 0.02, 0.12, 0.5 * al));
+      gx.rrect_line(px0, y0, pw, ph, 15., 1., Color::new(1., 0.6, 0.95, 0.5 * al)); pearl(gx, px0 + 16., y0 + ph / 2., 6.5, al); gx.text(&pearls_s, px0 + 30., y0 + ph / 2., 15., Color::new(1., 0.93, 1., al), 0, 2); }
+    // ---- нижний блок (снизу вверх) ----
+    let gift_left = GIFT_MAX.saturating_sub(a.g.s.daily.gift); let gift = gift_left > 0 && a.ad_ready();
+    let (bh_play, tile_h, row_h) = if sm { (58., 66., 46.) } else { (68., 78., 52.) }; let gap = if sm { 8. } else { 10. };
+    let block = bh_play + gap + tile_h + gap + row_h + gap + 28.; let yb = bottom(a) - block;
+    // ---- арт и логотип в свободной середине ----
+    let top_free = tp + 40.; let logo_k = if sm { 0.62 } else if h > 720. { 0.86 } else { 0.72 }; let logo_h = 118. * logo_k;
+    let avail = (yb - 12.) - top_free; let art = (avail - logo_h - 6.).min(bw * 1.05).max(90.);
+    { let gx = &mut a.gx; let ay = top_free + (avail - logo_h - art) * 0.5; let bob = (tm * 1.1).sin() * 5.; let pul = 1. + (tm * 0.9).sin() * 0.012;
+      gx.glow_scr(true, c::CYAN, cx * p, (ay + art / 2.) * p, art * 0.75 * p, 0.45 * al); gx.glow_scr(true, c::GOLD, cx * p, (ay + art * 0.55) * p, art * 0.3 * p, 0.25 * al);
+      if let Some(t_) = gx.keyart.clone() { let s_ = art * pul; gx.tex_ui(&t_, cx - s_ / 2., ay + bob + (art - s_) / 2., s_, s_, Color::new(1., 1., 1., al)); }
+      let ly = ay + art - logo_h * 0.18; logo(gx, cx, ly, logo_k, al, tm); logo_shine(gx, cx, ly, logo_k, tm, al); }
+    // ---- кнопки ----
+    let mut y = yb;
+    if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, bh_play), &t("play"), St::Cyan, if sm { 24. } else { 28. }, true) { a.click(); a.g.s.seen_how = true; a.start_run(RunMode::Normal); return; }
+    y += bh_play + gap;
+    let muts = crate::flow::daily_muts(); let mn: Vec<String> = muts.iter().map(|&i| i18n::mutator(data::MUTS[i]).0).collect(); let d = a.g.s.daily.clone();
+    let qd = d.quests.iter().filter(|q| q.done).count(); let qr = a.g.quests_ready();
+    let en = i18n::is_en(); let n = if gift { 3. } else { 2. }; let tw_ = (bw - gap * (n - 1.)) / n;
+    let daily_l = format!("☀ {}{}\n{}", if en { "Daily" } else { "Испытание" }, if d.ch_done { " ✓" } else { "" }, mn.join(" + "));
+    if a.ui.btn(&mut a.gx, Rect::new(bx, y, tw_, tile_h), &daily_l, St::Gold, 15., true) { a.click(); a.start_run(RunMode::Daily); return; }
+    let q_l = format!("{}\n{}/{}{}", t("quests"), qd, d.quests.len(), if qr > 0 { format!(" · {}", t("claim")) } else { String::new() });
+    if a.ui.btn(&mut a.gx, Rect::new(bx + tw_ + gap, y, tw_, tile_h), &q_l, if qr > 0 { St::Gold } else { St::Cyan }, 15., true) { a.click(); a.ui.scroll_reset(3); a.show(Scr::Quest); }
+    if gift { let g_l = format!("▶ +{}\n{} ({})", GIFT_R, if en { "for an ad" } else { "за рекламу" }, gift_left);
+        if a.ui.btn(&mut a.gx, Rect::new(bx + (tw_ + gap) * 2., y, tw_, tile_h), &g_l, St::Pink, 15., true) { a.click(); a.ad_show("gift", AdCb::Gift); } }
+    y += tile_h + gap;
+    let rw = (bw - gap * 2.) / 3.;
+    if a.ui.btn(&mut a.gx, Rect::new(bx, y, rw, row_h), &t("shop"), St::Pink, 15., true) { a.click(); a.back_to = Scr::Title; a.ui.scroll_reset(1); a.show(Scr::Shop); }
+    if a.ui.btn(&mut a.gx, Rect::new(bx + rw + gap, y, rw, row_h), &t("ach"), St::Gold, 15., true) { a.click(); a.ui.scroll_reset(2); a.show(Scr::Ach); }
+    if a.ui.btn(&mut a.gx, Rect::new(bx + (rw + gap) * 2., y, rw, row_h), &t("settings"), St::Cyan, 15., true) { a.click(); a.back_to = Scr::Title; a.show(Scr::Set); }
+    y += row_h + gap + 12.;
+    let mut links: Vec<(String, u8)> = vec![]; if a.g.s.wins > 0 { links.push((if a.g.s.set.hard { t("hardOn") } else { t("hardOff") }, 0)); }
+    links.push((t("howLink"), 1)); links.push((t("bestL"), 2));
+    let ws: Vec<f32> = links.iter().map(|l| a.gx.text_w(&l.0, 12., 0) + 20.).collect(); let tot: f32 = ws.iter().sum(); let mut x = cx - tot / 2.;
+    for (i, (l, id)) in links.iter().enumerate() { let lx = x + ws[i] / 2.; x += ws[i];
+        if a.ui.link(&mut a.gx, lx, y, l, 12.) { a.click(); match id { 0 => { a.g.s.set.hard = !a.g.s.set.hard; a.g.dirty = true; } 1 => a.show(Scr::How), _ => { a.ui.scroll_reset(4); a.show(Scr::Best); } } } }
+}
+
 fn title(a: &mut App) {
+    if !a.landscape() { title_portrait(a); return; }
     let sm = small(a); let tp = top(a); let _ = (sm, tp); let _gh = a.gx.h;
     let (w, h) = (a.gx.w, a.gx.h); let al = a.ui.alpha; let tm = a.g.t; let land = a.landscape(); let (_, cw) = col(a);
     let g = &a.g; let s = &g.s;
@@ -302,7 +353,8 @@ fn revive(a: &mut App) {
     y += a.gx.text_wrap(&t("reviveSub"), w / 2., y, w - 40., 14., 19., Color::new(1., 1., 1., 0.75 * al), 1, 0) + 10.;
     let n = a.revive_n.ceil().max(0.) as i32; let p = a.gx.px; a.gx.glow_scr(true, c::CYAN, w / 2. * p, (y + 30.) * p, 60. * p, 0.5 * al);
     a.gx.text(&n.to_string(), w / 2., y + 30., 54., Color::new(1., 1., 1., al), 1, 2); y += 76.;
-    if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, 68.), &t("adRevive"), St::Gold, 19., a.ads.cb.is_none()) { a.click(); a.ad_show("revive", AdCb::Revive); } y += 76.;
+    let ready = a.ad_ready(); let lbl = if ready || a.ads.cb.is_some() { t("adRevive") } else if i18n::is_en() { "Ad is loading…".to_string() } else { "Реклама загружается…".to_string() };
+    if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, 68.), &lbl, St::Gold, 19., ready) { a.click(); a.ad_show("revive", AdCb::Revive); } y += 76.;
     if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, 56.), &t("noRevive"), St::Cyan, 18., a.ads.cb.is_none()) { a.click(); a.game_over(); }
 }
 

@@ -76,11 +76,8 @@ pub fn background(gx: &mut Gfx, rd: &mut Rd, g: &mut Game, dt: f32, show_decor: 
     let (w, h) = (gx.w, gx.h); let twr = w * 1.6; let p = gx.px; gx.set_add(true);
     for i in 0..(if hi { 5 } else { 3 }) {
         let r = RAYS[i]; let x = modf(r[0] * twr - g.cam_x * 0.05 * (gx.ws / p), twr) - w * 0.3; let swy = (g.t * 0.3 + r[2]).sin() * 40.; let rw = r[1];
-        let passes: &[(f32, f32)] = if g.quality >= 2 { &[(1.15, 0.4), (0.85, 0.4), (0.55, 0.4)] } else { &[(1.0, 1.0)] };
-        for &(k, am) in passes { let ww = rw * k; let top = Color::new(170. / 255., 240. / 255., 1., 0.13 * ray_a * am); let bot = Color::new(170. / 255., 240. / 255., 1., 0.);
-            let vtx = vec![Vertex::new((x - ww * 0.3) * p, 0., 0., 0., 0., top), Vertex::new((x + ww * 0.3) * p, 0., 0., 0., 0., top),
-                Vertex::new((x + ww + swy + 60.) * p, h * 0.9 * p, 0., 0., 0., bot), Vertex::new((x - ww + swy + 60.) * p, h * 0.9 * p, 0., 0., 0., bot)];
-            draw_mesh(&Mesh { vertices: vtx, indices: vec![0, 1, 2, 0, 2, 3], texture: None }); }
+        let ww = rw * 1.1; let col = Color::new(170. / 255., 240. / 255., 1., 0.2 * ray_a);
+        soft_ray((x - ww * 0.35) * p, (x + ww * 0.35) * p, 0., (x - ww + swy + 60.) * p, (x + ww + swy + 60.) * p, h * 0.9 * p, col);
     }
     // морской снег: три слоя параллакса
     let (tw, th) = (w + 60., h + 60.); let vs = gx.ws / p;

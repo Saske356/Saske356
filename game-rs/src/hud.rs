@@ -79,9 +79,9 @@ pub fn hud(a: &mut App) {
             if let Some(tx) = gx.icon.get(d.icon).cloned() { gx.tex_ui(&tx, x - 8., y - 8., 16., 16., WHITE); } } }
     // счёт и комбо
     let cx = w / 2. + 20.; let sc = i18n::fmt_num(g.score as i64);
-    gx.text(&sc, cx, top + 21.5, 26., Color::new(63. / 255., 240. / 255., 1., 0.25), 1, 2); gx.text(&sc, cx, top + 20., 26., WHITE, 1, 2);
+    let ss = (26. * (120. / gx.text_w(&sc, 26., 2).max(1.)).min(1.)).max(15.); gx.text(&sc, cx, top + 21.5, ss, Color::new(63. / 255., 240. / 255., 1., 0.25), 1, 2); gx.text(&sc, cx, top + 20., ss, WHITE, 1, 2);
     if g.combo >= 2 { let k = g.combo_t / 2.6; let pop = 1. + (g.combo_t - 2.4).max(0.) * 2.;
-        gx.text(&format!("×{:.1}", g.mult), cx - 34., top + 47., (19. * pop).round(), pal(c::GOLD), 1, 2);
+        gx.text(&format!("×{:.1}", g.mult), cx - 38., top + 47., (17. * pop).round(), pal(c::GOLD), 1, 2);
         gx.text(&format!("{} {}", t("comboW"), g.combo), cx + 26., top + 47., 12., Color::new(1., 1., 1., 0.85), 1, 1);
         gx.rect(cx - 60., top + 60., 120., 3., Color::new(1., 213. / 255., 79. / 255., 0.3)); gx.rect(cx - 60., top + 60., 120. * k, 3., pal(c::GOLD)); }
     if let Some(ch) = g.chal { let y = top + 78.; gx.text(&tf("chalHud", &[&ch.got.min(ch.need).to_string(), &ch.need.to_string(), &(ch.t.ceil() as i32).to_string()]), w / 2., y, 14., hex(0x5fffb0), 1, 2);

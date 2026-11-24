@@ -106,7 +106,10 @@ impl App {
         if ok { self.ads.last = self.now; }
         match cb {
             AdCb::Inter(n) => self.do_next(n),
-            AdCb::Revive => { if self.g.state != State::Revive { return; } if !ok { self.game_over(); return; } self.g.revive_ad(); self.show(Scr::None); }
+            AdCb::Revive => { if self.g.state != State::Revive { return; }
+                // не досмотрено или сбой — не заканчиваем забег, даём попробовать ещё раз
+                if !ok { self.revive_n = self.revive_n.max(5.); self.toasts.push(Toast { title: if crate::i18n::is_en() { "Ad unavailable".into() } else { "Реклама не сработала".into() }, sub: if crate::i18n::is_en() { "Try again".into() } else { "Попробуй ещё раз".into() }, t: 0. }); return; }
+                self.g.revive_ad(); self.show(Scr::None); }
             AdCb::Double => { if !ok || self.g.ad_doubled || self.g.state != State::Over { return; } self.g.ad_doubled = true; let e = self.g.last_earned; self.g.s.pearls += e; self.g.s.total_pearls += e as u64;
                 self.persist(); self.au.play(Sfx::PickCard); platform::vibrate(30); }
             AdCb::Reroll => { if ok && self.g.ad_rerolls < 2 { self.g.ad_rerolls += 1; self.roll_cards(); } }
@@ -119,7 +122,7 @@ impl App {
             Ev::Ad(_, ok) => { if let Some(cb) = self.ads.cb.take() { self.ad_result(cb, ok); } }
             Ev::MusicDone(i) => self.au.track_done(i), Ev::Save(_) => {} } }
         // страховка: реклама не ответила — игра не должна висеть
-        if let Some(cb) = self.ads.cb { if self.now - self.ads.wd > self.ads.wd_len || (self.ads.back_t > 0. && self.now - self.ads.back_t > 3.) { self.ads.cb = None; self.ads.back_t = 0.; self.ad_result(cb, false); } }
+        if let Some(cb) = self.ads.cb { if self.now - self.ads.wd > self.ads.wd_len || (self.ads.back_t > 0. && self.now - self.ads.back_t > 8.) { self.ads.cb = None; self.ads.back_t = 0.; self.ad_result(cb, false); } }
     }
 
     // ---------- переходы ----------
@@ -148,7 +151,7 @@ impl App {
         let (e, rec) = self.g.game_over(); self.earned = e; self.rec = rec; self.over_t = 0.; self.joy = Joy::default(); self.show(Scr::Over); self.persist();
     }
     fn offer_revive(&mut self) -> bool {
-        if self.g.ad_revived || self.g.victory || !self.ad_ready() { return false; }
+        if self.g.ad_revived || self.g.victory || self.bot { return false; }
         self.g.state = State::Revive; self.joy = Joy::default(); self.revive_n = 5.; self.show(Scr::Revive); true
     }
 

@@ -162,7 +162,7 @@ pub static SHOP: [ShopDef; 14] = [
     ShopDef { id: "xp", max: 15, base: 30. }, ShopDef { id: "luck", max: 15, base: 50. }, ShopDef { id: "reroll", max: 5, base: 70. },
     ShopDef { id: "flare", max: 4, base: 120. }, ShopDef { id: "revive", max: 1, base: 400. },
 ];
-pub fn shop_cost(i: usize, lvl: u8) -> u32 { (SHOP[i].base * ((lvl as f32 + 1.0).powf(1.35))).round() as u32 }
+pub fn shop_cost(i: usize, lvl: u8) -> u32 { (SHOP[i].base * ((lvl as f32 + 1.0).powf(1.6))).round() as u32 }
 
 pub struct TalDef { pub id: &'static str, pub br: u8, pub cost: u32 }
 pub static TALENTS: [TalDef; 12] = [

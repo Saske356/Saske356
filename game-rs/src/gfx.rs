@@ -20,7 +20,7 @@ impl Anim {
 pub struct Spr { pub tex: Texture2D, pub h: f32, pub fl: bool, pub anim: Option<Anim>, pub hinge: Option<(f32, f32)> }
 
 pub struct Gfx {
-    pub spr: HashMap<String, Spr>, pub glow: Vec<Texture2D>, pub soft: Vec<Texture2D>, pub bul: Vec<Texture2D>, pub icon: HashMap<String, Texture2D>, pub ground: Vec<Texture2D>, pub caustic: Option<Texture2D>, pub shade: Texture2D, pub tint: Color,
+    pub spr: HashMap<String, Spr>, pub glow: Vec<Texture2D>, pub soft: Vec<Texture2D>, pub bul: Vec<Texture2D>, pub icon: HashMap<String, Texture2D>, pub ground: Vec<Texture2D>, pub caustic: Option<Texture2D>, pub keyart: Option<Texture2D>, pub shade: Texture2D, pub tint: Color,
     pub font_b: Font, pub font_k: Font, pub font_m: Font, pub add: Material, pub wmat: Material, pub wadd: Material, pub vign: Texture2D, pub hurt: Texture2D, pub white: Texture2D,
     /// Физических пикселей на логический пиксель (как devicePixelRatio)
     pub px: f32, pub w: f32, pub h: f32, pub ws: f32, pub ox: f32, pub oy: f32, pub safe_t: f32, pub safe_b: f32,
@@ -48,6 +48,15 @@ fn radial_tex(n: u16, stops: &[(f32, [f32; 4])]) -> Texture2D {
     let t = Texture2D::from_rgba8(n, n, &px); t.set_filter(FilterMode::Linear); t
 }
 
+/// Луч света с мягкими краями: трапеция (верх x0..x1 на y0, низ x2..x3 на y1), прозрачная по бокам и внизу.
+/// Жёсткие края старых лучей выглядели на дне как «склейки».
+pub fn soft_ray(x0: f32, x1: f32, y0: f32, x2: f32, x3: f32, y1: f32, col: Color) {
+    let c0 = Color::new(col.r, col.g, col.b, 0.); let cm = col; let cb = Color::new(col.r, col.g, col.b, 0.);
+    let (tm, bm) = ((x0 + x1) / 2., (x2 + x3) / 2.);
+    let v = vec![Vertex::new(x0, y0, 0., 0., 0., c0), Vertex::new(tm, y0, 0., 0., 0., cm), Vertex::new(x1, y0, 0., 0., 0., c0),
+                 Vertex::new(x2, y1, 0., 0., 0., cb), Vertex::new(bm, y1, 0., 0., 0., cb), Vertex::new(x3, y1, 0., 0., 0., cb)];
+    draw_mesh(&Mesh { vertices: v, indices: vec![0, 1, 4, 0, 4, 3, 1, 2, 5, 1, 5, 4], texture: None });
+}
 /// Мягкое тёмное пятно (тень под существами)
 fn shade_tex() -> Texture2D {
     let n = 64u16; let mut px = vec![0u8; n as usize * n as usize * 4];
@@ -75,7 +84,7 @@ impl Gfx {
         let wadd = load_material(ShaderSource::Glsl { vertex: VS, fragment: FSW }, MaterialParams {
             pipeline_params: PipelineParams { color_blend: Some(BlendState::new(Equation::Add, BlendFactor::Value(BlendValue::SourceAlpha), BlendFactor::One)), ..Default::default() },
             ..Default::default() }).expect("white add material");
-        let mut g = Gfx { spr: HashMap::new(), glow: vec![], soft: vec![], bul: vec![], icon: HashMap::new(), ground: vec![], caustic: None, shade: shade_tex(), tint: WHITE, font_b, font_k, font_m, add, wmat, wadd,
+        let mut g = Gfx { spr: HashMap::new(), glow: vec![], soft: vec![], bul: vec![], icon: HashMap::new(), ground: vec![], caustic: None, keyart: None, shade: shade_tex(), tint: WHITE, font_b, font_k, font_m, add, wmat, wadd,
             vign: radial_tex(128, &[(0.0, [0., 0., 0.03, 0.]), (0.62, [0., 0., 0.03, 0.]), (1.0, [0., 0., 0.03, 0.78])]),
             hurt: radial_tex(128, &[(0.0, [1., 0., 0.16, 0.]), (0.62, [1., 0., 0.16, 0.]), (1.0, [1., 0.08, 0.24, 0.85])]),
             white: Texture2D::from_rgba8(1, 1, &[255, 255, 255, 255]), px: 1., w: 390., h: 844., ws: 1., ox: 0., oy: 0., safe_t: 0., safe_b: 0., sqx: 1., sqy: 1., jaw: 0., jrot: 0., defer_white: false, white_q: vec![], additive: false, mat: 0 };
@@ -95,6 +104,7 @@ impl Gfx {
         for z in 0..15 { let t = tex(&format!("ground/g{z}.png")).await;
             unsafe { let ctx = get_internal_gl().quad_context; ctx.texture_set_wrap(t.raw_miniquad_id(), TextureWrap::Repeat, TextureWrap::Repeat); }
             g.ground.push(t); done += 1.; progress(done / total); }
+        { let t = tex("fx/keyart.png").await; if t.width() > 2. { g.keyart = Some(t); } }
         { let t = tex("fx/caustic.png").await; if t.width() > 2. { unsafe { let ctx = get_internal_gl().quad_context; ctx.texture_set_wrap(t.raw_miniquad_id(), TextureWrap::Repeat, TextureWrap::Repeat); } g.caustic = Some(t); } }
         g
     }
@@ -325,7 +335,7 @@ varying lowp vec4 color; varying lowp vec2 uv; uniform sampler2D Texture; unifor
 void main() {
     vec3 s = texture2D(Texture, uv + vec2(-px.x, -px.y)).rgb + texture2D(Texture, uv + vec2(px.x, -px.y)).rgb
            + texture2D(Texture, uv + vec2(-px.x, px.y)).rgb + texture2D(Texture, uv + vec2(px.x, px.y)).rgb;
-    s *= 0.25; float l = max(s.r, max(s.g, s.b)); float k = smoothstep(0.42, 0.95, l);
+    s *= 0.25; float l = max(s.r, max(s.g, s.b)); float k = smoothstep(0.55, 1.0, l);
     gl_FragColor = vec4(s * k, 1.0);
 }"#;
 const FS_BLUR: &str = r#"#version 100
@@ -350,7 +360,7 @@ impl Bloom {
         let (w, h) = (screen_width() as u32, screen_height() as u32);
         if w == self.w && h == self.h { return; } self.w = w; self.h = h;
         let rt = |w: u32, h: u32| { let r = render_target(w.max(1), h.max(1)); r.texture.set_filter(FilterMode::Linear); r };
-        self.scene = rt(w, h); self.a = rt(w / 6, h / 6); self.b = rt(w / 6, h / 6);
+        self.scene = rt(w, h); self.a = rt(w / 4, h / 4); self.b = rt(w / 4, h / 4);
     }
     fn cam(rt: &RenderTarget, w: f32, h: f32) -> Camera2D { let mut c = Camera2D::from_display_rect(Rect::new(0., 0., w, h)); c.render_target = Some(rt.clone()); c.zoom.y = -c.zoom.y; c }
     /// Начать рисовать мир в текстуру
@@ -358,13 +368,13 @@ impl Bloom {
     /// Выделить яркое, размыть и наложить на экран
     pub fn end(&mut self, gx: &mut Gfx, strength: f32) {
         gx.set_mat(0);
-        let (sw, sh) = (screen_width(), screen_height()); let (qw, qh) = ((self.w / 6).max(1) as f32, (self.h / 6).max(1) as f32);
+        let (sw, sh) = (screen_width(), screen_height()); let (qw, qh) = ((self.w / 4).max(1) as f32, (self.h / 4).max(1) as f32);
         let full = |t: &Texture2D, w: f32, h: f32, c: Color| draw_texture_ex(t, 0., 0., c, DrawTextureParams { dest_size: Some(vec2(w, h)), ..Default::default() });
         set_camera(&Self::cam(&self.a, qw, qh)); clear_background(BLACK);
-        self.bright.set_uniform("px", vec2(2.5 / sw, 2.5 / sh)); gl_use_material(&self.bright); full(&self.scene.texture, qw, qh, WHITE);
-        for _ in 0..1 {
-            set_camera(&Self::cam(&self.b, qw, qh)); self.blur.set_uniform("dir", vec2(1. / qw, 0.)); gl_use_material(&self.blur); full(&self.a.texture, qw, qh, WHITE);
-            set_camera(&Self::cam(&self.a, qw, qh)); self.blur.set_uniform("dir", vec2(0., 1. / qh)); gl_use_material(&self.blur); full(&self.b.texture, qw, qh, WHITE);
+        self.bright.set_uniform("px", vec2(1.5 / sw, 1.5 / sh)); gl_use_material(&self.bright); full(&self.scene.texture, qw, qh, WHITE);
+        for k in 0..2 { let s = 1. + k as f32 * 1.5;
+            set_camera(&Self::cam(&self.b, qw, qh)); self.blur.set_uniform("dir", vec2(s / qw, 0.)); gl_use_material(&self.blur); full(&self.a.texture, qw, qh, WHITE);
+            set_camera(&Self::cam(&self.a, qw, qh)); self.blur.set_uniform("dir", vec2(0., s / qh)); gl_use_material(&self.blur); full(&self.b.texture, qw, qh, WHITE);
         }
         gl_use_default_material(); set_default_camera();
         full(&self.scene.texture, sw, sh, WHITE);
