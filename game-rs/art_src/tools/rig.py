@@ -41,7 +41,8 @@ def disk(r):
     y, x = np.ogrid[-r:r + 1, -r:r + 1]; return x * x + y * y <= r * r
 
 
-def find_parts(name, im, maxn=7):
+def find_parts(name, im, maxn=None):
+    if maxn is None: maxn = {'drifter': 2, 'fry': 2, 'spikelet': 0}.get(name, 7)
     """1) отростки по форме: силуэт минус «толстое ядро» (открытие кругом 0.55 от толщины тела);
        2) Segment Anything уточняет край каждой части по рисунку (подсказка — рамка и точка части, минус-точка в ядре).
        Возвращает (ядро, [(маска, (hx, hy), длина)]) в сетке N×N."""
@@ -138,7 +139,7 @@ def rig(name, man):
             cutS = np.asarray(Image.fromarray((cut * 255).astype(np.uint8)).resize((b.shape[1], b.shape[0]), Image.BILINEAR)).astype(np.float32) / 255
             b[..., 3] *= 1 - cutS; bodies[bk] = Image.fromarray(b.astype(np.uint8)); bodies[bk].save(bpath)
             pm_meta = dict(man['meta'][vn]); pm_meta.pop('parts', None); pm_meta.pop('hinge', None); man['meta'][pk] = pm_meta
-        plist.append({'k': f'__p{k}', 'h': [round(u, 4), round(v, 4)], 'a': round(amp, 3), 'w': w, 'p': round(ph, 3), 'z': z})
+        plist.append({'k': f'__p{k}', 'h': [round(u, 4), round(v, 4)], 'l': round(L / N, 4), 'a': round(amp, 3), 'w': w, 'p': round(ph, 3), 'z': z})
     for vn in variants:
         bk = body_key.replace(name, vn) if body_key != name else vn
         man['meta'][bk]['parts'] = [dict(p, k=vn + p['k']) for p in plist]

@@ -38,6 +38,7 @@ pub struct Enemy {
     pub p1: f32, pub p2: f32, pub p3: f32, pub spawn_t: f32, pub lvl: i32, pub tx: f32, pub ty: f32, pub sh: f32, pub burn: f32, pub burn_t: f32, pub burn_acc: f32,
     pub hx: f32, pub hy: f32, pub th_t: f32, pub txt: i32, pub a_t: f32 /* часы анимации */, pub tier: u8, pub tt: f32, pub tt2: f32, pub inv_t: f32,
     pub aff: u8 /* свойство элиты */, pub ash: f32 /* панцирь */, pub aff_t: f32,
+    pub pang: f32, pub turn: f32 /* сглаженная скорость поворота — для инерции частей */,
 }
 #[derive(Clone, Default)] pub struct PBul { pub x: f32, pub y: f32, pub vx: f32, pub vy: f32, pub dmg: f32, pub pierce: i32, pub bounce: i32, pub life: f32, pub crit: bool, pub last_uid: u32, pub hom_t: f32, pub tgt: i32, pub tgt_uid: u32, pub split: bool, pub r: f32, pub boom: f32, pub form: u8 /* форма атаки искры */, pub t: f32 }
 #[derive(Clone, Default)] pub struct EBul { pub x: f32, pub y: f32, pub vx: f32, pub vy: f32, pub r: f32, pub dmg: f32, pub life: f32, pub col: u8, pub spin: f32, pub acc: f32, pub grazed: bool }
@@ -72,7 +73,7 @@ pub struct Player {
     pub beam_tg: i32, pub beam_tg2: i32, pub ink_t: f32, pub ink_x: f32, pub ink_y: f32, pub ink_d: f32, pub ink_q: bool, pub a_t: f32,
     pub salvo_n: u32, pub seek_t: f32, pub vac_t: f32, pub thun_t: f32, pub was_dash: bool, pub mark_uid: u32, pub mark_t: f32,
     pub form: u8 /* индекс искры: своя форма снарядов */,
-    pub evo: u16 /* взятые эволюции (биты) */, pub mast_n: u32,
+    pub evo: u16 /* взятые эволюции (биты) */, pub mast_n: u32, pub pang: f32, pub turn: f32,
 }
 #[derive(Default, Clone)]
 pub struct Stats {
@@ -120,6 +121,8 @@ pub struct Game {
 pub const TUT_NEED: [f32; 5] = [300., 3., 6., 1., 1.];
 
 /// Опыт до следующего уровня: после 15-го уровни заметно дороже, чтобы к глубине не набиралось 70 уровней
+/// Уровень врагов: они тоже качаются — на каждые 3 уровня игрока 2 уровня врагам
+pub fn foe_level(player_lv: u32) -> u32 { player_lv.saturating_sub(1) * 2 / 3 }
 /// Режим «На время»: 10 минут
 pub const TIME_LIMIT: f32 = 600.;
 pub fn xp_need(l: u32) -> f32 { let l = l as f32; let late = (l - 25.).max(0.); ((6.0 + l * 4.0 + l * l * 0.55 + late * late * 0.5) * 1.035f32.powf((l - 40.).max(0.))).floor() }
@@ -270,6 +273,7 @@ impl Game {
         if !d.boss { if self.muts[0] { e.spd *= 1.3; } if self.muts[2] { e.max_hp *= 0.7; e.hp = e.max_hp; } if self.muts[6] { e.scale *= 1.25; e.r *= 1.2; e.max_hp *= 1.4; e.hp = e.max_hp; } }
         if !d.boss && self.relics.contains(&crate::content::R_DEAL) { e.max_hp *= 1.15; e.hp = e.max_hp; }
         if !d.boss && self.path != 0 { e.max_hp *= self.path_hp(); e.hp = e.max_hp; e.dmg *= self.path_dmg(); }
+        { let fl = foe_level(self.p.level) as f32; let k = if d.boss { 0.5 } else { 1. }; e.max_hp *= 1. + 0.022 * fl * k; e.hp = e.max_hp; e.dmg *= 1. + 0.012 * fl * k; e.lvl = e.lvl.max(0); }
         self.en.items[i] = e; if elite { self.assign_affix(i); }
         if !self.s.seen.contains_key(kind.key()) { self.s.seen.insert(kind.key().into(), 1); self.dirty = true; }
         if kind == K::Crab && !self.s.crab_hint { self.s.crab_hint = true; self.dirty = true; self.banner(t("crabT"), t("crabS"), 0xff8a9a, 3.); }
@@ -707,7 +711,8 @@ impl Game {
     pub fn add_xp(&mut self, v: f32) {
         self.p.xp += v * self.st.xp_mul;
         while self.p.xp >= self.p.xp_next { self.p.xp -= self.p.xp_next; self.p.level += 1; self.p.xp_next = xp_need(self.p.level); self.level_pending += 1; self.level_delay = self.level_delay.max(0.3);
-            self.ring(self.p.x, self.p.y, 10., 140., 0.5, c::GOLD, 5.); self.burst(self.p.x, self.p.y, 20, c::GOLD, 260., 8., 0.6); if self.p.level >= 20 { self.unlock("lvl20"); } }
+            self.ring(self.p.x, self.p.y, 10., 140., 0.5, c::GOLD, 5.); self.burst(self.p.x, self.p.y, 20, c::GOLD, 260., 8., 0.6); if self.p.level >= 20 { self.unlock("lvl20"); }
+            if self.p.level % 6 == 0 { let fl = foe_level(self.p.level); let (x, y) = (self.p.x, self.p.y - 52.); self.text(x, y, if i18n::is_en() { format!("Foes level up: {fl}") } else { format!("Враги тоже качаются: ур. {fl}") }, 0xff8a8a, false, true); } }
     }
 
     // ---------- достижения и задания ----------

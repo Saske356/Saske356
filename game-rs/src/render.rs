@@ -177,7 +177,8 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
         let (ex, ey, er, kind) = { let e = &g.en.items[i]; (e.x, e.y, e.r, e.kind) };
         if !in_view(ex, ey, er * 3. + match kind { K::Boss2 => 260., K::Eel => 140., _ => 0. }) { continue; }
         { let e = &mut g.en.items[i]; let v = hypot(e.vx, e.vy); let k = (v / e.spd.max(20.).max(if e.spd > 0. { 0. } else { 60. })).min(1.8);
-            e.a_t += rdt * (0.55 + 0.85 * k); let st = (k - 1.).max(0.) * 0.12; let hit = if e.flash > 0. { 0.14 } else { 0. }; gx.sqx = 1. + st - hit; gx.sqy = 1. - st * 0.7 + hit; }
+            e.a_t += rdt * (0.55 + 0.85 * k);
+            { let da = ang_diff(e.pang, e.ang); e.pang = e.ang; let tr = if rdt > 0. { (da / rdt).clamp(-8., 8.) } else { 0. }; e.turn += (tr - e.turn) * (1. - (-rdt * 5.).exp()); gx.inertia = (e.turn * 0.09 + (v / e.spd.max(40.)).min(2.) * 0.0).clamp(-0.45, 0.45); } let st = (k - 1.).max(0.) * 0.12; let hit = if e.flash > 0. { 0.14 } else { 0. }; gx.sqx = 1. + st - hit; gx.sqy = 1. - st * 0.7 + hit; }
         let e = g.en.items[i].clone();
         let mut sc = e.scale; let mut alpha = 1.;
         if e.spawn_t > 0. { let q = 1. - e.spawn_t / 0.4; sc *= if q < 0.7 { q / 0.7 * 1.15 } else { 1.15 - (q - 0.7) / 0.3 * 0.15 }; alpha = (q * 1.6).min(1.); }
@@ -217,7 +218,7 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
                 let drift = (t * 1.7 + e.phase).sin() * 1.4; let wob = (t * 2.1 + e.phase).sin() * 0.07; let p = ph(gx, key);
                 gx.spr_world(key, e.x, e.y + drift, e.ang + wob, sc * breathe, alpha, wht, p, false); }
         }
-        gx.sqx = 1.; gx.sqy = 1.; gx.jaw = 0.;
+        gx.sqx = 1.; gx.sqy = 1.; gx.jaw = 0.; gx.inertia = 0.;
         if g.p.mark_uid != 0 && e.uid == g.p.mark_uid { let rr = e.r * e.scale * 1.6 + 6.; let col = with_a(hex(PAL_HEX[c::CRAB as usize]), 0.75 + 0.25 * (t * 6.).sin());
             for q in 0..4 { let a0 = t * 1.5 + q as f32 * std::f32::consts::FRAC_PI_2; gx.arc_world(e.x, e.y, rr, a0, a0 + 0.9, 2.5, col, true); } }
         if e.elite { gx.arc_world(e.x, e.y, e.r * e.scale * 1.35, t * 2., t * 2. + 4.6, 2., with_a(hex(PAL_HEX[c::GOLD as usize]), 0.8), false); }
@@ -418,7 +419,8 @@ fn player(gx: &mut Gfx, g: &mut Game, rdt: f32) {
         gx.sqx = if g.p.dash_t > 0. { 1.22 } else { 1. + 0.05 * k }; gx.sqy = if g.p.dash_t > 0. { 0.84 } else { 1. - 0.03 * k };
         if g.p.inv > 0.75 { gx.sqx *= 0.9; gx.sqy *= 1.1; }
         let ph = gx.spr_anim(&key).map(|a| g.p.a_t * a.freq() * TAU).unwrap_or(0.);
-        gx.spr_world(&key, g.p.x, g.p.y, g.p.ang + (t * 3.).sin() * 0.05, 1., 1., false, ph, false);
+        { let da = ang_diff(g.p.pang, g.p.ang); g.p.pang = g.p.ang; let tr = if rdt > 0. { (da / rdt).clamp(-10., 10.) } else { 0. }; g.p.turn += (tr - g.p.turn) * (1. - (-rdt * 5.).exp()); gx.inertia = (g.p.turn * 0.08).clamp(-0.5, 0.5); }
+        gx.spr_world(&key, g.p.x, g.p.y, g.p.ang + (t * 3.).sin() * 0.05, 1., 1., false, ph, false); gx.inertia = 0.;
         gx.sqx = 1.; gx.sqy = 1.;
     }
     let (px, py) = (g.p.x, g.p.y);

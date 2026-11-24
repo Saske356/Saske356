@@ -62,6 +62,7 @@ pub fn hud(a: &mut App) {
     if hp > 0. { gx.rrect(l + 2., top + 10., ((hw - 4.) * hp).max(6.), 11., 5., hex(if hp < 0.3 { 0xff3b5c } else { 0xff6f91 })); }
     gx.text(&format!("{} / {}", g.p.hp.ceil().max(0.), g.p.max_hp), l + hw / 2., top + 16., 11., WHITE, 1, 1);
     let lvs = format!("{} {}", t("lv"), g.p.level); let w0 = gx.text(&lvs, l, top + 38., 14., pal(c::GOLD), 0, 1);
+    { let fl = foe_level(g.p.level); if fl > 0 { gx.text(&format!("{} {}", if i18n::is_en() { "foes" } else { "враги" }, fl), l + hw - 2., top + 38., 11., hex(0xff8a8a), 2, 1); } }
     if g.level_pending > 0 && st == State::Play { gx.text(&format!(" +{}", g.level_pending), l + w0, top + 38., 13., with_alpha(pal(c::GOLD), 0.75 + 0.25 * (tm * 6.).sin()), 0, 1); }
     gx.text(&format!("{} {}", g.zone * 100, t("m")), l + 52., top + 38., 14., hex(0x8fd8ff), 0, 1);
     if g.endless { gx.text("∞", l + 104., top + 38., 13., pal(c::GOLD), 0, 1); }
