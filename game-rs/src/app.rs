@@ -21,7 +21,7 @@ pub enum Next { Again, Menu }
 pub struct Intro { pub t: f32, pub dur: f32, pub full: bool, pub ig: f32, pub revealed: bool }
 pub struct End { pub t: f32, pub show: f32, pub shown: bool, pub first: bool }
 #[derive(Default)] pub struct Joy { pub id: Option<u64>, pub ox: f32, pub oy: f32, pub jx: f32, pub jy: f32 }
-pub struct Ads { pub cb: Option<AdCb>, pub wd: f64, pub wd_len: f64, pub last: f64, pub t0: f64, pub over_n: u32, pub back_t: f64 }
+pub struct Ads { pub place: String, pub cb: Option<AdCb>, pub wd: f64, pub wd_len: f64, pub last: f64, pub t0: f64, pub over_n: u32, pub back_t: f64 }
 pub struct Toast { pub title: String, pub sub: String, pub t: f32 }
 
 pub struct App {
@@ -72,7 +72,7 @@ impl App {
         let now = get_time();
         let mut app = App { gx, bloom: None, rd: Rd::new(), g, ui: Ui::new(), au, scr: Scr::None, scr_t: 0., back_to: Scr::Title,
             intro: Intro { t: 0., dur: if full { 5.8 } else { 1.5 }, full, ig: if full { 3.7 } else { 0.08 }, revealed: false }, end: End { t: 0., show: 7.4, shown: false, first: false },
-            joy: Joy::default(), ads: Ads { cb: None, wd: 0., wd_len: 0., last: -1e9, t0: now, over_n: 0, back_t: 0. }, cards: vec![], cards_t: 0., relic_mode: false, earned: 0, rec: false, over_t: 0., revive_n: 0.,
+            joy: Joy::default(), ads: Ads { place: String::new(), cb: None, wd: 0., wd_len: 0., last: -1e9, t0: now, over_n: 0, back_t: 0. }, cards: vec![], cards_t: 0., relic_mode: false, earned: 0, rec: false, over_t: 0., revive_n: 0.,
             shop_tab: 0, toasts: vec![], save_t: 0., safe: [0.; 4], now, was_paused: false, glow_auto_off: false, glow_slow: 0., test: std::env::var("SVET_TEST").unwrap_or_default().split(';').filter_map(|c| c.split_once(':').map(|(t, c)| (t.trim().parse().unwrap_or(0.), c.trim().to_string()))).collect(), bot: false, shot: None, fps_acc: 0., fps_n: 0, fps: 60., slow_t: 0., q_auto: 2, last_land: false, orient_set: 99, fps_set: 0 };
         app.g.state = State::Intro;
         if let Some(crate::flow::DailyMsg::Login(d, r)) = app.g.daily_check() { app.toast_later(tf("loginT", &[&d.to_string()]), format!("+{r} {}", t("pearlsGen"))); }
@@ -90,7 +90,7 @@ impl App {
     pub fn ad_ready(&self) -> bool { self.ads.cb.is_none() && platform::ad_ready(0) }
     pub fn ad_show(&mut self, place: &str, cb: AdCb) -> bool {
         if self.ads.cb.is_some() || !platform::ad_ready(0) { self.ad_result(cb, false); return false; }
-        self.ads.cb = Some(cb); self.ads.wd = self.now; self.ads.wd_len = 70.; platform::ad_show(0, place); true
+        self.ads.cb = Some(cb); self.ads.place = place.to_string(); self.ads.wd = self.now; self.ads.wd_len = 90.; platform::ad_show(0, place); true
     }
     /// Межстраничная реклама между забегами — бережно: не новичкам, не чаще раза в 4 мин, после каждой второй гибели
     pub fn between(&mut self, next: Next) {
@@ -99,7 +99,7 @@ impl App {
         let ok = self.ads.cb.is_none() && self.g.s.runs >= 2 && self.g.run_t >= 60. && self.now - self.ads.last >= 180.
             && self.now - self.ads.t0 >= 60. && platform::ad_ready(1);
         if !ok { self.do_next(next); return; }
-        self.ads.cb = Some(AdCb::Inter(next)); self.ads.wd = self.now; self.ads.wd_len = 35.; platform::ad_show(1, "inter");
+        self.ads.cb = Some(AdCb::Inter(next)); self.ads.place = "inter".into(); self.ads.wd = self.now; self.ads.wd_len = 35.; platform::ad_show(1, "inter");
     }
     fn do_next(&mut self, n: Next) { match n { Next::Again => self.start_run(self.g.run_mode), Next::Menu => self.to_title() } }
     fn ad_result(&mut self, cb: AdCb, ok: bool) {
@@ -119,10 +119,14 @@ impl App {
     }
     fn ads_tick(&mut self, events: &mut Vec<Ev>) {
         for e in events.drain(..) { match e {
-            Ev::Ad(_, ok) => { if let Some(cb) = self.ads.cb.take() { self.ad_result(cb, ok); } }
+            Ev::Ad(p, ok) => {
+                // только ответ на ТЕКУЩИЙ показ (запоздавший ответ межстраничной рекламы раньше «съедал» возрождение)
+                if self.ads.cb.is_some() && p == self.ads.place { let cb = self.ads.cb.take().unwrap(); self.ad_result(cb, ok); }
+                // награда пришла после того, как сторож уже сдался, — всё равно воскрешаем
+                else if ok && p == "revive" && self.g.state == State::Revive { self.ad_result(AdCb::Revive, true); } }
             Ev::MusicDone(i) => self.au.track_done(i), Ev::Save(_) => {} } }
         // страховка: реклама не ответила — игра не должна висеть
-        if let Some(cb) = self.ads.cb { if self.now - self.ads.wd > self.ads.wd_len || (self.ads.back_t > 0. && self.now - self.ads.back_t > 8.) { self.ads.cb = None; self.ads.back_t = 0.; self.ad_result(cb, false); } }
+        if let Some(cb) = self.ads.cb { if self.now - self.ads.wd > self.ads.wd_len || (self.ads.back_t > 0. && self.now - self.ads.back_t > 10.) { self.ads.cb = None; self.ads.back_t = 0.; self.ad_result(cb, false); } }
     }
 
     // ---------- переходы ----------
@@ -222,6 +226,8 @@ impl App {
                 "lang" => { self.g.s.set.lang = arg.into(); i18n::set_en(arg == "en"); }
                 "shot" => { self.shot = Some(arg.to_string()); }
                 "char" => { let k = n as usize % crate::data::CHARS.len(); self.g.s.ch = crate::data::CHARS[k].id.into(); self.g.compute_stats(); }
+                "die" => { self.g.give_up(); }
+                "tap" => { if self.scr == Scr::Revive { self.ad_show("revive", AdCb::Revive); } }
                 "relic" => { self.g.relic_pending += 1; self.g.level_delay = 0.; }
                 "elite" => { let k = crate::data::K_ALL[n as usize % 23]; for q in 0..6 { let (x, y) = (self.g.p.x - 150. + q as f32 * 60., self.g.p.y - 200.); if let Some(i) = self.g.spawn_enemy(k, x, y, true) { self.g.en.items[i].aff = 1 + q as u8; if q == 0 { self.g.en.items[i].ash = self.g.en.items[i].max_hp * 0.45; } } } }
                 "fps" => { eprintln!("fps {:.1} enemies {} parts {} ebul {}", self.fps, self.g.en.n, self.g.parts.n, self.g.eb.n); }
@@ -305,7 +311,7 @@ impl App {
         let end_lit = st == State::Ending && self.end.t > 4.15;
         // 3.8: полноэкранная подсветка (рендер в текстуру + размытие) лагала на телефонах — выключена навсегда.
         // «Свечение» в настройках теперь просто усиливает собственный свет существ и снарядов (почти бесплатно).
-        let use_bloom = false; self.gx.glow_boost = if self.g.s.set.fx { 1.35 } else { 1. };
+        let use_bloom = false; self.gx.glow_boost = if self.g.s.set.fx { 1.35 } else { 1. }; self.gx.clock = self.now as f32; self.gx.anim_parts = self.g.quality >= 1;
         if use_bloom { if let Some(b) = self.bloom.as_mut() { b.begin(&mut self.gx); } }
         if intro_dark { clear_background(Color::from_rgba(0, 2, 7, 255)); }
         else if !end_lit { render::background(&mut self.gx, &mut self.rd, &mut self.g, rdt, !(st == State::Intro && self.intro.t <= self.intro.ig)); }

@@ -17,10 +17,13 @@ impl Anim {
     /// Циклов в секунду
     pub fn freq(self) -> f32 { match self { Anim::Swim => 1.7, Anim::Fin => 1.1, Anim::Tent => 1.15, Anim::Jelly | Anim::JellyV => 0.7, Anim::Crab => 2.6, Anim::Pulse => 0.8, Anim::Flap => 1.3, Anim::Orb => 1.6 } }
 }
-pub struct Spr { pub tex: Texture2D, pub h: f32, pub fl: bool, pub anim: Option<Anim>, pub hinge: Option<(f32, f32)> }
+pub struct Spr { pub tex: Texture2D, pub h: f32, pub fl: bool, pub anim: Option<Anim>, pub hinge: Option<(f32, f32)>, pub parts: Vec<Part> }
+/// Подвижная часть существа (плавник, нога, щупальце): своя картинка на том же холсте, качается вокруг шарнира (hu, hv).
+/// Нарезка — art_src/tools/rig.py (форма силуэта + Segment Anything).
+#[derive(Clone)] pub struct Part { pub key: String, pub hu: f32, pub hv: f32, pub a: f32, pub w: f32, pub p: f32, pub front: bool }
 
 pub struct Gfx {
-    pub spr: HashMap<String, Spr>, pub glow: Vec<Texture2D>, pub soft: Vec<Texture2D>, pub bul: Vec<Texture2D>, pub icon: HashMap<String, Texture2D>, pub ground: Vec<Texture2D>, pub caustic: Option<Texture2D>, pub keyart: Option<Texture2D>, pub glow_boost: f32, pub shade: Texture2D, pub tint: Color,
+    pub spr: HashMap<String, Spr>, pub glow: Vec<Texture2D>, pub soft: Vec<Texture2D>, pub bul: Vec<Texture2D>, pub icon: HashMap<String, Texture2D>, pub ground: Vec<Texture2D>, pub caustic: Option<Texture2D>, pub keyart: Option<Texture2D>, pub glow_boost: f32, pub clock: f32, pub anim_parts: bool, pub shade: Texture2D, pub tint: Color,
     pub font_b: Font, pub font_k: Font, pub font_m: Font, pub add: Material, pub wmat: Material, pub wadd: Material, pub vign: Texture2D, pub hurt: Texture2D, pub white: Texture2D,
     /// Физических пикселей на логический пиксель (как devicePixelRatio)
     pub px: f32, pub w: f32, pub h: f32, pub ws: f32, pub ox: f32, pub oy: f32, pub safe_t: f32, pub safe_b: f32,
@@ -84,7 +87,7 @@ impl Gfx {
         let wadd = load_material(ShaderSource::Glsl { vertex: VS, fragment: FSW }, MaterialParams {
             pipeline_params: PipelineParams { color_blend: Some(BlendState::new(Equation::Add, BlendFactor::Value(BlendValue::SourceAlpha), BlendFactor::One)), ..Default::default() },
             ..Default::default() }).expect("white add material");
-        let mut g = Gfx { spr: HashMap::new(), glow: vec![], soft: vec![], bul: vec![], icon: HashMap::new(), ground: vec![], caustic: None, keyart: None, glow_boost: 1., shade: shade_tex(), tint: WHITE, font_b, font_k, font_m, add, wmat, wadd,
+        let mut g = Gfx { spr: HashMap::new(), glow: vec![], soft: vec![], bul: vec![], icon: HashMap::new(), ground: vec![], caustic: None, keyart: None, glow_boost: 1., clock: 0., anim_parts: true, shade: shade_tex(), tint: WHITE, font_b, font_k, font_m, add, wmat, wadd,
             vign: radial_tex(128, &[(0.0, [0., 0., 0.03, 0.]), (0.62, [0., 0., 0.03, 0.]), (1.0, [0., 0., 0.03, 0.78])]),
             hurt: radial_tex(128, &[(0.0, [1., 0., 0.16, 0.]), (0.62, [1., 0., 0.16, 0.]), (1.0, [1., 0.08, 0.24, 0.85])]),
             white: Texture2D::from_rgba8(1, 1, &[255, 255, 255, 255]), px: 1., w: 390., h: 844., ws: 1., ox: 0., oy: 0., safe_t: 0., safe_b: 0., sqx: 1., sqy: 1., jaw: 0., jrot: 0., defer_white: false, white_q: vec![], additive: false, mat: 0 };
@@ -95,7 +98,10 @@ impl Gfx {
             let t = tex(&format!("spr/{k}.png")).await;
             let anim = m["anim"].as_str().and_then(Anim::parse);
             let hinge = m["hinge"].as_array().map(|a| (a[0].as_f64().unwrap_or(0.5) as f32, a[1].as_f64().unwrap_or(0.5) as f32));
-            g.spr.insert(k.clone(), Spr { tex: t, h: m["h"].as_f64().unwrap_or(20.) as f32, fl: m["fl"].as_bool().unwrap_or(false), anim, hinge });
+            let parts = m["parts"].as_array().map(|a| a.iter().map(|p| Part { key: p["k"].as_str().unwrap_or("").to_string(),
+                hu: p["h"][0].as_f64().unwrap_or(0.5) as f32, hv: p["h"][1].as_f64().unwrap_or(0.5) as f32, a: p["a"].as_f64().unwrap_or(0.2) as f32,
+                w: p["w"].as_f64().unwrap_or(1.) as f32, p: p["p"].as_f64().unwrap_or(0.) as f32, front: p["z"].as_i64().unwrap_or(-1) > 0 }).collect()).unwrap_or_default();
+            g.spr.insert(k.clone(), Spr { tex: t, h: m["h"].as_f64().unwrap_or(20.) as f32, fl: m["fl"].as_bool().unwrap_or(false), anim, hinge, parts });
             done += 1.; progress(done / total);
         }
         for i in 0..npal { g.glow.push(tex(&format!("fx/glow{i}.png")).await); g.soft.push(tex(&format!("fx/soft{i}.png")).await); g.bul.push(tex(&format!("fx/bul{i}.png")).await); done += 3.; progress(done / total); }
@@ -128,10 +134,20 @@ impl Gfx {
     }
     /// Спрайт в экранных (физических) пикселях; k — пикселей на мировую единицу
     pub fn spr_screen(&mut self, key: &str, sx: f32, sy: f32, ang: f32, k: f32, alpha: f32, white: bool, ph: f32, force_fl: bool) {
+        let parts = match self.spr.get(key) { Some(s) if !s.parts.is_empty() && self.anim_parts => s.parts.clone(), _ => { self.spr_screen_raw(key, sx, sy, ang, k, alpha, white, ph, force_fl, None); return; } };
+        // качание: в такт анимации плавания (ph), а у неподвижных — по часам
+        let t = if ph != 0. { ph } else { self.clock * 2.4 };
+        let jaw = self.jaw; self.jaw = 0.;
+        for front in [false, true] { for p in parts.iter().filter(|p| p.front == front) {
+            let r = p.a * (t * p.w + p.p).sin(); self.spr_screen_raw(&p.key, sx, sy, ang, k, alpha, white, ph, force_fl, Some((p.hu, p.hv, r))); }
+            if !front { self.jaw = jaw; self.spr_screen_raw(key, sx, sy, ang, k, alpha, white, ph, force_fl, None); self.jaw = 0.; } }
+        self.jaw = jaw;
+    }
+    fn spr_screen_raw(&mut self, key: &str, sx: f32, sy: f32, ang: f32, k: f32, alpha: f32, white: bool, ph: f32, force_fl: bool, part: Option<(f32, f32, f32)>) {
         let Some(s) = self.spr.get(key) else { return };
         let half = s.h * k; let flip = (s.fl || force_fl) && ang.cos() < 0.; let (sqx, sqy) = (self.sqx, self.sqy);
         let tex = s.tex.clone(); let anim = s.anim;
-        let jaw = self.jaw; let hg = s.hinge.map(|(hu, hv)| (hu, hv, self.jrot));
+        let jaw = self.jaw; let hg = part.or(s.hinge.map(|(hu, hv)| (hu, hv, self.jrot)));
         if self.defer_white { // тело сейчас, белую вспышку — одним проходом потом (меньше переключений шейдера)
             let tn = self.tint; self.set_mat(0); draw_warp_h(&tex, sx, sy, half, ang, flip, sqx, sqy, anim, ph, Color::new(tn.r, tn.g, tn.b, alpha), jaw, hg);
             if white { self.white_q.push((tex, sx, sy, half, ang, flip, sqx, sqy, anim, ph, alpha, jaw, hg)); } return; }

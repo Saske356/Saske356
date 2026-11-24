@@ -30,7 +30,8 @@ public class RewardedAds {
     private final RewardedAdLoader loader;
     private volatile RewardedAd ad;
     private volatile boolean showing = false;
-    private boolean rewarded = false;
+    private volatile boolean rewarded = false;
+    private volatile boolean reported = true;
     private String place = "";
 
     public RewardedAds(Activity activity) {
@@ -65,22 +66,28 @@ public class RewardedAds {
                 @Override public void onAdDismissed() { finish(); }
                 @Override public void onAdClicked() {}
                 @Override public void onAdImpression(ImpressionData data) {}
-                @Override public void onRewarded(Reward reward) { rewarded = true; }
+                @Override public void onRewarded(Reward reward) { rewarded = true;
+                    // награда пришла уже после закрытия — сообщаем игре отдельно
+                    if (!showing && !reported) { reported = true; result(place, true); } }
             });
             try { current.show(activity); }
             catch (Throwable t) { Log.w(TAG, "show failed", t); showing = false; result(where, false); } // сбой показа — игра не должна ждать вечно
         });
     }
 
-    /** Реклама закрыта: сообщаем игре итог и сразу грузим следующую. */
+    /** Реклама закрыта. Яндекс иногда присылает onRewarded чуть позже onAdDismissed —
+     *  поэтому итог отправляем через 600 мс (или сразу, если награда уже есть). */
     private void finish() {
         if (!showing) return;
-        showing = false;
-        RewardedAd old = ad;
+        showing = false; reported = false;
+        final RewardedAd old = ad;
         ad = null;
-        if (old != null) old.setAdEventListener(null);
-        result(place, rewarded);
-        load();
+        Runnable done = () -> {
+            if (!reported) { reported = true; result(place, rewarded); }
+            if (old != null) old.setAdEventListener(null);
+            load();
+        };
+        if (rewarded) done.run(); else web.postDelayed(done, 600);
     }
 
     private void result(String where, boolean ok) {
