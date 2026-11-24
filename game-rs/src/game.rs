@@ -121,8 +121,6 @@ pub struct Game {
 pub const TUT_NEED: [f32; 5] = [300., 3., 6., 1., 1.];
 
 /// Опыт до следующего уровня: после 15-го уровни заметно дороже, чтобы к глубине не набиралось 70 уровней
-/// Уровень врагов: они тоже качаются — на каждые 3 уровня игрока 2 уровня врагам
-pub fn foe_level(player_lv: u32) -> u32 { player_lv.saturating_sub(1) * 2 / 3 }
 /// Режим «На время»: 10 минут
 pub const TIME_LIMIT: f32 = 600.;
 pub fn xp_need(l: u32) -> f32 { let l = l as f32; let late = (l - 25.).max(0.); ((6.0 + l * 4.0 + l * l * 0.55 + late * late * 0.5) * 1.035f32.powf((l - 40.).max(0.))).floor() }
@@ -273,7 +271,8 @@ impl Game {
         if !d.boss { if self.muts[0] { e.spd *= 1.3; } if self.muts[2] { e.max_hp *= 0.7; e.hp = e.max_hp; } if self.muts[6] { e.scale *= 1.25; e.r *= 1.2; e.max_hp *= 1.4; e.hp = e.max_hp; } }
         if !d.boss && self.relics.contains(&crate::content::R_DEAL) { e.max_hp *= 1.15; e.hp = e.max_hp; }
         if !d.boss && self.path != 0 { e.max_hp *= self.path_hp(); e.hp = e.max_hp; e.dmg *= self.path_dmg(); }
-        { let fl = foe_level(self.p.level) as f32; let k = if d.boss { 0.5 } else { 1. }; e.max_hp *= 1. + 0.022 * fl * k; e.hp = e.max_hp; e.dmg *= 1. + 0.012 * fl * k; e.lvl = e.lvl.max(0); }
+        // мобы крепнут вместе с постоянной прокачкой (магазин, таланты): ты растёшь быстрее, но они не остаются слабыми
+        { let m = self.s.meta_power() as f32; let k = if d.boss { 0.6 } else { 1. }; e.max_hp *= 1. + 0.004 * m * k; e.hp = e.max_hp; e.dmg *= 1. + 0.0025 * m * k; }
         self.en.items[i] = e; if elite { self.assign_affix(i); }
         if !self.s.seen.contains_key(kind.key()) { self.s.seen.insert(kind.key().into(), 1); self.dirty = true; }
         if kind == K::Crab && !self.s.crab_hint { self.s.crab_hint = true; self.dirty = true; self.banner(t("crabT"), t("crabS"), 0xff8a9a, 3.); }
@@ -711,8 +710,7 @@ impl Game {
     pub fn add_xp(&mut self, v: f32) {
         self.p.xp += v * self.st.xp_mul;
         while self.p.xp >= self.p.xp_next { self.p.xp -= self.p.xp_next; self.p.level += 1; self.p.xp_next = xp_need(self.p.level); self.level_pending += 1; self.level_delay = self.level_delay.max(0.3);
-            self.ring(self.p.x, self.p.y, 10., 140., 0.5, c::GOLD, 5.); self.burst(self.p.x, self.p.y, 20, c::GOLD, 260., 8., 0.6); if self.p.level >= 20 { self.unlock("lvl20"); }
-            if self.p.level % 6 == 0 { let fl = foe_level(self.p.level); let (x, y) = (self.p.x, self.p.y - 52.); self.text(x, y, if i18n::is_en() { format!("Foes level up: {fl}") } else { format!("Враги тоже качаются: ур. {fl}") }, 0xff8a8a, false, true); } }
+            self.ring(self.p.x, self.p.y, 10., 140., 0.5, c::GOLD, 5.); self.burst(self.p.x, self.p.y, 20, c::GOLD, 260., 8., 0.6); if self.p.level >= 20 { self.unlock("lvl20"); } }
     }
 
     // ---------- достижения и задания ----------

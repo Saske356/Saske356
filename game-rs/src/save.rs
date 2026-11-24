@@ -50,6 +50,8 @@ fn map(v: &Value, k: &str) -> BTreeMap<String, u8> {
 fn mapv(m: &BTreeMap<String, u8>) -> Value { let mut o = Map::new(); for (k, v) in m { o.insert(k.clone(), json!(v)); } Value::Object(o) }
 
 impl Save {
+    /// Сила постоянной прокачки: уровни усилений в магазине + таланты ×2 (максимум ≈ 180)
+    pub fn meta_power(&self) -> u32 { self.shop.values().map(|&v| v as u32).sum::<u32>() + self.tal.values().filter(|&&v| v > 0).count() as u32 * 2 }
     /// Разбор JSON (своего или из веб-версии). Неверные поля просто остаются по умолчанию.
     pub fn from_json(text: &str) -> Save {
         let mut d = Save::default();
