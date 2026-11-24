@@ -59,7 +59,7 @@ pub fn background(gx: &mut Gfx, rd: &mut Rd, g: &mut Game, dt: f32, show_decor: 
     // тогда картинка за краем растягивалась в полосы и дно выглядело «склеенным из двух».
     let tint = if g.zone > 15 && g.state != State::Title { Color::new(0.92, 0.74, 0.8, 1.) } else { WHITE };
     if let Some(t) = gx.ground.get(zi).cloned() {
-        gx.set_add(false); let tile = 560.; let tile_h = tile * t.height() / t.width().max(1.);
+        gx.set_add(false); let tile = 620.; let tile_h = tile * t.height() / t.width().max(1.);
         tile_grid(gx, &t, tile, tile_h, 0., 0., tint);
     }
     // бегущие блики света по дну (каустика): два слоя с разным масштабом и сносом
