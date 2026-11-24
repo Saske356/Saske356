@@ -1,0 +1,1 @@
+fn main() { svetly::run(); }
