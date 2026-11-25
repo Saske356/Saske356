@@ -121,16 +121,16 @@ pub fn boss_name(k: K, tier: u8, en: bool) -> Option<&'static str> {
 pub fn foe_name(k: K, tier: u8, en: bool) -> Option<&'static str> {
     let ru1 = |k: K| match k { K::Drifter => "Багровый плавунец", K::Dart => "Огненная игла", K::Jelly => "Жгучая медуза", K::Urchin => "Огненный ёж", K::Spikelet => "Горячий шип",
         K::Eel => "Жгучий угорь", K::Squid => "Кровавый кальмар", K::Crab => "Багровый краб", K::Mender => "Хранитель", K::Bomber => "Вулкан", K::Ray => "Огненный скат",
-        K::Lantern => "Факельщик", K::Wisp => "Уголёк", K::Spawner => "Кровавый пузырник", K::Fry => "Искромалёк", _ => "" };
+        K::Lantern => "Факельщик", K::Wisp => "Уголёк", K::Spawner => "Кровавый пузырник", K::Fry => "Искромалёк", K::Nautilus => "Кровавый наутилус", K::Hermit => "Огненный отшельник", K::Seahorse => "Огненный снайпер", K::Cuttle => "Багровая каракатица", K::Puffer => "Огненный шар", _ => "" };
     let ru2 = |k: K| match k { K::Drifter => "Пустотник", K::Dart => "Призрачная игла", K::Jelly => "Медуза бездны", K::Urchin => "Звёздный ёж", K::Spikelet => "Осколок звезды",
         K::Eel => "Угорь бездны", K::Squid => "Кальмар-тень", K::Crab => "Краб бездны", K::Mender => "Жрец бездны", K::Bomber => "Сверхновая", K::Ray => "Скат-призрак",
-        K::Lantern => "Маяк бездны", K::Wisp => "Блуждающий огонь", K::Spawner => "Матка бездны", K::Fry => "Теневой малёк", _ => "" };
+        K::Lantern => "Маяк бездны", K::Wisp => "Блуждающий огонь", K::Spawner => "Матка бездны", K::Fry => "Теневой малёк", K::Nautilus => "Наутилус бездны", K::Hermit => "Отшельник бездны", K::Seahorse => "Теневой снайпер", K::Cuttle => "Призрачная каракатица", K::Puffer => "Шар бездны", _ => "" };
     let en1 = |k: K| match k { K::Drifter => "Crimson Drifter", K::Dart => "Fire Needle", K::Jelly => "Burning Jelly", K::Urchin => "Fire Urchin", K::Spikelet => "Hot Spike",
         K::Eel => "Burning Eel", K::Squid => "Blood Squid", K::Crab => "Crimson Crab", K::Mender => "Keeper", K::Bomber => "Volcano", K::Ray => "Fire Ray",
-        K::Lantern => "Torchbearer", K::Wisp => "Ember", K::Spawner => "Blood Spawner", K::Fry => "Spark Fry", _ => "" };
+        K::Lantern => "Torchbearer", K::Wisp => "Ember", K::Spawner => "Blood Spawner", K::Fry => "Spark Fry", K::Nautilus => "Blood Nautilus", K::Hermit => "Fire Hermit", K::Seahorse => "Fire Sniper", K::Cuttle => "Crimson Cuttlefish", K::Puffer => "Fire Puffer", _ => "" };
     let en2 = |k: K| match k { K::Drifter => "Voidling", K::Dart => "Ghost Needle", K::Jelly => "Abyss Jelly", K::Urchin => "Star Urchin", K::Spikelet => "Star Shard",
         K::Eel => "Abyss Eel", K::Squid => "Shadow Squid", K::Crab => "Abyss Crab", K::Mender => "Abyss Priest", K::Bomber => "Supernova", K::Ray => "Ghost Ray",
-        K::Lantern => "Abyss Beacon", K::Wisp => "Will-o'-wisp", K::Spawner => "Abyss Brood", K::Fry => "Shadow Fry", _ => "" };
+        K::Lantern => "Abyss Beacon", K::Wisp => "Will-o'-wisp", K::Spawner => "Abyss Brood", K::Fry => "Shadow Fry", K::Nautilus => "Abyss Nautilus", K::Hermit => "Abyss Hermit", K::Seahorse => "Shadow Sniper", K::Cuttle => "Phantom Cuttlefish", K::Puffer => "Abyss Puffer", _ => "" };
     let s = match (tier, en) { (1, false) => ru1(k), (1, true) => en1(k), (2, false) => ru2(k), (2, true) => en2(k), _ => "" };
     if s.is_empty() { None } else { Some(s) }
 }
@@ -150,6 +150,11 @@ pub fn foe_desc(k: K, tier: u8, en: bool) -> &'static str {
         (K::Ray, false) => "Рывок оставляет полосу пуль.", (K::Ray, true) => "Its charge leaves a stripe of bullets.",
         (K::Lantern, false) => "Залп из трёх огней.", (K::Lantern, true) => "Fires volleys of three flames.",
         (K::Spawner, false) => "Выпускает свирепых мальков.", (K::Spawner, true) => "Releases fierce fry.",
+        (K::Nautilus, false) => "Спираль чернил гуще и быстрее.", (K::Nautilus, true) => "A thicker, faster ink spiral.",
+        (K::Hermit, false) => "Раковина крепче, залп из пяти.", (K::Hermit, true) => "A tougher shell and a five-shot volley.",
+        (K::Seahorse, false) => "Целится быстрее.", (K::Seahorse, true) => "Aims faster.",
+        (K::Cuttle, false) => "Бросок длиннее, чернил больше.", (K::Cuttle, true) => "A longer lunge and more ink.",
+        (K::Puffer, false) => "Иглы летят двойным кольцом.", (K::Puffer, true) => "Spines fly in a double ring.",
         (_, false) => "Обитатель глубин, сильнее родичей сверху.", (_, true) => "A deep dweller, stronger than its kin above.",
     }
 }

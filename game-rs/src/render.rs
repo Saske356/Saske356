@@ -213,6 +213,7 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
                 let (lx, ly) = (e.x + e.ang.cos() * e.r * 1.25 + e.ang.sin() * e.r * 0.05, yy + e.ang.sin() * e.r * 1.25 - e.ang.cos() * e.r * 0.05);
                 gx.glow_world(false, c::AMBER, lx, ly, 8. + ch * 16. + (t * 7.).sin() * 1.5, 0.55 + 0.45 * ch); }
             K::Crystal => gx.spr_world(key, e.x, e.y, t * 2., sc, alpha, wht, ph(gx, key), false),
+            K::Nautilus | K::Hermit | K::Seahorse | K::Cuttle | K::Puffer => foe45(gx, g, &e, key, sc, alpha, wht, ph(gx, key)),
             K::Crab => { let p = ph(gx, key); let jr = 0.13 * (t * 4.2 + e.phase).sin() + 0.04; let wob = (t * 2.1 + e.phase).sin() * 0.05;
                 gx.spr_jaw_a(key, e.x, e.y, e.ang + wob, sc, alpha, wht, p, jr); }
             _ => { let breathe = 1. + (t * if e.elite { 3.1 } else { 2.35 } + e.phase).sin() * if e.elite { 0.045 } else { 0.025 };
@@ -258,6 +259,8 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
         for i in 0..36 { let fi = i as f32; let ox = ((fi * 0.618 * w_ + g.t * cx * 230.) % w_ + w_) % w_ - w_ / 2.; let oy = ((fi * 0.377 * h_ + g.t * cy * 230.) % h_ + h_) % h_ - h_ / 2.;
             let (x, y) = (g.cam_x + ox, g.cam_y + oy); let l = 40. + (i % 4) as f32 * 18.; gx.line_world(x, y, x - cx * l, y - cy * l, 2.2, Color::new(0.7, 0.95, 1., 0.22), true); } }
     // опасности зоны: гейзеры (круг-предупреждение), взрывные кристаллы
+    // 4.5: чернила каракатиц
+    for &(x, y, tl) in g.inks.iter() { let k = (tl / 5.).min(1.); let r = 58. * k.max(0.4); gx.glow_world(true, c::PURP, x, y, r * 1.5, 0.25 * k); gx.circle_world(x, y, r, Color::new(0.06, 0.02, 0.1, 0.55 * k), false); gx.arc_world(x, y, r, 0., TAU, 1.5, with_a(hex(0xb57dff), 0.35 * k), false); }
     for gy in g.geysers.iter() { let k = 1. - gy.t / 1.3; gx.circle_world(gy.x, gy.y, 75. * k, with_a(hex(0xff6a3d), 0.12 + 0.2 * k), false); gx.arc_world(gy.x, gy.y, 75., 0., TAU, 2.5, with_a(hex(0xffb340), 0.5 + 0.4 * (t * 14.).sin().abs()), false); gx.glow_world(true, c::FIRE, gy.x, gy.y, 30. + 40. * k, 0.4 * k); }
     for cr in g.bcr.iter() { let pul = 1. + 0.08 * (t * 3. + cr.ph).sin(); gx.glow_world(true, c::ICE, cr.x, cr.y, 46. * pul, 0.5); gx.spr_world("crystal", cr.x, cr.y, t * 0.6 + cr.ph, 1.5 * pul, 1., false, 0., false);
         for q in 0..cr.hp as i32 { gx.circle_world(cr.x - 10. + q as f32 * 10., cr.y + 26., 3., WHITE, false); } }
@@ -372,15 +375,65 @@ fn boss_new(gx: &mut Gfx, g: &Game, e: &Enemy, sc: f32, wht: bool) {
     let pulse = 1. + (t * 2.2 + e.phase).sin() * 0.02;
     gx.spr_jaw(&tk, e.x, e.y, e.ang + (t * 1.9).sin() * 0.03, sc * pulse, wht, anim_ph(gx, &tk, e), jr);
 }
-fn boss4(gx: &mut Gfx, g: &Game, e: &Enemy, sc: f32, wht: bool) {
-    let t = g.t; let a = e.ang; let (nx, ny) = (-a.sin(), a.cos());
-    for k in 0..4 { let kf = k as f32; let phase = t * 4.2 - kf * 0.72; let bx = e.x - a.cos() * (e.r * (0.85 + kf * 0.5)); let by = e.y - a.sin() * (e.r * (0.85 + kf * 0.5));
-        let sw = phase.sin() * (12. + kf * 5.); gx.glow_world(true, c::EEL, bx + nx * sw, by + ny * sw, e.r * (0.95 - kf * 0.12), (1. - kf / 4.) * 0.23); }
-    gx.glow_world(true, c::EEL, e.x, e.y, e.r * 2.2, 0.48 + 0.18 * (t * 7.).sin());
-    let lunge = e.state == 1 && (e.p3 % 1.7) > 1.; let pulse = 1. + (t * 5.2).sin() * 0.025 + if lunge { 0.045 } else { 0. };
-    let jr = jaw_anim(t * 1.1 + e.phase, lunge, wht); let tk = tkey("boss4", e.tier); gx.spr_jaw(&tk, e.x, e.y, e.ang + (t * 2.4).sin() * 0.035, sc * pulse, wht, anim_ph(gx, &tk, e), jr);
-    let flip = if e.ang.cos() < 0. { -1. } else { 1. };
-    for k in 0..4 { let kf = k as f32; let (gx_, gy) = local(e, -e.r * (0.52 + kf * 0.12) * sc, e.r * (0.22 + kf * 0.08) * sc * flip); gx.glow_world(false, c::ICE, gx_, gy, 4.5, 0.38 + 0.22 * (t * 6. + kf * 0.8).sin()); }
+/// 4.5: Левиафан — лента вдоль следа головы (serpent.rs), челюсть на шарнире, бегущие огни по телу
+fn boss4(gx: &mut Gfx, g: &Game, e: &Enemy, _sc: f32, wht: bool) {
+    use crate::serpent::{SERP_L, U_HEAD};
+    let Some(i) = (0..g.en.n).find(|&k| g.en.items[k].uid == e.uid) else { return };
+    let t = g.t; let key = tkey("serp", e.tier); let jkey = format!("{key}_jaw");
+    let (asp, hinge) = gx.spr.get(&key).map(|s| (s.tex.width() / s.tex.height().max(1.), s.hinge.unwrap_or((0.884, 0.496)))).unwrap_or((4.8, (0.884, 0.496)));
+    let half = SERP_L / asp * 0.5; let flip = e.ang.cos() < 0.;
+    let glow = match e.tier { 1 => c::FIRE, 2 => c::AMETH, _ => c::EEL };
+    // предупреждение перед броском — линия по курсу
+    if e.state == 1 && (e.p3 % 1.9) < 1.05 { let k = (e.p3 % 1.9) / 1.05;
+        gx.rect_rot_world(e.x, e.y, e.ang, 40., 620., 70., with_a(hex(0xff5a6a), 0.08 + 0.22 * k), Some((2., with_a(hex(0xffc0c8), 0.3 + 0.5 * k)))); }
+    // свечение под телом
+    let n = 40; let mut pts = Vec::with_capacity(n + 1);
+    for k in 0..=n { let u = 1. - k as f32 / n as f32; let (x, y, a) = g.serp_at(i, (U_HEAD - u) * SERP_L); pts.push((x, y, a, u)); }
+    for k in (4..n).step_by(4) { let (x, y, _, _) = pts[k]; gx.glow_world(true, glow, x, y, half * 1.5, 0.16); }
+    // пасть: глотка, челюсть, тело
+    let lunge = e.state == 1 && (e.p3 % 1.9) >= 1.05;
+    let open = if e.mouth > 0. { 0.18 + 0.5 * (e.mouth / 1.).min(1.) } else { jaw_anim(t * 1.1 + e.phase, false, wht).max(0.) } + if lunge { 0.15 } else { 0. };
+    let (hs, hn) = ((U_HEAD - hinge.0) * SERP_L, (hinge.1 - 0.5) * 2. * half);
+    let (ca, sa) = (e.ang.cos(), e.ang.sin()); let dn = if flip { -1. } else { 1. };
+    let (hx, hy) = (e.x - ca * hs + (-sa) * hn * dn, e.y - sa * hs + ca * hn * dn);
+    let (mx, my) = (hx + ca * half * 0.3 + (-sa) * dn * half * 0.05, hy + sa * half * 0.3 + ca * dn * half * 0.05);
+    gx.circle_world(mx, my, half * 0.14, Color::new(0.22, 0.02, 0.05, 0.95), false); gx.glow_world(true, c::CRAB, mx, my, half * 0.4, 0.35 * open);
+    let col = WHITE;
+    gx.tex_pivot(&jkey, hx, hy, SERP_L, half, hinge.0, hinge.1, e.ang + open * 0.55 * dn, flip, col, false);
+    gx.strip(&key, &pts, half, flip, col, false);
+    if wht { gx.strip(&key, &pts, half, flip, Color::new(1., 1., 1., 0.35), true); }
+    // огни вдоль тела: бегущая волна от головы к хвосту
+    for k in (6..n - 3).step_by(3) { let (x, y, _, _) = pts[k]; let w = (t * 6. - k as f32 * 0.35).sin() * 0.5 + 0.5; gx.glow_world(false, glow, x, y, 7. + 6. * w, 0.25 + 0.5 * w); }
+    // глаз
+    let (ex_, ey_) = (e.x + ca * half * 0.55 - (-sa) * dn * half * 0.4, e.y + sa * half * 0.55 - ca * dn * half * 0.4);
+    gx.glow_world(false, glow, ex_, ey_, 9., 0.6 + 0.3 * (t * 5.).sin());
+}
+/// 4.5: новые враги
+fn foe45(gx: &mut Gfx, g: &Game, e: &Enemy, key: &str, sc: f32, alpha: f32, wht: bool, ph: f32) {
+    let t = g.t; let col = e.kind.d().col; let flip = if e.ang.cos() < 0. { -1. } else { 1. };
+    match e.kind {
+        K::Nautilus => { if e.state == 1 { gx.glow_world(true, c::PURP, e.x, e.y, e.r * 3.2, 0.35 + 0.15 * (t * 12.).sin()); }
+            gx.spr_world(key, e.x, e.y, e.ang, sc, alpha, wht, ph, false);
+            let (lx, ly) = local(e, e.r * 0.55, -e.r * 0.05 * flip); gx.glow_world(false, c::GOLD, lx, ly, 6. + 2. * (t * 5. + e.phase).sin(), 0.7); }
+        K::Hermit => { if e.state == 1 { // спрятался: только раковина, сжата и темнее, вокруг — щит
+                let was = gx.anim_parts; gx.anim_parts = false; gx.sqx = 0.92; gx.sqy = 0.86;
+                gx.tint = Color::new(0.7, 0.7, 0.85, 1.); gx.spr_world(key, e.x, e.y, e.ang, sc * 0.94, alpha, wht, 0., false); gx.tint = WHITE; gx.sqx = 1.; gx.sqy = 1.; gx.anim_parts = was;
+                gx.arc_world(e.x, e.y, e.r * sc * 1.5, 0., TAU, 2., with_a(hex(0x8fe8ff), 0.35 + 0.2 * (t * 6.).sin()), false); }
+            else { gx.spr_world(key, e.x, e.y, e.ang, sc, alpha, wht, ph, false); } }
+        K::Seahorse => {
+            if e.state == 1 { let k = 1. - e.st / crate::newfoes::SEAHORSE_T; let lock = e.st < 0.25; let (sx, sy) = local(e, e.r * 2.3, 0.);
+                let c1 = if lock { with_a(hex(0xff4d5e), 0.75) } else { with_a(hex(0xffe08a), 0.15 + 0.4 * k) };
+                gx.rect_rot_world(sx, sy, e.ang, 0., 900., if lock { 4. } else { 2. }, c1, None); gx.glow_world(false, c::GOLD, sx, sy, 8. + 14. * k, 0.5 + 0.5 * k); }
+            gx.spr_world(key, e.x, e.y + (t * 2. + e.phase).sin() * 2., e.ang, sc, alpha, wht, ph, false); }
+        K::Cuttle => { let a = match e.state { 0 => 0.14 + 0.06 * (t * 3. + e.phase).sin(), 1 => 1., _ => 1. } * alpha;
+            if e.state == 1 { let k = 1. - e.st / 0.45; gx.glow_world(true, c::AMETH, e.x, e.y, e.r * (2. + 2. * k), 0.4 + 0.5 * k); }
+            if e.state == 0 { gx.glow_world(true, c::AMETH, e.x, e.y, e.r * 1.6, 0.06); }
+            gx.spr_world(key, e.x, e.y, e.ang, sc, a, wht || e.state == 1 && (t * 18.) as i32 % 2 == 0, ph, false); }
+        K::Puffer => { let k = e.r / e.kind.d().r; if k > 1.05 { gx.glow_world(true, c::URCH, e.x, e.y, e.r * 1.8, 0.25 * (k - 1.)); }
+            gx.spr_world(key, e.x, e.y, e.ang, sc * k, alpha, wht, ph, false); }
+        _ => {}
+    }
+    let _ = col;
 }
 fn king(gx: &mut Gfx, g: &Game, e: &Enemy, sc: f32, wht: bool) {
     let t = g.t;
@@ -424,6 +477,9 @@ fn player(gx: &mut Gfx, g: &mut Game, rdt: f32) {
     let tk = g.s.trail; let tw = if tk == 4 { 1.35 } else if tk == 6 { 1.25 } else { 1. };
     for k in 1..12 { let j = (g.trail_head + 12 - k) % 12; gx.glow_world(true, crate::extras::trail_col(tk, pal, k, t), g.trail[j * 2], g.trail[j * 2 + 1], 16. * tw * (1. - k as f32 / 14.), (1. - k as f32 / 12.) * 0.55); }
     gx.glow_world(true, pal, g.p.x, g.p.y, if g.p.dash_t > 0. { 70. } else { 46. }, 0.55 + 0.15 * (t * 5.).sin());
+    // 4.5: кольцо под Люменом — себя видно в любой толпе; в чернилах — фиолетовые капли (замедлен)
+    gx.arc_world(g.p.x, g.p.y, 24., 0., TAU, 1.6, with_a(hex(PAL_HEX[pal as usize]), 0.28 + 0.1 * (t * 3.).sin()), false);
+    if g.p_ink { for k in 0..4 { let a = t * 2. + k as f32 * 1.57; gx.glow_world(false, c::PURP, g.p.x + a.cos() * 16., g.p.y + a.sin() * 16. + 6., 5., 0.7); } }
     let skin = SKINS[g.p.skin].id; let key = format!("pl_{skin}");
     if !(g.p.inv > 0. && (t * 16.) as i32 % 2 == 1) {
         let v = hypot(g.p.vx, g.p.vy); let k = (v / g.st.speed.max(60.)).min(1.6); g.p.a_t += rdt * (0.5 + 1.1 * k);

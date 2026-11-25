@@ -198,11 +198,11 @@ pub static REGIONS: [RegionDef; 4] = [
     RegionDef { ru: ("Бездна", "Основной спуск: все зоны и владыки"), en: ("The Abyss", "The main descent: every zone and lord"), cost: 0, col: 0x5fe9ff,
         grounds: &[], bosses: [K::Boss1, K::Boss2, K::Boss4, K::Boss5, K::Boss6, K::Boss3], foes: [K::Drifter, K::Drifter, K::Drifter], hazard: 0, pearl: 1., pos: (0.5, 0.62) },
     RegionDef { ru: ("Коралловое море", "Медузы, кальмары и иглы среди кораллов · жемчуг ×1.2"), en: ("Coral Sea", "Jellies, squids and needlefish among corals · pearls ×1.2"), cost: 8, col: 0xff8ad8,
-        grounds: &[1, 2, 0, 6, 12, 1, 2, 9], bosses: [K::Boss2, K::Boss7, K::Boss1, K::Boss5, K::Boss2, K::Boss3], foes: [K::Jelly, K::Squid, K::Dart], hazard: HZ_CRYSTAL, pearl: 1.2, pos: (0.24, 0.3) },
+        grounds: &[1, 2, 0, 6, 12, 1, 2, 9], bosses: [K::Boss2, K::Boss7, K::Boss1, K::Boss5, K::Boss2, K::Boss3], foes: [K::Jelly, K::Puffer, K::Hermit], hazard: HZ_CRYSTAL, pearl: 1.2, pos: (0.24, 0.3) },
     RegionDef { ru: ("Ледяной шельф", "Скаты, крабы и ежи, течения во льдах · жемчуг ×1.35"), en: ("Ice Shelf", "Rays, crabs and urchins, currents in the ice · pearls ×1.35"), cost: 20, col: 0x9fe6ff,
-        grounds: &[7, 10, 3, 7, 11, 10], bosses: [K::Boss6, K::Boss4, K::Boss7, K::Boss6, K::Boss8, K::Boss3], foes: [K::Ray, K::Crab, K::Urchin], hazard: HZ_CURRENT, pearl: 1.35, pos: (0.76, 0.28) },
+        grounds: &[7, 10, 3, 7, 11, 10], bosses: [K::Boss6, K::Boss4, K::Boss7, K::Boss6, K::Boss8, K::Boss3], foes: [K::Ray, K::Seahorse, K::Cuttle], hazard: HZ_CURRENT, pearl: 1.35, pos: (0.76, 0.28) },
     RegionDef { ru: ("Вулканический разлом", "Бомберы и фонарщики, гейзеры в лаве · жемчуг ×1.5"), en: ("Volcanic Rift", "Bombers and lanternfish, geysers in lava · pearls ×1.5"), cost: 40, col: 0xff8a40,
-        grounds: &[8, 13, 14, 5, 8, 13], bosses: [K::Boss5, K::Boss1, K::Boss8, K::Boss4, K::Boss5, K::Boss3], foes: [K::Bomber, K::Lantern, K::Urchin], hazard: HZ_GEYSER, pearl: 1.5, pos: (0.5, 0.86) },
+        grounds: &[8, 13, 14, 5, 8, 13], bosses: [K::Boss5, K::Boss1, K::Boss8, K::Boss4, K::Boss5, K::Boss3], foes: [K::Bomber, K::Nautilus, K::Lantern], hazard: HZ_GEYSER, pearl: 1.5, pos: (0.5, 0.86) },
 ];
 pub fn region_txt(i: usize) -> (&'static str, &'static str) { if i18n::is_en() { REGIONS[i].en } else { REGIONS[i].ru } }
 

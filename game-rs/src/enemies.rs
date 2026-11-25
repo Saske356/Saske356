@@ -71,8 +71,9 @@ impl Game {
                 K::Boss1 => self.update_boss1(i, dt, d, ux, uy),
                 K::Boss2 => self.update_boss2(i, dt, d, ux, uy),
                 K::Boss3 => self.update_boss3(i, dt, d, ux, uy),
-                K::Boss4 => self.update_boss4(i, dt, d, ux, uy),
+                K::Boss4 => self.update_serpent(i, dt), // 4.5: змей вдоль следа (старое поведение — update_boss4)
                 K::Boss5 | K::Boss6 | K::Boss7 | K::Boss8 => self.update_boss_new(i, dt, d, ux, uy),
+                K::Nautilus | K::Hermit | K::Seahorse | K::Cuttle | K::Puffer => { if self.update_foe45(i, dt, d, ux, uy, sp, fz) { i += 1; continue; } }
                 K::Ray | K::Lantern | K::Wisp | K::Spawner | K::Fry => { if self.update_new_foe(i, dt, d, ux, uy, sp, fz) { i += 1; continue; } }
                 K::KingCrab => self.update_king(i, dt, d, ux, uy),
                 K::Queen => self.update_queen(i, dt, d, ux, uy),
@@ -90,7 +91,8 @@ impl Game {
             if !self.p.dead && sp_t <= 0. && dmg > 0. { let rr = r * sc * 0.85 + self.p.r; if d < rr {
                 if self.st.thorns > 0. && self.en.items[i].th_t < self.t { self.en.items[i].th_t = self.t + 0.5; self.damage_enemy(i, self.st.thorns, false, f32::NAN, -ux * 260., -uy * 260., Src::None);
                     let (x, y) = (self.en.items[i].x, self.en.items[i].y); self.burst(x, y, 6, c::AMBER, 140., 5., 0.3); if self.en.items[i].dead { i += 1; continue; } }
-                self.hurt_player(dmg); if !kind.d().boss { let e = &mut self.en.items[i]; e.vx -= ux * 200.; e.vy -= uy * 200.; } } }
+                let was = self.p.inv; self.hurt_player(dmg); if self.p.inv > was { self.p.vx += ux * 260.; self.p.vy += uy * 260.; } // 4.5: толчок от удара
+                if !kind.d().boss { let e = &mut self.en.items[i]; e.vx -= ux * 200.; e.vy -= uy * 200.; } } }
             i += 1;
         }
     }

@@ -714,7 +714,16 @@ fn best_card(a: &mut App, i: usize, tr: u8) {
     let (mx, my) = (w / 2., cy0 + 30. + sz); a.gx.glow_scr(true, acc, mx * p, my * p, sz * 1.5 * p, 0.55 * al);
     let ph = a.gx.spr_anim(key).map(|an| tm * an.freq() * std::f32::consts::TAU).unwrap_or(0.);
     let jaw = if a.gx.spr.contains_key(&format!("{key}_body")) { 0.1 + 0.18 * (tm * 1.6).sin().max(-0.3) } else { 0. };
-    if jaw != 0. { let half_b = a.gx.spr_half(&format!("{key}_body")); let kb = sz / half_b; a.gx.jaw = 0.;
+    if k == crate::data::K::Boss4 { // 4.5: змей — волнистая лента во всю ширину карточки
+        let skey = crate::render::tkey("serp", tr); let (sw, sh) = a.gx.spr.get(&skey).map(|s| (s.tex.width(), s.tex.height())).unwrap_or((4.8, 1.)); let len = bw * 0.96; let hw = len / (sw / sh) * 0.5;
+        let n = 30; let pts: Vec<(f32, f32, f32, f32)> = (0..=n).map(|q| { let u = 1. - q as f32 / n as f32; let x = w / 2. + (u - 0.5) * len; let ph = u * 7. - tm * 2.2;
+            let yv = my + ph.sin() * 16. * (1. - u * 0.8); let a_ = (ph.cos() * 16. * 7. / len * (1. - u * 0.8)).atan(); (x * p, yv * p, -a_, u) }).collect();
+        let (hu, hv) = a.gx.spr.get(&skey).and_then(|s| s.hinge).unwrap_or((0.884, 0.496)); let ph = hu * 7. - tm * 2.2;
+        let (hx, hy) = (w / 2. + (hu - 0.5) * len, my + ph.sin() * 16. * (1. - hu * 0.8) + (hv - 0.5) * 2. * hw); let ha = -(ph.cos() * 16. * 7. / len * (1. - hu * 0.8)).atan();
+        if let Some(jt) = a.gx.spr.get(&format!("{skey}_jaw")).map(|s| s.tex.clone()) { a.gx.set_mat(0); let open = 0.12 + 0.12 * (tm * 1.6).sin();
+            draw_texture_ex(&jt, (hx - hu * len) * p, (hy - hv * 2. * hw) * p, Color::new(1., 1., 1., al), DrawTextureParams { dest_size: Some(vec2(len * p, 2. * hw * p)), rotation: ha + open, pivot: Some(vec2(hx * p, hy * p)), ..Default::default() }); }
+        a.gx.strip_px(&skey, &pts, hw * p, false, Color::new(1., 1., 1., al), false); }
+    else if jaw != 0. { let half_b = a.gx.spr_half(&format!("{key}_body")); let kb = sz / half_b; a.gx.jaw = 0.;
         let mouth = format!("{key}_mouth"); if a.gx.spr.contains_key(&mouth) { a.gx.spr_screen(&mouth, mx * p, my * p, 0., kb * p, al, false, ph, false); }
         a.gx.jrot = jaw; a.gx.spr_screen(&format!("{key}_jaw"), mx * p, my * p, 0., kb * p, al, false, ph, false); a.gx.jrot = 0.;
         a.gx.spr_screen(&format!("{key}_body"), mx * p, my * p, 0., kb * p, al, false, ph, false); }

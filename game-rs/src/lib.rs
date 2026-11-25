@@ -1,6 +1,6 @@
 //! «Свет Бездны» на Rust (macroquad): игра целиком — мир, существа, интерфейс, звук, реклама.
 #![recursion_limit = "256"]
-pub mod data; pub mod i18n; pub mod save; pub mod game; pub mod enemies; pub mod gfx; pub mod render; pub mod ui; pub mod audio; pub mod platform; pub mod flow; pub mod tiers; pub mod upg2; pub mod content; pub mod extras; pub mod upgtxt;
+pub mod data; pub mod i18n; pub mod save; pub mod game; pub mod enemies; pub mod gfx; pub mod render; pub mod ui; pub mod audio; pub mod platform; pub mod flow; pub mod tiers; pub mod upg2; pub mod content; pub mod extras; pub mod upgtxt; pub mod serpent; pub mod newfoes;
 pub mod app; pub mod hud; pub mod screens;
 use macroquad::prelude::*;
 

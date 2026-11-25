@@ -184,6 +184,30 @@ impl Gfx {
         for (t, sx, sy, half, ang, flip, sqx, sqy, an, ph, a, jaw, hg) in q.iter() { draw_warp_h(t, *sx, *sy, *half, *ang, *flip, *sqx, *sqy, *an, *ph, Color::new(1., 1., 1., 0.3 * a), *jaw, *hg); }
         self.white_q = q; self.white_q.clear(); self.set_mat(0);
     }
+    /// 4.5: картинка-лента вдоль ломаной (тело змея). pts: (x, y, угол, u) в мире, от головы к хвосту.
+    /// Каждая полоса текстуры кладётся поперёк линии; half — полутолщина в мире; flip — зеркало по высоте.
+    pub fn strip(&mut self, key: &str, pts: &[(f32, f32, f32, f32)], half: f32, flip: bool, col: Color, white: bool) {
+        let sp: Vec<(f32, f32, f32, f32)> = pts.iter().map(|&(x, y, a, u)| (self.sx(x), self.sy(y), a, u)).collect(); self.strip_px(key, &sp, half * self.ws, flip, col, white);
+    }
+    /// То же в пикселях экрана (бестиарий)
+    pub fn strip_px(&mut self, key: &str, pts: &[(f32, f32, f32, f32)], hw: f32, flip: bool, col: Color, white: bool) {
+        let Some(s) = self.spr.get(key) else { return }; let tex = s.tex.clone(); if pts.len() < 2 { return; }
+        let mut vs = Vec::with_capacity(pts.len() * 2); let mut ix: Vec<u16> = Vec::with_capacity(pts.len() * 6);
+        let (v0, v1) = if flip { (1., 0.) } else { (0., 1.) };
+        for (k, &(sx, sy, a, u)) in pts.iter().enumerate() { let (ux, uy) = (a.sin(), -a.cos());
+            vs.push(macroquad::models::Vertex::new(sx + ux * hw, sy + uy * hw, 0., u, v0, col)); vs.push(macroquad::models::Vertex::new(sx - ux * hw, sy - uy * hw, 0., u, v1, col));
+            if k > 0 { let b = (k as u16 - 1) * 2; ix.extend_from_slice(&[b, b + 1, b + 2, b + 1, b + 3, b + 2]); } }
+        let was = self.mat; self.set_mat(if white { 2 } else { 0 });
+        draw_mesh(&Mesh { vertices: vs, indices: ix, texture: Some(tex) }); self.set_mat(was);
+    }
+    /// Текстура целиком, повёрнутая вокруг точки (шарнир челюсти змея); hu, hv — шарнир в долях картинки
+    pub fn tex_pivot(&mut self, key: &str, wx: f32, wy: f32, len: f32, half: f32, hu: f32, hv: f32, ang: f32, flip: bool, col: Color, white: bool) {
+        let Some(s) = self.spr.get(key) else { return }; let tex = s.tex.clone();
+        let (px_, py_) = (self.sx(wx), self.sy(wy)); let (w, h) = (len * self.ws, half * 2. * self.ws); let hv = if flip { 1. - hv } else { hv };
+        let was = self.mat; self.set_mat(if white { 2 } else { 0 });
+        draw_texture_ex(&tex, px_ - hu * w, py_ - hv * h, col, DrawTextureParams { dest_size: Some(vec2(w, h)), rotation: ang, pivot: Some(vec2(px_, py_)), flip_y: flip, ..Default::default() });
+        self.set_mat(was);
+    }
     pub fn spr_half(&self, key: &str) -> f32 { self.spr.get(key).map(|s| s.h).unwrap_or(20.) }
     pub fn spr_anim(&self, key: &str) -> Option<Anim> { self.spr.get(key).and_then(|s| s.anim) }
 
