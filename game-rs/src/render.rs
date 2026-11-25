@@ -519,7 +519,9 @@ fn player(gx: &mut Gfx, g: &mut Game, rdt: f32) {
             let prism = matches!(skin, "prism" | "aurora" | "nebula" | "keeper"); let pul = 0.5 + 0.5 * (t * 2.6).sin();
             gx.glow_world(true, if prism { [c::FIRE, c::GOLD, c::EMER, c::CYAN, c::AMETH][((t * 1.5) as usize) % 5] } else { pal }, g.p.x, g.p.y, 30. + 8. * pul, 0.22 + 0.18 * pul);
             for q in 0..3 { let a = t * 2.2 + q as f32 * TAU / 3.; let r = 17. + 3. * (t * 3. + q as f32).sin(); gx.glow_world(false, acc, g.p.x + a.cos() * r, g.p.y + a.sin() * r * 0.7, 3.2, 0.8); } }
-        let _ = 0;
+        // 4.8: собранный комплект — сияние из трёх цветов темы, медленно вращается
+        if let Some(ti) = g.theme { let cs = crate::extras::THEMES[ti].cols; for q in 0..6 { let a = -t * 1.1 + q as f32 * TAU / 6.; let r = 26. + 2.5 * (t * 2. + q as f32).sin();
+            gx.glow_world(true, cs[q % 3], g.p.x + a.cos() * r, g.p.y + a.sin() * r, 9., 0.38); } }
         gx.sqx = 1.; gx.sqy = 1.;
     }
     let (px, py) = (g.p.x, g.p.y);

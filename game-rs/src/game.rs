@@ -115,7 +115,7 @@ pub struct Game {
     // реликвии
     pub event: u8, pub pet: PetState, pub pet_sh: f32, pub pet2: PetState, pub pet2_id: Option<usize>, pub pet_force: Option<usize>, pub run_shards: u32, pub shards_x2: bool, pub rev: u8 /* 4.7: событие в забеге */, pub rev_t: f32, pub rev_cd: f32, pub rev_acc: f32, pub room_t: f32 /* тайная комната */, pub room_k: u8, pub room_hit: bool, pub room_got: u32, pub room_need: u32, pub room_acc: f32, pub portal: Option<(f32, f32, f32)>, pub portal_zone: u32, pub abyss: u8 /* уровень Бездны забега */, pub region: u8, pub hz_t: f32, pub geysers: Vec<crate::extras::Geyser>, pub bcr: Vec<crate::extras::BoomCrystal>,
     pub inks: Vec<(f32, f32, f32)> /* чернила каракатиц (x, y, осталось) */, pub p_ink: bool,
-    pub serp: Vec<(f32, f32)> /* след головы Левиафана: тело гнётся вдоль него */, pub serp_cache: Vec<(f32, f32, f32)> /* узлы тела на этот кадр */,
+    pub serp: Vec<(f32, f32)> /* след головы Левиафана: тело гнётся вдоль него */, pub serp_cache: Vec<(f32, f32, f32)> /* узлы тела на этот кадр */, pub theme: Option<usize> /* 4.8: собранный комплект (на забег) */, pub boss_ph: u8 /* 4.8: фаза владыки 0/1/2 (здоровье >60%, >30%, меньше) — музыка нагнетается */, pub boss_beat: f32,
     pub relics: Vec<u8>, pub relic_pending: u32, pub want_relic: bool, pub path: u8, pub path_pending: bool, pub want_path: bool, pub rel_lives: u32, pub rel_kills: u32, pub rel_blood: f32, pub rel_blood_t: f32, pub rel_ward_t: f32, pub rel_storm_t: f32,
 }
 #[derive(Default, Clone, Copy)] pub struct PetState { pub x: f32, pub y: f32, pub ang: f32, pub t: f32, pub dash: f32, pub tx: f32, pub ty: f32 }
@@ -147,7 +147,7 @@ impl Game {
             decor: vec![], decor_zone: 99, floor: vec![], qz: Qz::default(), jx: 0., jy: 0., dash_q: false, flare_q: false,
             sfx: vec![], toasts: vec![], vib: vec![], want_levelup: false, want_over: false, want_ending: false, dirty: false, run_mode: RunMode::Normal,
             vw: 200., vh: 400., static_q: 0, tut: Tut::default(), touch: true,
-            event: 0, pet: PetState::default(), pet_sh: 0., pet2: PetState::default(), pet2_id: None, pet_force: None, run_shards: 0, shards_x2: false, rev: 0, rev_t: 0., rev_cd: 80., rev_acc: 0., room_t: 0., room_k: 0, room_hit: false, room_got: 0, room_need: 0, room_acc: 0., portal: None, portal_zone: 0, abyss: 0, region: 0, hz_t: 2., geysers: vec![], bcr: vec![], inks: vec![], p_ink: false, serp: vec![], serp_cache: vec![], relics: vec![], relic_pending: 0, want_relic: false, path: 0, path_pending: false, want_path: false, rel_lives: 0, rel_kills: 0, rel_blood: 0., rel_blood_t: 0., rel_ward_t: 0., rel_storm_t: 0.,
+            event: 0, pet: PetState::default(), pet_sh: 0., pet2: PetState::default(), pet2_id: None, pet_force: None, run_shards: 0, shards_x2: false, rev: 0, rev_t: 0., rev_cd: 80., rev_acc: 0., room_t: 0., room_k: 0, room_hit: false, room_got: 0, room_need: 0, room_acc: 0., portal: None, portal_zone: 0, abyss: 0, region: 0, hz_t: 2., geysers: vec![], bcr: vec![], inks: vec![], p_ink: false, serp: vec![], serp_cache: vec![], theme: None, boss_ph: 0, boss_beat: 0., relics: vec![], relic_pending: 0, want_relic: false, path: 0, path_pending: false, want_path: false, rel_lives: 0, rel_kills: 0, rel_blood: 0., rel_blood_t: 0., rel_ward_t: 0., rel_storm_t: 0.,
         };
         g.p.skin = data::SKINS.iter().position(|k| k.id == g.s.skin).unwrap_or(0); g.p.pal = data::SKINS[g.p.skin].pal;
         g.init_floor(); g.build_decor(0);
@@ -448,6 +448,10 @@ impl Game {
         let d = hypot(self.p.x, self.p.y); let lim = cfg::ARENA_R - self.p.r; if d > lim { self.p.x *= lim / d; self.p.y *= lim / d; }
         if self.p.inv > 0. { self.p.inv -= dt; } if self.p.dash_cd > 0. { self.p.dash_cd -= dt; }
         if self.p.hp < self.p.max_hp * 0.3 { self.p.beat_t -= dt; if self.p.beat_t <= 0. { self.p.beat_t = 0.9; self.snd(Sfx::Beat); } }
+        // 4.8: фазы владыки — при переходе удар и встряска, музыка ускоряется (app: au.set_rate), в последней фазе стучит барабан
+        { let ph = match self.boss_idx() { Some(b) => { let e = &self.en.items[b]; let f = e.hp / e.max_hp.max(1.); if f > 0.6 { 0 } else if f > 0.3 { 1 } else { 2 } } None => 0 };
+          if ph > self.boss_ph { self.snd(Sfx::Beat); self.shake(7.); self.vibrate(45); self.boss_beat = 0.25; } self.boss_ph = ph;
+          if ph == 2 && self.p.hp >= self.p.max_hp * 0.3 { self.boss_beat -= dt; if self.boss_beat <= 0. { self.boss_beat = 0.68; self.snd(Sfx::Beat); } } }
         if self.st.regen > 0. && self.p.hp < self.p.max_hp { self.p.hp = (self.p.hp + self.st.regen * dt).min(self.p.max_hp); }
         self.p.hb = (self.p.max_hp * cfg::HEAL_RATE * 2.).min(self.p.hb + self.p.max_hp * cfg::HEAL_RATE * dt);
         self.update_new_upg(dt); self.update_upg2(dt); self.update_upg3(dt);
@@ -658,7 +662,7 @@ impl Game {
                 let (ox, oy) = (self.en.items[o].x, self.en.items[o].y); self.text(ox, oy - 80., if i18n::is_en() { "ENRAGED!".into() } else { "В ЯРОСТИ!".into() }, 0xff4f5e, true, true); return; } }
         self.quest_add("boss", 1); if e.tier > 0 { self.unlock("lord"); }
         self.boss = -1; self.bosses_killed += 1; self.boss_clear_t = 3.; self.level_delay = self.level_delay.max(1.6);
-        if self.zone % 5 == 0 { self.path_pending = true; if self.run_mode == RunMode::Normal && !self.god { let sh = if self.zone >= 30 { 3 } else { 1 }; self.s.shards += sh; self.run_shards += sh; self.dirty = true; } }
+        if self.zone % 5 == 0 { self.path_pending = true; if self.run_mode == RunMode::Normal && !self.god { let sh = if self.zone >= 30 { 3 } else { 1 } + (self.zone % 10 == 0 && crate::extras::theme_full(&self.s).is_some()) as u32 /* 4.8: комплект */; self.s.shards += sh; self.run_shards += sh; self.dirty = true; } }
         self.hit_stop = 0.35; self.flash = 1.; self.shake(34.); self.vibrate(370); self.snd(Sfx::Boom(true));
         for k in 0..4 { self.ring(e.x, e.y, 20., 200. + k as f32 * 120., 0.6 + k as f32 * 0.2, if k % 2 == 1 { c::WHITE } else { e.col }, 8.); }
         self.burst(e.x, e.y, 90, e.col, 520., 16., 1.3); self.burst(e.x, e.y, 40, c::WHITE, 300., 10., 1.);

@@ -15,10 +15,10 @@ fn on_off(v: bool) -> String { if v { t("on") } else { t("off") } }
 pub fn draw(a: &mut App) {
     if a.scr == Scr::None { return; }
     let al = (a.scr_t / 0.28).min(1.); a.ui.alpha = al;
-    if a.scr != Scr::Title { let light = matches!(a.scr, Scr::Level | Scr::Pause | Scr::Revive); let tm = a.g.t; menu_backdrop(&mut a.gx, tm, al, light); }
+    if a.scr != Scr::Title && a.scr != Scr::Try { let light = matches!(a.scr, Scr::Level | Scr::Pause | Scr::Revive); let tm = a.g.t; menu_backdrop(&mut a.gx, tm, al, light); }
     match a.scr {
         Scr::Title => { if a.rate_pending { a.rate_pending = false; a.show(Scr::Rate); } title(a) } Scr::How => how(a), Scr::Level => level(a), Scr::Pause => pause(a), Scr::Revive => revive(a), Scr::Over => over(a),
-        Scr::Shop => shop(a), Scr::Ach => ach(a), Scr::Set => settings(a), Scr::Quest => quests(a), Scr::Best => best(a), Scr::Modes => modes(a), Scr::Wheel => wheel(a), Scr::Map => ocean_map(a), Scr::Rate => rate(a), Scr::Card => card(a), Scr::End => end(a), Scr::None => {}
+        Scr::Shop => shop(a), Scr::Ach => ach(a), Scr::Set => settings(a), Scr::Quest => quests(a), Scr::Best => best(a), Scr::Modes => modes(a), Scr::Wheel => wheel(a), Scr::Map => ocean_map(a), Scr::Rate => rate(a), Scr::Card => card(a), Scr::Xfer => xfer(a), Scr::Try => try_scr(a), Scr::End => end(a), Scr::None => {}
     }
     a.ui.alpha = 1.;
 }
@@ -497,6 +497,59 @@ fn rate(a: &mut App) {
     if a.ui.btn(&mut a.gx, Rect::new(bx + hw + 8., by + 62., hw, 44.), if en { "Don't ask" } else { "Не спрашивать" }, St::Pink, 14., true) { a.click(); a.g.s.rate = 2; a.g.dirty = true; a.show(Scr::Title); }
 }
 
+/// 4.8: примерка — поверх песочницы: что примеряем и кнопки «Купить/Надеть» и «Назад»
+fn try_scr(a: &mut App) {
+    let (w, h) = (a.gx.w, a.gx.h); let al = a.ui.alpha; let en = i18n::is_en(); let (bx, bw) = col(a); let tp = top(a);
+    let Some(real) = a.try_real.as_ref() else { return; }; let rs = &real.s; let (k, i) = a.try_kind;
+    let (nm, own, sel, cost, win) = match k {
+        0 => { let sk = &SKINS[i]; (i18n::skin(sk.id), rs.skins.contains_key(sk.id), rs.skin == sk.id, sk.cost, sk.win) }
+        1 => (crate::extras::trail_txt(i).0.to_string(), i == 0 || rs.trails.contains_key(&i.to_string()), rs.trail as usize == i, crate::extras::TRAILS[i].cost, false),
+        2 => (crate::extras::death_txt(i).0.to_string(), i == 0 || rs.deaths.contains_key(&i.to_string()), rs.death as usize == i, crate::extras::DEATHS[i].cost, false),
+        _ => (crate::extras::shot_txt(i).0.to_string(), i == 0 || rs.shots.contains_key(&i.to_string()), rs.shot as usize == i, crate::extras::SHOTS[i].cost, false) };
+    let pearls = rs.pearls;
+    let pw = (a.gx.text_w(&nm, 20., 2) + 60.).max(220.).min(w - 32.); let py = tp + 8.;
+    panel(&mut a.gx, Rect::new(w / 2. - pw / 2., py, pw, 62.), 18., Color::new(0.02, 0.07, 0.15, 0.82), Color::new(1., 0.84, 0.31, 0.7), al);
+    a.gx.text(if en { "TRY-ON" } else { "ПРИМЕРКА" }, w / 2., py + 18., 12., with_alpha(hex(0xffd54f), al), 1, 2);
+    a.gx.text(&nm, w / 2., py + 42., 20., Color::new(1., 1., 1., al), 1, 2);
+    let by = h - 128.; let hw = (bw - 8.) / 2.;
+    if sel { a.ui.btn(&mut a.gx, Rect::new(bx, by, hw, 54.), if en { "Worn" } else { "Надето" }, St::Gold, 16., false); }
+    else if own { if a.ui.btn(&mut a.gx, Rect::new(bx, by, hw, 54.), if en { "Wear" } else { "Надеть" }, St::Gold, 17., true) { a.click(); a.try_buy(); return; } }
+    else if win { a.ui.btn(&mut a.gx, Rect::new(bx, by, hw, 54.), if en { "For a feat" } else { "За подвиг" }, St::Gold, 15., false); }
+    else if price_btn(a, Rect::new(bx, by, hw, 54.), &cost.to_string(), true, pearls >= cost, St::Gold) { a.try_buy(); return; }
+    if a.ui.btn(&mut a.gx, Rect::new(bx + hw + 8., by, hw, 54.), &t("back"), St::Pink, 17., true) { a.click(); a.try_off(); }
+}
+
+/// 4.8: перенос прогресса на другой телефон кодом через буфер обмена (без серверов)
+fn xfer(a: &mut App) {
+    let (w, h) = (a.gx.w, a.gx.h); let al = a.ui.alpha; let en = i18n::is_en(); let (bx, bw) = col(a);
+    a.gx.rrect(0., 0., w, h, 0., Color::new(0., 0.02, 0.06, 0.55 * al));
+    let ph = 470.; let y0 = ((h - ph) / 2.).max(top(a)); panel(&mut a.gx, Rect::new(bx - 8., y0, bw + 16., ph), 20., Color::new(0.03, 0.1, 0.2, 0.95), Color::new(0.37, 0.91, 1., 0.6), al);
+    ui::h2c(&mut a.gx, if en { "Transfer progress" } else { "Перенос прогресса" }, w / 2., y0 + 34., 24., al, c::CYAN, hex(0xe6f8ff));
+    if let Some(n) = a.xfer.clone() {
+        // подтверждение: что найдено в коде
+        let txt = if en { format!("Code found: {} pearls, record {}, sparks {}, skins {}, runs {}.\n\nReplace the progress on THIS phone with it? Current progress will be lost (a backup copy stays in the game folder).", n.pearls, n.best, n.chars.len(), n.skins.len(), n.runs) }
+            else { format!("В коде: {} жемчуга, рекорд {}, искр {}, обликов {}, забегов {}.\n\nЗаменить им прогресс на ЭТОМ телефоне? Текущий прогресс пропадёт (резервная копия останется в папке игры).", n.pearls, n.best, n.chars.len(), n.skins.len(), n.runs) };
+        a.gx.text_wrap(&txt, w / 2., y0 + 80., bw - 20., 15., 21., Color::new(1., 1., 1., 0.92 * al), 1, 0);
+        let by = y0 + ph - 132.;
+        if a.ui.btn(&mut a.gx, Rect::new(bx, by, bw, 54.), if en { "Replace" } else { "Заменить" }, St::Gold, 19., true) { a.click();
+            if let Some(cur) = crate::platform::read_save() { let _ = std::fs::write(format!("{}/save_backup.json", crate::platform::files_dir()), cur); }
+            a.g.s = n; i18n::set_en(a.g.s.set.lang == "en"); a.g.dirty = true; a.persist(); a.xfer = None;
+            a.toast(if en { "Progress transferred".into() } else { "Прогресс перенесён".into() }, if en { "Welcome back!".into() } else { "С возвращением!".into() }); a.show(Scr::Title); return; }
+        if a.ui.btn(&mut a.gx, Rect::new(bx, by + 62., bw, 44.), &t("back"), St::Pink, 16., true) { a.click(); a.xfer = None; }
+        return;
+    }
+    a.gx.text_wrap(if en { "Moving to a new phone? Copy the code, send it to yourself (messenger, notes) and paste it on the new phone. The code holds all progress: pearls, sparks, skins, upgrades, pets." }
+        else { "Новый телефон? Скопируй код, перешли его себе (в мессенджер, заметки) и вставь на новом телефоне. В коде весь прогресс: жемчуг, искры, облики, улучшения, питомцы." },
+        w / 2., y0 + 72., bw - 20., 14.5, 20., Color::new(1., 1., 1., 0.88 * al), 1, 0);
+    let by = y0 + 210.;
+    if a.ui.btn(&mut a.gx, Rect::new(bx, by, bw, 54.), if en { "Copy my code" } else { "Скопировать мой код" }, St::Gold, 18., true) { a.click();
+        a.xfer_copy(); }
+    if a.ui.btn(&mut a.gx, Rect::new(bx, by + 64., bw, 54.), if en { "Paste code from old phone" } else { "Вставить код со старого телефона" }, St::Cyan, 16., true) { a.click();
+        a.xfer_paste(); }
+    if !a.xfer_msg.is_empty() { a.gx.text_wrap(&a.xfer_msg, w / 2., by + 134., bw - 20., 13.5, 18., with_alpha(hex(0xffe08a), al), 1, 0); }
+    if a.ui.btn(&mut a.gx, Rect::new(bx, y0 + ph - 60., bw, 46.), &t("back"), St::Pink, 17., true) { a.click(); a.show(Scr::Set); }
+}
+
 fn end(a: &mut App) {
     let sm = small(a); let tp = top(a); let _ = (sm, tp); let _gh = a.gx.h;
     let (w, h) = (a.gx.w, a.gx.h); let al = a.ui.alpha; let (bx, bw) = col(a); let land = a.landscape(); let g = &a.g;
@@ -552,6 +605,11 @@ fn tal_icon(id: &str) -> &'static str { match id { "t_dmg" => "dmg", "t_rate" =>
     "t_pearl" => "greed", "t_xp" => "echo", "t_mag" => "magnet", _ => "multi" } }
 fn branch_col(br: u8) -> (Color, u8) { match br { 0 => (hex(0xff7a5c), c::FIRE), 1 => (hex(0x4fffb0), c::EMER), _ => (hex(0xffd54f), c::GOLD) } }
 /// Кнопка цены: жемчужина и число
+/// 4.8: значок «▶ примерить» на миниатюре; касание миниатюры — примерка (kind: 0 облик, 1 шлейф, 2 гибель, 3 выстрелы)
+fn try_badge(a: &mut App, x: f32, y: f32, h: f32, al: f32, kind: u8, i: usize) {
+    let (bx, by) = (x + 48., y + h - 13.); a.gx.circle(bx, by, 8., Color::new(1., 0.84, 0.31, 0.9 * al)); a.gx.text("▶", bx + 0.8, by + 0.5, 9., Color::new(0.05, 0.1, 0.2, al), 1, 2);
+    if a.ui.tap(Rect::new(x, y, 58., h)) { a.click(); a.try_req = Some((kind, i)); }
+}
 fn price_btn(a: &mut App, r: Rect, label: &str, pearl_: bool, on: bool, st: St) -> bool {
     let hit = a.ui.btn(&mut a.gx, r, if pearl_ { "" } else { label }, st, 15., on);
     if pearl_ { let al = a.ui.alpha * if on { 1. } else { 0.5 }; let tw = a.gx.text_w(label, 15., 2); let cx = r.x + r.w / 2. + 6.; pearl(&mut a.gx, cx - tw / 2. - 10., r.y + r.h / 2., 5.5, al);
@@ -581,7 +639,7 @@ fn shop(a: &mut App) {
     match tab {
         0 => for i in 0..SHOP.len() { let d = i18n::shop(SHOP[i].id).1; items.push(It { kind: 0, i, h: (30. + dsw(a, &d, true) + 12.).max(64.) }); },
         1 => for i in 0..CHARS.len() { let (_, d) = i18n::chr(CHARS[i].id); let d = d + " "; let _m = 0; let d = d + &tf("healthW", &[&CHARS[i].hp.to_string()]) + " " + crate::content::char_attack(i) + "."; items.push(It { kind: 1, i, h: (30. + dsw(a, &d, true) + 12.).max(64.) + 18. }); },
-        2 => { for i in 0..SKINS.len() { items.push(It { kind: 2, i, h: 64. }); }
+        2 => { items.push(It { kind: 11, i: 0, h: 172. }); for i in 0..SKINS.len() { items.push(It { kind: 2, i, h: 64. }); }
             items.push(It { kind: 6, i: 0, h: 34. }); for i in 0..crate::extras::TRAILS.len() { items.push(It { kind: 7, i, h: 64. }); }
             items.push(It { kind: 6, i: 1, h: 34. }); for i in 0..crate::extras::DEATHS.len() { items.push(It { kind: 8, i, h: 64. }); }
             items.push(It { kind: 6, i: 2, h: 34. }); for i in 0..crate::extras::SHOTS.len() { items.push(It { kind: 9, i, h: 64. }); } },
@@ -621,12 +679,30 @@ fn shop(a: &mut App) {
                 let p = a.gx.px; let key = format!("pl_{}", sk.id); a.gx.glow_scr(true, sk.pal, (f.x + 30.) * p, (y + 32.) * p, 30. * p, 0.6 * al);
                 let ph = a.gx.spr_anim(&key).map(|an| a.g.t * 0.5 * an.freq() * std::f32::consts::TAU + it.i as f32).unwrap_or(0.);
                 crate::gfx::set_calm(0.5); a.gx.spr_screen(&key, (f.x + 30.) * p, (y + 32.) * p, -0.3, 0.75 * p, al, false, ph, false); crate::gfx::set_calm(1.);
+                try_badge(a, f.x, y, it.h, al, 0, it.i);
                 a.gx.text(&i18n::skin(sk.id), f.x + 58., y + 22., 16., Color::new(1., 1., 1., al), 0, 1);
                 let sub = if data::live_skin(sk.id) && sk.id != "keeper" { if i18n::is_en() { "✦ Living: shimmering glow".to_string() } else { "✦ Живой: свечение переливается".to_string() } } else if sk.id == "keeper" { if i18n::is_en() { "Discover the whole bestiary".to_string() } else { "Открой весь бестиарий".to_string() } } else if sk.win { t("skinWin") } else { t("skinColor") };
                 a.gx.text(&sub, f.x + 58., y + 42., 12., Color::new(1., 1., 1., 0.75 * al), 0, 0);
                 if sel { a.ui.btn(&mut a.gx, br, &t("worn"), St::Cyan, 15., false); } else if own { if a.ui.btn(&mut a.gx, br, &t("wear"), St::Cyan, 15., true) { a.g.pick_skin(it.i); } }
                 else if sk.win { let wl = if sk.id == "keeper" { if i18n::is_en() { "Bestiary".to_string() } else { "Бестиарий".to_string() } } else { t("winBtn") }; a.ui.btn(&mut a.gx, br, &wl, St::Gold, 15., false); }
                 else if price_btn(a, br, &sk.cost.to_string(), true, a.g.s.pearls >= sk.cost, St::Cyan) { a.g.pick_skin(it.i); } }
+            11 => { let en = i18n::is_en(); let acc = hex(0xffd54f); item_card(&mut a.gx, r, acc, false, al);
+                a.gx.text(if en { "OUTFITS" } else { "НАРЯДЫ" }, f.x + 16., y + 20., 16., with_alpha(acc, al), 0, 2);
+                let (ti, n) = crate::extras::theme_best(&a.g.s); let tn = crate::extras::theme_name(ti);
+                let st = if n == 4 { if en { format!("✦ «{tn}» set complete: special glow and +1 light shard at every 10th depth") } else { format!("✦ Комплект «{tn}» собран: особое сияние и +1 осколок света на каждой 10-й глубине") } }
+                    else if en { format!("Set «{tn}»: {n}/4. Skin, trail, death effect and shots of one theme give a glow and bonus shards") } else { format!("Комплект «{tn}»: {n}/4. Облик, шлейф, гибель и выстрелы одной темы — сияние и бонусные осколки") };
+                a.gx.text_wrap(&st, f.x + 16., y + 40., iw - 32., 12., 15., Color::new(1., 1., 1., 0.85 * al), 0, 0);
+                let gap = 8.; let sw = (iw - 32. - gap * 2.) / 3.; let cur = crate::extras::outfit_of(&a.g.s);
+                for k in 0..3 { let x = f.x + 16. + k as f32 * (sw + gap); let bx_ = Rect::new(x, y + 76., sw, 54.); let o = a.g.s.outfits[k].clone(); let on = !o.is_empty() && o == cur;
+                    panel(&mut a.gx, bx_, 12., Color::new(0.02, 0.08, 0.16, 0.85), if on { with_alpha(acc, 0.95) } else { Color::new(0.5, 0.8, 1., 0.35) }, al);
+                    if o.is_empty() { a.gx.text(if en { "empty" } else { "пусто" }, x + sw / 2., y + 103., 13., Color::new(1., 1., 1., 0.5 * al), 1, 0); }
+                    else { let v: Vec<&str> = o.split('|').collect(); let key = format!("pl_{}", v[0]); let p = a.gx.px; let tr: u8 = v.get(1).and_then(|q| q.parse().ok()).unwrap_or(0);
+                        let pal_ = SKINS.iter().find(|q| q.id == v[0]).map(|q| q.pal).unwrap_or(c::CYAN);
+                        for q in 1..6 { let col = crate::extras::trail_col(tr, pal_, q, a.g.t); a.gx.glow_scr(true, col, (x + sw / 2. - 14. - q as f32 * 7.) * p, (y + 103.) * p, (9. - q as f32) * p, (1. - q as f32 / 7.) * 0.8 * al); }
+                        crate::gfx::set_calm(0.5); a.gx.spr_screen(&key, (x + sw / 2. + 6.) * p, (y + 103.) * p, 0., 0.85 * p, al, false, 0., false); crate::gfx::set_calm(1.);
+                        if a.ui.tap(bx_) { a.click(); a.g.wear_outfit(k); } }
+                    if a.ui.btn(&mut a.gx, Rect::new(x, y + 136., sw, 28.), if o.is_empty() { if en { "Save" } else { "Запомнить" } } else if en { "Overwrite" } else { "Заменить" }, St::Cyan, 12., true) {
+                        a.click(); a.g.s.outfits[k] = cur.clone(); a.g.dirty = true; a.toast(if en { "Outfit saved".into() } else { "Наряд запомнен".into() }, if en { "Tap it to put it on".into() } else { "Нажми на него, чтобы надеть".into() }); } } }
             10 => { let en = i18n::is_en(); let cur = a.g.s.pet.clone();
                 let cand = (0..crate::extras::PETS.len()).filter(|&k| crate::extras::PETS[k].id != cur && a.g.s.pets.get(crate::extras::PETS[k].id).copied().unwrap_or(0) > 0).max_by_key(|&k| a.g.s.pets.get(crate::extras::PETS[k].id).copied().unwrap_or(0));
                 item_card(&mut a.gx, r, hex(0xffd54f), !a.g.s.tok_pet2.is_empty(), al); icon_tile(&mut a.gx, "heal", f.x + 34., y + it.h / 2., hex(0xffd54f), c::GOLD, al);
@@ -656,7 +732,7 @@ fn shop(a: &mut App) {
             6 => { let en = i18n::is_en(); let s_ = match it.i { 0 => if en { "TRAILS" } else { "ШЛЕЙФЫ" }, 1 => if en { "ENEMY DEATH EFFECTS" } else { "ЭФФЕКТЫ ГИБЕЛИ ВРАГОВ" }, _ => if en { "PROJECTILE COLOR" } else { "ЦВЕТ ВЫСТРЕЛОВ" } }; let tw = a.gx.text_w(s_, 14., 2); let acc = hex(0xffd54f);
                 a.gx.rrect(f.x + 8., y + 17., iw / 2. - tw / 2. - 20., 2., 1., with_alpha(acc, 0.5 * al)); a.gx.rrect(f.x + iw / 2. + tw / 2. + 12., y + 17., iw / 2. - tw / 2. - 20., 2., 1., with_alpha(acc, 0.5 * al));
                 a.gx.text(s_, f.x + iw / 2., y + 18., 14., with_alpha(acc, al), 1, 2); }
-            7 | 8 => { let death = it.kind == 8; let d_ = if death { &crate::extras::DEATHS[it.i] } else { &crate::extras::TRAILS[it.i] }; let (nm, d) = if death { crate::extras::death_txt(it.i) } else { crate::extras::trail_txt(it.i) };
+            7 | 8 => { let death = it.kind == 8; try_badge(a, f.x, y, it.h, al, if death { 2 } else { 1 }, it.i); let d_ = if death { &crate::extras::DEATHS[it.i] } else { &crate::extras::TRAILS[it.i] }; let (nm, d) = if death { crate::extras::death_txt(it.i) } else { crate::extras::trail_txt(it.i) };
                 let key = it.i.to_string(); let own = it.i == 0 || if death { a.g.s.deaths.contains_key(&key) } else { a.g.s.trails.contains_key(&key) }; let sel = (if death { a.g.s.death } else { a.g.s.trail }) as usize == it.i;
                 item_card(&mut a.gx, r, pal(d_.col), sel, al);
                 { let p = a.gx.px; let (cx, cy) = (f.x + 32., y + it.h / 2.); let tm = a.g.t;
@@ -671,7 +747,7 @@ fn shop(a: &mut App) {
                 if sel { a.ui.btn(&mut a.gx, br, if i18n::is_en() { "Active" } else { "Выбран" }, St::Gold, 14., false); }
                 else if own { if a.ui.btn(&mut a.gx, br, if i18n::is_en() { "Use" } else { "Выбрать" }, St::Cyan, 15., true) { a.click(); a.g.buy_fx(death as u8, it.i); } }
                 else if price_btn(a, br, &d_.cost.to_string(), true, a.g.s.pearls >= d_.cost, St::Cyan) { a.g.buy_fx(death as u8, it.i); } }
-            9 => { let d_ = &crate::extras::SHOTS[it.i]; let (nm, d) = crate::extras::shot_txt(it.i); let key = it.i.to_string(); let own = it.i == 0 || a.g.s.shots.contains_key(&key); let sel = a.g.s.shot as usize == it.i;
+            9 => { try_badge(a, f.x, y, it.h, al, 3, it.i); let d_ = &crate::extras::SHOTS[it.i]; let (nm, d) = crate::extras::shot_txt(it.i); let key = it.i.to_string(); let own = it.i == 0 || a.g.s.shots.contains_key(&key); let sel = a.g.s.shot as usize == it.i;
                 item_card(&mut a.gx, r, pal(d_.col), sel, al);
                 { let p = a.gx.px; let (cx, cy) = (f.x + 32., y + it.h / 2.); let tm = a.g.t;
                   for k in 0..3 { let (pc, ac) = crate::extras::shot_cols(it.i as u8, k, tm).unwrap_or((c::CYAN, c::WHITE)); let x = cx - 14. + k as f32 * 14. + ((tm * 3.).fract() * 14.); let yy = cy + (k as f32 - 1.) * 4.;
@@ -972,6 +1048,7 @@ fn settings(a: &mut App) {
         (format!("{}: {}", t("graphics"), match s.quality.as_str() { "high" => t("gHigh"), "low" => t("gLow"), _ => t("gAuto") }), 3),
         (format!("{}: {}", t("nums"), on_off(s.nums)), 4), (format!("{}: {}", t("shake"), on_off(s.shake)), 5),
         (format!("{orient_l}: {orient}"), 8), (format!("{}: {}", if i18n::is_en() { "Reminders" } else { "Напоминания" }, on_off(s.notify)), 10), (format!("{}: {}", if i18n::is_en() { "Glow" } else { "Подсветка" }, on_off(s.fx)), 9), (format!("{}: {}", t("lang"), if s.lang == "en" { "English" } else { "Русский" }), 6), (format!("{}: {}", t("fps"), s.fps), 7) ];
+    let mut rows = rows; rows.push((if i18n::is_en() { "Transfer progress".to_string() } else { "Перенос прогресса".to_string() }, 11));
     let (bx, bw) = col(a); let bh = if sm { 46. } else { 50. }; let gap = if sm { 6. } else { 8. };
     let ncol = if land { 2 } else { 1 }; let cw = if land { ((w - 40.) / 2.).min(300.) } else { bw }; let x0 = if land { (w - cw * 2. - 12.) / 2. } else { bx };
     let nrow = (rows.len() + ncol - 1) / ncol; let total = 40. + nrow as f32 * (bh + gap) + 8. + bh;
@@ -982,6 +1059,7 @@ fn settings(a: &mut App) {
         if a.ui.btn(&mut a.gx, Rect::new(cx, cy, cw, bh), l, St::Cyan, 17., true) { act = Some(*id); } }
     y += nrow as f32 * (bh + gap) + 4.;
     if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, bh), &t("back"), St::Pink, 18., true) { a.click(); let b = a.back_to; a.show(b); return; }
+    if act == Some(11) { a.click(); a.xfer = None; a.xfer_msg.clear(); a.show(Scr::Xfer); return; }
     if let Some(id) = act { a.click(); let s = &mut a.g.s.set;
         // громкость по кругу: 100 → 80 → 60 → 40 → 20 → выкл → 100
         match id { 0 => { s.vsfx = vol_next(s.sound, s.vsfx); s.sound = s.vsfx > 0; } 1 => { s.vmus = vol_next(s.music, s.vmus); s.music = s.vmus > 0; } 2 => { s.vibro = !s.vibro; if s.vibro { crate::platform::vibrate(30); } },

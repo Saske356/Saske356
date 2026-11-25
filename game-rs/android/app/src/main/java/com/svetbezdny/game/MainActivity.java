@@ -321,6 +321,9 @@ public class MainActivity extends Activity {
                     }
                     mp[i].setVolume(v, v); mp[i].seekTo(0); if (!paused) mp[i].start();
                 } else if (op == 0) { if (mp[i] != null) mp[i].setVolume(v, v); }
+                else if (op == 2) { // 4.8: скорость трека (нагнетание на владыке), тон не меняется
+                    if (mp[i] != null && android.os.Build.VERSION.SDK_INT >= 23 && mp[i].isPlaying()) {
+                        mp[i].setPlaybackParams(mp[i].getPlaybackParams().setSpeed(v).setPitch(1f)); } }
                 else { if (mp[i] != null) { mp[i].stop(); mp[i].release(); mp[i] = null; } }
             } catch (Throwable t) { Log.w("SvetMusic", "music " + i, t); }
         });

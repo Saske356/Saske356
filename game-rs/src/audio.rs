@@ -87,13 +87,15 @@ pub struct Audio {
     sfx: HashMap<Key, Sound>, last: HashMap<u8, f64>, pub sound_on: bool, pub music_on: bool, pub vol_sfx: f32, pub vol_mus: f32, last_mus: f32,
     /// уровень каждого трека в кроссфейде 0..1
     vol: [f32; 10], playing: [bool; 10], done_once: [bool; 10], pub want: Option<usize>, desk: HashMap<usize, Sound>, pub native_music: bool, t: f64,
-    pub cmds: Vec<(usize, i32, f32)> /* для платформы: (трек, 1 старт/0 громкость/-1 стоп, громкость) */,
+    pub cmds: Vec<(usize, i32, f32)> /* для платформы: (трек, 1 старт/0 громкость/-1 стоп/2 скорость, значение) */,
+    /// 4.8: нагнетание на владыке — скорость трека (Android, без смены тона) и прибавка громкости
+    rate: [f32; 10], pub boost: f32,
 }
 
 impl Audio {
     pub async fn new(native_music: bool) -> Audio {
         let mut a = Audio { sfx: HashMap::new(), last: HashMap::new(), sound_on: true, music_on: true, vol_sfx: 1., vol_mus: 1., last_mus: 1., vol: [0.; 10], playing: [false; 10], done_once: [false; 10], want: None,
-            desk: HashMap::new(), native_music, t: 0., cmds: vec![] };
+            desk: HashMap::new(), native_music, t: 0., cmds: vec![], rate: [1.; 10], boost: 1. };
         let mut keys = vec![Key::Hit, Key::Clink, Key::Boom(true), Key::Boom(false), Key::Pearl, Key::Level, Key::PickCard, Key::Hurt, Key::Dash, Key::Nova, Key::Flare, Key::Warn, Key::Click, Key::Ach, Key::Graze, Key::Beat, Key::Shot2];
         for i in 0..4 { keys.push(Key::Shoot(i)); } for i in 0..12 { keys.push(Key::Kill(i)); } for i in 0..15 { keys.push(Key::Pick(i)); }
         let mut seed = 0x1234567u32;
@@ -119,11 +121,11 @@ impl Audio {
     pub async fn tick(&mut self, want: Option<usize>, dt: f32, paused: bool) {
         let want = if self.music_on { want } else { None };
         if want != self.want { if let Some(w) = want { if Self::once(w) || self.vol[w] <= 0.01 { self.done_once[w] = false; if self.playing[w] { self.stop(w); } } } self.want = want; }
-        let step = dt / 1.5; let vm = self.vol_mus; let vm_changed = (vm - self.last_mus).abs() > 1e-3; self.last_mus = vm;
+        let step = dt / 1.5; let vm = self.vol_mus * self.boost; let vm_changed = (vm - self.last_mus).abs() > 0.01; if vm_changed { self.last_mus = vm; }
         for i in 0..10 {
             let target = if Some(i) == self.want && !paused { 1. } else { 0. };
             let v0 = self.vol[i]; self.vol[i] = if target > v0 { (v0 + step).min(target) } else { (v0 - step).max(target) };
-            let gain = self.vol[i] * self.vol[i] * 0.6 * vm;
+            let gain = (self.vol[i] * self.vol[i] * 0.6 * vm).min(1.);
             if self.vol[i] > 0. && !self.playing[i] && !(Self::once(i) && self.done_once[i]) { self.start(i).await; }
             if self.playing[i] { if self.vol[i] <= 0. { self.stop(i); } else if vm_changed || (self.vol[i] - v0).abs() > 1e-5 { self.set_vol(i, gain); } }
         }
@@ -131,7 +133,7 @@ impl Audio {
     }
     pub fn track_done(&mut self, i: usize) { self.done_once[i] = true; self.playing[i] = false; }
     async fn start(&mut self, i: usize) {
-        self.playing[i] = true; let v = self.vol[i] * self.vol[i] * 0.6 * self.vol_mus;
+        self.playing[i] = true; self.rate[i] = 1.; let v = self.vol[i] * self.vol[i] * 0.6 * self.vol_mus;
         if self.native_music { self.cmds.push((i, 1, v)); return; }
         if !self.desk.contains_key(&i) { if let Ok(s) = macroquad::audio::load_sound(&format!("audio/{}.ogg", TRACKS[i])).await { self.desk.insert(i, s); } }
         if let Some(s) = self.desk.get(&i) { play_sound(s, PlaySoundParams { looped: !Self::once(i), volume: v }); }
@@ -142,5 +144,7 @@ impl Audio {
         if self.native_music { self.cmds.push((i, -1, 0.)); return; }
         if let Some(s) = self.desk.get(&i) { stop_sound(s); }
     }
+    /// Скорость трека i (1 — обычная). Только на Android (MediaPlayer, тон сохраняется); на ПК — без изменений
+    pub fn set_rate(&mut self, i: usize, r: f32) { if i < 10 && self.playing[i] && (self.rate[i] - r).abs() > 0.005 { self.rate[i] = r; if self.native_music { self.cmds.push((i, 2, r)); } } }
     fn set_vol(&mut self, i: usize, v: f32) { if self.native_music { self.cmds.push((i, 0, v)); } else if let Some(s) = self.desk.get(&i) { set_sound_volume(s, v); } }
 }

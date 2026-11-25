@@ -58,7 +58,7 @@ impl Game {
         if self.daily { for i in daily_muts() { self.muts[i] = true; } }
         self.endless = false; self.ending_t = 0.; self.ad_revived = false; self.ad_doubled = false; self.ad_rerolls = 0; self.last_earned = 0; self.ev_t = 20.; self.chal = None; self.last_ev = 9; self.chests = 0; self.lv_t = -99.;
         self.want_levelup = false; self.want_ending = false; self.want_over = false; self.crystals = 0; self.qz = Qz::default();
-        self.run_shards = 0; self.shards_x2 = false; self.pet2_id = None; self.rev = 0; self.rev_cd = 80.; self.room_t = 0.; self.portal = None; self.portal_zone = 0; self.serp.clear(); self.serp_cache.clear(); self.inks.clear(); self.relics.clear(); self.relic_pending = 0; self.want_relic = false; self.path = 0; self.path_pending = false; self.want_path = false; self.rel_lives = 0; self.rel_kills = 0; self.rel_blood = 0.; self.rel_ward_t = 0.; self.rel_storm_t = 0.;
+        self.theme = crate::extras::theme_full(&self.s); self.run_shards = 0; self.shards_x2 = false; self.pet2_id = None; self.rev = 0; self.rev_cd = 80.; self.room_t = 0.; self.portal = None; self.portal_zone = 0; self.serp.clear(); self.serp_cache.clear(); self.inks.clear(); self.relics.clear(); self.relic_pending = 0; self.want_relic = false; self.path = 0; self.path_pending = false; self.want_path = false; self.rel_lives = 0; self.rel_kills = 0; self.rel_blood = 0.; self.rel_ward_t = 0.; self.rel_storm_t = 0.;
         if self.hard { self.dmg_scale = 1.35; }
         self.rerolls = self.s.shop_lv("reroll") as u32; self.build_decor(0); self.start_best = self.s.best_depth; self.rec_shown = false;
         let skin = SKINS.iter().position(|k| k.id == self.s.skin).unwrap_or(0);

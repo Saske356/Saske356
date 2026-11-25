@@ -20,7 +20,7 @@ pub struct Save {
     pub skins: BTreeMap<String, u8>, pub skin: String, pub ach: BTreeMap<String, u8>, pub seen_how: bool, pub seen_intro: bool,
     pub foe_seen: BTreeMap<String, u8>, pub seen: BTreeMap<String, u8>, pub mode_best: BTreeMap<String, u8> /* лучшая зона в режиме */, pub tut: bool, pub wins: u32, pub daily: Daily,
     pub best_kills: u32, pub best_combo: u32, pub best_level: u32, pub best_syn: u32, pub crab_hint: bool, pub set: Settings,
-    pub err_log: Vec<String>, pub migrated: bool,
+    pub err_log: Vec<String>, pub migrated: bool, pub outfits: Vec<String> /* 4.8: наряды «облик|шлейф|гибель|выстрел», 3 слота */,
     // 4.1: питомцы, мастерство искр, жетоны колеса удачи
     pub pets: BTreeMap<String, u8>, pub pet: String, pub mastery: BTreeMap<String, u32>, pub tok_relic: u32, pub tok_reroll: u32, pub abyss_max: u8 /* открытый уровень Бездны */, pub abyss_sel: u8, pub shards: u32 /* осколки света */, pub regions: BTreeMap<String, u8>, pub region: u8, pub rate: u8 /* 0 — не спрашивали, 1 — «позже», 2 — всё */, pub rate_at: u32, pub notif_asked: bool, pub trails: BTreeMap<String, u8>, pub trail: u8, pub deaths: BTreeMap<String, u8>, pub death: u8, pub shots: BTreeMap<String, u8>, pub shot: u8, pub best_claim: u32 /* 4.7: получено наград бестиария (по 5) */, pub tok_pet2: String /* 4.7: второй питомец на след. забег (за рекламу) */, pub hints: BTreeMap<String, u8>,
 }
@@ -35,7 +35,7 @@ impl Default for Save {
             chars, ch: "lumen".into(), skins, skin: "azure".into(), ach: BTreeMap::new(), seen_how: false, seen_intro: false, foe_seen: BTreeMap::new(),
             seen: BTreeMap::new(), mode_best: BTreeMap::new(), tut: false, wins: 0, daily: Daily::default(), best_kills: 0, best_combo: 0, best_level: 0, best_syn: 0, crab_hint: false,
             set: Settings { sound: true, music: true, vibro: true, quality: "auto".into(), nums: true, shake: true, lang: default_lang(), fps: 120, fx: true, hard: false, orient: 0, vsfx: 10, vmus: 8, notify: true },
-            err_log: vec![], migrated: false, pets: BTreeMap::new(), pet: String::new(), mastery: BTreeMap::new(), tok_relic: 0, tok_reroll: 0, abyss_max: 0, abyss_sel: 0, shards: 0, regions: BTreeMap::new(), region: 0, rate: 0, rate_at: 0, notif_asked: false, trails: BTreeMap::new(), trail: 0, deaths: BTreeMap::new(), death: 0, shots: BTreeMap::new(), shot: 0, best_claim: 0, tok_pet2: String::new(), hints: BTreeMap::new() }
+            err_log: vec![], migrated: false, outfits: vec![String::new(); 3], pets: BTreeMap::new(), pet: String::new(), mastery: BTreeMap::new(), tok_relic: 0, tok_reroll: 0, abyss_max: 0, abyss_sel: 0, shards: 0, regions: BTreeMap::new(), region: 0, rate: 0, rate_at: 0, notif_asked: false, trails: BTreeMap::new(), trail: 0, deaths: BTreeMap::new(), death: 0, shots: BTreeMap::new(), shot: 0, best_claim: 0, tok_pet2: String::new(), hints: BTreeMap::new() }
     }
 }
 
@@ -69,6 +69,7 @@ impl Save {
         if let Some(x) = num(&o, "rate") { d.rate = x as u8; } if let Some(x) = num(&o, "rateAt") { d.rate_at = x as u32; } d.notif_asked = flag(&o, "notifAsked", false);
         d.trails = map(&o, "trails"); d.deaths = map(&o, "deaths"); if let Some(x) = num(&o, "trail") { d.trail = x as u8; } if let Some(x) = num(&o, "death") { d.death = x as u8; }
         if let Some(x) = o.get("tokPet2").and_then(|v| v.as_str()) { d.tok_pet2 = x.to_string(); }
+        if let Some(Value::Array(a)) = o.get("outfits") { for (k, x) in a.iter().take(3).enumerate() { d.outfits[k] = x.as_str().unwrap_or("").to_string(); } }
         d.hints = map(&o, "hints"); if let Some(x) = num(&o, "bestClaim") { d.best_claim = x as u32; }
         d.shots = map(&o, "shots"); if let Some(x) = num(&o, "shot") { d.shot = (x as u8).min(6); } d.trail = d.trail.min(10); d.death = d.death.min(8);
         if let Some(x) = num(&o, "abyssMax") { d.abyss_max = (x as u8).min(20); } if let Some(x) = num(&o, "abyssSel") { d.abyss_sel = (x as u8).min(d.abyss_max); }
@@ -117,10 +118,45 @@ impl Save {
         });
         let mut v = v; let mut ms = Map::new(); for (k, x) in &self.mastery { ms.insert(k.clone(), json!(x)); }
         v["pets"] = mapv(&self.pets); v["pet"] = json!(self.pet); v["mastery"] = Value::Object(ms); v["tokRelic"] = json!(self.tok_relic); v["abyssMax"] = json!(self.abyss_max); v["shards"] = json!(self.shards); v["regions"] = mapv(&self.regions); v["region"] = json!(self.region); v["rate"] = json!(self.rate); v["rateAt"] = json!(self.rate_at); v["notifAsked"] = json!(self.notif_asked as u8);
-        v["trails"] = mapv(&self.trails); v["deaths"] = mapv(&self.deaths); v["trail"] = json!(self.trail); v["death"] = json!(self.death); v["shots"] = mapv(&self.shots); v["hints"] = mapv(&self.hints); v["tokPet2"] = json!(self.tok_pet2); v["bestClaim"] = json!(self.best_claim); v["shot"] = json!(self.shot); v["set"]["notify"] = json!(self.set.notify as u8); v["abyssSel"] = json!(self.abyss_sel); v["tokReroll"] = json!(self.tok_reroll);
+        v["outfits"] = json!(self.outfits); v["trails"] = mapv(&self.trails); v["deaths"] = mapv(&self.deaths); v["trail"] = json!(self.trail); v["death"] = json!(self.death); v["shots"] = mapv(&self.shots); v["hints"] = mapv(&self.hints); v["tokPet2"] = json!(self.tok_pet2); v["bestClaim"] = json!(self.best_claim); v["shot"] = json!(self.shot); v["set"]["notify"] = json!(self.set.notify as u8); v["abyssSel"] = json!(self.abyss_sel); v["tokReroll"] = json!(self.tok_reroll);
         v.to_string()
     }
     pub fn lv(&self, m: &BTreeMap<String, u8>, k: &str) -> u8 { *m.get(k).unwrap_or(&0) }
     pub fn shop_lv(&self, k: &str) -> u8 { *self.shop.get(k).unwrap_or(&0) }
     pub fn tal(&self, k: &str) -> bool { self.tal.get(k).copied().unwrap_or(0) > 0 }
 }
+
+// ---------- 4.8: перенос прогресса кодом ----------
+// Код = «SB1-» + base64url(deflate(json)) + «-» + контрольная сумма. Без серверов: копируется в буфер обмена,
+// пересылается себе (мессенджер, заметки) и вставляется на новом телефоне. Настройки экрана/звука остаются свои.
+const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+fn fnv(b: &[u8]) -> u32 { let mut h = 0x811c9dc5u32; for &x in b { h ^= x as u32; h = h.wrapping_mul(0x01000193); } h }
+fn b64e(b: &[u8]) -> String { let mut s = String::with_capacity(b.len() * 4 / 3 + 4);
+    for c in b.chunks(3) { let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
+        for k in 0..c.len() + 1 { s.push(B64[(n >> (18 - 6 * k) & 63) as usize] as char); } } s }
+fn b64d(s: &str) -> Option<Vec<u8>> { let mut out = vec![]; let v: Vec<u32> = s.bytes().map(|c| B64.iter().position(|&x| x == c).map(|p| p as u32)).collect::<Option<_>>()?;
+    for c in v.chunks(4) { if c.len() < 2 { return None; } let mut n = 0u32; for k in 0..4 { n = n << 6 | c.get(k).copied().unwrap_or(0); }
+        for k in 0..c.len() - 1 { out.push((n >> (16 - 8 * k) & 255) as u8); } } Some(out) }
+impl Save {
+    pub fn export_code(&self) -> String {
+        let mut s = self.clone(); s.err_log.clear(); let j = s.to_json();
+        let z = miniz_oxide::deflate::compress_to_vec(j.as_bytes(), 9);
+        format!("SB1-{}-{:08x}", b64e(&z), fnv(j.as_bytes()))
+    }
+    /// Разобрать код; Err — понятная причина. Настройки (звук, экран, язык) берутся с этого телефона.
+    pub fn import_code(code: &str, keep: &Settings) -> Result<Save, &'static str> {
+        let c: String = code.chars().filter(|c| !c.is_whitespace()).collect();
+        let body = c.find("SB1-").map(|i| &c[i + 4..]).ok_or("nocode")?;
+        let (data, sum) = body.rsplit_once('-').ok_or("broken")?; let sum: String = sum.chars().take(8).collect();
+        let z = b64d(data).ok_or("broken")?;
+        let j = miniz_oxide::inflate::decompress_to_vec_with_limit(&z, 1 << 20).map_err(|_| "broken")?;
+        if format!("{:08x}", fnv(&j)) != sum { return Err("broken"); }
+        let txt = String::from_utf8(j).map_err(|_| "broken")?;
+        let mut s = Save::from_json(&txt); s.set = keep.clone(); s.migrated = true; Ok(s)
+    }
+}
+#[cfg(test)] mod xfer_test { use super::*;
+    #[test] fn roundtrip() { let mut s = Save::from_json("{}"); s.pearls = 1234; s.skins.insert("ember".into(), 1); let c = s.export_code();
+        let r = Save::import_code(&format!("  вот код: {c}\n"), &s.set).unwrap(); assert_eq!(r.pearls, 1234); assert!(r.skins.contains_key("ember"));
+        let mut bad = c.clone(); bad.replace_range(10..11, if &c[10..11] == "A" { "B" } else { "A" }); assert!(Save::import_code(&bad, &s.set).is_err());
+        assert!(b64d(&b64e(b"ab")).unwrap() == b"ab"); assert!(b64d(&b64e(b"abcd")).unwrap() == b"abcd"); println!("len {}", c.len()); } }

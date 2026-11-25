@@ -11,7 +11,7 @@ use crate::ui::Ui;
 use macroquad::prelude::*;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub enum Scr { None, Title, How, Level, Pause, Revive, Over, Shop, Ach, Set, Quest, Best, End, Modes, Wheel, Map, Rate, Card }
+pub enum Scr { None, Title, How, Level, Pause, Revive, Over, Shop, Ach, Set, Quest, Best, End, Modes, Wheel, Map, Rate, Card, Xfer, Try }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum AdCb { Revive, Double, Reroll, Gift, Inter(Next), Boost, RelicReroll, Quest(usize), Wheel, Pet2(usize), Shards }
@@ -31,7 +31,7 @@ pub struct App {
     pub scr: Scr, pub scr_t: f32, pub back_to: Scr, pub intro: Intro, pub end: End, pub joy: Joy, pub ads: Ads,
     pub cards: Vec<usize>, pub cards_t: f32, pub relic_mode: bool, pub path_mode: bool, pub best_sel: Option<(usize, u8)>, pub wheel: WheelSt, pub map_pick: u8, pub modes_h: f32, pub prof: [f64; 3], pub fps_cap: u32, pub slow120: u32, pub warmed: bool, pub share_cap: Option<Rect>, pub rate_pending: bool, pub rem_done: bool, pub relic_rerolled: bool, pub earned: u32, pub rec: bool, pub over_t: f32, pub revive_n: f32,
     pub shop_tab: u8, pub toasts: Vec<Toast>, pub save_t: f32, pub safe: [f32; 4], pub now: f64, pub was_paused: bool,
-    pub glow_auto_off: bool, pub banner_on: bool, pub glow_slow: f32, pub test: Vec<(f64, String)>, pub bot: bool, pub shot: Option<String>, pub fps_acc: f32, pub fps_n: u32, pub fps: f32, pub slow_t: f32, pub q_auto: u8, pub last_land: bool, pub orient_set: u8, pub fps_set: u32,
+    pub try_real: Option<Box<Game>> /* 4.8: примерка — настоящая игра отложена, на экране песочница */, pub try_req: Option<(u8, usize)>, pub try_kind: (u8, usize), pub xfer: Option<crate::save::Save> /* 4.8: найденный в коде прогресс, ждёт подтверждения */, pub xfer_msg: String, pub glow_auto_off: bool, pub banner_on: bool, pub glow_slow: f32, pub test: Vec<(f64, String)>, pub bot: bool, pub shot: Option<String>, pub fps_acc: f32, pub fps_n: u32, pub fps: f32, pub slow_t: f32, pub q_auto: u8, pub last_land: bool, pub orient_set: u8, pub fps_set: u32,
 }
 
 pub const GIFT_R: u32 = 30; pub const GIFT_MAX: u32 = 8; pub const BOOST_MAX: u32 = 5;
@@ -76,15 +76,36 @@ impl App {
         let mut app = App { gx, scaler: crate::gfx::Scaler::new(), bloom: None, rd: Rd::new(), g, ui: Ui::new(), au, scr: Scr::None, scr_t: 0., back_to: Scr::Title,
             intro: Intro { t: 0., dur: if full { 5.8 } else { 1.5 }, full, ig: if full { 3.7 } else { 0.08 }, revealed: false }, end: End { t: 0., show: 7.4, shown: false, first: false },
             joy: Joy::default(), ads: Ads { place: String::new(), cb: None, wd: 0., wd_len: 0., last: -1e9, t0: now, over_n: 0, back_t: 0. }, cards: vec![], cards_t: 0., relic_mode: false, path_mode: false, best_sel: None, wheel: WheelSt::default(), map_pick: 0, modes_h: 600., prof: [0.; 3], fps_cap: 0, slow120: 0, warmed: false, share_cap: None, rate_pending: false, rem_done: false, relic_rerolled: false, earned: 0, rec: false, over_t: 0., revive_n: 0.,
-            shop_tab: 0, toasts: vec![], save_t: 0., safe: [0.; 4], now, was_paused: false, glow_auto_off: false, banner_on: false, glow_slow: 0., test: std::env::var("SVET_TEST").unwrap_or_default().split(';').filter_map(|c| c.split_once(':').map(|(t, c)| (t.trim().parse().unwrap_or(0.), c.trim().to_string()))).collect(), bot: false, shot: None, fps_acc: 0., fps_n: 0, fps: 60., slow_t: 0., q_auto: 2, last_land: false, orient_set: 99, fps_set: 0 };
+            shop_tab: 0, toasts: vec![], save_t: 0., safe: [0.; 4], now, was_paused: false, try_real: None, try_req: None, try_kind: (0, 0), xfer: None, xfer_msg: String::new(), glow_auto_off: false, banner_on: false, glow_slow: 0., test: std::env::var("SVET_TEST").unwrap_or_default().split(';').filter_map(|c| c.split_once(':').map(|(t, c)| (t.trim().parse().unwrap_or(0.), c.trim().to_string()))).collect(), bot: false, shot: None, fps_acc: 0., fps_n: 0, fps: 60., slow_t: 0., q_auto: 2, last_land: false, orient_set: 99, fps_set: 0 };
         app.g.state = State::Intro;
         if let Some(crate::flow::DailyMsg::Login(d, r)) = app.g.daily_check() { app.toast_later(tf("loginT", &[&d.to_string()]), format!("+{r} {}", t("pearlsGen"))); }
         app.persist();
         app
     }
     fn toast_later(&mut self, title: String, sub: String) { self.toasts.push(Toast { title, sub, t: -1.8 }); }
+    /// 4.8: перенос прогресса — код в буфер обмена / разбор кода из буфера
+    pub fn xfer_copy(&mut self) { let en = crate::i18n::is_en(); let code = self.g.s.export_code(); macroquad::miniquad::window::clipboard_set(&code);
+        self.xfer_msg = if en { format!("Copied ({} characters). Now paste it into a chat with yourself.", code.len()) } else { format!("Скопировано ({} символов). Теперь вставь его в чат с самим собой.", code.len()) }; }
+    pub fn xfer_paste(&mut self) { let en = crate::i18n::is_en(); let clip = macroquad::miniquad::window::clipboard_get().unwrap_or_default();
+        match crate::save::Save::import_code(&clip, &self.g.s.set) {
+            Ok(n) => { self.xfer = Some(n); self.xfer_msg.clear(); }
+            Err(e) => { self.xfer_msg = match (e, en) { ("nocode", true) => "No code in the clipboard — copy the whole code first.".into(), ("nocode", false) => "В буфере обмена нет кода — сначала скопируй код целиком.".into(),
+                (_, true) => "The code is damaged — copy it whole, from SB1- to the end.".into(), _ => "Код повреждён — скопируй его целиком, от SB1- до конца.".into() }; } } }
     pub fn toast(&mut self, title: String, sub: String) { self.toasts.push(Toast { title, sub, t: 0. }); }
-    pub fn persist(&mut self) { platform::write_save(&self.g.s.to_json()); self.g.dirty = false; self.save_t = 0.; }
+    pub fn persist(&mut self) { let j = match &self.try_real { Some(r) => r.s.to_json(), None => self.g.s.to_json() }; platform::write_save(&j); self.g.dirty = false; self.save_t = 0.; }
+    /// 4.8: примерка — песочница с копией сохранения: искра сама плавает и стреляет, враги гибнут с выбранным эффектом.
+    /// Ничего из песочницы не сохраняется; «Назад» возвращает настоящую игру.
+    pub fn try_on(&mut self, kind: u8, i: usize) {
+        if self.try_real.is_some() { return; }
+        let mut s = self.g.s.clone(); s.runs = s.runs.max(999); s.tut = true;
+        match kind { 0 => { let id = crate::data::SKINS[i].id; s.skin = id.into(); s.skins.insert(id.into(), 1); }
+            1 => { s.trail = i as u8; s.trails.insert(i.to_string(), 1); } 2 => { s.death = i as u8; s.deaths.insert(i.to_string(), 1); } _ => { s.shot = i as u8; s.shots.insert(i.to_string(), 1); } }
+        let mut pg = Game::new(s); pg.quality = self.g.quality; pg.start_run(RunMode::Normal); pg.god = true; pg.touch = true;
+        self.try_real = Some(Box::new(std::mem::replace(&mut self.g, pg))); self.try_kind = (kind, i); self.joy = Joy::default(); self.show(Scr::Try);
+    }
+    pub fn try_off(&mut self) { if let Some(r) = self.try_real.take() { self.g = *r; } self.joy = Joy::default(); self.show(Scr::Shop); }
+    /// Купить/надеть то, что примеряешь (после возврата в настоящую игру)
+    pub fn try_buy(&mut self) { let (k, i) = self.try_kind; self.try_off(); match k { 0 => { self.g.pick_skin(i); } 1 => { self.g.buy_fx(0, i); } 2 => { self.g.buy_fx(1, i); } _ => { self.g.buy_fx(2, i); } } self.persist(); }
     pub fn show(&mut self, s: Scr) { if s != self.scr { self.scr = s; self.scr_t = 0.; self.ui.lock = 0.12; self.ui.reset(); } }
     pub fn click(&mut self) { self.au.play(Sfx::Click); }
     pub fn landscape(&self) -> bool { self.gx.w > self.gx.h * 1.15 }
@@ -165,7 +186,7 @@ impl App {
         platform::share_record(&txt, if en { "Share record" } else { "Поделиться рекордом" });
     }
     pub fn to_title(&mut self) { self.g.state = State::Title; self.show(Scr::Title); }
-    pub fn pause(&mut self) { if self.g.state != State::Play || self.g.dying > 0. { return; } self.g.state = State::Pause; self.joy = Joy::default(); self.show(Scr::Pause); self.persist(); }
+    pub fn pause(&mut self) { if self.g.state != State::Play || self.g.dying > 0. || self.try_real.is_some() { return; } self.g.state = State::Pause; self.joy = Joy::default(); self.show(Scr::Pause); self.persist(); }
     pub fn resume(&mut self) { self.g.state = State::Play; self.show(Scr::None); self.joy = Joy::default(); }
     pub fn roll_cards(&mut self) { self.cards = self.g.roll_choices(); self.cards_t = 0.; self.ui.lock = 0.48; }
     pub fn open_level_up(&mut self) { self.relic_mode = false; self.path_mode = false; self.g.open_level_up(); self.joy = Joy::default(); self.roll_cards(); self.show(Scr::Level); self.ui.lock = 0.48; }
@@ -226,7 +247,7 @@ impl App {
         let (vw, vh) = self.gx.frame(px, self.g.cam_x, self.g.cam_y, 0., 0.); self.g.vw = vw; self.g.vh = vh;
         let ins = platform::insets(); self.safe = [ins[0] / px, ins[1] / px, ins[2] / px, ins[3] / px];
         // баннер — только в меню вне забега; кнопки поднимаются над ним
-        let menu = matches!(self.g.state, State::Title | State::Menu) && matches!(self.scr, Scr::Title | Scr::Shop | Scr::Ach | Scr::Quest | Scr::Best | Scr::Set | Scr::How | Scr::Modes | Scr::Map);
+        let menu = matches!(self.g.state, State::Title | State::Menu) && matches!(self.scr, Scr::Title | Scr::Shop | Scr::Ach | Scr::Quest | Scr::Best | Scr::Set | Scr::How | Scr::Modes | Scr::Map | Scr::Xfer);
         if menu != self.banner_on { self.banner_on = menu; platform::set_banner(menu); }
         if menu { let bh = platform::banner_h() / px; if bh > 0. { self.safe[1] = self.safe[1].max(bh + 4.); } }
         self.gx.safe_t = self.safe[0]; self.gx.safe_b = self.safe[1];
@@ -242,7 +263,7 @@ impl App {
         if !paused && self.was_paused && self.ads.cb.is_some() { self.ads.back_t = self.now; }
         self.was_paused = paused;
         if self.ui.back { self.back(); }
-        if !self.test.is_empty() || self.bot { self.test_tick(); }
+        if !self.test.is_empty() || self.bot || self.try_real.is_some() { self.test_tick(); }
 
         // ---- логика ----
         let t0 = std::time::Instant::now();
@@ -256,7 +277,12 @@ impl App {
         // во время забега — не чаще раза в 20 с (и при паузе/сворачивании/конце забега), в меню — сразу
         if self.g.dirty { self.save_t += rdt; if self.save_t > if self.g.state == State::Play { 20. } else { 0.6 } { self.persist(); } }
         self.au.sound_on = self.g.s.set.sound; self.au.music_on = self.g.s.set.music; self.au.vol_sfx = self.g.s.set.vsfx as f32 / 10.; self.au.vol_mus = (self.g.s.set.vmus as f32 / 10.).powf(1.5);
-        let tr = track_for(&self.g); self.au.tick(tr, rdt, paused).await;
+        let tr = track_for(&self.g);
+        // 4.8: музыка владыки нагнетается по фазам: быстрее и громче
+        { let boss = self.g.state == State::Play && self.g.boss_idx().is_some(); let ph = if boss { self.g.boss_ph } else { 0 };
+          let (r, b) = match ph { 0 => (1., 1.), 1 => (1.05, 1.08), _ => (1.1, 1.18) }; self.au.boost += (b - self.au.boost) * (1. - (-rdt * 2.).exp());
+          if let Some(t) = tr { self.au.set_rate(t, r); } }
+        self.au.tick(tr, rdt, paused).await;
         for (i, op, v) in std::mem::take(&mut self.au.cmds) { platform::music(i, op, v); }
 
         // ---- отрисовка ----
@@ -285,7 +311,7 @@ impl App {
             match c {
                 "play" => self.start_run(RunMode::Normal), "daily" => self.start_run(RunMode::Daily),
                 "title" => { self.g.state = State::Title; self.intro.revealed = true; self.show(Scr::Title); }
-                "shop" => { self.back_to = Scr::Title; self.shop_tab = n as u8; self.show(Scr::Shop); } "ach" => self.show(Scr::Ach), "set" => { self.back_to = Scr::Title; self.show(Scr::Set); }
+                "shop" => { self.back_to = Scr::Title; self.shop_tab = n as u8; self.show(Scr::Shop); } "ach" => self.show(Scr::Ach), "set" => { self.back_to = Scr::Title; self.show(Scr::Set); } "xfer" => { self.back_to = Scr::Title; self.show(Scr::Xfer); } "clip" => { macroquad::miniquad::window::clipboard_set(&std::fs::read_to_string(arg).unwrap_or_default()); } "xcopy" => { self.xfer_copy(); let _ = std::fs::write(arg, macroquad::miniquad::window::clipboard_get().unwrap_or_default()); } "xpaste" => { self.xfer_paste(); } "try" => { let k: u8 = arg.parse().unwrap_or(0); let i = it.next().and_then(|v| v.parse().ok()).unwrap_or(0); self.try_on(k, i); } "tryoff" => self.try_off(), "wear" => { self.g.wear_outfit(n as usize); } "outfit" => { let k: usize = arg.parse().unwrap_or(0); self.g.s.outfits[k] = crate::extras::outfit_of(&self.g.s); }
                 "quest" => self.show(Scr::Quest), "best" => self.show(Scr::Best), "how" => self.show(Scr::How),
                 "xp" => self.g.add_xp(n), "zone" => { self.g.zone = n as u32 - 1; self.g.zone_t = cfg::ZONE_TIME; }
                 "god" => self.g.god = true, "bot" => self.bot = true, "pause" => self.pause(), "over" => self.game_over(), "lvl" => self.open_level_up(),
@@ -325,12 +351,12 @@ impl App {
                 _ => {}
             }
         }
-        if self.bot && self.g.state == State::Play { // бот: держится подальше от ближайших врагов, кружит по арене
+        if (self.bot || self.try_real.is_some()) && self.g.state == State::Play { // бот (и примерка): держится подальше от ближайших врагов, кружит по арене
             let (px, py) = (self.g.p.x, self.g.p.y); let (mut fx, mut fy) = (0f32, 0f32);
             for i in 0..self.g.en.n { let e = &self.g.en.items[i]; if e.dead { continue; } let (dx, dy) = (px - e.x, py - e.y); let d2 = (dx * dx + dy * dy).max(100.); if d2 < 300. * 300. { fx += dx / d2 * 900.; fy += dy / d2 * 900.; } }
             for i in 0..self.g.eb.n { let b = &self.g.eb.items[i]; let (dx, dy) = (px - b.x, py - b.y); let d2 = (dx * dx + dy * dy).max(50.); if d2 < 120. * 120. { fx += dx / d2 * 1500.; fy += dy / d2 * 1500.; } }
             let a = self.now as f32 * 0.4; fx += -py * 0.0015 + a.cos() * 0.4; fy += px * 0.0015 + a.sin() * 0.4; let l = (fx * fx + fy * fy).sqrt().max(1e-3); self.g.jx = fx / l; self.g.jy = fy / l;
-            if self.g.p.flare >= 100. { self.g.flare_q = true; } if self.g.p.dash_cd <= 0. && fx * fx + fy * fy > 30. { self.g.dash_q = true; }
+            if self.g.p.flare >= 100. && self.try_real.is_none() { self.g.flare_q = true; } if self.g.p.dash_cd <= 0. && fx * fx + fy * fy > 30. { self.g.dash_q = true; }
         }
         if self.bot && self.scr == Scr::Level && self.ui.lock <= 0. && self.cards_t > 0.6 { self.take_card(0); }
         if self.bot && self.g.state == State::Revive { self.game_over(); }
@@ -349,6 +375,8 @@ impl App {
             Scr::Pause => self.resume(),
             Scr::Title => { platform::write_save_now(&self.g.s.to_json()); platform::quit(); }
             Scr::Shop | Scr::Set => { let b = self.back_to; self.show(b); }
+            Scr::Xfer => { self.xfer = None; self.show(Scr::Set); }
+            Scr::Try => self.try_off(),
             Scr::Best if self.best_sel.is_some() => self.best_sel = None,
             Scr::Ach | Scr::Quest | Scr::Best | Scr::How | Scr::Modes => self.show(Scr::Title),
             Scr::Wheel => { if self.wheel.spin <= 0. { self.show(Scr::Title); } }
@@ -366,6 +394,7 @@ impl App {
     pub fn skip_ending(&mut self) { if !self.end.shown && self.end.t < self.end.show - 0.3 { self.end.t = self.end.show - 0.3; } }
 
     fn update(&mut self, rdt: f32) {
+        if let Some((k, i)) = self.try_req.take() { self.try_on(k, i); }
         if self.wheel.spin > 0. { self.wheel.spin -= rdt; let k = 1. - (self.wheel.spin / 3.6).max(0.); let e = 1. - (1. - k).powi(4); self.wheel.ang = self.wheel.from + (self.wheel.to - self.wheel.from) * e;
             if self.wheel.spin <= 0. { self.wheel.ang = self.wheel.to; self.wheel.shown = 2.5; self.wheel_award(); } }
         if self.wheel.shown > 0. { self.wheel.shown -= rdt; }
@@ -374,7 +403,12 @@ impl App {
         match g.state {
             State::Play => {
                 // ввод: игровые кнопки, затем джойстик
-                crate::hud::input(self);
+                if self.try_real.is_none() { crate::hud::input(self); } else { let g = &mut self.g; g.want_levelup = false; g.want_path = false; g.want_relic = false; g.toasts.clear(); g.want_ending = false; g.zone_t = 0.;
+                    // витрина: вокруг всегда 7–8 слабых врагов, чтобы было видно выстрелы и гибель
+                    let alive = (0..g.en.n).filter(|&i| !g.en.items[i].dead).count();
+                    if alive < 8 && g.rand() < 0.08 { let a = g.rand() * std::f32::consts::TAU; let d = 230. + g.rand() * 120.; let (x, y) = (g.p.x + a.cos() * d, g.p.y + a.sin() * d);
+                        let ks = [crate::data::K::Drifter, crate::data::K::Jelly, crate::data::K::Dart]; let k = ks[(g.rand() * 3.) as usize % 3];
+                        if let Some(i) = g.spawn_enemy(k, x, y, false) { let e = &mut g.en.items[i]; e.hp = e.hp.min(14.); e.max_hp = e.hp; e.dmg = 0.; } } }
                 let g = &mut self.g;
                 let mut dt = rdt;
                 if g.hit_stop > 0. { g.hit_stop -= rdt; dt = rdt * 0.06; }
@@ -427,7 +461,7 @@ impl App {
         if use_bloom { if let Some(b) = self.bloom.as_mut() { b.end(&mut self.gx, 0.85); } }
         if !intro_dark { render::overlay(&mut self.gx, &self.g); }
         self.scaler.end(&mut self.gx);
-        if !intro_dark { crate::hud::hud(self); }
+        if !intro_dark && self.try_real.is_none() { crate::hud::hud(self); }
         if st == State::Intro { crate::hud::intro(self); }
         crate::screens::draw(self);
         crate::hud::toasts(self);

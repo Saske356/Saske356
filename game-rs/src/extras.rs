@@ -363,6 +363,40 @@ impl Game {
     }
 }
 
+// ---------------- 4.8: наряды и тематические комплекты ----------------
+/// Комплект: подходящие облики + шлейф + гибель врагов + цвет выстрелов. Собран — особое сияние вокруг искры
+/// и +1 осколок света на каждой 10-й глубине (экономику жемчуга не трогает).
+pub struct Theme { pub ru: &'static str, pub en: &'static str, pub skins: &'static [&'static str], pub trail: u8, pub death: u8, pub shot: u8, pub cols: [u8; 3] }
+pub static THEMES: [Theme; 7] = [
+    Theme { ru: "Огонь", en: "Fire", skins: &["ember", "inferno", "dawn"], trail: 4, death: 8, shot: 4, cols: [c::FIRE, c::GOLD, c::AMBER] },
+    Theme { ru: "Лёд", en: "Ice", skins: &["frost", "lunar", "azure"], trail: 8, death: 5, shot: 2, cols: [c::ICE, c::WHITE, c::CYAN] },
+    Theme { ru: "Бездна", en: "Abyss", skins: &["void", "abyss", "nebula", "scythe"], trail: 6, death: 4, shot: 5, cols: [c::PURP, c::AMETH, c::ICE] },
+    Theme { ru: "Золото", en: "Gold", skins: &["solar", "royal", "crescent", "amber"], trail: 9, death: 3, shot: 1, cols: [c::GOLD, c::AMBER, c::WHITE] },
+    Theme { ru: "Яд", en: "Venom", skins: &["venom", "jade", "emerald", "mother"], trail: 10, death: 7, shot: 3, cols: [c::EMER, c::GOLD, c::CYAN] },
+    Theme { ru: "Коралл", en: "Coral", skins: &["coral", "amethyst", "miner"], trail: 7, death: 6, shot: 0, cols: [c::CORAL, c::AMETH, c::GOLD] },
+    Theme { ru: "Радуга", en: "Rainbow", skins: &["prism", "aurora", "cyber", "keeper"], trail: 3, death: 1, shot: 6, cols: [c::FIRE, c::EMER, c::AMETH] },
+];
+pub fn theme_name(i: usize) -> &'static str { if i18n::is_en() { THEMES[i].en } else { THEMES[i].ru } }
+/// Сколько из 4 частей комплекта надето (облик, шлейф, гибель, выстрел)
+pub fn theme_score(s: &crate::save::Save, i: usize) -> u8 { let t = &THEMES[i];
+    t.skins.contains(&s.skin.as_str()) as u8 + (s.trail == t.trail) as u8 + (s.death == t.death) as u8 + (s.shot == t.shot) as u8 }
+/// Собранный комплект или ближайший к сбору (индекс, части)
+pub fn theme_best(s: &crate::save::Save) -> (usize, u8) { (0..THEMES.len()).map(|i| (i, theme_score(s, i))).max_by_key(|&(i, n)| (n, THEMES[i].skins.contains(&s.skin.as_str()) as u8)).unwrap_or((0, 0)) }
+pub fn theme_full(s: &crate::save::Save) -> Option<usize> { let (i, n) = theme_best(s); if n == 4 { Some(i) } else { None } }
+pub fn outfit_of(s: &crate::save::Save) -> String { format!("{}|{}|{}|{}", s.skin, s.trail, s.death, s.shot) }
+impl Game {
+    /// Надеть наряд из слота k (всё в нём уже куплено)
+    pub fn wear_outfit(&mut self, k: usize) -> bool {
+        let o = self.s.outfits.get(k).cloned().unwrap_or_default(); let v: Vec<&str> = o.split('|').collect(); if v.len() != 4 { return false; }
+        if let Some(i) = crate::data::SKINS.iter().position(|x| x.id == v[0]) { if self.s.skins.contains_key(v[0]) { self.pick_skin(i); } }
+        let n = |x: &str, max: usize| x.parse::<usize>().ok().filter(|&q| q < max);
+        if let Some(q) = n(v[1], TRAILS.len()) { if q == 0 || self.s.trails.contains_key(&q.to_string()) { self.s.trail = q as u8; } }
+        if let Some(q) = n(v[2], DEATHS.len()) { if q == 0 || self.s.deaths.contains_key(&q.to_string()) { self.s.death = q as u8; } }
+        if let Some(q) = n(v[3], SHOTS.len()) { if q == 0 || self.s.shots.contains_key(&q.to_string()) { self.s.shot = q as u8; } }
+        self.snd(crate::game::Sfx::PickCard); self.dirty = true; true
+    }
+}
+
 // ---------------- 4.7: события в забеге ----------------
 pub const REV_STORM: u8 = 1; pub const REV_FLIES: u8 = 2; pub const REV_DARK: u8 = 3;
 pub fn rev_txt(k: u8) -> (&'static str, &'static str) {
