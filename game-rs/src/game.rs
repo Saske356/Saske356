@@ -275,6 +275,9 @@ impl Game {
         if !d.boss && self.path != 0 { e.max_hp *= self.path_hp(); e.hp = e.max_hp; e.dmg *= self.path_dmg(); }
         // мобы крепнут вместе с постоянной прокачкой (магазин, таланты): ты растёшь быстрее, но они не остаются слабыми
         { let m = self.s.meta_power() as f32; let k = if d.boss { 0.6 } else { 1. }; e.max_hp *= 1. + 0.004 * m * k; e.hp = e.max_hp; e.dmg *= 1. + 0.0025 * m * k; }
+        // 4.4: владыка крепнет от улучшений, взятых в этом забеге (+7% за каждый уровень улучшения, +25% за эволюцию)
+        if d.boss { let ups: u32 = (0..u::COUNT).map(|k| self.p.up[k] as u32).sum(); let evos = self.p.evo.count_ones() as f32;
+            e.max_hp *= 1. + 0.07 * ups as f32 + 0.25 * evos; e.hp = e.max_hp; }
         self.en.items[i] = e; if elite { self.assign_affix(i); }
         if !self.s.seen.contains_key(kind.key()) { self.s.seen.insert(kind.key().into(), 1); self.dirty = true; }
         if kind == K::Crab && !self.s.crab_hint { self.s.crab_hint = true; self.dirty = true; self.banner(t("crabT"), t("crabS"), 0xff8a9a, 3.); }
@@ -558,6 +561,8 @@ impl Game {
         if self.st.rage > 0. { dmg *= 1. + self.st.rage * if self.p.hp < self.p.max_hp * 0.4 { 2. } else { 1. }; }
         if kind == K::Boss3 && self.crystals > 0 { dmg *= 0.25; if self.rand() < 0.3 { self.snd(Sfx::Clink); } }
         let boss = kind.d().boss;
+        // 4.4: один удар снимает с владыки не больше 3% здоровья — бой не кончается за 3 выстрела
+        if boss { dmg = dmg.min(self.en.items[i].max_hp * 0.03); }
         { let frost = self.st.frost; let burn = self.st.burn; let e = &mut self.en.items[i]; e.hp -= dmg; e.flash = 0.07;
             if !boss { let kb = if e.elite { 0.3 } else { 1. }; e.vx += kx * kb; e.vy += ky * kb; }
             if frost > 0 && src != Src::Chain { e.slow = 0.6 + 0.5 * frost as f32; }
