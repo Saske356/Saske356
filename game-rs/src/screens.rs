@@ -705,11 +705,22 @@ fn shop(a: &mut App) {
                     if a.ui.btn(&mut a.gx, Rect::new(x, y + 136., sw, 28.), if o.is_empty() { if en { "Save" } else { "Запомнить" } } else if en { "Overwrite" } else { "Заменить" }, St::Cyan, 12., true) {
                         a.click(); a.g.s.outfits[k] = cur.clone(); a.g.dirty = true; a.toast(if en { "Outfit saved".into() } else { "Наряд запомнен".into() }, if en { "Tap it to put it on".into() } else { "Нажми на него, чтобы надеть".into() }); } } }
             10 => { let en = i18n::is_en(); let cur = a.g.s.pet.clone();
-                let cand = (0..crate::extras::PETS.len()).filter(|&k| crate::extras::PETS[k].id != cur && a.g.s.pets.get(crate::extras::PETS[k].id).copied().unwrap_or(0) > 0).max_by_key(|&k| a.g.s.pets.get(crate::extras::PETS[k].id).copied().unwrap_or(0));
-                item_card(&mut a.gx, r, hex(0xffd54f), !a.g.s.tok_pet2.is_empty(), al); icon_tile(&mut a.gx, "heal", f.x + 34., y + it.h / 2., hex(0xffd54f), c::GOLD, al);
+                // 4.8.4: кого взять вторым — выбирается касанием карточки (по кругу среди своих питомцев, кроме основного)
+                let owned: Vec<usize> = (0..crate::extras::PETS.len()).filter(|&k| crate::extras::PETS[k].id != cur && a.g.s.pets.get(crate::extras::PETS[k].id).copied().unwrap_or(0) > 0).collect();
+                let tok = crate::extras::PETS.iter().position(|p| p.id == a.g.s.tok_pet2);
+                let cand = tok.filter(|k| owned.contains(k)).or(a.pet2_pick.filter(|k| owned.contains(k))).or_else(|| owned.iter().copied().max_by_key(|&k| a.g.s.pets.get(crate::extras::PETS[k].id).copied().unwrap_or(0)));
+                if owned.len() > 1 && a.ui.tap(Rect::new(f.x, y, iw - bw - 24., it.h)) { a.click(); let i0 = cand.and_then(|c| owned.iter().position(|&k| k == c)).unwrap_or(0); let nk = owned[(i0 + 1) % owned.len()];
+                    a.pet2_pick = Some(nk); if !a.g.s.tok_pet2.is_empty() { a.g.s.tok_pet2 = crate::extras::PETS[nk].id.into(); a.g.dirty = true; } }
+                let cand = if owned.len() > 1 { a.pet2_pick.filter(|k| owned.contains(k)).or(cand) } else { cand };
+                let cand = if !a.g.s.tok_pet2.is_empty() { crate::extras::PETS.iter().position(|p| p.id == a.g.s.tok_pet2) } else { cand };
+                item_card(&mut a.gx, r, hex(0xffd54f), !a.g.s.tok_pet2.is_empty(), al);
+                if let Some(k) = cand { let pd = &crate::extras::PETS[k]; let p = a.gx.px; let (cx, cy) = (f.x + 34., y + it.h / 2.); a.gx.glow_scr(true, pd.col, cx * p, cy * p, 30. * p, 0.6 * al);
+                    let half = a.gx.spr_half(pd.spr); crate::gfx::set_calm(0.6); a.gx.spr_screen(pd.spr, cx * p, cy * p, 0., 26. / half * p, al, false, 0., false); crate::gfx::set_calm(1.); }
+                else { icon_tile(&mut a.gx, "heal", f.x + 34., y + it.h / 2., hex(0xffd54f), c::GOLD, al); }
                 a.gx.text(if en { "Second pet" } else { "Второй питомец" }, f.x + 64., y + 20., 16., Color::new(1., 1., 1., al), 0, 1);
-                let d = if !a.g.s.tok_pet2.is_empty() { let nm = crate::extras::PETS.iter().position(|p| p.id == a.g.s.tok_pet2).map(|k| crate::extras::pet_txt(k).0).unwrap_or(""); if en { format!("{nm} joins your next run") } else { format!("{nm} поплывёт с тобой в следующем забеге") } }
-                    else if let Some(k) = cand { if en { format!("{} joins the next run as well", crate::extras::pet_txt(k).0) } else { format!("{} поплывёт вместе в следующем забеге", crate::extras::pet_txt(k).0) } } else { String::new() };
+                let more = owned.len() > 1; let hint = if !more { "" } else if en { " · tap to change" } else { " · нажми, чтобы сменить" };
+                let d = if !a.g.s.tok_pet2.is_empty() { let nm = cand.map(|k| crate::extras::pet_txt(k).0).unwrap_or(""); if en { format!("✓ {nm} joins your next run{hint}") } else { format!("✓ {nm} поплывёт с тобой в следующем забеге{hint}") } }
+                    else if let Some(k) = cand { if en { format!("{} joins the next run as well{hint}", crate::extras::pet_txt(k).0) } else { format!("{} поплывёт вместе в следующем забеге{hint}", crate::extras::pet_txt(k).0) } } else { String::new() };
                 a.gx.text_wrap(&d, f.x + 64., y + 40., iw - 76. - bw - 10., 12.5, 16., Color::new(1., 1., 1., 0.8 * al), 0, 0);
                 if a.g.s.tok_pet2.is_empty() { if let Some(k) = cand { let rdy = a.ad_ready(); if a.ui.btn(&mut a.gx, br, "▶", St::Gold, 18., rdy) { a.click(); a.ad_show("pet2", AdCb::Pet2(k)); } } }
                 else { a.ui.btn(&mut a.gx, br, "✓", St::Gold, 18., false); } }

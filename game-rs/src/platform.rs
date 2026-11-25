@@ -72,7 +72,7 @@ mod imp {
     /// На компьютере реклама имитируется только при SVET_FAKE_ADS=1 (для проверки интерфейса)
     fn fake() -> bool { std::env::var("SVET_FAKE_ADS").map(|v| v == "1").unwrap_or(false) }
     pub fn ad_ready(_kind: i32) -> bool { fake() }
-    pub fn ad_show(kind: i32, place: &str) { let p = if kind == 0 { place.to_string() } else { "inter".into() }; ADS.lock().unwrap().push((p, macroquad::time::get_time() + 1.)); }
+    pub fn ad_show(kind: i32, place: &str) { let p = if kind == 0 { place.chars().filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '_').collect() } else { "inter".into() }; /* как в RewardedAds.result */ ADS.lock().unwrap().push((p, macroquad::time::get_time() + 1.)); }
     pub fn vibrate(_ms: u32) {}
     pub fn music(_i: usize, _op: i32, _v: f32) {}
     pub fn set_orient(_o: u8) {}

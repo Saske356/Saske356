@@ -88,11 +88,11 @@ public class RewardedAds {
             if (old != null) old.setAdEventListener(null);
             load();
         };
-        if (rewarded) done.run(); else web.postDelayed(done, 600);
+        if (rewarded) done.run(); else web.postDelayed(done, 1500); // 4.8.4: награда бывает позже закрытия — ждём дольше
     }
 
     private void result(String where, boolean ok) {
-        String safe = where == null ? "" : where.replaceAll("[^a-z]", "");
+        String safe = where == null ? "" : where.replaceAll("[^a-z0-9_]", ""); // 4.8.4: цифры были вырезаны — «pet2» приходил как «pet» и награда терялась
         MainActivity.pushAd(safe, ok);
     }
 

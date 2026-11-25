@@ -107,7 +107,7 @@ pub fn hud(a: &mut App) {
         let p = gx.px; gx.glow_scr(true, c::GOLD, sx * p, sy * p, 22. * p, 0.5); arrow(gx, sx, sy, an, with_alpha(pal(c::GOLD), 0.65 + 0.35 * (tm * 7.).sin())); }
     // баннер
     let bn = &g.banner;
-    if bn.t < bn.dur {
+    if bn.t < bn.dur && g.state == State::Play { // 4.8.4: на паузе/выборе карт баннер не просвечивает сквозь меню
         let tt = bn.t; let al = if tt < 0.25 { tt / 0.25 } else if tt > bn.dur - 0.5 { ((bn.dur - tt) / 0.5).max(0.) } else { 1. };
         let s = if tt < 0.4 { 0.6 + 0.4 * ease_out(tt / 0.4) + (tt / 0.4 * std::f32::consts::PI).sin() * 0.12 } else { 1. };
         let (bx, by) = (w / 2., h * 0.3);

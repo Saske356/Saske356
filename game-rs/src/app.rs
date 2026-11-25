@@ -21,7 +21,7 @@ pub enum Next { Again, Menu }
 pub struct Intro { pub t: f32, pub dur: f32, pub full: bool, pub ig: f32, pub revealed: bool }
 pub struct End { pub t: f32, pub show: f32, pub shown: bool, pub first: bool }
 #[derive(Default)] pub struct Joy { pub id: Option<u64>, pub ox: f32, pub oy: f32, pub jx: f32, pub jy: f32 }
-pub struct Ads { pub place: String, pub cb: Option<AdCb>, pub wd: f64, pub wd_len: f64, pub last: f64, pub t0: f64, pub over_n: u32, pub back_t: f64 }
+pub struct Ads { pub late: Option<(String, AdCb, f64)> /* последний неудачный показ — вдруг награда придёт позже */, pub place: String, pub cb: Option<AdCb>, pub wd: f64, pub wd_len: f64, pub last: f64, pub t0: f64, pub over_n: u32, pub back_t: f64 }
 /// Колесо удачи: угол, скорость вращения, выпавший сектор
 #[derive(Default, Clone, Copy)] pub struct WheelSt { pub ang: f32, pub spin: f32, pub from: f32, pub to: f32, pub prize: usize, pub shown: f32 }
 pub struct Toast { pub title: String, pub sub: String, pub t: f32 }
@@ -31,7 +31,7 @@ pub struct App {
     pub scr: Scr, pub scr_t: f32, pub back_to: Scr, pub intro: Intro, pub end: End, pub joy: Joy, pub ads: Ads,
     pub cards: Vec<usize>, pub cards_t: f32, pub relic_mode: bool, pub path_mode: bool, pub best_sel: Option<(usize, u8)>, pub wheel: WheelSt, pub map_pick: u8, pub modes_h: f32, pub prof: [f64; 3], pub fps_cap: u32, pub slow120: u32, pub warmed: bool, pub share_cap: Option<Rect>, pub rate_pending: bool, pub rem_done: bool, pub relic_rerolled: bool, pub earned: u32, pub rec: bool, pub over_t: f32, pub revive_n: f32,
     pub shop_tab: u8, pub toasts: Vec<Toast>, pub save_t: f32, pub safe: [f32; 4], pub now: f64, pub was_paused: bool,
-    pub try_real: Option<Box<Game>> /* 4.8: примерка — настоящая игра отложена, на экране песочница */, pub try_req: Option<(u8, usize)>, pub try_kind: (u8, usize), pub xfer: Option<crate::save::Save> /* 4.8: найденный в коде прогресс, ждёт подтверждения */, pub xfer_msg: String, pub glow_auto_off: bool, pub banner_on: bool, pub glow_slow: f32, pub test: Vec<(f64, String)>, pub bot: bool, pub shot: Option<String>, pub fps_acc: f32, pub fps_n: u32, pub fps: f32, pub slow_t: f32, pub q_auto: u8, pub last_land: bool, pub orient_set: u8, pub fps_set: u32,
+    pub try_real: Option<Box<Game>> /* 4.8: примерка — настоящая игра отложена, на экране песочница */, pub try_req: Option<(u8, usize)>, pub pet2_pick: Option<usize>, pub try_kind: (u8, usize), pub xfer: Option<crate::save::Save> /* 4.8: найденный в коде прогресс, ждёт подтверждения */, pub xfer_msg: String, pub glow_auto_off: bool, pub banner_on: bool, pub glow_slow: f32, pub test: Vec<(f64, String)>, pub bot: bool, pub shot: Option<String>, pub fps_acc: f32, pub fps_n: u32, pub fps: f32, pub slow_t: f32, pub q_auto: u8, pub last_land: bool, pub orient_set: u8, pub fps_set: u32,
 }
 
 pub const GIFT_R: u32 = 30; pub const GIFT_MAX: u32 = 8; pub const BOOST_MAX: u32 = 5;
@@ -75,8 +75,8 @@ impl App {
         let now = get_time();
         let mut app = App { gx, scaler: crate::gfx::Scaler::new(), bloom: None, rd: Rd::new(), g, ui: Ui::new(), au, scr: Scr::None, scr_t: 0., back_to: Scr::Title,
             intro: Intro { t: 0., dur: if full { 5.8 } else { 1.5 }, full, ig: if full { 3.7 } else { 0.08 }, revealed: false }, end: End { t: 0., show: 7.4, shown: false, first: false },
-            joy: Joy::default(), ads: Ads { place: String::new(), cb: None, wd: 0., wd_len: 0., last: -1e9, t0: now, over_n: 0, back_t: 0. }, cards: vec![], cards_t: 0., relic_mode: false, path_mode: false, best_sel: None, wheel: WheelSt::default(), map_pick: 0, modes_h: 600., prof: [0.; 3], fps_cap: 0, slow120: 0, warmed: false, share_cap: None, rate_pending: false, rem_done: false, relic_rerolled: false, earned: 0, rec: false, over_t: 0., revive_n: 0.,
-            shop_tab: 0, toasts: vec![], save_t: 0., safe: [0.; 4], now, was_paused: false, try_real: None, try_req: None, try_kind: (0, 0), xfer: None, xfer_msg: String::new(), glow_auto_off: false, banner_on: false, glow_slow: 0., test: std::env::var("SVET_TEST").unwrap_or_default().split(';').filter_map(|c| c.split_once(':').map(|(t, c)| (t.trim().parse().unwrap_or(0.), c.trim().to_string()))).collect(), bot: false, shot: None, fps_acc: 0., fps_n: 0, fps: 60., slow_t: 0., q_auto: 2, last_land: false, orient_set: 99, fps_set: 0 };
+            joy: Joy::default(), ads: Ads { late: None, place: String::new(), cb: None, wd: 0., wd_len: 0., last: -1e9, t0: now, over_n: 0, back_t: 0. }, cards: vec![], cards_t: 0., relic_mode: false, path_mode: false, best_sel: None, wheel: WheelSt::default(), map_pick: 0, modes_h: 600., prof: [0.; 3], fps_cap: 0, slow120: 0, warmed: false, share_cap: None, rate_pending: false, rem_done: false, relic_rerolled: false, earned: 0, rec: false, over_t: 0., revive_n: 0.,
+            shop_tab: 0, toasts: vec![], save_t: 0., safe: [0.; 4], now, was_paused: false, try_real: None, try_req: None, pet2_pick: None, try_kind: (0, 0), xfer: None, xfer_msg: String::new(), glow_auto_off: false, banner_on: false, glow_slow: 0., test: std::env::var("SVET_TEST").unwrap_or_default().split(';').filter_map(|c| c.split_once(':').map(|(t, c)| (t.trim().parse().unwrap_or(0.), c.trim().to_string()))).collect(), bot: false, shot: None, fps_acc: 0., fps_n: 0, fps: 60., slow_t: 0., q_auto: 2, last_land: false, orient_set: 99, fps_set: 0 };
         app.g.state = State::Intro;
         if let Some(crate::flow::DailyMsg::Login(d, r)) = app.g.daily_check() { app.toast_later(tf("loginT", &[&d.to_string()]), format!("+{r} {}", t("pearlsGen"))); }
         app.persist();
@@ -128,6 +128,9 @@ impl App {
     fn do_next(&mut self, n: Next) { match n { Next::Again => self.start_run(self.g.run_mode), Next::Menu => self.to_title() } }
     fn ad_result(&mut self, cb: AdCb, ok: bool) {
         if ok { self.ads.last = self.now; }
+        // 4.8.4: награда не пришла — сказать об этом (раньше кнопка молча ничего не давала)
+        if !ok && !matches!(cb, AdCb::Inter(_) | AdCb::Revive) { let en = i18n::is_en();
+            self.toast(if en { "No reward".into() } else { "Награда не получена".into() }, if en { "The ad was not finished or failed to load".into() } else { "Реклама не досмотрена или не загрузилась".into() }); }
         match cb {
             AdCb::Inter(n) => self.do_next(n),
             AdCb::Revive => { if self.g.state != State::Revive { return; }
@@ -158,12 +161,14 @@ impl App {
         for e in events.drain(..) { match e {
             Ev::Ad(p, ok) => {
                 // только ответ на ТЕКУЩИЙ показ (запоздавший ответ межстраничной рекламы раньше «съедал» возрождение)
-                if self.ads.cb.is_some() && p == self.ads.place { let cb = self.ads.cb.take().unwrap(); self.ad_result(cb, ok); }
+                if self.ads.cb.is_some() && p == self.ads.place { let cb = self.ads.cb.take().unwrap(); if !ok { self.ads.late = Some((p.clone(), cb, self.now)); } self.ad_result(cb, ok); }
                 // награда пришла после того, как сторож уже сдался, — всё равно воскрешаем
-                else if ok && p == "revive" && self.g.state == State::Revive { self.ad_result(AdCb::Revive, true); } }
+                else if ok && p == "revive" && self.g.state == State::Revive { self.ad_result(AdCb::Revive, true); }
+                // 4.8.4: любая другая награда, пришедшая позже отказа (до 20 с), — всё равно выдаём
+                else if ok { if let Some((lp, lcb, lt)) = self.ads.late.take() { if lp == p && self.now - lt < 20. && matches!(lcb, AdCb::Pet2(_) | AdCb::Gift | AdCb::Quest(_) | AdCb::Shards | AdCb::Double) { self.ad_result(lcb, true); } } } }
             Ev::MusicDone(i) => self.au.track_done(i), Ev::Save(_) => {} } }
         // страховка: реклама не ответила — игра не должна висеть
-        if let Some(cb) = self.ads.cb { if self.now - self.ads.wd > self.ads.wd_len || (self.ads.back_t > 0. && self.now - self.ads.back_t > 10.) { self.ads.cb = None; self.ads.back_t = 0.; self.ad_result(cb, false); } }
+        if let Some(cb) = self.ads.cb { if self.now - self.ads.wd > self.ads.wd_len || (self.ads.back_t > 0. && self.now - self.ads.back_t > 10.) { self.ads.cb = None; self.ads.back_t = 0.; self.ads.late = Some((self.ads.place.clone(), cb, self.now)); self.ad_result(cb, false); } }
     }
 
     // ---------- переходы ----------
