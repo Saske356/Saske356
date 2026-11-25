@@ -228,6 +228,7 @@ impl App {
         let _ = U_HEAL;
     }
     pub fn game_over(&mut self) {
+        if std::env::var("SVET_LOG").is_ok() { eprintln!("RUNEND depth={} lvl={} t={:.0} kills={} hard={} char={}", self.g.zone * 100, self.g.p.level, self.g.run_t, self.g.kills, self.g.hard, self.g.s.ch); }
         let (e, rec) = self.g.game_over(); self.earned = e; self.rec = rec; self.over_t = 0.; self.joy = Joy::default(); self.show(Scr::Over);
         // 4.3: просьба об оценке — после третьего забега, когда пройден первый владыка (и ещё раз через 10 забегов, если «позже»)
         { let s = &mut self.g.s; if !self.bot && ((s.rate == 0 && s.runs >= 3 && s.best_depth >= 500) || (s.rate == 1 && s.runs >= s.rate_at)) { self.rate_pending = true; } }
@@ -267,7 +268,9 @@ impl App {
 
         // ---- логика ----
         let t0 = std::time::Instant::now();
-        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.update(rdt)));
+        // тесты: SVET_SPEED=k — k шагов логики за кадр (бот проходит глубины быстрее)
+        static STEPS: std::sync::OnceLock<u32> = std::sync::OnceLock::new(); let steps = *STEPS.get_or_init(|| std::env::var("SVET_SPEED").ok().and_then(|v| v.parse::<u32>().ok()).unwrap_or(1).max(1));
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| for _ in 0..steps { self.update(rdt); }));
         if res.is_err() { self.fault("update"); }
         self.prof[0] += t0.elapsed().as_secs_f64();
         // события игры
@@ -366,7 +369,7 @@ impl App {
         for p in [&mut g.en.n, &mut g.pb.n, &mut g.eb.n, &mut g.parts.n, &mut g.rings.n, &mut g.texts.n, &mut g.bolts.n, &mut g.picks.n, &mut g.mines.n] { let _ = p; }
         g.en.n = g.en.n.min(g.en.cap()); g.pb.n = g.pb.n.min(g.pb.cap()); g.eb.n = g.eb.n.min(g.eb.cap()); g.parts.n = g.parts.n.min(g.parts.cap());
         g.rings.n = g.rings.n.min(g.rings.cap()); g.texts.n = g.texts.n.min(g.texts.cap()); g.bolts.n = g.bolts.n.min(g.bolts.cap()); g.picks.n = g.picks.n.min(g.picks.cap()); g.mines.n = g.mines.n.min(g.mines.cap());
-        let msg = format!("{where_} @{}m", g.zone * 100); g.s.err_log.insert(0, msg); g.s.err_log.truncate(5); g.dirty = true;
+        let msg = format!("{where_} @{}m", g.zone * 100); if std::env::var("SVET_LOG").is_ok() { eprintln!("FAULT {msg}"); } g.s.err_log.insert(0, msg); g.s.err_log.truncate(5); g.dirty = true;
     }
 
     fn back(&mut self) {

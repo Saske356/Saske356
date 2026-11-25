@@ -72,6 +72,7 @@ public class BannerAds {
     /** Горизонтально баннер слева — игре не нужно поднимать кнопки (0); вертикально — его высота */
     public boolean leftSide() { return activity.getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE; }
 
+    public void reapply() { apply(); }
     public void show(boolean on) { if (on == want) return; want = on; apply(); }
 
     /** Высота видимого баннера в физических пикселях (0 — не показан) */

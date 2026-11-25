@@ -335,7 +335,7 @@ impl Game {
         else if self.room_t > 0. { return; } // 4.7: в тайной комнате зона стоит и никто не приходит
         else { self.zone_t += dt; if self.zone_t >= cfg::ZONE_TIME * if self.muts[7] || self.run_mode == RunMode::Time { 0.5 } else { 1. } { self.next_zone(); } }
         let z = self.zone as f32;
-        let mut rate = (2.3 + 0.55 * (z - 1.) + 0.35 * (z - 7.).max(0.) + 0.3 * (z - 15.).max(0.)) * if self.hard { 1.2 } else { 1. } * if self.muts[2] { 1.5 } else { 1. } * (1. + self.zone_t / cfg::ZONE_TIME * 0.4);
+        let mut rate = (2.3 + 0.55 * (z - 1.) + 0.35 * (z - 7.).max(0.) + 0.3 * (z - 15.).max(0.)) * if self.hard { 1.15 } else { 1. } * if self.muts[2] { 1.5 } else { 1. } * (1. + self.zone_t / cfg::ZONE_TIME * 0.4);
         rate *= self.path_spawn();
         if self.boss >= 0 { rate *= 0.22; }
         let max_alive = self.cap_alive(); // 4.4: толпа меньше — экран читается, телефон не греется
@@ -367,7 +367,7 @@ impl Game {
     pub fn next_zone(&mut self) {
         self.zone += 1; self.zone_t = 0.;
         if self.path == crate::content::P_TREASURE && self.zone % 5 != 0 { let a = self.rand() * TAU; self.spawn_chest(self.p.x + a.cos() * 300., self.p.y + a.sin() * 300.); } self.quest_max("depth", self.zone * 100); self.build_decor((self.zone as usize - 1) % 15);
-        { let z = (self.zone - 1) as f32; let late = (z - 6.).max(0.); self.dmg_scale = (1. + 0.1 * z + 0.006 * z * z + 0.02 * late * late) * 1.075f32.powf((z - 9.).max(0.)) * if self.hard { 1.35 } else { 1. }; }
+        { let z = (self.zone - 1) as f32; let late = (z - 6.).max(0.); self.dmg_scale = (1. + 0.1 * z + 0.006 * z * z + 0.015 * late * late) * 1.065f32.powf((z - 9.).max(0.)) * if self.hard { 1.25 } else { 1. }; /* 4.8.1: мягче на глубине */ }
         let depth = self.zone * 100;
         if self.zone == 3 && self.no_hit { self.unlock("depth300"); }
         if self.zone >= 5 { self.unlock("depth500"); } if self.zone >= 11 { self.unlock("deep1100"); } if self.zone >= 20 { self.unlock("endless2000"); }
@@ -416,7 +416,7 @@ impl Game {
         Some(i)
     }
     pub fn e_shoot(&mut self, x: f32, y: f32, a: f32, mut spd: f32, r: f32, dmg: f32, col: u8, spin: f32) -> Option<usize> {
-        if (self.boss < 0 && self.eb.n >= 240) || self.eb.n >= 360 { return None; } // 4.4: потолок пуль обычных врагов — экран не тонет в шарах
+        if (self.boss < 0 && self.eb.n >= 190) || self.eb.n >= 320 { return None; } // 4.4: потолок пуль обычных врагов — экран не тонет в шарах
         let i = self.eb.spawn()?; if self.muts[4] { spd *= 1.3; } if self.abyss >= 7 { spd *= 1.15; }
         self.eb.items[i] = EBul { x, y, vx: a.cos() * spd, vy: a.sin() * spd, r, dmg, life: 7., col, spin, acc: 0., grazed: false };
         Some(i)

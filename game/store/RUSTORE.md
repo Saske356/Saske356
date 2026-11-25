@@ -1,4 +1,4 @@
-# «Свет Бездны» / Light of the Abyss — всё для RuStore (версия 4.8.1)
+# «Свет Бездны» / Light of the Abyss — всё для RuStore (версия 4.8.2)
 
 ## Где что лежит
 
@@ -18,15 +18,15 @@
 | Код игры (Rust) | `game-rs/` | сборка APK: `game-rs/build-apk.sh` |
 | Рекламные блоки Яндекса | `game-rs/android/gradle.properties` | `R-M-20345698-1` (за награду), `R-M-20345698-2` (межстраничная), `R-M-20345698-3` (баннер в меню), `R-M-20345698-6` (при открытии) |
 
-**APK в репозитории не хранится** (больше 50 МБ). Его присылают файлом в чат: `LightOfTheAbyss-4.8.1.apk`,
-пакет `com.svetbezdny.game`, versionCode 52, versionName 4.8.1, подписан ключом `svetbezdny`
+**APK в репозитории не хранится** (больше 50 МБ). Его присылают файлом в чат: `LightOfTheAbyss-4.8.2.apk`,
+пакет `com.svetbezdny.game`, versionCode 53, versionName 4.8.2, подписан ключом `svetbezdny`
 (SHA-256 `0E:A1:1B:AF:59:E4:20:4B:04:5A:89:9C:D3:58:7A:5E:11:55:F6:7E:F4:7B:42:36:FA:70:4F:8D:5D:68:A9:2A`).
 Подпись совпадает с прошлыми версиями — RuStore примет как обновление.
 
 ## Порядок действий
 
 1. **Самозанятость** — «Мой налог» (уже оформлена).
-2. **RuStore** — console.rustore.ru → приложение `com.svetbezdny.game` → «Новая версия» → загрузить APK 4.8.1.
+2. **RuStore** — console.rustore.ru → приложение `com.svetbezdny.game` → «Новая версия» → загрузить APK 4.8.2.
    Обновить карточку: иконка, 8 скриншотов по порядку, обложка, видео, тексты ниже.
 3. **Политика конфиденциальности.** В `game/privacy.html` впиши свою почту вместо «укажите здесь свою почту».
    Включи GitHub Pages: репозиторий → Settings → Pages → Source: «Deploy from a branch» → ветка

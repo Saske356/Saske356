@@ -331,7 +331,10 @@ public class MainActivity extends Activity {
     public String eventPoll() { String r = EVENTS.poll(); return r == null ? "" : r; }
     public boolean isPaused() { return paused; }
     /** 0 — вертикально, 1 — горизонтально, 2 — как держишь телефон */
+    private int reqOrient = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT;
     public void setOrient(final int o) {
+        reqOrient = o == 1 ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            : o == 2 ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_USER : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT;
         runOnUiThread(() -> setRequestedOrientation(o == 1 ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             : o == 2 ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_USER : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT));
     }
@@ -415,6 +418,10 @@ public class MainActivity extends Activity {
         super.onResume();
         QuadNative.activityOnResume();
         paused = false; setFullScreen(true);
+        // 4.8.1: после рекламы (её окно бывает только вертикальным) вернуть ориентацию игры и состояние баннера —
+        // SDK мог показать баннер сам, а экран остаться повёрнутым
+        setRequestedOrientation(reqOrient);
+        if (banner != null) { banner.reapply(); ui.postDelayed(() -> { if (banner != null) banner.reapply(); }, 600); ui.postDelayed(() -> { if (banner != null) banner.reapply(); }, 1800); }
         ui.post(() -> { for (android.media.MediaPlayer m : mp) if (m != null) try { m.start(); } catch (Throwable t) { } });
 
 

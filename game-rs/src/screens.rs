@@ -196,7 +196,7 @@ fn title_portrait(a: &mut App) {
     if a.ui.btn(&mut a.gx, Rect::new(bx + rw + gap, y, rw, row_h), &t("ach"), St::Gold, 15., true) { a.click(); a.ui.scroll_reset(2); a.show(Scr::Ach); }
     if a.ui.btn(&mut a.gx, Rect::new(bx + (rw + gap) * 2., y, rw, row_h), &t("settings"), St::Cyan, 15., true) { a.click(); a.back_to = Scr::Title; a.show(Scr::Set); }
     y += row_h + gap + 12.;
-    let mut links: Vec<(String, u8)> = vec![]; if a.g.s.wins > 0 { links.push((if a.g.s.set.hard { t("hardOn") } else { t("hardOff") }, 0)); }
+    let mut links: Vec<(String, u8)> = vec![]; // 4.8.1: Кошмар включается только в «Режимах» (ссылка внизу убрана)
     links.push((t("howLink"), 1)); links.push((t("bestL"), 2));
     let ws: Vec<f32> = links.iter().map(|l| a.gx.text_w(&l.0, 12., 0) + 20.).collect(); let tot: f32 = ws.iter().sum(); let mut x = cx - tot / 2.;
     for (i, (l, id)) in links.iter().enumerate() { let lx = x + ws[i] / 2.; x += ws[i];
@@ -260,7 +260,7 @@ fn title(a: &mut App) {
     if a.ui.btn(&mut a.gx, Rect::new(bx + rw + 8., y, rw, bh_row), &t("ach"), St::Gold, 15., true) { a.click(); a.ui.scroll_reset(2); a.show(Scr::Ach); }
     if a.ui.btn(&mut a.gx, Rect::new(bx + (rw + 8.) * 2., y, rw, bh_row), &t("settings"), St::Cyan, 15., true) { a.click(); a.back_to = Scr::Title; a.show(Scr::Set); }
     y += bh_row + gap + 10.;
-    let mut links: Vec<(String, u8)> = vec![]; if a.g.s.wins > 0 { links.push((if a.g.s.set.hard { t("hardOn") } else { t("hardOff") }, 0)); }
+    let mut links: Vec<(String, u8)> = vec![]; // 4.8.1: Кошмар включается только в «Режимах» (ссылка внизу убрана)
     links.push((t("howLink"), 1)); links.push((t("bestL"), 2));
     let ws: Vec<f32> = links.iter().map(|l| a.gx.text_w(&l.0, 12., 0) + 20.).collect(); let tot: f32 = ws.iter().sum(); let mut x = cx - tot / 2.;
     for (i, (l, id)) in links.iter().enumerate() { let lx = x + ws[i] / 2.; x += ws[i];
@@ -523,7 +523,8 @@ fn try_scr(a: &mut App) {
 fn xfer(a: &mut App) {
     let (w, h) = (a.gx.w, a.gx.h); let al = a.ui.alpha; let en = i18n::is_en(); let (bx, bw) = col(a);
     a.gx.rrect(0., 0., w, h, 0., Color::new(0., 0.02, 0.06, 0.55 * al));
-    let ph = 470.; let y0 = ((h - ph) / 2.).max(top(a)); panel(&mut a.gx, Rect::new(bx - 8., y0, bw + 16., ph), 20., Color::new(0.03, 0.1, 0.2, 0.95), Color::new(0.37, 0.91, 1., 0.6), al);
+    let land = a.landscape(); let (bx, bw) = if land { let ww = (w - 48.).min(560.); ((w - ww) / 2., ww) } else { (bx, bw) };
+    let ph = if land { (bottom(a) - top(a)).min(360.) } else { 470. }; let y0 = ((h - ph) / 2.).max(top(a)); panel(&mut a.gx, Rect::new(bx - 8., y0, bw + 16., ph), 20., Color::new(0.03, 0.1, 0.2, 0.95), Color::new(0.37, 0.91, 1., 0.6), al);
     ui::h2c(&mut a.gx, if en { "Transfer progress" } else { "Перенос прогресса" }, w / 2., y0 + 34., 24., al, c::CYAN, hex(0xe6f8ff));
     if let Some(n) = a.xfer.clone() {
         // подтверждение: что найдено в коде
@@ -541,12 +542,12 @@ fn xfer(a: &mut App) {
     a.gx.text_wrap(if en { "Moving to a new phone? Copy the code, send it to yourself (messenger, notes) and paste it on the new phone. The code holds all progress: pearls, sparks, skins, upgrades, pets." }
         else { "Новый телефон? Скопируй код, перешли его себе (в мессенджер, заметки) и вставь на новом телефоне. В коде весь прогресс: жемчуг, искры, облики, улучшения, питомцы." },
         w / 2., y0 + 72., bw - 20., 14.5, 20., Color::new(1., 1., 1., 0.88 * al), 1, 0);
-    let by = y0 + 210.;
-    if a.ui.btn(&mut a.gx, Rect::new(bx, by, bw, 54.), if en { "Copy my code" } else { "Скопировать мой код" }, St::Gold, 18., true) { a.click();
+    let by = if land { y0 + 150. } else { y0 + 210. }; let hw = if land { (bw - 8.) / 2. } else { bw };
+    if a.ui.btn(&mut a.gx, Rect::new(bx, by, hw, 54.), if en { "Copy my code" } else { "Скопировать мой код" }, St::Gold, 18., true) { a.click();
         a.xfer_copy(); }
-    if a.ui.btn(&mut a.gx, Rect::new(bx, by + 64., bw, 54.), if en { "Paste code from old phone" } else { "Вставить код со старого телефона" }, St::Cyan, 16., true) { a.click();
+    if a.ui.btn(&mut a.gx, if land { Rect::new(bx + hw + 8., by, hw, 54.) } else { Rect::new(bx, by + 64., bw, 54.) }, if en { "Paste code from old phone" } else { "Вставить код со старого телефона" }, St::Cyan, if land { 14. } else { 16. }, true) { a.click();
         a.xfer_paste(); }
-    if !a.xfer_msg.is_empty() { a.gx.text_wrap(&a.xfer_msg, w / 2., by + 134., bw - 20., 13.5, 18., with_alpha(hex(0xffe08a), al), 1, 0); }
+    if !a.xfer_msg.is_empty() { a.gx.text_wrap(&a.xfer_msg, w / 2., by + if land { 72. } else { 134. }, bw - 20., 13.5, 18., with_alpha(hex(0xffe08a), al), 1, 0); }
     if a.ui.btn(&mut a.gx, Rect::new(bx, y0 + ph - 60., bw, 46.), &t("back"), St::Pink, 17., true) { a.click(); a.show(Scr::Set); }
 }
 
@@ -884,7 +885,11 @@ fn ocean_map(a: &mut App) {
     let (w, h) = (a.gx.w, a.gx.h); let al = a.ui.alpha; let en = i18n::is_en(); let p = a.gx.px; let tp = top(a); let tm = a.g.t;
     ui::h2c(&mut a.gx, if en { "OCEAN MAP" } else { "КАРТА ОКЕАНА" }, w / 2., tp + 22., 28., al, c::ICE, hex(0xe6f8ff));
     let sh = format!("✦ {} {}", a.g.s.shards, if en { "light shards" } else { "осколков света" }); a.gx.text(&sh, w / 2., tp + 52., 15., with_alpha(hex(0xffe08a), al), 1, 2);
-    let (bx, bw) = col(a); let mh = (h * 0.45).min(bw * 1.15); let my0 = tp + 72.; let rects: Vec<(f32, f32)> = crate::extras::REGIONS.iter().map(|r| (bx + r.pos.0 * bw, my0 + r.pos.1 * mh)).collect();
+    // 4.8.1: в горизонтали карта слева, описание и кнопки справа (раньше всё наезжало на «Назад»)
+    let land = a.landscape(); let (cbx, cbw) = col(a);
+    let (bx, bw) = if land { let mw = (w * 0.42).min(340.); (w * 0.27 - mw / 2., mw) } else { (cbx, cbw) };
+    let (dbx, dbw) = if land { let dw = (w * 0.4).min(320.); (w * 0.73 - dw / 2., dw) } else { (cbx, cbw) }; let dcx = dbx + dbw / 2.;
+    let my0 = tp + 72.; let mh = if land { (bottom(a) - my0 - 30.).max(120.) } else { (h * 0.45).min(bw * 1.15) }; let rects: Vec<(f32, f32)> = crate::extras::REGIONS.iter().map(|r| (bx + r.pos.0 * bw, my0 + r.pos.1 * mh)).collect();
     // фон карты
     ui::rrect_grad(&mut a.gx, bx - 6., my0 - 6., bw + 12., mh + 12., 18., Color::new(0.03, 0.14, 0.26, 0.85 * al), Color::new(0.02, 0.05, 0.14, 0.9 * al));
     for i in 1..rects.len() { let (x0, y0) = rects[0]; let (x1, y1) = rects[i]; gx_dash(&mut a.gx, x0, y0, x1, y1, Color::new(0.7, 0.9, 1., 0.25 * al)); }
@@ -898,14 +903,14 @@ fn ocean_map(a: &mut App) {
         if a.ui.tap(Rect::new(x - 40., y - 40., 80., 90.)) { a.click(); a.map_pick = i as u8; } }
     // описание выбранного на карте
     let pk = a.map_pick as usize; let r = &crate::extras::REGIONS[pk]; let open = pk == 0 || a.g.s.regions.contains_key(&pk.to_string());
-    let mut y = my0 + mh + 22.; ui::h2c(&mut a.gx, crate::extras::region_txt(pk).0, w / 2., y, 22., al, c::ICE, hex(r.col)); y += 24.;
-    y += a.gx.text_wrap(crate::extras::region_txt(pk).1, w / 2., y, bw - 10., 14., 19., Color::new(1., 1., 1., 0.85 * al), 1, 0) + 12.;
+    let mut y = if land { my0 + 10. } else { my0 + mh + 22. }; ui::h2c(&mut a.gx, crate::extras::region_txt(pk).0, dcx, y, 22., al, c::ICE, hex(r.col)); y += 24.;
+    y += a.gx.text_wrap(crate::extras::region_txt(pk).1, dcx, y, dbw - 10., 14., 19., Color::new(1., 1., 1., 0.85 * al), 1, 0) + 12.;
     { let hz = if r.hazard > 0 { crate::extras::hazard_txt(r.hazard) } else if en { "all hazards" } else { "все опасности" };
-      let l = hz.to_string(); a.gx.text(&l, w / 2., y, 13., with_alpha(hex(0xffe08a), 0.9 * al), 1, 0); y += 26.; }
-    if open { let chosen = sel == pk; if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, 54.), if chosen { if en { "Selected" } else { "Выбран" } } else if en { "Dive here" } else { "Нырять здесь" }, St::Gold, 19., !chosen) { a.click(); a.g.s.region = pk as u8; a.g.dirty = true; } }
-    else { let ok = a.g.s.shards >= r.cost; if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, 54.), &format!("{} ✦{}", if en { "Unlock for" } else { "Открыть за" }, r.cost), St::Gold, 18., ok) { a.click(); a.g.s.shards -= r.cost; a.g.s.regions.insert(pk.to_string(), 1); a.g.s.region = pk as u8; a.g.dirty = true; a.au.play(crate::game::Sfx::Ach); } }
-    let _ = y; let by = bottom(a) - 56.; if a.ui.btn(&mut a.gx, Rect::new(bx, by, bw, 56.), &t("back"), St::Cyan, 20., true) { a.click(); a.show(Scr::Title); }
-    if !open && a.g.s.shards < r.cost { a.gx.text(if en { "Shards are earned by defeating lords" } else { "Осколки дают владыки: 1 за каждого, 3 за Сердце Бездны" }, w / 2., by - 16., 12., Color::new(1., 1., 1., 0.6 * al), 1, 0); }
+      let l = hz.to_string(); a.gx.text(&l, dcx, y, 13., with_alpha(hex(0xffe08a), 0.9 * al), 1, 0); y += 26.; }
+    if open { let chosen = sel == pk; if a.ui.btn(&mut a.gx, Rect::new(dbx, y, dbw, 54.), if chosen { if en { "Selected" } else { "Выбран" } } else if en { "Dive here" } else { "Нырять здесь" }, St::Gold, 19., !chosen) { a.click(); a.g.s.region = pk as u8; a.g.dirty = true; } }
+    else { let ok = a.g.s.shards >= r.cost; if a.ui.btn(&mut a.gx, Rect::new(dbx, y, dbw, 54.), &format!("{} ✦{}", if en { "Unlock for" } else { "Открыть за" }, r.cost), St::Gold, 18., ok) { a.click(); a.g.s.shards -= r.cost; a.g.s.regions.insert(pk.to_string(), 1); a.g.s.region = pk as u8; a.g.dirty = true; a.au.play(crate::game::Sfx::Ach); } }
+    let _ = y; let by = bottom(a) - 56.; if a.ui.btn(&mut a.gx, Rect::new(dbx, by, dbw, 56.), &t("back"), St::Cyan, 20., true) { a.click(); a.show(Scr::Title); }
+    if !open && a.g.s.shards < r.cost { a.gx.text(if en { "Shards are earned by defeating lords" } else { "Осколки дают владыки: 1 за каждого, 3 за Сердце Бездны" }, dcx, by - 16., 12., Color::new(1., 1., 1., 0.6 * al), 1, 0); }
 }
 fn gx_dash(gx: &mut Gfx, x0: f32, y0: f32, x1: f32, y1: f32, c_: Color) { let p = gx.px; let n = 14; for i in 0..n { if i % 2 == 1 { continue; } let (a, b) = (i as f32 / n as f32, (i + 1) as f32 / n as f32);
     draw_line((x0 + (x1 - x0) * a) * p, (y0 + (y1 - y0) * a) * p, (x0 + (x1 - x0) * b) * p, (y0 + (y1 - y0) * b) * p, 2. * p, c_); } }
@@ -941,9 +946,9 @@ fn modes(a: &mut App) {
     }
     // ☠ Кошмар: переключатель для обычных забегов (после первой победы)
     { let won = a.g.s.wins > 0; let on = a.g.s.set.hard && won; let acc = hex(0xff4d5e);
-      let desc = if !won { if en { "Unlocks after your first victory (3000 m). Foes are 30% tougher, hit 35% harder and there are 20% more of them — pearls ×1.5.".to_string() } else { "Откроется после первой победы (3000 м). Враги на 30% крепче, бьют на 35% сильнее, их на 20% больше — жемчуг ×1,5.".to_string() } }
-          else if en { format!("For normal runs. Foes are 30% tougher, hit 35% harder and there are 20% more of them — pearls ×1.5. Now: {}", if on { "ON" } else { "off" }) }
-          else { format!("Для обычных забегов. Враги на 30% крепче, бьют на 35% сильнее, их на 20% больше — жемчуг ×1,5. Сейчас: {}", if on { "ВКЛ" } else { "выкл" }) };
+      let desc = if !won { if en { "Unlocks after your first victory (3000 m). Foes are 30% tougher, hit 25% harder and there are 15% more of them — pearls ×1.5.".to_string() } else { "Откроется после первой победы (3000 м). Враги на 30% крепче, бьют на 25% сильнее, их на 15% больше — жемчуг ×1,5.".to_string() } }
+          else if en { format!("For normal runs. Foes are 30% tougher, hit 25% harder and there are 15% more of them — pearls ×1.5. Now: {}", if on { "ON" } else { "off" }) }
+          else { format!("Для обычных забегов. Враги на 30% крепче, бьют на 25% сильнее, их на 15% больше — жемчуг ×1,5. Сейчас: {}", if on { "ВКЛ" } else { "выкл" }) };
       let dh = a.gx.wrap(&desc, iw - 76. - bw - 10., 12.5, 0).len() as f32 * 16.; let h = (34. + dh + 12.).max(74.);
       let r = Rect::new(f.x, y, iw, h); item_card(&mut a.gx, r, acc, on, if won { al } else { al * 0.6 }); icon_tile(&mut a.gx, "rage", f.x + 34., y + h / 2., acc, c::FIRE, al);
       a.gx.text(if en { "☠ Nightmare" } else { "☠ Кошмар" }, f.x + 64., y + 20., 17., Color::new(1., 1., 1., al), 0, 2);
@@ -977,8 +982,10 @@ fn quests(a: &mut App) {
     let sk = a.g.s.daily.streak.max(1);
     let line = if i18n::is_en() { format!("Login streak: day {sk} · tomorrow +{} pearls", 15 * (sk + 1).min(7)) } else { format!("Вход подряд: день {sk} · завтра +{} жемчуга", 15 * (sk + 1).min(7)) };
     a.gx.text(&line, w / 2., tp + 48., 14., Color::new(1., 1., 1., 0.75 * al), 1, 0);
-    let mut y = f.y0; let iw = f.w; let bw = 100.;
-    for k in 0..a.g.s.daily.quests.len() { let q = a.g.s.daily.quests[k].clone(); let h = 72.; let r = Rect::new(f.x, y, iw, h);
+    // 4.8.1: список заданий прокручивается — в горизонтали третье задание наезжало на «Назад»
+    let nq = a.g.s.daily.quests.len(); let area = Rect::new(f.x - 4., f.y0, f.w + 8., f.y1 - f.y0); let off = a.ui.scroll(7, area, nq as f32 * 81., get_frame_time()); a.ui.clip_on(&a.gx, area);
+    let mut y = f.y0 - off; let iw = f.w; let bw = 100.;
+    for k in 0..nq { let q = a.g.s.daily.quests[k].clone(); let h = 72.; let r = Rect::new(f.x, y, iw, h);
         item_panel(&mut a.gx, r, q.got, if q.got { al * 0.8 } else { al });
         a.gx.text(&i18n::quest(&q.id, q.need), f.x + 12., y + 18., 16., Color::new(1., 1., 1., al), 0, 1);
         pbar(&mut a.gx, f.x + 12., y + 32., iw - 24. - bw - 10., 6., q.p as f32 / q.need as f32, if q.done { pal(c::GOLD) } else { pal(c::CYAN) }, al);
@@ -990,6 +997,7 @@ fn quests(a: &mut App) {
             if a.ui.btn(&mut a.gx, b2, "▶ ×2", St::Gold, 15., true) { a.click(); a.ad_show("quest", AdCb::Quest(k)); } }
         else if a.ui.btn(&mut a.gx, br, &t("claim"), St::Gold, 15., q.done) { a.g.claim_quest(k); }
         y += h + 9.; }
+    a.ui.clip_off();
 }
 
 fn best(a: &mut App) {
