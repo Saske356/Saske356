@@ -48,6 +48,8 @@ public class BannerAds {
                 @Override public void onImpression(ImpressionData d) {}
             });
             activity.addContentView(view, params());
+            // 4.6: высота — живая: после поворота баннер перестраивается (вертикально он выше), игра должна знать новую
+            view.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> { int hh = b - t; if (hh > 0) heightPx = hh; });
             view.setVisibility(View.GONE);
             view.loadAd(new AdRequest.Builder(BuildConfig.YANDEX_BANNER_ID).build());
         } catch (Throwable t) { Log.w(TAG, "banner init failed", t); view = null; }
@@ -64,8 +66,8 @@ public class BannerAds {
         activity.runOnUiThread(() -> { if (view != null) { view.setLayoutParams(params()); view.setVisibility(want && loaded ? View.VISIBLE : View.GONE); } });
     }
 
-    /** Поворот экрана: переставить баннер */
-    public void onConfig() { apply(); }
+    /** Поворот экрана: переставить баннер; пока он не перестроился — оставить запас по высоте (90 dp) */
+    public void onConfig() { heightPx = Math.max(heightPx, Math.round(90 * activity.getResources().getDisplayMetrics().density)); apply(); }
 
     /** Горизонтально баннер слева — игре не нужно поднимать кнопки (0); вертикально — его высота */
     public boolean leftSide() { return activity.getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE; }

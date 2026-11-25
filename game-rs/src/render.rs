@@ -162,8 +162,9 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
         gx.tri_world(a, b, cc, col); gx.tri_world(a, cc, d, col);
         let wl = Color::new(1., 1., 1., 0.8); for (u, v) in [(a, b), (b, cc), (cc, d), (d, a)] { gx.line_world(u.0, u.1, v.0, v.1, 1., wl, false); } }
     // враги: свечение
+    let crowd = if g.en.n > 60 { 0.75 } else { 1. }; // 4.6: в толпе ореолы меньше — вдвое меньше заливки
     if hi { for i in 0..g.en.n { let e = &g.en.items[i]; if e.dead || !in_view(e.x, e.y, e.r * 3.) { continue; }
-        gx.glow_world(true, if e.elite { c::GOLD } else { e.col }, e.x, e.y, e.r * e.scale * if e.elite { 3.4 } else { 2.6 } * (1. + 0.06 * (t * 2.2 + e.phase).sin()), 0.4 + 0.1 * (t * 2.2 + e.phase).sin()); } } // свечение существ дышит
+        gx.glow_world(true, if e.elite { c::GOLD } else { e.col }, e.x, e.y, crowd * e.r * e.scale * if e.elite { 3.4 } else { 2.6 } * (1. + 0.06 * (t * 2.2 + e.phase).sin()), 0.4 + 0.1 * (t * 2.2 + e.phase).sin()); } } // свечение существ дышит
     // телеграфы атак
     for i in 0..g.en.n { let e = g.en.items[i].clone(); if e.dead || !in_view(e.x, e.y, 300.) { continue; } telegraph(gx, g, &e); }
     // мягкие тени под существами — отделяют их от дна
@@ -253,7 +254,9 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
     new_upg(gx, g);
     if let Some(pi) = g.pet_idx() { let pd = &crate::extras::PETS[pi]; let (x, y) = (g.pet.x, g.pet.y);
         gx.glow_world(true, pd.col, x, y, 26., 0.45 + 0.15 * (t * 4.).sin()); let ph = gx.spr_anim(pd.spr).map(|a| t * a.freq() * TAU).unwrap_or(0.);
-        let sc = match pi { 0 => 1.7, 1 => 1.6, _ => 0.85 } * (1. + 0.04 * g.pet_lvl() as f32); gx.spr_world(pd.spr, x, y + (t * 2.).sin() * 2., g.pet.ang, sc, 1., false, ph, true); }
+        let puff = if pi == 3 && g.pet.dash < 0. { 1. + 0.5 * (-g.pet.dash / 0.4) } else { 1. };
+        let sc = match pi { 0 => 1.7, 1 => 1.6, 2 => 0.85, _ => 24. / gx.spr_half(pd.spr) } * (1. + 0.04 * g.pet_lvl() as f32) * puff; gx.spr_world(pd.spr, x, y + (t * 2.).sin() * 2., g.pet.ang, sc, 1., false, ph, true);
+        if pi == 5 { gx.arc_world(x, y, 30. + 3. * g.pet_lvl() as f32, 0., TAU, 1.5, with_a(hex(0xffc35a), 0.3), false); } }
     // течение: бегущие полосы воды поперёк всего экрана
     if g.hazard() == crate::extras::HZ_CURRENT { let (cx, cy) = g.current_dir(); let (w_, h_) = (g.vw * 2. + 200., g.vh * 2. + 200.);
         for i in 0..36 { let fi = i as f32; let ox = ((fi * 0.618 * w_ + g.t * cx * 230.) % w_ + w_) % w_ - w_ / 2.; let oy = ((fi * 0.377 * h_ + g.t * cy * 230.) % h_ + h_) % h_ - h_ / 2.;
@@ -266,8 +269,9 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
         for q in 0..cr.hp as i32 { gx.circle_world(cr.x - 10. + q as f32 * 10., cr.y + 26., 3., WHITE, false); } }
     if !g.p.dead { player(gx, g, rdt); }
     // снаряды игрока
-    let pc = g.p.pal; let ac = crate::data::SKIN_ACC.get(g.p.skin).copied().unwrap_or(c::WHITE);
+    let pc0 = g.p.pal; let ac0 = crate::data::SKIN_ACC.get(g.p.skin).copied().unwrap_or(c::WHITE); let shot = g.s.shot; // 4.6: цвет выстрелов из магазина
     for i in 0..g.pb.n { let b = &g.pb.items[i]; if !in_view(b.x, b.y, 10.) { continue; } let a = b.vy.atan2(b.vx);
+        let (pc, ac) = crate::extras::shot_cols(shot, i, t).unwrap_or((pc0, ac0));
         if b.boom > 0. { gx.glow_stretch(c::FIRE, b.x, b.y, a, -30., 40., 16., 0.7); gx.glow_world(true, c::FIRE, b.x, b.y, 16., 0.9); gx.glow_world(false, c::WHITE, b.x, b.y, 6., 1.); continue; }
         let k = b.r / 4.;
         match b.form {
@@ -373,6 +377,9 @@ fn boss_new(gx: &mut Gfx, g: &Game, e: &Enemy, sc: f32, wht: bool) {
     let attack = e.state == 1 || (e.state == 2 && e.p1 > 0.);
     let jr = jaw_anim(t * 1.05 + e.phase, attack, wht); let tk = tkey(e.kind.key(), e.tier);
     let pulse = 1. + (t * 2.2 + e.phase).sin() * 0.02;
+    if e.kind == K::Boss7 { // 4.6: медуза — купол всегда вверх, щупальца вниз; толчки: сжимается и раскрывается
+        let pp = (t * 2.2 + e.phase).sin(); gx.sqx = 1. + 0.06 * pp; gx.sqy = 1. - 0.05 * pp;
+        gx.spr_jaw(&tk, e.x, e.y, -std::f32::consts::FRAC_PI_2 + (t * 0.9 + e.phase).sin() * 0.1, sc, wht, anim_ph(gx, &tk, e), jr); gx.sqx = 1.; gx.sqy = 1.; return; }
     gx.spr_jaw(&tk, e.x, e.y, e.ang + (t * 1.9).sin() * 0.03, sc * pulse, wht, anim_ph(gx, &tk, e), jr);
 }
 /// 4.5: Левиафан — лента вдоль следа головы (serpent.rs), челюсть на шарнире, бегущие огни по телу

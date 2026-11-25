@@ -6,10 +6,14 @@ use crate::i18n;
 
 // ---------------- питомцы ----------------
 pub struct PetDef { pub id: &'static str, pub spr: &'static str, pub cost: u32, pub col: u8, pub ru: (&'static str, &'static str), pub en: (&'static str, &'static str) }
-pub static PETS: [PetDef; 3] = [
-    PetDef { id: "fry", spr: "fry", cost: 600, col: c::EMER, ru: ("Малёк", "Собирает опыт и жемчуг издалека и бросается на врагов"), en: ("Fry", "Pulls in XP and pearls from afar and lunges at foes") },
-    PetDef { id: "wisp", spr: "wisp", cost: 1200, col: c::AMBER, ru: ("Огонёк", "Стреляет огненными искрами по ближайшему врагу"), en: ("Wisp", "Shoots fiery sparks at the nearest foe") },
-    PetDef { id: "jelly", spr: "jelly", cost: 2000, col: c::JELLY, ru: ("Медузка", "Лечит и время от времени дарит щит на один удар"), en: ("Jellyling", "Heals you and now and then grants a one-hit shield") },
+pub static PETS: [PetDef; 6] = [
+    PetDef { id: "fry", spr: "fry", cost: 600, col: c::EMER, ru: ("Малёк", "Притягивает опыт и жемчуг (+25% радиуса за уровень) и каждые 2 с бросается на врага"), en: ("Fry", "Pulls in XP and pearls (+25% radius per level) and lunges at a foe every 2 s") },
+    PetDef { id: "wisp", spr: "wisp", cost: 1200, col: c::AMBER, ru: ("Огонёк", "Дважды в секунду стреляет огненной искрой, которая поджигает врага"), en: ("Wisp", "Twice a second shoots a fiery spark that sets the foe on fire") },
+    PetDef { id: "jelly", spr: "jelly", cost: 2000, col: c::JELLY, ru: ("Медузка", "Лечит (здоровье в секунду), каждые 6 с — 3% здоровья, каждые 12 с — щит на удар"), en: ("Jellyling", "Heals (health per second), 3% health every 6 s, a one-hit shield every 12 s") },
+    // 4.6: новые — из картинок новых врагов
+    PetDef { id: "puffer", spr: "puffer", cost: 2600, col: c::URCH, ru: ("Шарик", "Каждые 4 с раздувается: отбрасывает врагов вокруг и стреляет кольцом игл"), en: ("Puffy", "Every 4 s puffs up: knocks foes back and fires a ring of spines") },
+    PetDef { id: "seahorse", spr: "seahorse", cost: 3200, col: c::GOLD, ru: ("Конёк", "Снайпер: каждые 2,5 с бьёт самого крепкого врага на экране лучом насквозь"), en: ("Seahorse", "Sniper: every 2.5 s hits the toughest foe on screen with a piercing beam") },
+    PetDef { id: "nautilus", spr: "nautilus", cost: 4000, col: c::AMBER, ru: ("Наутилус", "Кружит вокруг тебя раковиной и сбивает вражеские пули"), en: ("Nautilus", "Circles you with its shell and blocks enemy bullets") },
 ];
 pub const PET_MAX: u8 = 5;
 pub fn pet_txt(i: usize) -> (&'static str, &'static str) { if i18n::is_en() { PETS[i].en } else { PETS[i].ru } }
@@ -66,29 +70,46 @@ impl Game {
         self.s.pearls -= cost; self.s.pets.insert(PETS[i].id.into(), l + 1); if l == 0 { self.s.pet = PETS[i].id.into(); }
         self.snd(Sfx::Ach); self.dirty = true; true
     }
-    pub fn pick_pet(&mut self, i: usize) { if self.s.pets.get(PETS[i].id).copied().unwrap_or(0) > 0 { self.s.pet = if self.s.pet == PETS[i].id { String::new() } else { PETS[i].id.into() }; self.snd(Sfx::Click); self.dirty = true; } }
+    /// 4.6: только выбирает (раньше повторное нажатие на «С тобой» убирало питомца — казалось, что он не работает)
+    pub fn pick_pet(&mut self, i: usize) { if self.s.pets.get(PETS[i].id).copied().unwrap_or(0) > 0 { self.s.pet = PETS[i].id.into(); self.snd(Sfx::Click); self.dirty = true; } }
     /// бонусы питомца к статам — в конце compute_stats
     pub fn pet_stats(&mut self) {
         let l = self.pet_lvl() as f32; if l <= 0. { return; }
-        match self.pet_idx() { Some(0) => self.st.magnet *= 1. + 0.15 * l, Some(2) => self.st.regen += 0.3 * l, _ => {} }
+        match self.pet_idx() { Some(0) => self.st.magnet *= 1. + 0.25 * l, Some(2) => self.st.regen += 0.5 * l, _ => {} }
     }
-    /// каждый кадр: питомец плывёт за искрой и действует
+    /// каждый кадр: питомец плывёт за искрой и действует. 4.6: питомцы заметно сильнее и с видимыми эффектами
     pub fn pet_tick(&mut self, dt: f32) {
-        let Some(pi) = self.pet_idx() else { return }; let l = self.pet_lvl() as f32;
-        // плывёт за плечом, с запаздыванием
-        let a = self.p.ang + 2.4 + (self.t * 1.3).sin() * 0.4; let (tx, ty) = (self.p.x + a.cos() * 46., self.p.y + a.sin() * 46.);
+        let Some(pi) = self.pet_idx() else { return }; let l = self.pet_lvl() as f32; let dm = self.st.dmg;
+        // плывёт за плечом, с запаздыванием (наутилус — кружит вокруг)
+        let a = if pi == 5 { self.t * (2.2 + 0.2 * l) } else { self.p.ang + 2.4 + (self.t * 1.3).sin() * 0.4 }; let rr = if pi == 5 { 52. } else { 46. };
+        let (tx, ty) = (self.p.x + a.cos() * rr, self.p.y + a.sin() * rr);
         if self.pet.dash > 0. { self.pet.dash -= dt; let k = 1. - (-dt * 10.).exp(); self.pet.x += (self.pet.tx - self.pet.x) * k; self.pet.y += (self.pet.ty - self.pet.y) * k; }
-        else { let k = 1. - (-dt * 4.).exp(); let (ox, oy) = (self.pet.x, self.pet.y); self.pet.x += (tx - self.pet.x) * k; self.pet.y += (ty - self.pet.y) * k;
+        else { let k = 1. - (-dt * if pi == 5 { 14. } else { 4. }).exp(); let (ox, oy) = (self.pet.x, self.pet.y); self.pet.x += (tx - self.pet.x) * k; self.pet.y += (ty - self.pet.y) * k;
             let (vx, vy) = (self.pet.x - ox, self.pet.y - oy); if vx * vx + vy * vy > 0.01 { self.pet.ang = vy.atan2(vx); } }
-        self.pet.t -= dt;
+        self.pet.t -= dt; if self.pet.dash < 0. { self.pet.dash = (self.pet.dash + dt).min(0.); } let (px, py) = (self.pet.x, self.pet.y);
         match pi {
-            0 => if self.pet.t <= 0. { self.pet.t = 5. - 0.5 * l; let tg = self.nearest_enemy(self.pet.x, self.pet.y, 320.);
-                if tg >= 0 { let i = tg as usize; let (ex, ey) = (self.en.items[i].x, self.en.items[i].y); self.pet.tx = ex; self.pet.ty = ey; self.pet.dash = 0.35; self.pet.ang = (ey - self.pet.y).atan2(ex - self.pet.x);
-                    self.damage_enemy(i, self.st.dmg * (2. + l), false, f32::NAN, 0., 0., Src::None); self.ring(ex, ey, 4., 40., 0.25, c::EMER, 3.); } },
-            1 => if self.pet.t <= 0. { self.pet.t = 1.05 - 0.1 * l; let tg = self.nearest_enemy(self.pet.x, self.pet.y, 480.);
-                if tg >= 0 { let (ex, ey) = (self.en.items[tg as usize].x, self.en.items[tg as usize].y); let a = (ey - self.pet.y).atan2(ex - self.pet.x); let (px, py) = (self.pet.x, self.pet.y);
-                    if let Some(b) = self.fire_pb(px, py, a, self.st.dmg * (0.35 + 0.08 * l), false) { let bb = &mut self.pb.items[b]; bb.form = 7; bb.life = 0.8; bb.pierce = 0; bb.bounce = 0; } } },
-            _ => if self.pet.t <= 0. { self.pet.t = 14. - 1.5 * l; if self.p.shield < 2 { self.p.shield += 1; let (x, y) = (self.p.x, self.p.y); self.ring(x, y, self.p.r, self.p.r + 24., 0.4, c::JELLY, 4.); self.snd(Sfx::Graze); } },
+            0 => if self.pet.t <= 0. { self.pet.t = 2.2 - 0.2 * l; let tg = self.nearest_enemy(px, py, 360.);
+                if tg >= 0 { let i = tg as usize; let (ex, ey) = (self.en.items[i].x, self.en.items[i].y); self.pet.tx = ex; self.pet.ty = ey; self.pet.dash = 0.35; self.pet.ang = (ey - py).atan2(ex - px);
+                    self.damage_enemy(i, dm * (3. + 1.2 * l), false, f32::NAN, 0., 0., Src::None); self.ring(ex, ey, 4., 48., 0.25, c::EMER, 3.); self.burst(ex, ey, 8, c::EMER, 160., 6., 0.3); } },
+            1 => if self.pet.t <= 0. { self.pet.t = 0.55 - 0.05 * l; let tg = self.nearest_enemy(px, py, 520.);
+                if tg >= 0 { let (ex, ey) = (self.en.items[tg as usize].x, self.en.items[tg as usize].y); let a = (ey - py).atan2(ex - px);
+                    if let Some(b) = self.fire_pb(px, py, a, dm * (0.6 + 0.15 * l), false) { let bb = &mut self.pb.items[b]; bb.form = 7; bb.life = 0.9; bb.pierce = 0; bb.bounce = 0; } } },
+            2 => { if self.pet.t <= 0. { self.pet.t = 6.; let h = self.heal_p(self.p.max_hp * 0.03 * (1. + 0.15 * l)); let (x, y) = (self.p.x, self.p.y);
+                    if h >= 1. { self.ring(x, y, self.p.r, self.p.r + 30., 0.4, c::EMER, 3.); self.text(x, y - 26., format!("+{}", h.round()), 0x8affc0, false, false); } }
+                if self.p.shield < 1 { self.pet_sh += dt; if self.pet_sh >= 12. - 1.2 * l { self.pet_sh = 0.; self.p.shield = 1; let (x, y) = (self.p.x, self.p.y); self.ring(x, y, self.p.r, self.p.r + 24., 0.4, c::JELLY, 4.); self.snd(Sfx::Graze); } } },
+            3 => if self.pet.t <= 0. { self.pet.t = 4. - 0.3 * l; let r = 120. + 10. * l;
+                let q = self.qa(px, py, r + 30.); for &i in &q { let (dead, ex, ey, boss) = { let e = &self.en.items[i]; (e.dead, e.x, e.y, e.kind.d().boss) }; if dead { continue; }
+                    let (dx, dy) = (ex - px, ey - py); let d = (dx * dx + dy * dy).sqrt().max(1.); if d < r { self.damage_enemy(i, dm * (1.5 + 0.5 * l), false, f32::NAN, if boss { 0. } else { dx / d * 380. }, if boss { 0. } else { dy / d * 380. }, Src::Nova); } } self.qa_back(q);
+                let n = 8 + 2 * l as u32; for k in 0..n { let a = k as f32 / n as f32 * TAU; if let Some(b) = self.fire_pb(px, py, a, dm * (0.5 + 0.1 * l), false) { let bb = &mut self.pb.items[b]; bb.life = 0.5; bb.r = 3.; bb.pierce = 0; bb.bounce = 0; } }
+                self.ring(px, py, 10., r, 0.35, c::URCH, 4.); self.pet.dash = -0.4; self.snd(Sfx::Nova); },
+            4 => if self.pet.t <= 0. { self.pet.t = 2.5 - 0.2 * l;
+                let mut best = (-1i32, 0f32); for i in 0..self.en.n { let e = &self.en.items[i]; if e.dead || e.kind == K::Crystal || (e.x - self.cam_x).abs() > self.vw || (e.y - self.cam_y).abs() > self.vh { continue; } if e.hp > best.1 { best = (i as i32, e.hp); } }
+                if best.0 >= 0 { let i = best.0 as usize; let (ex, ey) = (self.en.items[i].x, self.en.items[i].y); let a = (ey - py).atan2(ex - px); self.pet.ang = a;
+                    if let Some(b) = self.fire_pb(px, py, a, dm * (4. + 1.5 * l), false) { let bb = &mut self.pb.items[b]; bb.pierce = 99; bb.life = 1.2; bb.r = 5.; bb.vx = a.cos() * 1100.; bb.vy = a.sin() * 1100.; }
+                    self.ring(px, py, 3., 26., 0.2, c::GOLD, 3.); self.snd(Sfx::Shot2); } },
+            _ => { // наутилус: сбивает вражеские пули рядом с собой
+                let r = 30. + 3. * l; let mut i = self.eb.n; let mut hit = 0; while i > 0 { i -= 1; let b = &self.eb.items[i]; if (b.x - px).powi(2) + (b.y - py).powi(2) < (r + b.r).powi(2) { let (bx, by) = (b.x, b.y); self.eb.kill(i); hit += 1; if hit <= 2 { self.part(bx, by, 0., 0., 0.2, 8., c::AMBER, 0.); } } }
+                if hit > 0 && self.rand() < 0.3 { self.snd(Sfx::Clink); } }
         }
     }
 
@@ -246,7 +267,7 @@ pub fn sync_reminders(s: &crate::save::Save) { crate::platform::set_reminders(&r
 
 // ---------------- 4.3: шлейфы и эффекты гибели (за жемчуг, только внешний вид) ----------------
 pub struct FxDef { pub ru: (&'static str, &'static str), pub en: (&'static str, &'static str), pub cost: u32, pub col: u8 }
-pub static TRAILS: [FxDef; 7] = [
+pub static TRAILS: [FxDef; 11] = [
     FxDef { ru: ("Свечение", "Обычный след твоего цвета"), en: ("Glow", "The usual trail in your color"), cost: 0, col: c::CYAN },
     FxDef { ru: ("Пузыри", "За тобой поднимаются пузырьки"), en: ("Bubbles", "Bubbles rise behind you"), cost: 400, col: c::ICE },
     FxDef { ru: ("Звёздная пыль", "Золотые искорки мерцают в следе"), en: ("Stardust", "Golden sparkles twinkle in your wake"), cost: 600, col: c::GOLD },
@@ -254,21 +275,46 @@ pub static TRAILS: [FxDef; 7] = [
     FxDef { ru: ("Пламя", "Огненный хвост и искры"), en: ("Flame", "A fiery tail with embers"), cost: 1000, col: c::FIRE },
     FxDef { ru: ("Молнии", "Разряды пробегают по следу"), en: ("Lightning", "Sparks of electricity run along the trail"), cost: 1300, col: c::CYAN },
     FxDef { ru: ("Тень", "Клубы фиолетовой тьмы"), en: ("Shadow", "Wisps of violet darkness"), cost: 1600, col: c::PURP },
+    // 4.6
+    FxDef { ru: ("Лепестки", "За тобой кружат розовые лепестки"), en: ("Petals", "Pink petals swirl behind you"), cost: 700, col: c::CORAL },
+    FxDef { ru: ("Снежинки", "След из искрящихся снежинок"), en: ("Snowflakes", "A trail of glittering snowflakes"), cost: 900, col: c::ICE },
+    FxDef { ru: ("Кометы", "Крупные золотые кометы с длинным хвостом"), en: ("Comets", "Big golden comets with long tails"), cost: 1400, col: c::GOLD },
+    FxDef { ru: ("Призрачные огни", "Зелёные блуждающие огоньки"), en: ("Ghost lights", "Green will-o'-wisps"), cost: 1800, col: c::EMER },
 ];
-pub static DEATHS: [FxDef; 6] = [
+pub static DEATHS: [FxDef; 9] = [
     FxDef { ru: ("Вспышка", "Обычная гибель врагов"), en: ("Flash", "The usual enemy death"), cost: 0, col: c::WHITE },
     FxDef { ru: ("Фейерверк", "Враги разлетаются разноцветным салютом"), en: ("Fireworks", "Foes burst into colorful fireworks"), cost: 500, col: c::CORAL },
     FxDef { ru: ("Пузыри", "Враги лопаются облаком пузырей"), en: ("Bubbles", "Foes pop into a cloud of bubbles"), cost: 700, col: c::ICE },
     FxDef { ru: ("Звездопад", "Золотые звёзды разлетаются кольцом"), en: ("Starfall", "Golden stars scatter in a ring"), cost: 900, col: c::GOLD },
     FxDef { ru: ("Чёрная дыра", "Враг схлопывается в точку"), en: ("Black hole", "The foe collapses into a point"), cost: 1200, col: c::PURP },
     FxDef { ru: ("Кристаллы", "Враг рассыпается ледяными осколками"), en: ("Crystals", "The foe shatters into ice shards"), cost: 1500, col: c::ICE },
+    // 4.6
+    FxDef { ru: ("Цветение", "Враг распускается цветком из лепестков"), en: ("Bloom", "The foe blossoms into a flower of petals"), cost: 800, col: c::CORAL },
+    FxDef { ru: ("Электрошок", "Из врага бьют короткие молнии"), en: ("Shock", "Short lightning bolts burst out of the foe"), cost: 1100, col: c::CYAN },
+    FxDef { ru: ("Сверхновая", "Золотая вспышка с лучами"), en: ("Supernova", "A golden flash with rays"), cost: 1700, col: c::GOLD },
 ];
+/// 4.6: цвет выстрелов (поверх цвета облика). 0 — как у облика, последний — радуга
+pub static SHOTS: [FxDef; 7] = [
+    FxDef { ru: ("Цвет облика", "Снаряды в цвет твоего облика"), en: ("Skin color", "Projectiles match your skin"), cost: 0, col: c::CYAN },
+    FxDef { ru: ("Золото", "Золотые снаряды"), en: ("Gold", "Golden projectiles"), cost: 600, col: c::GOLD },
+    FxDef { ru: ("Лёд", "Ледяные голубые снаряды"), en: ("Ice", "Icy blue projectiles"), cost: 600, col: c::ICE },
+    FxDef { ru: ("Яд", "Ядовито-зелёные снаряды"), en: ("Venom", "Toxic green projectiles"), cost: 800, col: c::EMER },
+    FxDef { ru: ("Пламя", "Огненные снаряды"), en: ("Flame", "Fiery projectiles"), cost: 1000, col: c::FIRE },
+    FxDef { ru: ("Тьма", "Фиолетовые снаряды бездны"), en: ("Void", "Violet abyss projectiles"), cost: 1200, col: c::PURP },
+    FxDef { ru: ("Радуга", "Каждый снаряд своего цвета"), en: ("Rainbow", "Every projectile its own color"), cost: 2000, col: c::EMER },
+];
+pub fn shot_txt(i: usize) -> (&'static str, &'static str) { if i18n::is_en() { SHOTS[i].en } else { SHOTS[i].ru } }
+/// (основной, акцент) цвета выстрелов; None — по облику
+pub fn shot_cols(i: u8, k: usize, t: f32) -> Option<(u8, u8)> {
+    match i { 1 => Some((c::GOLD, c::AMBER)), 2 => Some((c::ICE, c::WHITE)), 3 => Some((c::EMER, c::GOLD)), 4 => Some((c::FIRE, c::GOLD)), 5 => Some((c::PURP, c::AMETH)),
+        6 => Some((RAINBOW[(k + (t * 6.) as usize) % 7], c::WHITE)), _ => None }
+}
 pub fn trail_txt(i: usize) -> (&'static str, &'static str) { if i18n::is_en() { TRAILS[i].en } else { TRAILS[i].ru } }
 pub fn death_txt(i: usize) -> (&'static str, &'static str) { if i18n::is_en() { DEATHS[i].en } else { DEATHS[i].ru } }
 const RAINBOW: [u8; 7] = [c::FIRE, c::AMBER, c::GOLD, c::EMER, c::CYAN, c::ICE, c::AMETH];
 /// Цвет точки следа k (0 — у игрока)
 pub fn trail_col(kind: u8, pal: u8, k: usize, t: f32) -> u8 {
-    match kind { 2 => if k % 2 == 0 { c::GOLD } else { pal }, 3 => RAINBOW[(k + (t * 10.) as usize) % 7], 4 => if k < 4 { c::GOLD } else if k < 8 { c::AMBER } else { c::FIRE }, 5 => c::ICE, 6 => c::PURP, _ => pal }
+    match kind { 2 => if k % 2 == 0 { c::GOLD } else { pal }, 3 => RAINBOW[(k + (t * 10.) as usize) % 7], 4 => if k < 4 { c::GOLD } else if k < 8 { c::AMBER } else { c::FIRE }, 5 => c::ICE, 6 => c::PURP, 7 => c::CORAL, 8 => if k % 2 == 0 { c::WHITE } else { c::ICE }, 9 => c::GOLD, 10 => c::EMER, _ => pal }
 }
 impl Game {
     /// Частицы шлейфа (раз в 35 мс, пока игрок движется)
@@ -282,6 +328,10 @@ impl Game {
             3 => { let col = RAINBOW[(self.t * 10.) as usize % 7]; self.part(x, y, bx * 30., by * 30., 0.7, 10., col, 2.); },
             4 => { for _ in 0..2 { let col = if self.rand() < 0.4 { c::GOLD } else { c::FIRE }; self.pj(x, y, 6., bx * 60., by * 60. - 25., 20., 0., 0.55, 11., col, 2.5); } },
             5 => if self.rand() < 0.12 { let l = self.rr(40., 70.); let (j1, j2) = (self.rr(-15., 15.), self.rr(-15., 15.)); self.bolt(x, y, x + bx * l + j1, y + by * l + j2, c::ICE); },
+            7 => if self.rand() < 0.6 { let a = self.t * 9.; self.pj(x + a.cos() * 9., y + a.sin() * 9., 4., bx * 25. + a.sin() * 30., by * 25. - a.cos() * 30., 8., 8., 1.1, 7., c::CORAL, 1.); },
+            8 => if self.rand() < 0.55 { let col = if self.rand() < 0.5 { c::WHITE } else { c::ICE }; self.pj(x, y, 12., 0., 22., 12., 6., 1.3, 5., col, 0.4); },
+            9 => if self.rand() < 0.18 { self.pj(x, y, 6., bx * 140., by * 140., 25., 25., 0.6, 16., c::GOLD, 2.); self.pj(x, y, 6., bx * 100., by * 100., 10., 10., 0.8, 8., c::WHITE, 2.); },
+            10 => if self.rand() < 0.5 { self.pj(x, y, 10., bx * 10., -35., 15., 10., 1.2, 10., c::EMER, 0.8); },
             _ => { self.pj(x, y, 8., bx * 15., by * 15. - 8., 0., 0., 1.0, 14., c::PURP, 1.2); },
         }
     }
@@ -294,16 +344,20 @@ impl Game {
             2 => { for _ in 0..n { let sz2 = 4. + self.rr(0., 5.); self.pj(x, y, sz, 0., -80., 30., 30., 1.0, sz2 * 1.5, c::ICE, 0.8); } },
             3 => { for i in 0..8 { let a = i as f32 / 8. * TAU; self.part(x, y, a.cos() * 110., a.sin() * 110., 0.85, 12., c::GOLD, 3.); } self.burst(x, y, 6, c::WHITE, 50., 4., 0.4); },
             4 => { self.ring(x, y, sz * 3., 2., 0.35, c::PURP, 4.); self.ring(x, y, sz * 2., 1., 0.25, c::AMETH, 2.5); for i in 0..n { let a = i as f32 / n as f32 * TAU; let r = sz * 2.2; self.part(x + a.cos() * r, y + a.sin() * r, -a.cos() * r * 2.6, -a.sin() * r * 2.6, 0.38, 8., c::PURP, 0.); } },
+            6 => { for i in 0..10 { let a = i as f32 / 10. * TAU + self.t; let s = 70. + sz * 2.; self.part(x, y, a.cos() * s, a.sin() * s, 0.9, 10., if i % 2 == 0 { c::CORAL } else { c::AMETH }, 2.8); } self.burst(x, y, 4, c::GOLD, 30., 6., 0.5); },
+            7 => { for _ in 0..if self.quality == 0 { 2 } else { 4 } { let a = self.rand() * TAU; let l = sz * 2. + self.rr(20., 50.); self.bolt(x, y, x + a.cos() * l, y + a.sin() * l, c::ICE); } self.ring(x, y, 4., sz * 2., 0.25, c::CYAN, 2.); },
+            8 => { self.ring(x, y, sz * 0.4, sz * 4., 0.45, c::GOLD, 5.); for i in 0..8 { let a = i as f32 / 8. * TAU; self.part(x, y, a.cos() * 260., a.sin() * 260., 0.35, 9., c::WHITE, 4.); } self.flash = self.flash.max(0.04); },
             _ => { for _ in 0..n { let a = self.rand() * TAU; let s = 80. + self.rand() * 120.; let col = if self.rand() < 0.5 { c::ICE } else { c::WHITE }; self.part(x, y, a.cos() * s, a.sin() * s, 0.7, 9., col, 3.5); } self.ring(x, y, sz * 0.4, sz * 2., 0.3, c::ICE, 3.); },
         }
     }
     /// частица с разбросом: позиция ±j, скорость (vx±dvx, vy±dvy)
     fn pj(&mut self, x: f32, y: f32, j: f32, vx: f32, vy: f32, dvx: f32, dvy: f32, life: f32, size: f32, col: u8, drag: f32) {
         let (a, b, c_, d) = (self.rr(-j, j), self.rr(-j, j), self.rr(-dvx, dvx), self.rr(-dvy, dvy)); self.part(x + a, y + b, vx + c_, vy + d, life, size, col, drag); }
-    pub fn buy_fx(&mut self, death: bool, i: usize) -> bool {
-        let (cost, key) = (if death { DEATHS[i].cost } else { TRAILS[i].cost }, i.to_string());
-        let owned = i == 0 || if death { self.s.deaths.contains_key(&key) } else { self.s.trails.contains_key(&key) };
-        if !owned { if self.s.pearls < cost { return false; } self.s.pearls -= cost; if death { self.s.deaths.insert(key, 1); } else { self.s.trails.insert(key, 1); } self.snd(crate::game::Sfx::Ach); }
-        if death { self.s.death = i as u8; } else { self.s.trail = i as u8; } self.dirty = true; true
+    /// kind: 0 — шлейф, 1 — гибель врагов, 2 — цвет выстрелов
+    pub fn buy_fx(&mut self, kind: u8, i: usize) -> bool {
+        let cost = match kind { 1 => DEATHS[i].cost, 2 => SHOTS[i].cost, _ => TRAILS[i].cost }; let key = i.to_string();
+        let owned = i == 0 || match kind { 1 => self.s.deaths.contains_key(&key), 2 => self.s.shots.contains_key(&key), _ => self.s.trails.contains_key(&key) };
+        if !owned { if self.s.pearls < cost { return false; } self.s.pearls -= cost; match kind { 1 => { self.s.deaths.insert(key, 1); } 2 => { self.s.shots.insert(key, 1); } _ => { self.s.trails.insert(key, 1); } } self.snd(crate::game::Sfx::Ach); }
+        match kind { 1 => self.s.death = i as u8, 2 => self.s.shot = i as u8, _ => self.s.trail = i as u8 } self.dirty = true; true
     }
 }

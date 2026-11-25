@@ -375,6 +375,30 @@ pub fn draw_warp_h(t: &Texture2D, sx: f32, sy: f32, half: f32, ang: f32, flip: b
     draw_mesh(&Mesh { vertices: verts, indices: idx, texture: Some(t.clone()) });
 }
 
+// ---------- 4.6: уменьшенный рендер мира ----------
+/// Мир (фон, существа, эффекты) рисуется в текстуру меньшего разрешения и растягивается на экран; интерфейс — поверх
+/// в полном разрешении. На телефоне 1080×2400 это вдвое-втрое меньше закрашиваемых пикселей: главный тормоз — заливка
+/// (свечения, полупрозрачные слои), а не процессор.
+pub struct Scaler { rt: Option<RenderTarget>, w: u32, h: u32, active: bool }
+impl Scaler {
+    pub fn new() -> Scaler { Scaler { rt: None, w: 0, h: 0, active: false } }
+    /// budget — сколько пикселей можно закрашивать за кадр (по площади)
+    pub fn begin(&mut self, gx: &mut Gfx, budget: f32) {
+        let (sw, sh) = (screen_width(), screen_height()); let k = (budget / (sw * sh).max(1.)).sqrt();
+        if k >= 0.95 || std::env::var("SVET_NOSCALE").is_ok() { self.active = false; return; }
+        let k = k.max(0.5); let (w, h) = ((sw * k) as u32, (sh * k) as u32);
+        if self.rt.is_none() || (w as i32 - self.w as i32).abs() > 2 || (h as i32 - self.h as i32).abs() > 2 {
+            let r = render_target(w.max(1), h.max(1)); r.texture.set_filter(FilterMode::Linear); self.rt = Some(r); self.w = w; self.h = h; }
+        let rt = self.rt.as_ref().unwrap(); gx.set_mat(0);
+        let mut c = Camera2D::from_display_rect(Rect::new(0., 0., sw, sh)); c.render_target = Some(rt.clone()); c.zoom.y = -c.zoom.y; set_camera(&c);
+        self.active = true;
+    }
+    pub fn end(&mut self, gx: &mut Gfx) {
+        if !self.active { return; } self.active = false; gx.set_mat(0); gl_use_default_material(); gx.mat = 0; gx.additive = false; set_default_camera();
+        if let Some(rt) = self.rt.as_ref() { draw_texture_ex(&rt.texture, 0., 0., WHITE, DrawTextureParams { dest_size: Some(vec2(screen_width(), screen_height())), ..Default::default() }); }
+    }
+}
+
 // ---------- подсветка (bloom) ----------
 const FS_BRIGHT: &str = r#"#version 100
 precision mediump float;

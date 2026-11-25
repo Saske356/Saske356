@@ -578,7 +578,8 @@ fn shop(a: &mut App) {
         1 => for i in 0..CHARS.len() { let (_, d) = i18n::chr(CHARS[i].id); let d = d + " "; let _m = 0; let d = d + &tf("healthW", &[&CHARS[i].hp.to_string()]) + " " + crate::content::char_attack(i) + "."; items.push(It { kind: 1, i, h: (30. + dsw(a, &d, true) + 12.).max(64.) + 18. }); },
         2 => { for i in 0..SKINS.len() { items.push(It { kind: 2, i, h: 64. }); }
             items.push(It { kind: 6, i: 0, h: 34. }); for i in 0..crate::extras::TRAILS.len() { items.push(It { kind: 7, i, h: 64. }); }
-            items.push(It { kind: 6, i: 1, h: 34. }); for i in 0..crate::extras::DEATHS.len() { items.push(It { kind: 8, i, h: 64. }); } },
+            items.push(It { kind: 6, i: 1, h: 34. }); for i in 0..crate::extras::DEATHS.len() { items.push(It { kind: 8, i, h: 64. }); }
+            items.push(It { kind: 6, i: 2, h: 34. }); for i in 0..crate::extras::SHOTS.len() { items.push(It { kind: 9, i, h: 64. }); } },
         4 => for i in 0..crate::extras::PETS.len() { let d = crate::extras::pet_txt(i).1; items.push(It { kind: 5, i, h: (30. + dsw(a, d, true) + 30.).max(80.) }); },
         _ => for br in 0..3 { items.push(It { kind: 4, i: br, h: 34. }); for (i, tl) in TALENTS.iter().enumerate() { if tl.br as usize != br { continue; } let d = i18n::talent(i).1; items.push(It { kind: 3, i, h: (30. + dsw(a, &d, true) + 12.).max(64.) }); } },
     }
@@ -636,7 +637,7 @@ fn shop(a: &mut App) {
                 a.gx.text(&format!("{}{}", if open || own { "" } else { "✗ " }, nm), f.x + 64., y + 20., 16., Color::new(1., 1., 1., aa), 0, 1);
                 a.gx.text_wrap(&d, f.x + 64., y + 40., iw - 76. - bw - 10., 12.5, 16., Color::new(1., 1., 1., 0.8 * aa), 0, 0);
                 if own { a.ui.btn(&mut a.gx, br, &t("talOwn"), St::Cyan, 15., false); } else if price_btn(a, br, &tl.cost.to_string(), true, open && a.g.s.pearls >= tl.cost, St::Cyan) { a.g.buy_tal(it.i); } }
-            6 => { let en = i18n::is_en(); let s_ = if it.i == 0 { if en { "TRAILS" } else { "ШЛЕЙФЫ" } } else if en { "ENEMY DEATH EFFECTS" } else { "ЭФФЕКТЫ ГИБЕЛИ ВРАГОВ" }; let tw = a.gx.text_w(s_, 14., 2); let acc = hex(0xffd54f);
+            6 => { let en = i18n::is_en(); let s_ = match it.i { 0 => if en { "TRAILS" } else { "ШЛЕЙФЫ" }, 1 => if en { "ENEMY DEATH EFFECTS" } else { "ЭФФЕКТЫ ГИБЕЛИ ВРАГОВ" }, _ => if en { "PROJECTILE COLOR" } else { "ЦВЕТ ВЫСТРЕЛОВ" } }; let tw = a.gx.text_w(s_, 14., 2); let acc = hex(0xffd54f);
                 a.gx.rrect(f.x + 8., y + 17., iw / 2. - tw / 2. - 20., 2., 1., with_alpha(acc, 0.5 * al)); a.gx.rrect(f.x + iw / 2. + tw / 2. + 12., y + 17., iw / 2. - tw / 2. - 20., 2., 1., with_alpha(acc, 0.5 * al));
                 a.gx.text(s_, f.x + iw / 2., y + 18., 14., with_alpha(acc, al), 1, 2); }
             7 | 8 => { let death = it.kind == 8; let d_ = if death { &crate::extras::DEATHS[it.i] } else { &crate::extras::TRAILS[it.i] }; let (nm, d) = if death { crate::extras::death_txt(it.i) } else { crate::extras::trail_txt(it.i) };
@@ -644,7 +645,7 @@ fn shop(a: &mut App) {
                 item_card(&mut a.gx, r, pal(d_.col), sel, al);
                 { let p = a.gx.px; let (cx, cy) = (f.x + 32., y + it.h / 2.); let tm = a.g.t;
                   if death { let ph = (tm * 0.9 + it.i as f32 * 0.37).fract(); let n = 8; for k in 0..n { let an = k as f32 / n as f32 * std::f32::consts::TAU; let rr = if it.i == 4 { 22. * (1. - ph) } else { 4. + 20. * ph };
-                      let col = match it.i { 1 => [c::FIRE, c::GOLD, c::EMER, c::CYAN, c::ICE, c::AMETH, c::CORAL, c::AMBER][k], 3 => c::GOLD, 4 => c::PURP, 2 | 5 => c::ICE, _ => c::WHITE };
+                      let col = match it.i { 1 => [c::FIRE, c::GOLD, c::EMER, c::CYAN, c::ICE, c::AMETH, c::CORAL, c::AMBER][k], 3 | 8 => c::GOLD, 4 => c::PURP, 2 | 5 => c::ICE, 6 => c::CORAL, 7 => c::CYAN, _ => c::WHITE };
                       a.gx.glow_scr(false, col, (cx + an.cos() * rr) * p, (cy + an.sin() * rr - if it.i == 2 { ph * 8. } else { 0. }) * p, 5. * p, (1. - ph * 0.7) * al); } }
                   else { for k in 0..9 { let x = cx + 20. - k as f32 * 6.; let yy = cy + (tm * 4. - k as f32 * 0.6).sin() * 5.; let col = crate::extras::trail_col(it.i as u8, c::CYAN, k + 1, tm);
                       a.gx.glow_scr(true, col, x * p, yy * p, (11. - k as f32) * p, (1. - k as f32 / 10.) * 0.8 * al); }
@@ -652,8 +653,18 @@ fn shop(a: &mut App) {
                 a.gx.text(nm, f.x + 64., y + 20., 16., Color::new(1., 1., 1., al), 0, 1);
                 a.gx.text_wrap(d, f.x + 64., y + 40., iw - 76. - bw - 10., 12.5, 16., Color::new(1., 1., 1., 0.8 * al), 0, 0);
                 if sel { a.ui.btn(&mut a.gx, br, if i18n::is_en() { "Active" } else { "Выбран" }, St::Gold, 14., false); }
-                else if own { if a.ui.btn(&mut a.gx, br, if i18n::is_en() { "Use" } else { "Выбрать" }, St::Cyan, 15., true) { a.click(); a.g.buy_fx(death, it.i); } }
-                else if price_btn(a, br, &d_.cost.to_string(), true, a.g.s.pearls >= d_.cost, St::Cyan) { a.g.buy_fx(death, it.i); } }
+                else if own { if a.ui.btn(&mut a.gx, br, if i18n::is_en() { "Use" } else { "Выбрать" }, St::Cyan, 15., true) { a.click(); a.g.buy_fx(death as u8, it.i); } }
+                else if price_btn(a, br, &d_.cost.to_string(), true, a.g.s.pearls >= d_.cost, St::Cyan) { a.g.buy_fx(death as u8, it.i); } }
+            9 => { let d_ = &crate::extras::SHOTS[it.i]; let (nm, d) = crate::extras::shot_txt(it.i); let key = it.i.to_string(); let own = it.i == 0 || a.g.s.shots.contains_key(&key); let sel = a.g.s.shot as usize == it.i;
+                item_card(&mut a.gx, r, pal(d_.col), sel, al);
+                { let p = a.gx.px; let (cx, cy) = (f.x + 32., y + it.h / 2.); let tm = a.g.t;
+                  for k in 0..3 { let (pc, ac) = crate::extras::shot_cols(it.i as u8, k, tm).unwrap_or((c::CYAN, c::WHITE)); let x = cx - 14. + k as f32 * 14. + ((tm * 3.).fract() * 14.); let yy = cy + (k as f32 - 1.) * 4.;
+                      a.gx.glow_scr(true, pc, x * p, yy * p, 10. * p, 0.7 * al); a.gx.glow_scr(false, ac, x * p, yy * p, 4.5 * p, al); } }
+                a.gx.text(nm, f.x + 64., y + 20., 16., Color::new(1., 1., 1., al), 0, 1);
+                a.gx.text_wrap(d, f.x + 64., y + 40., iw - 76. - bw - 10., 12.5, 16., Color::new(1., 1., 1., 0.8 * al), 0, 0);
+                if sel { a.ui.btn(&mut a.gx, br, if i18n::is_en() { "Active" } else { "Выбран" }, St::Gold, 14., false); }
+                else if own { if a.ui.btn(&mut a.gx, br, if i18n::is_en() { "Use" } else { "Выбрать" }, St::Cyan, 15., true) { a.click(); a.g.buy_fx(2, it.i); } }
+                else if price_btn(a, br, &d_.cost.to_string(), true, a.g.s.pearls >= d_.cost, St::Cyan) { a.g.buy_fx(2, it.i); } }
             _ => { let (acc, _) = branch_col(it.i as u8); let s_ = i18n::tal_branch(it.i).to_uppercase(); let tw = a.gx.text_w(&s_, 14., 2);
                 a.gx.rrect(f.x + 8., y + 17., iw / 2. - tw / 2. - 20., 2., 1., with_alpha(acc, 0.5 * al)); a.gx.rrect(f.x + iw / 2. + tw / 2. + 12., y + 17., iw / 2. - tw / 2. - 20., 2., 1., with_alpha(acc, 0.5 * al));
                 a.gx.text(&s_, f.x + iw / 2., y + 18., 14., with_alpha(acc, al), 1, 2); }

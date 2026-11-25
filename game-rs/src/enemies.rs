@@ -377,7 +377,11 @@ impl Game {
         let (col, alt, minion) = match kind { K::Boss5 => (c::FIRE, c::CRAB, K::Squid), K::Boss6 => (c::ICE, c::CYAN, K::Ray), K::Boss7 => (c::EMER, c::JELLY, K::Jelly), _ => (c::CYAN, c::GOLD, K::Crab) };
         let (enr, state, ex, ey, st);
         { let e = &mut self.en.items[i]; enr = e.hp < e.max_hp * 0.5; e.st -= dt; state = e.state; st = e.st;
-            if !(state == 2 && matches!(kind, K::Boss5 | K::Boss6 | K::Boss8)) {   // кружит на дистанции (кроме фазы рывка)
+            if kind == K::Boss7 { // 4.6: медуза зависает над игроком, покачиваясь, и плывёт толчками (как настоящая) — вся в кадре
+                let (px, py) = (self.p.x, self.p.y); let tt = self.t * 0.55 + e.phase; let (tx, ty) = (px + tt.sin() * 160., py - 230. + (tt * 1.7).sin() * 30.);
+                let (dx, dy) = (tx - e.x, ty - e.y); let dd = (dx * dx + dy * dy).sqrt().max(1.); let push = 0.55 + 0.45 * (self.t * 2.2 + e.phase).sin().max(0.);
+                let s = (e.spd * 1.3 * push).min(dd * 2.5); steer(e, dx / dd * s, dy / dd * s, 2.2, dt); }
+            else if !(state == 2 && matches!(kind, K::Boss5 | K::Boss6 | K::Boss8)) {   // кружит на дистанции (кроме фазы рывка)
                 let keep = if kind == K::Boss7 { 280. } else { 300. }; let rad = if d < keep - 40. { -1. } else if d > keep + 40. { 1. } else { 0. };
                 let s = e.spd * if kind == K::Boss6 { 1.25 } else { 1. }; steer(e, (ux * rad - uy * 0.55 * e.p3.signum().max(-1.)) * s, (uy * rad + ux * 0.55) * s, 1.8, dt); }
             if e.vx * e.vx + e.vy * e.vy > 4. { e.ang += ang_diff(e.ang, if state == 2 { face } else { e.vy.atan2(e.vx) }) * (dt * 4.).min(1.); }
@@ -385,7 +389,7 @@ impl Game {
         let (mut p1, mut p2) = (self.en.items[i].p1, self.en.items[i].p2);
         match state {
             // 0: спираль / веер
-            0 => { p1 -= dt; if p1 <= 0. { p1 = if enr { 0.1 } else { 0.14 }; p2 += match kind { K::Boss7 => 0.23, K::Boss6 => 0.37, _ => 0.31 };
+            0 => { p1 -= dt; if p1 <= 0. { p1 = if kind == K::Boss7 { if enr { 0.16 } else { 0.21 } } else if enr { 0.1 } else { 0.14 }; p2 += match kind { K::Boss7 => 0.23, K::Boss6 => 0.37, _ => 0.31 };
                     let n = if enr { 4 } else { 3 }; for k in 0..n { self.e_shoot(ex, ey, p2 + k as f32 * TAU / n as f32, 160. + if kind == K::Boss6 { 40. } else { 0. }, 6., 10. * dsc, col, if kind == K::Boss7 { 0.35 } else { 0. }); } } }
             // 1: тяжёлый удар — кольцо / прицельный веер / лучи рун
             1 => { p1 -= dt; if p1 <= 0. { match kind {
@@ -394,7 +398,7 @@ impl Game {
                     K::Boss7 => { p1 = 0.9; let n = 24; for k in 0..n { if k % 4 == 0 { continue; } self.e_shoot(ex, ey, p2 + k as f32 * TAU / n as f32, 120., 7., 11. * dsc, alt, if k % 2 == 0 { 0.4 } else { -0.4 }); } p2 += 0.3; self.snd(Sfx::Shot2); }
                     _ => { p1 = 0.09; p2 += if enr { 0.09 } else { 0.07 }; for k in 0..4 { self.e_shoot(ex, ey, p2 + k as f32 * TAU / 4., 230., 7., 12. * dsc, alt, 0.); } } } } }
             // 2: рывок (Кракен, Змей, Страж) или туманная волна (Медуза)
-            2 => { if kind == K::Boss7 { p1 -= dt; if p1 <= 0. { p1 = 0.5; let o = self.rand() * TAU; for k in 0..16 { self.e_shoot(ex, ey, o + k as f32 * TAU / 16., 90., 9., 12. * dsc, c::PURP, 0.); } self.ring(ex, ey, 10., 140., 0.4, c::PURP, 4.); } }
+            2 => { if kind == K::Boss7 { p1 -= dt; if p1 <= 0. { p1 = if enr { 0.9 } else { 1.15 }; let o = self.rand() * TAU; for k in 0..12 { if let Some(b) = self.e_shoot(ex, ey, o + k as f32 * TAU / 12., 95., 9., 12. * dsc, c::PURP, 0.) { self.eb.items[b].life = 4.; } } self.ring(ex, ey, 10., 140., 0.4, c::PURP, 4.); } }
                 else { let e = &mut self.en.items[i]; e.p3 = e.p3.abs() + dt; let cyc = e.p3 % 1.6;
                     if cyc < 0.95 { steer(e, -ux * 60., -uy * 60., 4., dt); p1 = 0.; }
                     else if p1 == 0. { p1 = 1.; let sp = if kind == K::Boss6 { 900. } else { 760. }; e.vx = e.ang.cos() * sp; e.vy = e.ang.sin() * sp; let a = e.ang;
