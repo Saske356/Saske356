@@ -115,7 +115,7 @@ upgs! {
     HUNTER = "hunter", 1, c::GOLD, syn(HOMING, 1, PIERCE, 2); TIDE = "tide", 1, c::GOLD, syn(DASH, 2, SPEED, 2);
     WILDFIRE = "wildfire", 1, c::GOLD, syn(BURN, 2, NOVA, 1); AEGIS = "aegis", 1, c::GOLD, syn(BARRIER, 1, ARMOR, 2);
     LEECH = "leech", 1, c::GOLD, syn(SIPHON, 1, REGEN, 1); SPEAR = "spear", 1, c::GOLD, syn(HARPOON, 2, PIERCE, 2);
-    LIGHTHOUSE = "lighthouse", 1, c::GOLD, syn(BEAM, 2, FROST, 1); MAELSTROM = "maelstrom", 1, c::GOLD, syn(AURA, 2, VORTEX, 1);
+    LIGHTHOUSE = "lighthouse", 1, c::GOLD, syn(BEAM, 2, FROST, 1); MAELSTROM = "maelstrom", 1, c::GOLD, syn(AURA, 2, MAGNET, 1);
     CHOIR = "choir", 1, c::GOLD, syn(TWIN, 2, MULTI, 2); TEMPEST = "tempest", 1, c::GOLD, syn(STATIC, 2, CHAIN, 1);
     KRAKEN = "kraken", 1, c::GOLD, syn(INK, 1, THORNS, 2);
     HURRICANE = "hurricane", 1, c::GOLD, syn(SALVO, 2, MULTI, 2); BOMBARD = "bombard", 1, c::GOLD, syn(SEEKER, 2, NOVA, 1);

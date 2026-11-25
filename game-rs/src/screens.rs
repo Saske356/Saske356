@@ -174,11 +174,11 @@ fn title_portrait(a: &mut App) {
       let r = Rect::new(bx + bw / 2. - tw / 2., y - 34., tw, 26.); ui::rrect_grad(&mut a.gx, r.x, r.y, r.w, r.h, 13., Color::new(0.03, 0.1, 0.2, 0.7 * al), Color::new(0.02, 0.06, 0.14, 0.6 * al));
       a.gx.rrect_line(r.x, r.y, r.w, r.h, 13., 1., with_alpha(hex(crate::extras::REGIONS[ri].col), 0.7 * al)); a.gx.text(&l, r.x + r.w / 2., r.y + 13., 13., Color::new(1., 1., 1., al), 1, 1);
       if a.ui.tap(r) { a.click(); a.map_pick = a.g.s.region; a.show(Scr::Map); return; } }
-    // «Играть» и рядом — забег с реликвией за рекламу (до 5 в день)
+    // «Играть» и рядом — забег с улучшением на старте за рекламу (до 5 в день)
     let boost_left = BOOST_MAX.saturating_sub(a.g.s.daily.boost); let boost = boost_left > 0 && a.g.s.runs >= 1 && a.ad_ready();
     let pw = if boost { bw * 0.6 } else { bw };
     if a.ui.btn(&mut a.gx, Rect::new(bx, y, pw, bh_play), &t("play"), St::Cyan, if sm { 24. } else { 28. }, true) { a.click(); a.g.s.seen_how = true; a.start_run(RunMode::Normal); return; }
-    if boost { let l = format!("▶ {}\n{} ({})", if i18n::is_en() { "Play" } else { "Играть" }, if i18n::is_en() { "with a relic" } else { "с реликвией" }, boost_left);
+    if boost { let l = format!("▶ {}\n{} ({})", if i18n::is_en() { "Play" } else { "Играть" }, if i18n::is_en() { "with an upgrade" } else { "с улучшением" }, boost_left);
         if a.ui.btn(&mut a.gx, Rect::new(bx + pw + gap, y, bw - pw - gap, bh_play), &l, St::Gold, 17., true) { a.click(); a.ad_show("boost", AdCb::Boost); return; } }
     y += bh_play + gap;
     let muts = crate::flow::daily_muts(); let mn: Vec<String> = muts.iter().map(|&i| i18n::mutator(data::MUTS[i]).0).collect(); let d = a.g.s.daily.clone();
@@ -292,7 +292,7 @@ fn level(a: &mut App) {
     let cwid = if land { ((w - 40.) / n as f32 - 12.).min(240.) } else { (w - 32.).min(420.) };
     let rm = a.relic_mode || a.path_mode; let pm = a.path_mode;
     let infos: Vec<(String, String, bool, u8, u8, u8)> = a.cards.iter().map(|&i| if pm { let (n, d) = crate::content::path_txt(i as u8); (n.to_string(), d.to_string(), true, 0, 1, crate::content::PATHS[i - 1].col) } else if i >= crate::content::EVO_BASE && i != U_HEAL { let (n, d) = crate::content::evo_txt(i - crate::content::EVO_BASE); (n.to_string(), d.to_string(), true, 0, 1, c::GOLD) } else if rm { let (n, d) = crate::content::relic_txt(i as u8); (n.to_string(), d.to_string(), true, 0, 1, crate::content::RELICS[i].col) } else if i == U_HEAL { ("Чистый свет".to_string(), "Восстановить 50% здоровья и +1000 очков".to_string(), false, 0, 1, c::EMER) }
-        else { let (nm, d) = i18n::upg(UPG[i].id); (nm, d, UPG[i].syn.is_some(), a.g.p.up[i], UPG[i].max, UPG[i].col) }).collect();
+        else { let nm = i18n::upg(UPG[i].id).0; let d = crate::upgtxt::card(i, a.g.p.up[i] + 1); (nm, d, UPG[i].syn.is_some(), a.g.p.up[i], UPG[i].max, UPG[i].col) }).collect();
     let heal_en = i18n::is_en();
     let hs: Vec<f32> = infos.iter().map(|inf| { let dw = if land { cwid - 24. } else { cwid - 28. - 68. }; let dh = a.gx.wrap(&inf.1, dw, 13.5, 0).len() as f32 * 17.;
         if land { 12. + 56. + 8. + if inf.2 && !rm { 18. } else { 0. } + 24. + dh + 12. } else { (24. + if inf.2 && !rm { 18. } else { 0. } + 22. + dh).max(80.) } }).collect();
@@ -758,7 +758,7 @@ fn wheel(a: &mut App) {
     // стрелка сверху
     a.gx.set_add(false); let (ax, ay) = (cx, cy - rr - 6.); draw_triangle(vec2((ax - 14.) * p, (ay - 18.) * p), vec2((ax + 14.) * p, (ay - 18.) * p), vec2(ax * p, (ay + 12.) * p), with_alpha(hex(0xff4f6f), al));
     let mut y = cy + rr + 30.;
-    if a.wheel.shown > 0. { let (ty, nn, _) = crate::extras::WHEEL[a.wheel.prize]; let s_ = match ty { 0 => format!("+{nn} {}", t("pearlsGen")), 1 => if en { "Relic for the next run!".into() } else { "Реликвия на следующий забег!".into() }, _ => if en { "+1 reroll next run!".into() } else { "+1 перевыбор в следующем забеге!".into() } };
+    if a.wheel.shown > 0. { let (ty, nn, _) = crate::extras::WHEEL[a.wheel.prize]; let s_ = match ty { 0 => format!("+{nn} {}", t("pearlsGen")), 1 => if en { "An upgrade for the next run!".into() } else { "Улучшение на старте следующего забега!".into() }, _ => if en { "+1 reroll next run!".into() } else { "+1 перевыбор в следующем забеге!".into() } };
         ui::h2c(&mut a.gx, &s_, w / 2., y, 22., al, c::GOLD, hex(0xfff2c0)); }
     y += 34.; let (bx, bw) = col(a); let d = &a.g.s.daily; let free = d.wheel == 0; let ads_left = crate::extras::WHEEL_AD_MAX.saturating_sub(d.wheel_ad); let busy = a.wheel.spin > 0.;
     if free { if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, 60.), if en { "Spin — free" } else { "Крутить бесплатно" }, St::Gold, 20., !busy) { a.click(); a.g.s.daily.wheel = 1; a.g.dirty = true; a.wheel_start(); } }
@@ -809,7 +809,7 @@ fn modes(a: &mut App) {
         (RunMode::Time, "rate", if en { "Time attack".into() } else { "На время".into() },
             if en { format!("10 minutes, zones twice as fast — dive as deep as you can. Best: {} m", rec("time")) } else { format!("10 минут, зоны вдвое быстрее — нырни как можно глубже. Лучшее: {} м", rec("time")) }, hex(0x5fe9ff), "time"),
         (RunMode::NoUp, "dmg", if en { "No upgrades".into() } else { "Без улучшений".into() },
-            if en { format!("No cards: each level heals and makes you stronger. Relics still drop. Best: {} m", rec("noup")) } else { format!("Никаких карт: каждый уровень лечит и усиливает. Реликвии остаются. Лучшее: {} м", rec("noup")) }, hex(0xff7a5c), "noup"),
+            if en { format!("No cards: each level heals and makes you stronger. Best: {} m", rec("noup")) } else { format!("Никаких карт: каждый уровень лечит и усиливает. Лучшее: {} м", rec("noup")) }, hex(0xff7a5c), "noup"),
         (RunMode::Dash, "dash", if en { "Dash only".into() } else { "Только рывок".into() },
             if en { format!("You can't shoot — dash through foes, it recharges fast and hits hard. Best: {} m", rec("dash")) } else { format!("Стрелять нельзя — тарань врагов рывком, он быстрый и мощный. Лучшее: {} м", rec("dash")) }, hex(0xc59bff), "dash"),
     ];

@@ -115,9 +115,9 @@ impl App {
             AdCb::Double => { if !ok || self.g.ad_doubled || self.g.state != State::Over { return; } self.g.ad_doubled = true; let e = self.g.last_earned; self.g.s.pearls += e; self.g.s.total_pearls += e as u64;
                 self.persist(); self.au.play(Sfx::PickCard); platform::vibrate(30); }
             AdCb::Reroll => { if ok && self.g.ad_rerolls < 2 { self.g.ad_rerolls += 1; self.roll_cards(); } }
-            // забег с реликвией на старте (до 5 в день)
+            // забег с улучшением на старте (до 5 в день)
             AdCb::Boost => { if !ok || self.g.s.daily.boost >= BOOST_MAX { return; } self.g.s.daily.boost += 1; self.persist(); self.start_run(RunMode::Normal);
-                self.g.relic_pending += 1; self.g.level_delay = 0.8; }
+                self.g.level_pending += 1; self.g.lv_t = -99.; self.g.level_delay = 0.8; }
             // другие три реликвии
             AdCb::RelicReroll => { if !ok || !self.relic_mode { return; } self.relic_rerolled = true; let c = self.g.roll_relics(); if !c.is_empty() { self.cards = c; self.cards_t = 0.; self.ui.lock = 0.4; } }
             // награда за задание ×2
@@ -184,7 +184,7 @@ impl App {
     pub fn wheel_award(&mut self) {
         let (ty, n, _) = crate::extras::WHEEL[self.wheel.prize]; let en = crate::i18n::is_en();
         match ty { 0 => { self.g.s.pearls += n; self.g.s.total_pearls += n as u64; self.toast(if en { "Wheel of fortune".into() } else { "Колесо удачи".into() }, format!("+{n} {}", t("pearlsGen"))); }
-            1 => { self.g.s.tok_relic += 1; self.toast(if en { "Wheel of fortune".into() } else { "Колесо удачи".into() }, if en { "A relic at the start of your next run".into() } else { "Реликвия на старте следующего забега".into() }); }
+            1 => { self.g.s.tok_relic += 1; self.toast(if en { "Wheel of fortune".into() } else { "Колесо удачи".into() }, if en { "An upgrade at the start of your next run".into() } else { "Улучшение на старте следующего забега".into() }); }
             _ => { self.g.s.tok_reroll += 1; self.toast(if en { "Wheel of fortune".into() } else { "Колесо удачи".into() }, if en { "+1 reroll in your next run".into() } else { "+1 перевыбор в следующем забеге".into() }); } }
         self.au.play(Sfx::Ach); platform::vibrate(40); self.persist();
     }
@@ -297,10 +297,12 @@ impl App {
                 "abyss" => { self.g.s.abyss_max = (n as u8).min(20); self.g.s.abyss_sel = (n as u8).min(20); }
                 "card" => { self.show(Scr::Card); } "share" => { self.share_cap = Some(crate::screens::card_rect(self)); } "rate" => { self.show(Scr::Rate); } "remind" => { std::env::set_var("SVET_REMIND", "1"); crate::extras::sync_reminders(&self.g.s); }
                 "trail" => { let i = n as usize % 7; self.g.s.trails.insert(i.to_string(), 1); self.g.s.trail = i as u8; } "death" => { let i = n as usize % 6; self.g.s.deaths.insert(i.to_string(), 1); self.g.s.death = i as u8; } "scroll" => { self.ui.scroll_set(1, n); }
+                "cards" => { self.cards = arg.split(',').filter_map(|id| crate::data::UPG.iter().position(|u| u.id == id)).collect(); self.cards_t = 0.; }
                 "map" => { self.map_pick = n as u8 % 4; self.show(Scr::Map); } "region" => { let i = n as u8 % 4; self.g.s.regions.insert(i.to_string(), 1); self.g.s.region = i; } "shards" => { self.g.s.shards = n as u32; }
                 "path" => { self.g.path_pending = true; }
                 "relic" => { self.g.relic_pending += 1; self.g.level_delay = 0.; }
                 "elite" => { let k = crate::data::K_ALL[n as usize % crate::data::K_ALL.len()]; for q in 0..6 { let (x, y) = (self.g.p.x - 150. + q as f32 * 60., self.g.p.y - 200.); if let Some(i) = self.g.spawn_enemy(k, x, y, true) { self.g.en.items[i].aff = 1 + q as u8; if q == 0 { self.g.en.items[i].ash = self.g.en.items[i].max_hp * 0.45; } } } }
+                "kinds" => { let mut m: std::collections::BTreeMap<String, u32> = Default::default(); for e in self.g.en.iter().filter(|e| !e.dead) { *m.entry(format!("{}{}", e.kind.key(), if e.elite { "*" } else { "" })).or_default() += 1; } eprintln!("kinds {:?}", m); }
                 "fps" => { eprintln!("fps {:.1} enemies {} parts {} ebul {} zone {} hz {} boss {}", self.fps, self.g.en.n, self.g.parts.n, self.g.eb.n, self.g.zone, self.g.hazard(), self.g.boss); }
                 "up" => { if let Some(i) = crate::data::UPG.iter().position(|u| u.id == arg) { self.g.p.up[i] = it.next().and_then(|v| v.parse().ok()).unwrap_or(1); self.g.compute_stats(); } }
                 "quit" => std::process::exit(0),

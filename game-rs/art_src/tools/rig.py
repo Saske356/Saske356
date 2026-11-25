@@ -24,7 +24,7 @@ N = 512
 
 DEFAULT = [f'pl_{s}' for s in ['azure', 'amber', 'amethyst', 'emerald', 'coral', 'ghost', 'ember', 'frost', 'dawn', 'void', 'aurora', 'solar', 'venom',
                                'royal', 'nebula', 'cyber', 'lunar', 'inferno', 'abyss', 'jade', 'prism']] + \
-          ['dart', 'squid', 'lantern', 'ray', 'bomber', 'mender', 'crab', 'crab_bare', 'kingcrab', 'kingcrab_bare', 'boss1', 'boss4', 'boss2']
+          ['dart', 'squid', 'lantern', 'ray', 'bomber', 'mender', 'crab', 'crab_bare', 'kingcrab', 'kingcrab_bare', 'boss1', 'boss2']  # boss4 не режем: нарезка рвала голову и хвост (4.4)
 
 _pred = None
 def predictor():

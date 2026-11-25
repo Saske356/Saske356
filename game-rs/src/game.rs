@@ -36,7 +36,7 @@ pub struct Enemy {
     pub col: u8, pub ang: f32, pub t: f32, pub st: f32, pub state: i32, pub flash: f32, pub slow: f32, pub freeze: f32, pub elite: bool, pub dead: bool, pub uid: u32,
     pub orb_cd: f32, pub dash_hit: u32, pub chain_mark: u32, pub scale: f32, pub next: i32, pub hist: Arr<f32, 64>, pub hh: usize, pub hn: usize, pub phase: f32,
     pub p1: f32, pub p2: f32, pub p3: f32, pub spawn_t: f32, pub lvl: i32, pub tx: f32, pub ty: f32, pub sh: f32, pub burn: f32, pub burn_t: f32, pub burn_acc: f32,
-    pub hx: f32, pub hy: f32, pub th_t: f32, pub txt: i32, pub a_t: f32 /* часы анимации */, pub tier: u8, pub tt: f32, pub tt2: f32, pub inv_t: f32,
+    pub hx: f32, pub hy: f32, pub th_t: f32, pub txt: i32, pub a_t: f32 /* часы анимации */, pub tier: u8, pub tt: f32, pub tt2: f32, pub inv_t: f32, pub heal_t: f32 /* недавно вылечен */, pub far_t: f32 /* сколько секунд далеко от игрока */,
     pub aff: u8 /* свойство элиты */, pub ash: f32 /* панцирь */, pub aff_t: f32,
     pub pang: f32, pub turn: f32 /* сглаженная скорость поворота — для инерции частей */,
 }
@@ -123,7 +123,8 @@ pub const TUT_NEED: [f32; 5] = [300., 3., 6., 1., 1.];
 /// Опыт до следующего уровня: после 15-го уровни заметно дороже, чтобы к глубине не набиралось 70 уровней
 /// Режим «На время»: 10 минут
 pub const TIME_LIMIT: f32 = 600.;
-pub fn xp_need(l: u32) -> f32 { let l = l as f32; let late = (l - 25.).max(0.); ((6.0 + l * 4.0 + l * l * 0.55 + late * late * 0.5) * 1.035f32.powf((l - 40.).max(0.))).floor() }
+/// 4.4: кривая круче (кубическая): первые уровни быстро, дальше реже — к 1200 м ≈25–30-й уровень, а не 53-й
+pub fn xp_need(l: u32) -> f32 { let l = l as f32; (8.0 + 4.0 * l + 0.9 * l * l + 0.12 * l * l * l).floor() }
 
 impl Game {
     pub fn new(s: Save) -> Game {
@@ -181,7 +182,7 @@ impl Game {
         st.wildfire = lv(u::WILDFIRE) > 0.; st.siphon_ch = if lv(u::SIPHON) > 0. { 0.1 + 0.07 * lv(u::SIPHON) } else { 0. }; st.leech = lv(u::LEECH) > 0.;
         st.echo_ch = if lv(u::ECHO) > 0. { 0.12 + 0.1 * lv(u::ECHO) } else { 0. };
         st.barrier_max = if lv(u::BARRIER) > 0. { 1 + if lv(u::AEGIS) > 0. { 1 } else { 0 } } else { 0 }; st.barrier_cd = 9. - 1.4 * lv(u::BARRIER); st.aegis = lv(u::AEGIS) > 0.;
-        st.over = if lv(u::OVERCHARGE) > 0. { 6 } else { 0 };
+        st.over = if lv(u::OVERCHARGE) > 0. { 7 - lv(u::OVERCHARGE) as u32 } else { 0 }; // 4.4: 6/5/4 — раньше уровни 2–3 ничего не давали
         st.harpoon_lv = lv(u::HARPOON) as u32; st.harpoon_cd = 3.4 - 0.6 * lv(u::HARPOON); st.harpoon_dmg = st.dmg * (5. + 3. * lv(u::HARPOON)) * if lv(u::SPEAR) > 0. { 1.3 } else { 1. };
         st.beam_lv = lv(u::BEAM) as u32; st.beam_dps = st.dmg * (1.1 + 0.7 * lv(u::BEAM)); st.beam_r = 300.;
         st.aura_lv = lv(u::AURA) as u32; st.aura_r = (95. + 15. * lv(u::AURA)) * if lv(u::MAELSTROM) > 0. { 1.4 } else { 1. }; st.aura_dps = st.dmg * (0.45 + 0.3 * lv(u::AURA));
@@ -287,7 +288,7 @@ impl Game {
             if r < hw * 2. { x = self.p.x - hw + r; y = self.p.y + if self.rand() < 0.5 { -hh } else { hh }; }
             else { y = self.p.y - hh + (r - hw * 2.); x = self.p.x + if self.rand() < 0.5 { -hw } else { hw }; }
             if x * x + y * y < (cfg::ARENA_R - 40.).powi(2) { return (x, y); } }
-        let a = self.rand() * TAU; let rr = cfg::ARENA_R - 60.; (a.cos() * rr, a.sin() * rr)
+        let a = self.p.y.atan2(self.p.x) + self.rr(-0.5, 0.5); let rr = cfg::ARENA_R - 60.; (a.cos() * rr, a.sin() * rr)
     }
     pub fn count_kind(&self, k: K) -> usize { self.en.iter().filter(|e| !e.dead && e.kind == k).count() }
     pub fn pick_kind(&mut self) -> K {
@@ -303,7 +304,10 @@ impl Game {
         for i in 0..12 { r -= w[i]; if r <= 0. { return PT[i]; } }
         K::Drifter
     }
+    /// 4.4: сколько обычных врагов может быть одновременно (стаи и события тоже его соблюдают)
+    pub fn cap_alive(&self) -> usize { 110usize.min(36 + self.zone as usize * 5) }
     fn spawn_pack(&mut self) {
+        if self.en.n + 8 >= self.cap_alive() { return; }
         let z = self.zone; let kind = self.rand();
         if kind < 0.4 { let n = (10 + z * 2).min(26); let rr = self.vw.max(self.vh) * 0.9;
             for i in 0..n { let a = i as f32 / n as f32 * TAU; let (x, y) = (self.p.x + a.cos() * rr, self.p.y + a.sin() * rr);
@@ -324,7 +328,7 @@ impl Game {
         let mut rate = (2.3 + 0.55 * (z - 1.) + 0.35 * (z - 7.).max(0.) + 0.3 * (z - 15.).max(0.)) * if self.hard { 1.2 } else { 1. } * if self.muts[2] { 1.5 } else { 1. } * (1. + self.zone_t / cfg::ZONE_TIME * 0.4);
         rate *= self.path_spawn();
         if self.boss >= 0 { rate *= 0.22; }
-        let max_alive = (cfg::MAX_ENEMIES - 20).min(48 + self.zone as usize * 9);
+        let max_alive = self.cap_alive(); // 4.4: толпа меньше — экран читается, телефон не греется
         self.spawn_acc += rate * dt;
         while self.spawn_acc >= 1. { self.spawn_acc -= 1.; if self.en.n >= max_alive { continue; }
             let (x, y) = self.offscreen_point(); let k = self.pick_kind(); let k = self.event_kind(k); let k = self.region_kind(k); let el = z >= 3. && self.rand() < (0.03 + z * 0.004 + (z - 15.).max(0.) * 0.006) * if self.path == crate::content::P_HUNT || self.event_on() == crate::extras::EV_ELITE { 3. } else { 1. } * if self.abyss >= 4 { 1.5 } else { 1. } * if self.muts[3] { 3. } else { 1. };
@@ -341,6 +345,7 @@ impl Game {
         if let Some(i) = self.spawn_enemy(K::Chest, x, y, false) { let e = &mut self.en.items[i]; e.hx = x; e.hy = y; e.spawn_t = 0.3; self.ring(x, y, 10., 90., 0.5, c::GOLD, 4.); }
     }
     fn start_run_event(&mut self) {
+        if self.en.n + 8 >= self.cap_alive() { return; }
         let kinds: Vec<u8> = (0..3).filter(|k| *k != self.last_ev).collect(); let k = kinds[(self.rand() * kinds.len() as f32) as usize % kinds.len()]; self.last_ev = k;
         if k == 0 { let a0 = self.rand() * TAU;
             for i in 0..8 { let a = a0 + i as f32 / 8. * TAU; let (mut x, mut y) = (self.p.x + a.cos() * 400., self.p.y + a.sin() * 400.); let l = hypot(x, y); let m = cfg::ARENA_R - 60.;
@@ -388,6 +393,7 @@ impl Game {
         Some(i)
     }
     pub fn e_shoot(&mut self, x: f32, y: f32, a: f32, mut spd: f32, r: f32, dmg: f32, col: u8, spin: f32) -> Option<usize> {
+        if self.boss < 0 && self.eb.n >= 240 { return None; } // 4.4: потолок пуль обычных врагов — экран не тонет в шарах
         let i = self.eb.spawn()?; if self.muts[4] { spd *= 1.3; } if self.abyss >= 7 { spd *= 1.15; }
         self.eb.items[i] = EBul { x, y, vx: a.cos() * spd, vy: a.sin() * spd, r, dmg, life: 7., col, spin, acc: 0., grazed: false };
         Some(i)
@@ -435,7 +441,7 @@ impl Game {
                 // Шквал — дробь: ещё два коротких снаряда веером
                 if self.p.form == 3 { for k in [-1f32, 1.] { let j = self.rr(-0.06, 0.06); self.fire_pb(px + a.cos() * 14., py + a.sin() * 14., a + k * (sp * (n as f32) * 0.5 + 0.2) + j, self.st.dmg * 0.6, false); } }
                 if self.st.echo_ch > 0. && self.rand() < self.st.echo_ch { for i in 0..n { let j = self.rr(-0.05, 0.05); self.fire_pb(px + a.cos() * 14., py + a.sin() * 14., a + (i as f32 - (n - 1) as f32 / 2.) * sp + j, self.st.dmg * 0.8, true); } self.part(px, py, 0., 0., 0.2, 14., c::ICE, 1.); }
-                if self.st.over > 0 { self.p.shot_n += 1; if self.p.shot_n % self.st.over == 0 { if let Some(hb) = self.fire_pb(px + a.cos() * 16., py + a.sin() * 16., a, self.st.dmg * 4., false) { self.pb.items[hb].pierce += 4; self.pb.items[hb].r = 7.; } self.snd(Sfx::Nova); self.ring(px, py, 6., 40., 0.25, c::GOLD, 4.); } }
+                if self.st.over > 0 { self.p.shot_n += 1; if self.p.shot_n % self.st.over == 0 { if let Some(hb) = self.fire_pb(px + a.cos() * 16., py + a.sin() * 16., a, self.st.dmg * (3. + self.lv(u::OVERCHARGE) as f32), false) { self.pb.items[hb].pierce += 4; self.pb.items[hb].r = 7.; } self.snd(Sfx::Nova); self.ring(px, py, 6., 40., 0.25, c::GOLD, 4.); } }
                 self.part(px + a.cos() * 18., py + a.sin() * 18., a.cos() * 60., a.sin() * 60., 0.12, 10., self.p.pal, 0.);
                 self.snd(Sfx::Shoot); self.on_shot(px, py, a); self.mastery_shot(px, py);
             } else { self.p.fire_t = 0.05; }
@@ -606,7 +612,7 @@ impl Game {
         if e.kind == K::Spawner && src != Src::Cleanup { self.spawn_fry(i, 4); }
         if src == Src::Nova && self.lv(u::SUPERNOVA) > 0 { if let Some(m) = self.mines.spawn() { self.mines.items[m] = Mine { x: e.x, y: e.y, t: 99., r: 60., dmg: self.st.dmg * 1.5, inst: true, freeze: false }; } }
         if e.kind == K::Chest { let n = 3 + (self.zone / 4).min(3); for _ in 0..n { let (a, b) = (self.rr(-26., 26.), self.rr(-26., 26.)); self.drop_pick(e.x + a, e.y + b, 3, 1.); }
-            if self.rand() < 0.35 && self.relics.len() < crate::content::RELICS.len() { self.relic_pending += 1; } else { self.level_pending += 1; } self.level_delay = self.level_delay.max(0.5); self.chests += 1; self.quest_add("chest", 1);
+            self.level_pending += 1; self.lv_t = -99.; self.level_delay = self.level_delay.max(0.5); self.chests += 1; self.quest_add("chest", 1);
             self.burst(e.x, e.y, 30, c::GOLD, 260., 9., 0.7); self.ring(e.x, e.y, 10., 140., 0.5, c::GOLD, 5.); self.snd(Sfx::Level); self.banner(t("chestOpen"), t("chestOpenS"), 0xffd54f, 2.2); }
         if let Some(ch) = self.chal.as_mut() { if e.kind != K::Chest { ch.got += 1; } }
         self.quest_add("kills", 1); if self.combo >= 10 { self.quest_max("combo", self.combo); }
@@ -710,7 +716,9 @@ impl Game {
     }
     pub fn add_xp(&mut self, v: f32) {
         self.p.xp += v * self.st.xp_mul;
-        while self.p.xp >= self.p.xp_next { self.p.xp -= self.p.xp_next; self.p.level += 1; self.p.xp_next = xp_need(self.p.level); self.level_pending += 1; self.level_delay = self.level_delay.max(0.3);
+        // 4.4: уровни по одному. Пока предыдущее улучшение не выбрано — полоска стоит полной, лишний опыт сгорает (никаких «3 экрана подряд»)
+        if self.level_pending > 0 || self.state == State::LevelUp { self.p.xp = self.p.xp.min(self.p.xp_next * 0.999); return; }
+        if self.p.xp >= self.p.xp_next { self.p.xp = (self.p.xp - self.p.xp_next).min(xp_need(self.p.level + 1) * 0.5); self.p.level += 1; self.p.xp_next = xp_need(self.p.level); self.level_pending += 1; self.level_delay = self.level_delay.max(0.3);
             self.ring(self.p.x, self.p.y, 10., 140., 0.5, c::GOLD, 5.); self.burst(self.p.x, self.p.y, 20, c::GOLD, 260., 8., 0.6); if self.p.level >= 20 { self.unlock("lvl20"); } }
     }
 

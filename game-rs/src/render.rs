@@ -234,7 +234,8 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
                 AFF_SPLIT => { gx.arc_world(e.x, e.y, rr * 1.2, t * 3., t * 3. + 1.4, 2.5, with_a(ac, 0.8), true); gx.arc_world(e.x, e.y, rr * 1.2, t * 3. + 3.14, t * 3. + 4.54, 2.5, with_a(ac, 0.8), true); }
                 _ => {}
             }
-            let (sx, sy) = (gx.sx(e.x), gx.sy(e.y - rr - 20.)); let p = gx.px; gx.text(aff_name(e.aff), sx / p, sy / p, 10., with_a(ac, 0.95), 1, 2);
+            // 4.4: подпись свойства — только первые 3 с, дальше элиту выдаёт кольцо (иначе надписи забивают экран)
+            if e.t < 3. { let fa = (3. - e.t).min(1.); let (sx, sy) = (gx.sx(e.x), gx.sy(e.y - rr - 20.)); let p = gx.px; gx.text(aff_name(e.aff), sx / p, sy / p, 10., with_a(ac, 0.95 * fa), 1, 2); }
         }
         if (e.elite || e.hp < e.max_hp * 0.72) && !ET[e.kind as usize].boss && e.kind != K::Chest {
             let bw = (e.r * e.scale * 2.1).max(22.); let by = e.y - e.r * e.scale - 9.; let a = if e.elite { 0.92 } else { 0.68 };

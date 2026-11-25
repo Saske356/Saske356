@@ -88,10 +88,11 @@ impl Game {
         let (a, x, y) = { let e = &self.en.items[i]; (e.aff, e.x, e.y) }; if a == 0 { return; }
         self.en.items[i].aff_t -= dt;
         match a {
-            AFF_VAMP => if self.en.items[i].aff_t <= 0. { self.en.items[i].aff_t = 1.2; let q = self.qb(x, y, 190.); let mut n = 0;
-                for &k in &q { if k == i { continue; } let o = &self.en.items[k]; if o.dead || o.kind.d().boss || o.hp >= o.max_hp { continue; }
-                    let (ox, oy) = (o.x, o.y); let o = &mut self.en.items[k]; o.hp = (o.hp + o.max_hp * 0.06).min(o.max_hp); if n < 3 && self.quality > 0 { self.bolt(x, y, ox, oy, c::CRAB); } n += 1; }
-                self.qb_back(q); { let e = &mut self.en.items[i]; e.hp = (e.hp + e.max_hp * 0.015).min(e.max_hp); }
+            // 4.4: вампир лечит слабее и не больше трёх соседей — толпа вампиров больше не «бессмертна»
+            AFF_VAMP => if self.en.items[i].aff_t <= 0. { self.en.items[i].aff_t = 2.; let q = self.qb(x, y, 170.); let mut n = 0;
+                for &k in &q { if k == i || n >= 3 { continue; } let o = &self.en.items[k]; if o.dead || o.kind.d().boss || o.hp >= o.max_hp || o.heal_t > 0. { continue; }
+                    let (ox, oy) = (o.x, o.y); let o = &mut self.en.items[k]; o.hp = (o.hp + o.max_hp * 0.03).min(o.max_hp); o.heal_t = 1.5; if n < 3 && self.quality > 0 { self.bolt(x, y, ox, oy, c::CRAB); } n += 1; }
+                self.qb_back(q); { let e = &mut self.en.items[i]; e.hp = (e.hp + e.max_hp * 0.01).min(e.max_hp); }
                 if n > 0 { self.ring(x, y, 8., 190., 0.4, c::CRAB, 2.); } },
             AFF_BLINK => if self.en.items[i].aff_t <= 0. { self.en.items[i].aff_t = 3.6;
                 let d = hypot(self.p.x - x, self.p.y - y); if d > 120. && d < 900. { let a0 = self.rand() * TAU; let rr = self.rr(150., 220.);
@@ -165,7 +166,7 @@ impl Game {
     pub fn relic_kill(&mut self, boss: bool) {
         if self.rel(R_FANG) { self.rel_kills += 1; if self.rel_kills >= 20 { self.rel_kills = 0; let h = (self.p.max_hp * 0.08).min(self.p.max_hp - self.p.hp); if h > 0. { self.p.hp += h; let (x, y) = (self.p.x, self.p.y - 26.); self.text(x, y, format!("+{}", h.round()), 0x8affc0, false, false); } } }
         if self.rel(R_BLOOD) { self.rel_blood = (self.rel_blood + 0.015).min(0.36); self.rel_blood_t = 4.; }
-        if boss { self.relic_pending += 1; }
+        
     }
     /// Перед уроном игроку: true — удар отражён
     pub fn relic_dodge(&mut self) -> bool {
@@ -194,9 +195,9 @@ pub static PATHS: [PathDef; 7] = [
     PathDef { icon: "rage", ru: ("Опасный путь", "Враги на 40% крепче и бьют сильнее, но жемчуг падает вдвое чаще и опыта +30%"), en: ("Perilous Path", "Foes 40% tougher and stronger, but pearls drop twice as often and +30% XP"), col: c::CRAB },
     PathDef { icon: "greed", ru: ("Сокровищница", "В каждой зоне — жемчужница, но врагов на 20% больше"), en: ("Treasury", "A pearl oyster in every zone, but 20% more foes"), col: c::GOLD },
     PathDef { icon: "heal", ru: ("Тихий источник", "Сразу полное здоровье и +1 здоровья в секунду до следующего босса"), en: ("Quiet Spring", "Full health now and +1 health per second until the next boss"), col: c::EMER },
-    PathDef { icon: "overcharge", ru: ("Кузница света", "Сразу два улучшения на выбор"), en: ("Light Forge", "Pick two upgrades right away"), col: c::ICE },
+    PathDef { icon: "overcharge", ru: ("Кузница света", "Сразу улучшение на выбор, без ожидания"), en: ("Light Forge", "Pick an upgrade right away"), col: c::ICE },
     PathDef { icon: "hunter", ru: ("Охота на элиту", "Элиты втрое чаще, с каждой — 2 жемчужины"), en: ("Elite Hunt", "Elites three times as often, each drops 2 pearls"), col: c::AMBER },
-    PathDef { icon: "prism", ru: ("Тропа реликвий", "Сразу реликвия, но враги на 25% крепче"), en: ("Relic Trail", "A relic right away, but foes are 25% tougher"), col: c::PURP },
+    PathDef { icon: "prism", ru: ("Тропа мастера", "До следующего владыки — 4 карты на выбор вместо 3, но враги на 25% крепче"), en: ("Master's Trail", "Until the next lord — 4 cards to choose from instead of 3, but foes are 25% tougher"), col: c::PURP },
     PathDef { icon: "tide", ru: ("Тихие воды", "Врагов на 30% меньше и они слабее, но опыта на 20% меньше"), en: ("Calm Waters", "30% fewer and weaker foes, but 20% less XP"), col: c::CYAN },
 ];
 pub fn path_txt(id: u8) -> (&'static str, &'static str) { let p = &PATHS[(id as usize).saturating_sub(1).min(PATHS.len() - 1)]; if i18n::is_en() { p.en } else { p.ru } }
@@ -210,8 +211,8 @@ impl Game {
     }
     pub fn take_path(&mut self, id: usize) {
         let id = id as u8; self.path = id; self.snd(Sfx::Ach);
-        match id { P_HEAL => { self.p.hp = self.p.max_hp; } P_FORGE => { self.level_pending += 2; self.level_delay = 0.6; self.lv_t = -99.; }
-            P_RELIC => { self.relic_pending += 1; } P_TREASURE => { let a = self.rand() * TAU; self.spawn_chest(self.p.x + a.cos() * 260., self.p.y + a.sin() * 260.); } _ => {} }
+        match id { P_HEAL => { self.p.hp = self.p.max_hp; } P_FORGE => { self.level_pending += 1; self.level_delay = 0.6; self.lv_t = -99.; }
+            P_TREASURE => { let a = self.rand() * TAU; self.spawn_chest(self.p.x + a.cos() * 260., self.p.y + a.sin() * 260.); } _ => {} }
         self.compute_stats();
         let (x, y) = (self.p.x, self.p.y); let col = PATHS[id as usize - 1].col; self.ring(x, y, 10., 180., 0.6, col, 6.);
         self.banner(if i18n::is_en() { "PATH CHOSEN".into() } else { "ПУТЬ ВЫБРАН".into() }, path_txt(id).0.into(), 0x8fe8ff, 2.);
@@ -223,18 +224,18 @@ impl Game {
 }
 
 // ---------------- эволюции оружия ----------------
-/// Улучшение на максимуме + нужная реликвия → в выборе появляется золотая «Эволюция».
-pub struct EvoDef { pub upg: usize, pub relic: u8, pub icon: &'static str, pub ru: (&'static str, &'static str), pub en: (&'static str, &'static str) }
+/// 4.4: улучшение на максимуме + второе улучшение (need, need_lv) → в выборе появляется золотая «Эволюция». Реликвий больше нет.
+pub struct EvoDef { pub upg: usize, pub need: usize, pub need_lv: u8, pub icon: &'static str, pub ru: (&'static str, &'static str), pub en: (&'static str, &'static str) }
 pub const EVO_BASE: usize = usize::MAX - 100;
 pub const EV_NOVA: u16 = 1; pub const EV_ORBIT: u16 = 2; pub const EV_HARPOON: u16 = 4; pub const EV_BEAM: u16 = 8; pub const EV_FROST: u16 = 16; pub const EV_BURN: u16 = 32; pub const EV_RATE: u16 = 64;
 pub static EVOS: [EvoDef; 7] = [
-    EvoDef { upg: crate::data::u::NOVA, relic: R_STAR, icon: "supernova", ru: ("Солнечный венец", "Импульс вдвое чаще, шире в 1.5 раза и бьёт в 2.5 раза сильнее"), en: ("Solar Crown", "Pulse twice as often, 1.5× wider and 2.5× stronger") },
-    EvoDef { upg: crate::data::u::ORBIT, relic: R_STORM, icon: "storm", ru: ("Грозовой хоровод", "8 спор-спутников, урон спутников ×2.5"), en: ("Thunder Ring", "8 orbiting spores, orbit damage ×2.5") },
-    EvoDef { upg: crate::data::u::HARPOON, relic: R_FANG, icon: "spear", ru: ("Гарпун Левиафана", "Гарпун вдвое чаще и вдвое сильнее"), en: ("Leviathan Harpoon", "Harpoon twice as often and twice as strong") },
-    EvoDef { upg: crate::data::u::BEAM, relic: R_LENS, icon: "lighthouse", ru: ("Чёрное солнце", "Луч жжёт в 2.5 раза сильнее и достаёт дальше"), en: ("Black Sun", "The beam burns 2.5× stronger and reaches farther") },
-    EvoDef { upg: crate::data::u::FROST, relic: R_EYE, icon: "abyssice", ru: ("Ледяной взор", "+25% к шансу крита, по замедленным врагам урон +50%"), en: ("Frozen Gaze", "+25% crit chance, +50% damage to slowed foes") },
-    EvoDef { upg: crate::data::u::BURN, relic: R_EMBER, icon: "wildfire", ru: ("Пламя глубин", "Горение втрое сильнее и перекидывается на соседей"), en: ("Deep Flame", "Burning is 3× stronger and spreads to neighbours") },
-    EvoDef { upg: crate::data::u::RATE, relic: R_BLOOD, icon: "frenzy", ru: ("Буря света", "Скорострельность ×1.4 и +1 снаряд в залпе"), en: ("Light Storm", "Fire rate ×1.4 and +1 projectile per volley") },
+    EvoDef { upg: crate::data::u::NOVA, need: crate::data::u::DASHNOVA, need_lv: 1, icon: "supernova", ru: ("Солнечный венец", "Импульс вдвое чаще, шире в 1.5 раза и бьёт в 2.5 раза сильнее"), en: ("Solar Crown", "Pulse twice as often, 1.5× wider and 2.5× stronger") },
+    EvoDef { upg: crate::data::u::ORBIT, need: crate::data::u::STATIC, need_lv: 1, icon: "storm", ru: ("Грозовой хоровод", "8 спор-спутников, урон спутников ×2.5"), en: ("Thunder Ring", "8 orbiting spores, orbit damage ×2.5") },
+    EvoDef { upg: crate::data::u::HARPOON, need: crate::data::u::EXECUTE, need_lv: 1, icon: "spear", ru: ("Гарпун Левиафана", "Гарпун вдвое чаще и вдвое сильнее"), en: ("Leviathan Harpoon", "Harpoon twice as often and twice as strong") },
+    EvoDef { upg: crate::data::u::BEAM, need: crate::data::u::MULTI, need_lv: 2, icon: "lighthouse", ru: ("Чёрное солнце", "Луч жжёт в 2.5 раза сильнее и достаёт дальше"), en: ("Black Sun", "The beam burns 2.5× stronger and reaches farther") },
+    EvoDef { upg: crate::data::u::FROST, need: crate::data::u::CRIT, need_lv: 2, icon: "abyssice", ru: ("Ледяной взор", "+25% к шансу крита, по замедленным врагам урон +50%"), en: ("Frozen Gaze", "+25% crit chance, +50% damage to slowed foes") },
+    EvoDef { upg: crate::data::u::BURN, need: crate::data::u::AURA, need_lv: 1, icon: "wildfire", ru: ("Пламя глубин", "Горение втрое сильнее и перекидывается на соседей"), en: ("Deep Flame", "Burning is 3× stronger and spreads to neighbours") },
+    EvoDef { upg: crate::data::u::RATE, need: crate::data::u::FRENZY, need_lv: 1, icon: "frenzy", ru: ("Буря света", "Скорострельность ×1.4 и +1 снаряд в залпе"), en: ("Light Storm", "Fire rate ×1.4 and +1 projectile per volley") },
 ];
 pub fn evo_txt(k: usize) -> (&'static str, &'static str) { let e = &EVOS[k]; if i18n::is_en() { e.en } else { e.ru } }
 
@@ -242,7 +243,7 @@ impl Game {
     #[inline] pub fn evo(&self, bit: u16) -> bool { self.p.evo & bit != 0 }
     /// Эволюции, доступные прямо сейчас (индексы в EVOS)
     pub fn evo_ready(&self) -> Vec<usize> {
-        (0..EVOS.len()).filter(|&k| { let e = &EVOS[k]; self.p.evo & (1 << k) == 0 && self.p.up[e.upg] >= crate::data::UPG[e.upg].max && self.rel(e.relic) }).collect()
+        (0..EVOS.len()).filter(|&k| { let e = &EVOS[k]; self.p.evo & (1 << k) == 0 && self.p.up[e.upg] >= crate::data::UPG[e.upg].max && self.p.up[e.need] >= e.need_lv }).collect()
     }
     pub fn take_evo(&mut self, k: usize) {
         self.p.evo |= 1 << k; self.compute_stats(); self.snd(Sfx::Ach); self.vibrate(60);

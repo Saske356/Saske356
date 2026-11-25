@@ -79,7 +79,7 @@ impl Game {
         if self.abyss >= 11 { self.p.hp = (self.p.max_hp * 0.85).round(); }
         if self.abyss > 0 { self.banner(format!("{} {}", if i18n::is_en() { "ABYSS" } else { "БЕЗДНА" }, self.abyss), crate::extras::abyss_txt(self.abyss.min(20)).into(), 0xc77dff, 3.); }
         self.pet = PetState { x: self.p.x - 40., y: self.p.y + 30., t: 2., ..Default::default() };
-        if self.s.tok_relic > 0 { self.s.tok_relic -= 1; self.relic_pending += 1; self.level_delay = 0.8; self.dirty = true; }
+        if self.s.tok_relic > 0 { self.s.tok_relic -= 1; self.level_pending += 1; self.lv_t = -99.; self.level_delay = 0.8; self.dirty = true; } // жетон «улучшение на старте»
         if self.s.tok_reroll > 0 { self.rerolls += self.s.tok_reroll; self.s.tok_reroll = 0; self.dirty = true; }
         if self.event_on() > 0 { let (n, d) = crate::extras::event_txt(self.event as usize - 1); self.banner(n.to_uppercase(), d.into(), crate::extras::EVENTS[self.event as usize - 1].col, 3.); }
         if self.daily { let m = daily_muts(); let names: Vec<String> = m.iter().map(|&i| i18n::mutator(MUTS[i]).0).collect(); self.banner(t("dailyT"), names.join(" + "), 0xffd54f, 3.); }
@@ -88,9 +88,9 @@ impl Game {
     /// Карты на выбор: синергии весят больше, уже взятые — чуть больше новых
     pub fn roll_choices(&mut self) -> Vec<usize> {
         let mut pool: Vec<(usize, f32)> = vec![];
-        for (i, up) in UPG.iter().enumerate() { let l = self.p.up[i]; if l >= up.max { continue; }
+        for (i, up) in UPG.iter().enumerate() { let l = self.p.up[i]; if l >= up.max || crate::upgtxt::OFF.contains(&up.id) { continue; }
             match up.syn { Some((a, la, b, lb)) => if self.p.up[a] >= la && self.p.up[b] >= lb { pool.push((i, 5.)); }, None => pool.push((i, if l > 0 { 1.3 } else { 1. })) } }
-        let n = if self.s.tal("t_four") { 4 } else { 3 } - if self.abyss >= 14 { 1 } else { 0 }; let mut out = vec![];
+        let n = if self.s.tal("t_four") || self.path == crate::content::P_RELIC { 4 } else { 3 } - if self.abyss >= 14 { 1 } else { 0 }; let mut out = vec![];
         while out.len() < n && !pool.is_empty() { let tot: f32 = pool.iter().map(|p| p.1).sum(); let mut r = self.rand() * tot; let mut k = 0;
             while k < pool.len() - 1 { r -= pool[k].1; if r <= 0. { break; } k += 1; } out.push(pool[k].0); pool.remove(k); }
         // эволюция — всегда первой картой, если готова
@@ -101,14 +101,14 @@ impl Game {
     /// Взять улучшение. true — есть ещё выборы
     pub fn take_upgrade(&mut self, i: usize) -> bool {
         self.snd(Sfx::PickCard);
-        if i >= crate::content::EVO_BASE && i != U_HEAL { self.take_evo(i - crate::content::EVO_BASE); return if self.level_pending > 0 { self.level_pending -= 1; true } else { self.state = State::Play; self.lv_t = self.run_t; false }; }
+        if i >= crate::content::EVO_BASE && i != U_HEAL { self.take_evo(i - crate::content::EVO_BASE); self.state = State::Play; self.lv_t = self.run_t; return false; }
         let syn = i != U_HEAL && UPG[i].syn.is_some();
         if i == U_HEAL { self.p.hp = (self.p.hp + self.p.max_hp * 0.5).min(self.p.max_hp); self.score += 1000.; }
         else { self.p.up[i] += 1; if i == u::HP { self.p.hp += self.p.max_hp * 0.15; }
             if syn { self.synergies += 1; self.unlock("syn"); if self.synergies >= 3 { self.unlock("syn3"); } self.banner(t("synergy"), i18n::upg(UPG[i].id).0, 0xffd54f, 2.2); } }
         self.compute_stats();
         let (x, y) = (self.p.x, self.p.y); self.ring(x, y, 10., 120., 0.5, if syn { c::GOLD } else { c::CYAN }, 5.);
-        if self.level_pending > 0 { self.level_pending -= 1; true } else { self.state = State::Play; self.lv_t = self.run_t; false }
+        self.state = State::Play; self.lv_t = self.run_t; false // 4.4: по одному выбору за раз, следующий — не раньше чем через LV_GAP
     }
     /// «Без улучшений»: каждый уровень — лечение 20% и рост урона/скорострельности (без выбора карт)
     pub fn level_noup(&mut self) { self.want_levelup = false; self.level_pending = 0; self.lv_t = self.run_t; self.p.hp = (self.p.hp + self.p.max_hp * 0.2).min(self.p.max_hp); self.compute_stats();

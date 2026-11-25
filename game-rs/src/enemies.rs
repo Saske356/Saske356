@@ -12,7 +12,12 @@ impl Game {
         let mut i = 0;
         while i < self.en.n {
             if self.en.items[i].dead { i += 1; continue; }
-            { let e = &mut self.en.items[i]; if e.spawn_t > 0. { e.spawn_t -= dt; } if e.flash > 0. { e.flash -= dt; } if e.slow > 0. { e.slow -= dt; } }
+            { let e = &mut self.en.items[i]; if e.spawn_t > 0. { e.spawn_t -= dt; } if e.flash > 0. { e.flash -= dt; } if e.slow > 0. { e.slow -= dt; } if e.heal_t > 0. { e.heal_t -= dt; } }
+            // 4.4: враг, застрявший далеко за экраном (у края арены), через 4 с возвращается к игроку — до него иначе не достать
+            { let (k, ex, ey) = { let e = &self.en.items[i]; (e.kind, e.x, e.y) }; if !k.d().boss && !matches!(k, K::Chest | K::Crystal) {
+                let far = (ex - self.p.x).abs() > self.vw * 1.5 + 60. || (ey - self.p.y).abs() > self.vh * 1.5 + 60.;
+                if far { self.en.items[i].far_t += dt; if self.en.items[i].far_t > 4. { let (nx, ny) = self.offscreen_point(); let e = &mut self.en.items[i]; e.x = nx; e.y = ny; e.vx = 0.; e.vy = 0.; e.far_t = 0.; } }
+                else { self.en.items[i].far_t = 0.; } } }
             // горение
             if self.en.items[i].burn_t > 0. { let q = self.quality; let e = &mut self.en.items[i]; e.burn_t -= dt; e.burn_acc += dt;
                 if e.burn_acc >= 0.3 { let bd = e.burn * e.burn_acc; e.burn_acc = 0.; e.hp -= bd; e.flash = e.flash.max(0.04); let (x, y, r) = (e.x, e.y, e.r);
@@ -33,7 +38,7 @@ impl Game {
                     else { steer(e, 0., 0., 2.5, dt); e.st -= dt; if e.st <= 0. { e.state = 0; e.st = 0.6; } } }
                     if trail && self.rng.next() < 0.5 { let (x, y) = (self.en.items[i].x, self.en.items[i].y); self.part(x, y, 0., 0., 0.25, 7., c::DART, 0.); } }
                 K::Jelly => { let shoot; { let e = &mut self.en.items[i]; steer(e, ux * sp, uy * sp, 1., dt); if e.vx * e.vx + e.vy * e.vy > 4. { let ta = e.vy.atan2(e.vx); e.ang += ang_diff(e.ang, ta) * (dt * 2.5).min(1.); } shoot = e.t >= 3.3 && !fz && d < 700.; if shoot { e.t = 0.; e.p1 += 0.35; } }
-                    if shoot { let (x, y, p1) = (self.en.items[i].x, self.en.items[i].y, self.en.items[i].p1); let n = if self.zone >= 6 { 12 } else { 8 };
+                    if shoot { let (x, y, p1) = (self.en.items[i].x, self.en.items[i].y, self.en.items[i].p1); let n = if self.zone >= 6 { 9 } else { 7 }; // 4.4: было 12/8
                         for k in 0..n { self.e_shoot(x, y, p1 + k as f32 * TAU / n as f32, 115. + self.zone as f32 * 3., 5., 9. * self.dmg_scale, c::JELLY, 0.); }
                         self.ring(x, y, 5., 40., 0.3, c::JELLY, 2.); self.snd(Sfx::Shot2); } }
                 K::Urchin => { let e = &mut self.en.items[i]; steer(e, ux * sp, uy * sp, 1.5, dt); e.ang += dt * 2. * e.p3; }
@@ -59,7 +64,7 @@ impl Game {
                     if heal { let (x, y) = (self.en.items[i].x, self.en.items[i].y); let q = self.qb(x, y, 160.); let mut healed = 0;
                         for &k in &q { if k == i { continue; } let (dead, kk, hp, mh, ox, oy) = { let o = &self.en.items[k]; (o.dead, o.kind, o.hp, o.max_hp, o.x, o.y) };
                             if dead || kk.d().boss || kk == K::Chest { continue; }
-                            if hp < mh { let o = &mut self.en.items[k]; o.hp = (o.hp + o.max_hp * 0.3).min(o.max_hp); o.flash = o.flash.max(0.05); if self.quality > 0 && healed < 4 { self.bolt(x, y, ox, oy, c::EMER); } healed += 1; } }
+                            if hp < mh && self.en.items[k].heal_t <= 0. && healed < 4 { let o = &mut self.en.items[k]; o.hp = (o.hp + o.max_hp * 0.15).min(o.max_hp); o.heal_t = 1.5; o.flash = o.flash.max(0.05); if self.quality > 0 && healed < 4 { self.bolt(x, y, ox, oy, c::EMER); } healed += 1; } }
                         self.qb_back(q); if healed > 0 { self.ring(x, y, 8., 160., 0.4, c::EMER, 2.); self.snd(Sfx::Shot2); } } }
                 K::Bomber => { let q = self.quality; let e = &mut self.en.items[i]; steer(e, ux * sp, uy * sp, 2.6, dt); e.ang = e.vy.atan2(e.vx); let (x, y, r) = (e.x, e.y, e.r);
                     if q > 0 && self.rng.next() < 0.3 { self.part(x - ux * r, y - uy * r, 0., 0., 0.3, 6., c::CORAL, 1.); } }
@@ -195,6 +200,7 @@ impl Game {
     fn fizzle(&mut self, i: usize) { self.en.items[i].dead = true; let (x, y) = (self.en.items[i].x, self.en.items[i].y); self.burst(x, y, 8, c::AMBER, 120., 6., 0.35); self.ring(x, y, 3., 26., 0.25, c::AMBER, 2.); }
     pub fn spawn_fry(&mut self, i: usize, n: usize) {
         let (ex, ey, ea, er, es) = { let e = &self.en.items[i]; (e.x, e.y, e.ang, e.r, e.scale) };
+        let n = n.min(18usize.saturating_sub(self.count_kind(K::Fry))); // 4.4: не больше 18 мальков
         for k in 0..n { if self.en.n >= cfg::MAX_ENEMIES - 12 { break; } let a = ea + (k as f32 - (n - 1) as f32 / 2.) * 0.9 + self.rr(-0.2, 0.2);
             if let Some(f) = self.spawn_enemy(K::Fry, ex + a.cos() * er * es * 0.6, ey + a.sin() * er * es * 0.6, false) { let ff = &mut self.en.items[f]; ff.vx = a.cos() * 230.; ff.vy = a.sin() * 230.; ff.ang = a; } }
         self.ring(ex, ey, er * 0.6, er * 2., 0.35, c::EEL, 3.); self.snd(Sfx::Shot2);
