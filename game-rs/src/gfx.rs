@@ -208,6 +208,14 @@ impl Gfx {
         draw_texture_ex(&tex, px_ - hu * w, py_ - hv * h, col, DrawTextureParams { dest_size: Some(vec2(w, h)), rotation: ang, pivot: Some(vec2(px_, py_)), flip_y: flip, ..Default::default() });
         self.set_mat(was);
     }
+    /// 4.6.1: прогрев — один раз нарисовать каждую текстуру в 1 пиксель (почти прозрачно). Драйверы телефонов часто
+    /// загружают текстуру в видеопамять при ПЕРВОМ рисовании — без прогрева каждый новый вид врага давал подвисание.
+    pub fn prewarm(&mut self) {
+        self.set_mat(0); let c = Color::new(1., 1., 1., 0.004);
+        let mut all: Vec<Texture2D> = self.spr.values().map(|s| s.tex.clone()).collect();
+        all.extend(self.glow.iter().cloned()); all.extend(self.soft.iter().cloned()); all.extend(self.bul.iter().cloned()); all.extend(self.icon.values().cloned()); all.extend(self.ground.iter().cloned());
+        for t in all.iter() { draw_texture_ex(t, 0., 0., c, DrawTextureParams { dest_size: Some(vec2(1., 1.)), ..Default::default() }); }
+    }
     pub fn spr_half(&self, key: &str) -> f32 { self.spr.get(key).map(|s| s.h).unwrap_or(20.) }
     pub fn spr_anim(&self, key: &str) -> Option<Anim> { self.spr.get(key).and_then(|s| s.anim) }
 

@@ -29,7 +29,7 @@ pub struct Toast { pub title: String, pub sub: String, pub t: f32 }
 pub struct App {
     pub gx: Gfx, pub scaler: crate::gfx::Scaler, pub bloom: Option<crate::gfx::Bloom>, pub rd: Rd, pub g: Game, pub ui: Ui, pub au: Audio,
     pub scr: Scr, pub scr_t: f32, pub back_to: Scr, pub intro: Intro, pub end: End, pub joy: Joy, pub ads: Ads,
-    pub cards: Vec<usize>, pub cards_t: f32, pub relic_mode: bool, pub path_mode: bool, pub best_sel: Option<(usize, u8)>, pub wheel: WheelSt, pub map_pick: u8, pub modes_h: f32, pub prof: [f64; 3], pub share_cap: Option<Rect>, pub rate_pending: bool, pub rem_done: bool, pub relic_rerolled: bool, pub earned: u32, pub rec: bool, pub over_t: f32, pub revive_n: f32,
+    pub cards: Vec<usize>, pub cards_t: f32, pub relic_mode: bool, pub path_mode: bool, pub best_sel: Option<(usize, u8)>, pub wheel: WheelSt, pub map_pick: u8, pub modes_h: f32, pub prof: [f64; 3], pub fps_cap: u32, pub slow120: u32, pub warmed: bool, pub share_cap: Option<Rect>, pub rate_pending: bool, pub rem_done: bool, pub relic_rerolled: bool, pub earned: u32, pub rec: bool, pub over_t: f32, pub revive_n: f32,
     pub shop_tab: u8, pub toasts: Vec<Toast>, pub save_t: f32, pub safe: [f32; 4], pub now: f64, pub was_paused: bool,
     pub glow_auto_off: bool, pub banner_on: bool, pub glow_slow: f32, pub test: Vec<(f64, String)>, pub bot: bool, pub shot: Option<String>, pub fps_acc: f32, pub fps_n: u32, pub fps: f32, pub slow_t: f32, pub q_auto: u8, pub last_land: bool, pub orient_set: u8, pub fps_set: u32,
 }
@@ -74,7 +74,7 @@ impl App {
         let now = get_time();
         let mut app = App { gx, scaler: crate::gfx::Scaler::new(), bloom: None, rd: Rd::new(), g, ui: Ui::new(), au, scr: Scr::None, scr_t: 0., back_to: Scr::Title,
             intro: Intro { t: 0., dur: if full { 5.8 } else { 1.5 }, full, ig: if full { 3.7 } else { 0.08 }, revealed: false }, end: End { t: 0., show: 7.4, shown: false, first: false },
-            joy: Joy::default(), ads: Ads { place: String::new(), cb: None, wd: 0., wd_len: 0., last: -1e9, t0: now, over_n: 0, back_t: 0. }, cards: vec![], cards_t: 0., relic_mode: false, path_mode: false, best_sel: None, wheel: WheelSt::default(), map_pick: 0, modes_h: 600., prof: [0.; 3], share_cap: None, rate_pending: false, rem_done: false, relic_rerolled: false, earned: 0, rec: false, over_t: 0., revive_n: 0.,
+            joy: Joy::default(), ads: Ads { place: String::new(), cb: None, wd: 0., wd_len: 0., last: -1e9, t0: now, over_n: 0, back_t: 0. }, cards: vec![], cards_t: 0., relic_mode: false, path_mode: false, best_sel: None, wheel: WheelSt::default(), map_pick: 0, modes_h: 600., prof: [0.; 3], fps_cap: 0, slow120: 0, warmed: false, share_cap: None, rate_pending: false, rem_done: false, relic_rerolled: false, earned: 0, rec: false, over_t: 0., revive_n: 0.,
             shop_tab: 0, toasts: vec![], save_t: 0., safe: [0.; 4], now, was_paused: false, glow_auto_off: false, banner_on: false, glow_slow: 0., test: std::env::var("SVET_TEST").unwrap_or_default().split(';').filter_map(|c| c.split_once(':').map(|(t, c)| (t.trim().parse().unwrap_or(0.), c.trim().to_string()))).collect(), bot: false, shot: None, fps_acc: 0., fps_n: 0, fps: 60., slow_t: 0., q_auto: 2, last_land: false, orient_set: 99, fps_set: 0 };
         app.g.state = State::Intro;
         if let Some(crate::flow::DailyMsg::Login(d, r)) = app.g.daily_check() { app.toast_later(tf("loginT", &[&d.to_string()]), format!("+{r} {}", t("pearlsGen"))); }
@@ -227,7 +227,7 @@ impl App {
         self.gx.safe_t = self.safe[0]; self.gx.safe_b = self.safe[1];
         // настройки, которые применяет система
         if self.orient_set != self.g.s.set.orient { self.orient_set = self.g.s.set.orient; platform::set_orient(self.orient_set); }
-        if self.fps_set != self.g.s.set.fps { self.fps_set = self.g.s.set.fps; platform::set_fps(self.fps_set); }
+        { let want = if self.fps_cap > 0 { self.fps_cap.min(self.g.s.set.fps) } else { self.g.s.set.fps }; if self.fps_set != want { self.fps_set = want; platform::set_fps(want); } }
         let land = self.landscape(); if land != self.last_land { self.last_land = land; if self.g.state == State::Play { self.pause(); } } // поворот посреди забега — пауза
         self.ui.begin(px, rdt);
         let mut evs = platform::poll(); self.ads_tick(&mut evs);
@@ -405,8 +405,9 @@ impl App {
         let use_bloom = false; self.gx.glow_boost = if self.g.s.set.fx { 1.35 } else { 1. }; self.gx.clock = self.now as f32; self.gx.anim_parts = self.g.quality >= 1;
         if use_bloom { if let Some(b) = self.bloom.as_mut() { b.begin(&mut self.gx); } }
         // 4.6: мир — в уменьшенном разрешении (бюджет пикселей по качеству), интерфейс — потом, чётко
-        let budget = match self.g.quality { 2 => 1.15e6, 1 => 0.85e6, _ => 0.62e6 } * if matches!(self.g.s.set.quality.as_str(), "high") { 1.4 } else { 1. };
-        self.scaler.begin(&mut self.gx, budget);
+        // 4.6.1: только при «Графика: низкая». На высокой выигрыш съедало полноэкранное копирование и запись/чтение текстуры
+        // (мобильные GPU) — стало хуже, чем без него (фризы).
+        if self.g.s.set.quality == "low" { self.scaler.begin(&mut self.gx, 0.7e6); }
         if intro_dark { clear_background(Color::from_rgba(0, 2, 7, 255)); }
         else if !end_lit { render::background(&mut self.gx, &mut self.rd, &mut self.g, rdt, !(st == State::Intro && self.intro.t <= self.intro.ig)); }
         else { clear_background(Color::from_rgba(6, 48, 90, 255)); }
@@ -421,6 +422,7 @@ impl App {
         if st == State::Intro { crate::hud::intro(self); }
         crate::screens::draw(self);
         crate::hud::toasts(self);
+        if !self.warmed && self.now > 1.5 { self.warmed = true; self.gx.prewarm(); }
         self.gx.set_add(false);
     }
 }
