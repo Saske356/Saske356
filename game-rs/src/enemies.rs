@@ -314,7 +314,10 @@ impl Game {
         let dsc = self.dmg_scale; let flip = self.rand() < dt * 0.12;
         let (enr, l, state, ex, ey, er) = { let e = &mut self.en.items[i]; e.st -= dt; (e.hp < e.max_hp * 0.5, e.lvl, e.state, e.x, e.y, e.r) };
         if enr && self.en.items[i].ty == 0. { self.en.items[i].ty = 1.; self.text(ex, ey - er - 24., t("guardRage"), 0xbfe6ff, true, false); self.ring(ex, ey, 20., 240., 0.6, c::ICE, 7.); self.flash = self.flash.max(0.3); }
-        { let e = &mut self.en.items[i]; let keep = 290.; let rad = if d < keep - 40. { -1. } else if d > keep + 40. { 1. } else { 0. }; let s = e.spd; let p3 = e.p3; steer(e, (ux * rad - uy * 0.4 * p3) * s, (uy * rad + ux * 0.4 * p3) * s, 1.1, dt); e.ang = 0.; if flip { e.p3 = -e.p3; } }
+        { let e = &mut self.en.items[i]; let (kx, ky) = ((self.vw - 90.).max(150.), (self.vh - 90.).max(130.)); let keep = (1. / ((ux / kx).powi(2) + (uy / ky).powi(2)).sqrt().max(1e-3)).clamp(150., 290.); /* 4.8.2: в кадре и в горизонтали */
+            let rad = if d < keep - 40. { -1. } else if d > keep + 40. { 1. } else { 0. }; let s = e.spd * (1. + ((d - keep - 100.) / 150.).clamp(0., 4.)) /* далеко — догоняет */; let p3 = e.p3; steer(e, (ux * rad - uy * 0.4 * p3) * s, (uy * rad + ux * 0.4 * p3) * s, 1.1, dt); if flip { e.p3 = -e.p3; }
+            // 4.8.2: Королева Роя плывёт головой по ходу движения (раньше скользила боком и резко переворачивалась к игроку)
+            let v2 = e.vx * e.vx + e.vy * e.vy; let want = if v2 > 400. { e.vy.atan2(e.vx) } else { uy.atan2(ux) }; e.ang += ang_diff(e.ang, want) * (dt * 2.).min(1.); }
         let (ex, ey) = (self.en.items[i].x, self.en.items[i].y);
         match state {
             0 => { let (mut p1, mut p2) = (self.en.items[i].p1, self.en.items[i].p2); p1 -= dt;
@@ -378,13 +381,14 @@ impl Game {
         let (enr, state, ex, ey, st);
         { let e = &mut self.en.items[i]; enr = e.hp < e.max_hp * 0.5; e.st -= dt; state = e.state; st = e.st;
             if kind == K::Boss7 { // 4.6: медуза зависает над игроком, покачиваясь, и плывёт толчками (как настоящая) — вся в кадре
-                let (px, py) = (self.p.x, self.p.y); let tt = self.t * 0.55 + e.phase; let (tx, ty) = (px + tt.sin() * 160., py - 230. + (tt * 1.7).sin() * 30.);
+                let (px, py) = (self.p.x, self.p.y); let tt = self.t * 0.32 + e.phase; let (rx, ry) = ((self.vw - 150.).clamp(170., 300.), (self.vh - 150.).clamp(130., 240.)); // 4.8.2: кружит вокруг со всех сторон, головой вперёд
+                let (tx, ty) = (px + tt.cos() * rx, py + tt.sin() * ry + (tt * 2.3).sin() * 25.);
                 let (dx, dy) = (tx - e.x, ty - e.y); let dd = (dx * dx + dy * dy).sqrt().max(1.); let push = 0.55 + 0.45 * (self.t * 2.2 + e.phase).sin().max(0.);
-                let s = (e.spd * 1.3 * push).min(dd * 2.5); steer(e, dx / dd * s, dy / dd * s, 2.2, dt); }
+                let catch_ = 1. + ((dd - 250.) / 150.).clamp(0., 3.); let s = (e.spd * 1.3 * push * catch_).min(dd * 2.5); steer(e, dx / dd * s, dy / dd * s, 2.2, dt); } // далеко — догоняет
             else if !(state == 2 && matches!(kind, K::Boss5 | K::Boss6 | K::Boss8)) {   // кружит на дистанции (кроме фазы рывка)
                 let keep = if kind == K::Boss7 { 280. } else { 300. }; let rad = if d < keep - 40. { -1. } else if d > keep + 40. { 1. } else { 0. };
                 let s = e.spd * if kind == K::Boss6 { 1.25 } else { 1. }; steer(e, (ux * rad - uy * 0.55 * e.p3.signum().max(-1.)) * s, (uy * rad + ux * 0.55) * s, 1.8, dt); }
-            if e.vx * e.vx + e.vy * e.vy > 4. { e.ang += ang_diff(e.ang, if state == 2 { face } else { e.vy.atan2(e.vx) }) * (dt * 4.).min(1.); }
+            if e.vx * e.vx + e.vy * e.vy > 4. { e.ang += ang_diff(e.ang, if state == 2 { face } else { e.vy.atan2(e.vx) }) * (dt * if kind == K::Boss7 { 2.2 } else { 4. }).min(1.); }
             ex = e.x; ey = e.y; }
         let (mut p1, mut p2) = (self.en.items[i].p1, self.en.items[i].p2);
         match state {

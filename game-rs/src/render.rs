@@ -398,7 +398,7 @@ fn boss_new(gx: &mut Gfx, g: &Game, e: &Enemy, sc: f32, wht: bool) {
     let pulse = 1. + (t * 2.2 + e.phase).sin() * 0.02;
     if e.kind == K::Boss7 { // 4.6: медуза — купол всегда вверх, щупальца вниз; толчки: сжимается и раскрывается
         let pp = (t * 2.2 + e.phase).sin(); gx.sqx = 1. + 0.06 * pp; gx.sqy = 1. - 0.05 * pp;
-        gx.spr_jaw(&tk, e.x, e.y, -std::f32::consts::FRAC_PI_2 + (t * 0.9 + e.phase).sin() * 0.1, sc, wht, anim_ph(gx, &tk, e), jr); gx.sqx = 1.; gx.sqy = 1.; return; }
+        gx.spr_jaw(&tk, e.x, e.y, e.ang + (t * 0.9 + e.phase).sin() * 0.08, sc, wht, anim_ph(gx, &tk, e), jr); gx.sqx = 1.; gx.sqy = 1.; return; }
     gx.spr_jaw(&tk, e.x, e.y, e.ang + (t * 1.9).sin() * 0.03, sc * pulse, wht, anim_ph(gx, &tk, e), jr);
 }
 /// 4.5: Левиафан — лента вдоль следа головы (serpent.rs), челюсть на шарнире, бегущие огни по телу
@@ -482,7 +482,7 @@ fn queen(gx: &mut Gfx, g: &Game, e: &Enemy, sc: f32, wht: bool) {
         for i in 0..qz.rn { let a = qz.ra + i as f32 * TAU / qz.rn as f32; gx.line_world(e.x + a.cos() * e.r, e.y + a.sin() * e.r, e.x + a.cos() * 620., e.y + a.sin() * 620., 1.5 + 2. * k, col, false); } }
     gx.glow_world(true, c::ICE, e.x, e.y, e.r * 2.6, 0.4 + 0.2 * (t * 5.).sin());
     let pul = 1. + (t * 2.6).sin() * 0.05;
-    let qa = if g.p.x < e.x { std::f32::consts::PI } else { 0. }; let tk = tkey("queen", e.tier); gx.spr_world(&tk, e.x, e.y, qa, sc * pul, 1., wht, anim_ph(gx, &tk, e), false);
+    let qa = e.ang + (t * 1.3).sin() * 0.05; let tk = tkey("queen", e.tier); gx.spr_world(&tk, e.x, e.y, qa, sc * pul, 1., wht, anim_ph(gx, &tk, e), false);
 }
 
 fn new_upg(gx: &mut Gfx, g: &Game) {
