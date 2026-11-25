@@ -139,7 +139,11 @@ fn b64d(s: &str) -> Option<Vec<u8>> { let mut out = vec![]; let v: Vec<u32> = s.
         for k in 0..c.len() - 1 { out.push((n >> (16 - 8 * k) & 255) as u8); } } Some(out) }
 impl Save {
     pub fn export_code(&self) -> String {
-        let mut s = self.clone(); s.err_log.clear(); let j = s.to_json();
+        // 4.8.1: в код — только прогресс: без настроек, ежедневных заданий, отметок «новое» и подсказок; пустые/нулевые поля выкинуты
+        let mut v: Value = serde_json::from_str(&self.to_json()).unwrap_or(Value::Null);
+        if let Value::Object(m) = &mut v { for k in ["set", "daily", "seen", "hints", "errLog", "migrated", "seenHow", "seenIntro", "crabHint", "tut", "rate", "rateAt", "notifAsked"] { m.remove(k); }
+            m.retain(|_, x| !(x.is_null() || *x == json!(0) || *x == json!("") || x.as_object().map(|o| o.is_empty()).unwrap_or(false) || x.as_array().map(|a| a.iter().all(|q| q == &json!(""))).unwrap_or(false))); }
+        let j = v.to_string();
         let z = miniz_oxide::deflate::compress_to_vec(j.as_bytes(), 9);
         format!("SB1-{}-{:08x}", b64e(&z), fnv(j.as_bytes()))
     }
@@ -152,7 +156,7 @@ impl Save {
         let j = miniz_oxide::inflate::decompress_to_vec_with_limit(&z, 1 << 20).map_err(|_| "broken")?;
         if format!("{:08x}", fnv(&j)) != sum { return Err("broken"); }
         let txt = String::from_utf8(j).map_err(|_| "broken")?;
-        let mut s = Save::from_json(&txt); s.set = keep.clone(); s.migrated = true; Ok(s)
+        let mut s = Save::from_json(&txt); s.set = keep.clone(); s.migrated = true; s.tut = true; s.seen_how = true; s.seen_intro = true; Ok(s)
     }
 }
 #[cfg(test)] mod xfer_test { use super::*;

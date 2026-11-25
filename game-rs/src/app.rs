@@ -415,6 +415,8 @@ impl App {
                 if g.dying > 0. { g.dying -= rdt; dt = rdt * 0.35; if g.dying <= 0. { g.update_run(dt, rdt); if !self.offer_revive() { self.game_over(); } return; } }
                 let g = &mut self.g;
                 if g.state == State::Play { g.update_run(dt, rdt); }
+                if self.try_real.is_some() { let g = &mut self.g; g.want_levelup = false; g.want_path = false; g.want_relic = false; g.want_ending = false; g.p.xp = 0.; g.boss = -1; } // 4.8.1: в примерке без уровней
+                let g = &mut self.g;
                 if g.want_over && g.state == State::Play { self.game_over(); return; }
                 if g.want_levelup && g.run_mode == RunMode::NoUp && g.state == State::Play { g.level_noup(); }
                 let g = &mut self.g;

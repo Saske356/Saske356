@@ -1049,14 +1049,18 @@ fn settings(a: &mut App) {
         (format!("{}: {}", t("nums"), on_off(s.nums)), 4), (format!("{}: {}", t("shake"), on_off(s.shake)), 5),
         (format!("{orient_l}: {orient}"), 8), (format!("{}: {}", if i18n::is_en() { "Reminders" } else { "Напоминания" }, on_off(s.notify)), 10), (format!("{}: {}", if i18n::is_en() { "Glow" } else { "Подсветка" }, on_off(s.fx)), 9), (format!("{}: {}", t("lang"), if s.lang == "en" { "English" } else { "Русский" }), 6), (format!("{}: {}", t("fps"), s.fps), 7) ];
     let mut rows = rows; rows.push((if i18n::is_en() { "Transfer progress".to_string() } else { "Перенос прогресса".to_string() }, 11));
-    let (bx, bw) = col(a); let bh = if sm { 46. } else { 50. }; let gap = if sm { 6. } else { 8. };
-    let ncol = if land { 2 } else { 1 }; let cw = if land { ((w - 40.) / 2.).min(300.) } else { bw }; let x0 = if land { (w - cw * 2. - 12.) / 2. } else { bx };
-    let nrow = (rows.len() + ncol - 1) / ncol; let total = 40. + nrow as f32 * (bh + gap) + 8. + bh;
-    let mut y = ((h - total) / 2.).max(tp);
+    // 4.8.1: настройки помещаются между верхом и баннером: в вертикали — две колонки, высота кнопок по месту
+    let (bx, bw) = col(a); let gap = if sm { 6. } else { 8. }; let avail = bottom(a) - tp;
+    let ncol = 2;
+    let cw = if ncol == 1 { bw } else if land { ((w - 40.) / 2.).min(300.) } else { ((w - 32. - a.safe[2] - a.safe[3]) / 2. - 4.).min(210.) };
+    let x0 = if ncol == 1 { bx } else { (w - cw * 2. - 8.) / 2. }; let fs = if ncol == 2 && !land { 14. } else { 17. };
+    let nrow = (rows.len() + ncol - 1) / ncol; let bh = ((avail - 40. - 12. - nrow as f32 * gap) / (nrow as f32 + 1.)).clamp(36., 52.);
+    let total = 40. + nrow as f32 * (bh + gap) + 8. + bh;
+    let mut y = (tp + (avail - total) / 2.).max(tp);
     h2(&mut a.gx, &t("setTitle"), w / 2., y + 14., if land { 21. } else { 28. }, al); y += 40.;
     let mut act = None;
-    for (k, (l, id)) in rows.iter().enumerate() { let (cx, cy) = (x0 + (k % ncol) as f32 * (cw + 12.), y + (k / ncol) as f32 * (bh + gap));
-        if a.ui.btn(&mut a.gx, Rect::new(cx, cy, cw, bh), l, St::Cyan, 17., true) { act = Some(*id); } }
+    for (k, (l, id)) in rows.iter().enumerate() { let (cx, cy) = (x0 + (k % ncol) as f32 * (cw + 8.), y + (k / ncol) as f32 * (bh + gap));
+        if a.ui.btn(&mut a.gx, Rect::new(cx, cy, cw, bh), l, St::Cyan, fs, true) { act = Some(*id); } }
     y += nrow as f32 * (bh + gap) + 4.;
     if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, bh), &t("back"), St::Pink, 18., true) { a.click(); let b = a.back_to; a.show(b); return; }
     if act == Some(11) { a.click(); a.xfer = None; a.xfer_msg.clear(); a.show(Scr::Xfer); return; }
