@@ -411,7 +411,7 @@ fn over(a: &mut App) {
     let stats_h = ((cells.len() + cols - 1) / cols) as f32 * (cell_h + 8.) - 8.;
     let q_h = if land { 0. } else { quests.len() as f32 * 19. + 8. };
     let bh = if sm { 56. } else { 68. };
-    let total = 40. + 22. + if land { 40. } else { 62. } + 26. + stats_h + 12. + q_h + if dbl { 60. } else { 0. } + bh + 8. + 54. + if land { 0. } else { 44. } + if a.native_ok && !land { 94. } else { 0. };
+    let total = 40. + 22. + if land { 40. } else { 62. } + 26. + stats_h + 12. + q_h + if dbl { 60. } else { 0. } + bh + 8. + 54. + if land { 0. } else { 44. };
     let mut y = ((h - total) / 2.).max(tp);
     h2(&mut a.gx, &if a.g.victory { t("overWin") } else { t("overLose") }, w / 2., y + 14., if land { 21. } else { 28. }, al); y += if land { 30. } else { 40. };
     let sub = format!("{} {} · {}", a.g.zone * 100, t("m"), i18n::zone((a.g.zone as usize).saturating_sub(1) % 30)); a.gx.text(&sub, w / 2., y, 14., Color::new(1., 1., 1., 0.75 * al), 1, 0); y += 22.;
@@ -436,10 +436,6 @@ fn over(a: &mut App) {
     if a.ui.btn(&mut a.gx, Rect::new(bx, y, hw_, 54.), &t("overShop"), St::Pink, 15., true) { a.click(); a.back_to = Scr::Over; a.ui.scroll_reset(1); a.show(Scr::Shop); return; }
     if a.ui.btn(&mut a.gx, Rect::new(bx + hw_ + 8., y, hw_, 54.), &t("overMenu"), St::Cyan, 15., true) { a.click(); a.between(Next::Menu); return; }
     y += 62.; if a.g.zone >= 2 && a.ui.btn(&mut a.gx, Rect::new(bx + bw * 0.2, y, bw * 0.6, 36.), if i18n::is_en() { "Share record" } else { "Поделиться рекордом" }, St::Gold, 14., true) { a.click(); a.show(Scr::Card); }
-    // 4.5.2: нативная реклама — карточка под кнопками (её рисует Android поверх игры в этом прямоугольнике)
-    if a.native_ok && !land { let r = Rect::new(bx - 4., y + 44., bw + 8., 84.); a.native_rect = Some(r);
-        if !cfg!(target_os = "android") { ui::rrect_grad(&mut a.gx, r.x, r.y, r.w, r.h, 16., Color::new(0.04, 0.16, 0.27, 0.94 * al), Color::new(0.08, 0.04, 0.18, 0.94 * al));
-            a.gx.rrect_line(r.x, r.y, r.w, r.h, 16., 1.5, Color::new(0.37, 0.91, 1., 0.6 * al)); a.gx.text(if i18n::is_en() { "Ad (native)" } else { "Реклама (нативная)" }, r.x + r.w / 2., r.y + r.h / 2., 13., Color::new(1., 1., 1., 0.6 * al), 1, 1); } }
 }
 
 // ---------------- 4.3: карточка рекорда, просьба об оценке ----------------

@@ -262,11 +262,6 @@ public class MainActivity extends Activity {
     private BannerAds banner;
     /** Баннер внизу (только в меню) */
     public void setBanner(boolean on) { try { if (banner != null) banner.show(on); } catch (Throwable t) {} }
-    private NativeAds natives;
-    /** Нативная карточка на экране итогов */
-    public boolean nativeReady() { try { return natives != null && natives.ready(); } catch (Throwable t) { return false; } }
-    public void nativePlace(int x, int y, int w, int h) { try { if (natives != null) natives.place(x, y, w, h); } catch (Throwable t) { } }
-    public void nativeHide() { try { if (natives != null) natives.hide(); } catch (Throwable t) { } }
     public float bannerHeight() { try { return banner != null ? banner.height() : 0; } catch (Throwable t) { return 0; } }
     private InterstitialAds inter;
     private static final java.util.concurrent.ConcurrentLinkedQueue<String> AD_RESULTS = new java.util.concurrent.ConcurrentLinkedQueue<>();
@@ -407,7 +402,7 @@ public class MainActivity extends Activity {
         setFullScreen(true);
         try { ads = new RewardedAds(this); inter = new InterstitialAds(this); } catch (Throwable t) { Log.w("SvetAds", "ads init failed", t); }
         try { banner = new BannerAds(this); } catch (Throwable t) { Log.w("SvetAds", "banner init failed", t); }
-        try { natives = new NativeAds(this); } catch (Throwable t) { Log.w("SvetAds", "native init failed", t); }
+        if (savedInstanceState == null) try { new AppOpenAds(this); } catch (Throwable t) { Log.w("SvetAds", "app open init failed", t); } // только холодный запуск
 
 
     }
