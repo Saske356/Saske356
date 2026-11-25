@@ -260,7 +260,6 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
     for gy in g.geysers.iter() { let k = 1. - gy.t / 1.3; gx.circle_world(gy.x, gy.y, 75. * k, with_a(hex(0xff6a3d), 0.12 + 0.2 * k), false); gx.arc_world(gy.x, gy.y, 75., 0., TAU, 2.5, with_a(hex(0xffb340), 0.5 + 0.4 * (t * 14.).sin().abs()), false); gx.glow_world(true, c::FIRE, gy.x, gy.y, 30. + 40. * k, 0.4 * k); }
     for cr in g.bcr.iter() { let pul = 1. + 0.08 * (t * 3. + cr.ph).sin(); gx.glow_world(true, c::ICE, cr.x, cr.y, 46. * pul, 0.5); gx.spr_world("crystal", cr.x, cr.y, t * 0.6 + cr.ph, 1.5 * pul, 1., false, 0., false);
         for q in 0..cr.hp as i32 { gx.circle_world(cr.x - 10. + q as f32 * 10., cr.y + 26., 3., WHITE, false); } }
-    if g.p.ult_t > 0. && !g.p.dead { let k = (g.p.ult_t / 0.5).min(1.); gx.glow_world(true, c::GOLD, g.p.x, g.p.y, 260. * k, 0.35 + 0.1 * (t * 8.).sin()); gx.glow_world(true, c::WHITE, g.p.x, g.p.y, 90. * k, 0.5); }
     if !g.p.dead { player(gx, g, rdt); }
     // снаряды игрока
     let pc = g.p.pal; let ac = crate::data::SKIN_ACC.get(g.p.skin).copied().unwrap_or(c::WHITE);
@@ -431,8 +430,7 @@ fn player(gx: &mut Gfx, g: &mut Game, rdt: f32) {
         if g.p.inv > 0.75 { gx.sqx *= 0.9; gx.sqy *= 1.1; }
         let ph = gx.spr_anim(&key).map(|a| g.p.a_t * a.freq() * TAU).unwrap_or(0.);
         { let da = ang_diff(g.p.pang, g.p.ang); g.p.pang = g.p.ang; let tr = if rdt > 0. { (da / rdt).clamp(-10., 10.) } else { 0. }; g.p.turn += (tr - g.p.turn) * (1. - (-rdt * 5.).exp()); gx.inertia = (g.p.turn * 0.08).clamp(-0.5, 0.5); }
-        let usc = if g.p.ult_t > 0. { 1.5 + 0.06 * (t * 10.).sin() } else { 1. };
-        gx.spr_world(&key, g.p.x, g.p.y, g.p.ang + (t * 3.).sin() * 0.05, usc, 1., false, ph, false); gx.inertia = 0.;
+        gx.spr_world(&key, g.p.x, g.p.y, g.p.ang + (t * 3.).sin() * 0.05, 1., 1., false, ph, false); gx.inertia = 0.;
         gx.sqx = 1.; gx.sqy = 1.;
     }
     let (px, py) = (g.p.x, g.p.y);
@@ -480,7 +478,6 @@ fn darkness(gx: &mut Gfx, g: &Game) {
 /// Виньетка и красная пульсация при малом здоровье
 pub fn overlay(gx: &mut Gfx, g: &Game) {
     if g.hazard() == crate::extras::HZ_DARK && g.state == State::Play || (g.hazard() == crate::extras::HZ_DARK && g.state == State::Pause) { darkness(gx, g); }
-    if g.p.ult_t > 0. { gx.fill_screen(Color::new(1., 0.8, 0.3, 0.06 + 0.03 * (g.t * 8.).sin()), true); }
     let v = gx.vign.clone(); gx.tex_full(&v, WHITE);
     let lh = low_hp(g);
     if g.hurt_flash > 0. || lh { let a = (g.hurt_flash * 0.7).max(if lh { 0.16 + 0.1 * (g.t * 6.).sin() } else { 0. }).min(0.7); let h = gx.hurt.clone(); gx.tex_full(&h, Color::new(1., 1., 1., a)); }

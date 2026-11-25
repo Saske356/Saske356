@@ -120,35 +120,6 @@ impl Game {
     }
 }
 
-// ---------------- ульта «Сверхновая» ----------------
-pub const ULT_TIME: f32 = 8.;
-impl Game {
-    /// заряд за убийства: быстрее при длинном комбо, элиты и боссы — крупно
-    pub fn ult_charge(&mut self, elite: bool, boss: bool) {
-        if self.p.ult_t > 0. { return; }
-        let add = if boss { 35. } else if elite { 5. } else { 0.8 + (self.combo as f32 * 0.012).min(1.2) };
-        let was = self.p.ult; self.p.ult = (self.p.ult + add).min(100.);
-        if was < 100. && self.p.ult >= 100. { self.snd(Sfx::Level); let (x, y) = (self.p.x, self.p.y - 40.); self.text(x, y, if i18n::is_en() { "SUPERNOVA READY".into() } else { "СВЕРХНОВАЯ ГОТОВА".into() }, 0xffd54f, true, true); }
-    }
-    pub fn ult_fire(&mut self) {
-        if self.p.ult < 100. || self.p.ult_t > 0. || self.p.dead { return; }
-        self.p.ult = 0.; self.p.ult_t = ULT_TIME; self.flash = self.flash.max(0.6); self.shake(10.); self.vibrate(120); self.snd(Sfx::Boom(true));
-        let (x, y) = (self.p.x, self.p.y); self.ring(x, y, 10., 320., 0.7, c::GOLD, 10.); self.burst(x, y, 50, c::GOLD, 400., 12., 0.9);
-        self.banner(if i18n::is_en() { "SUPERNOVA".into() } else { "СВЕРХНОВАЯ".into() }, String::new(), 0xffd54f, 1.5);
-    }
-    /// каждый кадр во время ульты: неуязвимость, жгучая аура, стирание пуль
-    pub fn ult_tick(&mut self, dt: f32) {
-        if self.p.ult_t <= 0. { return; } self.p.ult_t -= dt; self.p.inv = self.p.inv.max(0.25); self.p.ult_hit -= dt;
-        let (x, y) = (self.p.x, self.p.y); let r = 240.;
-        if self.p.ult_hit <= 0. { self.p.ult_hit = 0.2;
-            let q = self.qa(x, y, r + 60.); let dm = self.st.dmg * 3.2;
-            for &i in &q { let (dead, ex, ey, er) = { let e = &self.en.items[i]; (e.dead, e.x, e.y, e.r * e.scale) }; if dead { continue; }
-                let (dx, dy) = (ex - x, ey - y); let d = (dx * dx + dy * dy).sqrt(); if d < r + er { let dd = d.max(1.); self.damage_enemy(i, dm, false, f32::NAN, dx / dd * 120., dy / dd * 120., Src::Nova); } }
-            self.qa_back(q); self.ring(x, y, r * 0.6, r, 0.25, c::GOLD, 3.); }
-        let mut i = self.eb.n; while i > 0 { i -= 1; let b = &self.eb.items[i]; if (b.x - x).powi(2) + (b.y - y).powi(2) < (r * 0.75).powi(2) { let (bx, by) = (b.x, b.y); self.eb.kill(i); self.part(bx, by, 0., 0., 0.25, 8., c::GOLD, 0.); } }
-        if self.p.ult_t <= 0. { self.ring(x, y, 20., 200., 0.5, c::GOLD, 5.); }
-    }
-}
 
 // ---------------- Уровни Бездны (вознесение) ----------------
 pub const ABYSS_MAX: u8 = 20;

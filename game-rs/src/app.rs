@@ -294,7 +294,6 @@ impl App {
                 "modes" => { self.show(Scr::Modes); } "mode" => { let m = [RunMode::Daily, RunMode::Time, RunMode::NoUp, RunMode::Dash][n as usize % 4]; self.start_run(m); }
                 "bestsel" => { self.show(Scr::Best); self.best_sel = Some((n as usize % crate::data::K_ALL.len(), 0)); }
                 "wheel" => { self.show(Scr::Wheel); } "spin" => { self.wheel_start(); } "shop4" => { self.shop_tab = 4; self.show(Scr::Shop); } "pet" => { let k = n as usize % 3; self.g.s.pets.insert(crate::extras::PETS[k].id.into(), 3); self.g.s.pet = crate::extras::PETS[k].id.into(); self.g.compute_stats(); }
-                "ult" => { self.g.p.ult = 100.; self.g.ult_q = true; }
                 "abyss" => { self.g.s.abyss_max = (n as u8).min(20); self.g.s.abyss_sel = (n as u8).min(20); }
                 "card" => { self.show(Scr::Card); } "share" => { self.share_cap = Some(crate::screens::card_rect(self)); } "rate" => { self.show(Scr::Rate); } "remind" => { std::env::set_var("SVET_REMIND", "1"); crate::extras::sync_reminders(&self.g.s); }
                 "trail" => { let i = n as usize % 7; self.g.s.trails.insert(i.to_string(), 1); self.g.s.trail = i as u8; } "death" => { let i = n as usize % 6; self.g.s.deaths.insert(i.to_string(), 1); self.g.s.death = i as u8; } "scroll" => { self.ui.scroll_set(1, n); }
