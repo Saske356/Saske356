@@ -313,6 +313,7 @@ impl App {
                 "rev" => { self.g.rev_cd = 0.; self.g.rev = 0; let k = n as u8; if k > 0 { self.g.rev = k; self.g.rev_t = 25.; } }
                 "portal" => { self.g.portal_zone = 0; self.g.zone_t = 30.; } "room" => { self.g.portal = Some((self.g.p.x + 20., self.g.p.y, 20.)); self.g.room_k = n as u8; }
                 "pet2" => { let k = n as usize % crate::extras::PETS.len(); self.g.s.tok_pet2 = crate::extras::PETS[k].id.into(); }
+                "adpet2" => { let k = n as usize % crate::extras::PETS.len(); self.ad_show("pet2", AdCb::Pet2(k)); }
                 "map" => { self.map_pick = n as u8 % 4; self.show(Scr::Map); } "region" => { let i = n as u8 % 4; self.g.s.regions.insert(i.to_string(), 1); self.g.s.region = i; } "shards" => { self.g.s.shards = n as u32; }
                 "path" => { self.g.path_pending = true; }
                 "relic" => { self.g.relic_pending += 1; self.g.level_delay = 0.; }

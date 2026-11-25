@@ -81,7 +81,8 @@ impl Game {
     pub fn pet_tick(&mut self, dt: f32) {
         let Some(pi) = self.pet_idx() else { return }; let l = self.pet_lvl() as f32; let dm = self.st.dmg;
         // плывёт за плечом, с запаздыванием (наутилус — кружит вокруг)
-        let a = if pi == 5 { self.t * (2.2 + 0.2 * l) } else { self.p.ang + 2.4 + (self.t * 1.3).sin() * 0.4 }; let rr = if pi == 5 { 52. } else { 46. };
+        let second = self.pet_force.is_some(); // 4.7.1: второй питомец — за другим плечом (раньше оба плыли в одной точке и сливались)
+        let a = if pi == 5 { self.t * (2.2 + 0.2 * l) + if second { std::f32::consts::PI } else { 0. } } else { self.p.ang + if second { -2.4 } else { 2.4 } + (self.t * 1.3).sin() * 0.4 }; let rr = if pi == 5 { 52. } else if second { 50. } else { 46. };
         let (tx, ty) = (self.p.x + a.cos() * rr, self.p.y + a.sin() * rr);
         if self.pet.dash > 0. { self.pet.dash -= dt; let k = 1. - (-dt * 10.).exp(); self.pet.x += (self.pet.tx - self.pet.x) * k; self.pet.y += (self.pet.ty - self.pet.y) * k; }
         else { let k = 1. - (-dt * if pi == 5 { 14. } else { 4. }).exp(); let (ox, oy) = (self.pet.x, self.pet.y); self.pet.x += (tx - self.pet.x) * k; self.pet.y += (ty - self.pet.y) * k;
