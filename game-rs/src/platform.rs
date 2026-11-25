@@ -48,6 +48,9 @@ mod imp {
     pub fn density() -> f32 { unsafe { with(|env| { let m = mid(env, "density", "()F"); if m.is_null() { return 2.5; } (**env).CallFloatMethod.unwrap()(env, ACTIVITY, m) }) } }
     pub fn set_fps(f: u32) { call_v("setFps", "(I)V", |env, m| unsafe { (**env).CallVoidMethod.unwrap()(env, ACTIVITY, m, f as i32); }) }
     pub fn files_dir() -> String { call_s("filesDir") }
+    pub fn native_ready() -> bool { call_b("nativeReady", "()Z", None) }
+    pub fn native_place(x: i32, y: i32, w: i32, h: i32) { call_v("nativePlace", "(IIII)V", |env, m| unsafe { (**env).CallVoidMethod.unwrap()(env, ACTIVITY, m, x, y, w, h); }) }
+    pub fn native_hide() { call_v("nativeHide", "()V", |env, m| unsafe { (**env).CallVoidMethod.unwrap()(env, ACTIVITY, m); }) }
     pub fn set_reminders(plan: &str, ch: &str) { call_v("setReminders", "(Ljava/lang/String;Ljava/lang/String;)V", |env, m| unsafe { let a = jstr(env, plan); let b = jstr(env, ch); (**env).CallVoidMethod.unwrap()(env, ACTIVITY, m, a, b); }) }
     pub fn ask_notify() { call_v("askNotify", "()V", |env, m| unsafe { (**env).CallVoidMethod.unwrap()(env, ACTIVITY, m); }) }
     pub fn rate_app() { call_v("rateApp", "()V", |env, m| unsafe { (**env).CallVoidMethod.unwrap()(env, ACTIVITY, m); }) }
@@ -86,6 +89,10 @@ mod imp {
     pub fn density() -> f32 { std::env::var("SVET_DPI").ok().and_then(|v| v.parse().ok()).unwrap_or(macroquad::window::screen_dpi_scale().max(1.)) }
     pub fn set_fps(_f: u32) {}
     pub fn files_dir() -> String { std::env::var("SVET_DATA").unwrap_or_else(|_| ".".into()) }
+    /// на ПК нативная карточка имитируется рамкой при SVET_FAKE_ADS=1
+    pub fn native_ready() -> bool { fake() }
+    pub fn native_place(_x: i32, _y: i32, _w: i32, _h: i32) {}
+    pub fn native_hide() {}
     pub fn set_reminders(plan: &str, _ch: &str) { if std::env::var("SVET_REMIND").is_ok() { eprintln!("reminders:\n{plan}"); } }
     pub fn ask_notify() { eprintln!("ask_notify"); }
     pub fn rate_app() { eprintln!("rate_app"); }

@@ -29,7 +29,7 @@ pub struct Toast { pub title: String, pub sub: String, pub t: f32 }
 pub struct App {
     pub gx: Gfx, pub bloom: Option<crate::gfx::Bloom>, pub rd: Rd, pub g: Game, pub ui: Ui, pub au: Audio,
     pub scr: Scr, pub scr_t: f32, pub back_to: Scr, pub intro: Intro, pub end: End, pub joy: Joy, pub ads: Ads,
-    pub cards: Vec<usize>, pub cards_t: f32, pub relic_mode: bool, pub path_mode: bool, pub best_sel: Option<(usize, u8)>, pub wheel: WheelSt, pub map_pick: u8, pub modes_h: f32, pub share_cap: Option<Rect>, pub rate_pending: bool, pub rem_done: bool, pub relic_rerolled: bool, pub earned: u32, pub rec: bool, pub over_t: f32, pub revive_n: f32,
+    pub cards: Vec<usize>, pub cards_t: f32, pub relic_mode: bool, pub path_mode: bool, pub best_sel: Option<(usize, u8)>, pub wheel: WheelSt, pub map_pick: u8, pub modes_h: f32, pub native_ok: bool, pub native_rect: Option<Rect>, pub native_on: bool, pub native_chk: f64, pub share_cap: Option<Rect>, pub rate_pending: bool, pub rem_done: bool, pub relic_rerolled: bool, pub earned: u32, pub rec: bool, pub over_t: f32, pub revive_n: f32,
     pub shop_tab: u8, pub toasts: Vec<Toast>, pub save_t: f32, pub safe: [f32; 4], pub now: f64, pub was_paused: bool,
     pub glow_auto_off: bool, pub banner_on: bool, pub glow_slow: f32, pub test: Vec<(f64, String)>, pub bot: bool, pub shot: Option<String>, pub fps_acc: f32, pub fps_n: u32, pub fps: f32, pub slow_t: f32, pub q_auto: u8, pub last_land: bool, pub orient_set: u8, pub fps_set: u32,
 }
@@ -74,7 +74,7 @@ impl App {
         let now = get_time();
         let mut app = App { gx, bloom: None, rd: Rd::new(), g, ui: Ui::new(), au, scr: Scr::None, scr_t: 0., back_to: Scr::Title,
             intro: Intro { t: 0., dur: if full { 5.8 } else { 1.5 }, full, ig: if full { 3.7 } else { 0.08 }, revealed: false }, end: End { t: 0., show: 7.4, shown: false, first: false },
-            joy: Joy::default(), ads: Ads { place: String::new(), cb: None, wd: 0., wd_len: 0., last: -1e9, t0: now, over_n: 0, back_t: 0. }, cards: vec![], cards_t: 0., relic_mode: false, path_mode: false, best_sel: None, wheel: WheelSt::default(), map_pick: 0, modes_h: 600., share_cap: None, rate_pending: false, rem_done: false, relic_rerolled: false, earned: 0, rec: false, over_t: 0., revive_n: 0.,
+            joy: Joy::default(), ads: Ads { place: String::new(), cb: None, wd: 0., wd_len: 0., last: -1e9, t0: now, over_n: 0, back_t: 0. }, cards: vec![], cards_t: 0., relic_mode: false, path_mode: false, best_sel: None, wheel: WheelSt::default(), map_pick: 0, modes_h: 600., native_ok: false, native_rect: None, native_on: false, native_chk: 0., share_cap: None, rate_pending: false, rem_done: false, relic_rerolled: false, earned: 0, rec: false, over_t: 0., revive_n: 0.,
             shop_tab: 0, toasts: vec![], save_t: 0., safe: [0.; 4], now, was_paused: false, glow_auto_off: false, banner_on: false, glow_slow: 0., test: std::env::var("SVET_TEST").unwrap_or_default().split(';').filter_map(|c| c.split_once(':').map(|(t, c)| (t.trim().parse().unwrap_or(0.), c.trim().to_string()))).collect(), bot: false, shot: None, fps_acc: 0., fps_n: 0, fps: 60., slow_t: 0., q_auto: 2, last_land: false, orient_set: 99, fps_set: 0 };
         app.g.state = State::Intro;
         if let Some(crate::flow::DailyMsg::Login(d, r)) = app.g.daily_check() { app.toast_later(tf("loginT", &[&d.to_string()]), format!("+{r} {}", t("pearlsGen"))); }
@@ -255,7 +255,13 @@ impl App {
         // ---- отрисовка ----
         let sh = self.g.shake; let (shx, shy) = if sh > 0.3 { (rand::gen_range(-1f32, 1.) * sh, rand::gen_range(-1f32, 1.) * sh) } else { (0., 0.) };
         self.gx.frame(px, self.g.cam_x, self.g.cam_y, shx, shy);
+        if self.scr == Scr::Over && self.now > self.native_chk { self.native_chk = self.now + 1.; self.native_ok = platform::native_ready(); }
+        self.native_rect = None;
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.draw(rdt)));
+        // нативная карточка: ставим, когда экран итогов проявился; уходим с него — убираем
+        match self.native_rect { Some(r) if self.scr == Scr::Over && self.ui.alpha > 0.98 => { let p = px;
+                platform::native_place((r.x * p) as i32, (r.y * p) as i32, (r.w * p) as i32, (r.h * p) as i32); self.native_on = true; }
+            _ => if self.native_on { self.native_on = false; platform::native_hide(); } }
         if res.is_err() { self.fault("draw"); gl_use_default_material(); }
         if !self.rem_done && self.now > 2. { self.rem_done = true; crate::extras::sync_reminders(&self.g.s); }
         if let Some(r) = self.share_cap.take() { self.share_capture(r); }
