@@ -426,6 +426,9 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    public void onConfigurationChanged(Configuration c) { super.onConfigurationChanged(c); if (banner != null) banner.onConfig(); } // поворот — переставить баннер
+
+    @Override
     protected void onStop() {
         super.onStop();
     }

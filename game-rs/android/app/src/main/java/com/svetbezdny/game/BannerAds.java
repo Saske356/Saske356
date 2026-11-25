@@ -1,6 +1,7 @@
 package com.svetbezdny.game;
 
 import android.app.Activity;
+import android.content.res.Configuration;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
@@ -35,7 +36,9 @@ public class BannerAds {
         try {
             view = new BannerAdView(activity);
             float density = activity.getResources().getDisplayMetrics().density;
-            int widthDp = Math.round(activity.getResources().getDisplayMetrics().widthPixels / density);
+            // ширина — по короткой стороне экрана: в горизонтальном режиме баннер не растягивается на весь экран
+            android.util.DisplayMetrics dm = activity.getResources().getDisplayMetrics();
+            int widthDp = Math.round(Math.min(dm.widthPixels, dm.heightPixels) / density);
             BannerAdSize size = BannerAdSize.sticky(activity, widthDp);
             view.setAdSize(size);
             view.setBannerAdEventListener(new BannerAdEventListener() {
@@ -44,16 +47,28 @@ public class BannerAds {
                 @Override public void onAdClicked() {}
                 @Override public void onImpression(ImpressionData d) {}
             });
-            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-            activity.addContentView(view, lp);
+            activity.addContentView(view, params());
             view.setVisibility(View.GONE);
             view.loadAd(new AdRequest.Builder(BuildConfig.YANDEX_BANNER_ID).build());
         } catch (Throwable t) { Log.w(TAG, "banner init failed", t); view = null; }
     }
 
-    private void apply() {
-        activity.runOnUiThread(() -> { if (view != null) view.setVisibility(want && loaded ? View.VISIBLE : View.GONE); });
+    /** Вертикально — внизу по центру; горизонтально — внизу слева (под картинкой), чтобы не закрывать кнопки справа */
+    private FrameLayout.LayoutParams params() {
+        boolean land = activity.getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
+        return new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM | (land ? Gravity.START : Gravity.CENTER_HORIZONTAL));
     }
+
+    private void apply() {
+        activity.runOnUiThread(() -> { if (view != null) { view.setLayoutParams(params()); view.setVisibility(want && loaded ? View.VISIBLE : View.GONE); } });
+    }
+
+    /** Поворот экрана: переставить баннер */
+    public void onConfig() { apply(); }
+
+    /** Горизонтально баннер слева — игре не нужно поднимать кнопки (0); вертикально — его высота */
+    public boolean leftSide() { return activity.getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE; }
 
     public void show(boolean on) { if (on == want) return; want = on; apply(); }
 

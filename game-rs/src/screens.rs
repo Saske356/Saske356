@@ -170,7 +170,7 @@ fn title_portrait(a: &mut App) {
     // ---- кнопки ----
     let mut y = yb;
     // регион (карта океана) — плашка над «Играть»
-    { let en = i18n::is_en(); let ri = a.g.s.region as usize; let nm = crate::extras::region_txt(ri).0; let l = format!("{}: {} ›", if en { "Region" } else { "Регион" }, nm); let tw = a.gx.text_w(&l, 13., 1) + 24.;
+    { let en = i18n::is_en(); let ri = a.g.s.region as usize; let nm = crate::extras::region_txt(ri).0; let l = format!("{}{}: {} ›", if a.g.s.set.hard && a.g.s.wins > 0 { "☠ " } else { "" }, if en { "Region" } else { "Регион" }, nm); let tw = a.gx.text_w(&l, 13., 1) + 24.;
       let r = Rect::new(bx + bw / 2. - tw / 2., y - 34., tw, 26.); ui::rrect_grad(&mut a.gx, r.x, r.y, r.w, r.h, 13., Color::new(0.03, 0.1, 0.2, 0.7 * al), Color::new(0.02, 0.06, 0.14, 0.6 * al));
       a.gx.rrect_line(r.x, r.y, r.w, r.h, 13., 1., with_alpha(hex(crate::extras::REGIONS[ri].col), 0.7 * al)); a.gx.text(&l, r.x + r.w / 2., r.y + 13., 13., Color::new(1., 1., 1., al), 1, 1);
       if a.ui.tap(r) { a.click(); a.map_pick = a.g.s.region; a.show(Scr::Map); return; } }
@@ -822,7 +822,10 @@ fn modes(a: &mut App) {
         (RunMode::Dash, "dash", if en { "Dash only".into() } else { "Только рывок".into() },
             if en { format!("You can't shoot — dash through foes, it recharges fast and hits hard. Best: {} m", rec("dash")) } else { format!("Стрелять нельзя — тарань врагов рывком, он быстрый и мощный. Лучшее: {} м", rec("dash")) }, hex(0xc59bff), "dash"),
     ];
-    let iw = f.w; let bw = 96.; let mut y = f.y0 + 4.;
+    let iw = f.w; let bw = 96.;
+    // 4.5: список прокручивается (в горизонтальном режиме не помещался)
+    let area = Rect::new(f.x - 4., f.y0, f.w + 8., f.y1 - f.y0); let off = a.ui.scroll(6, area, a.modes_h, get_frame_time()); a.ui.clip_on(&a.gx, area);
+    let mut y = f.y0 + 4. - off;
     for (m, icon, nm, desc, acc, _k) in items.iter() {
         let dh = a.gx.wrap(desc, iw - 76. - bw - 10., 12.5, 0).len() as f32 * 16.; let h = (34. + dh + 12.).max(74.);
         let r = Rect::new(f.x, y, iw, h); item_card(&mut a.gx, r, *acc, false, al);
@@ -830,9 +833,21 @@ fn modes(a: &mut App) {
         a.gx.text(nm, f.x + 64., y + 20., 17., Color::new(1., 1., 1., al), 0, 2);
         a.gx.text_wrap(desc, f.x + 64., y + 40., iw - 76. - bw - 10., 12.5, 16., Color::new(1., 1., 1., 0.82 * al), 0, 0);
         let br = Rect::new(f.x + iw - 12. - bw, y + h / 2. - 22., bw, 44.);
-        if a.ui.btn(&mut a.gx, br, if en { "Play" } else { "Играть" }, St::Gold, 16., true) { a.click(); a.start_run(*m); return; }
+        if a.ui.btn(&mut a.gx, br, if en { "Play" } else { "Играть" }, St::Gold, 16., true) { a.click(); a.ui.clip_off(); a.start_run(*m); return; }
         y += h + 10.;
     }
+    // ☠ Кошмар: переключатель для обычных забегов (после первой победы)
+    { let won = a.g.s.wins > 0; let on = a.g.s.set.hard && won; let acc = hex(0xff4d5e);
+      let desc = if !won { if en { "Unlocks after your first victory (3000 m). Foes are 30% tougher, hit 35% harder and there are 20% more of them — pearls ×1.5.".to_string() } else { "Откроется после первой победы (3000 м). Враги на 30% крепче, бьют на 35% сильнее, их на 20% больше — жемчуг ×1,5.".to_string() } }
+          else if en { format!("For normal runs. Foes are 30% tougher, hit 35% harder and there are 20% more of them — pearls ×1.5. Now: {}", if on { "ON" } else { "off" }) }
+          else { format!("Для обычных забегов. Враги на 30% крепче, бьют на 35% сильнее, их на 20% больше — жемчуг ×1,5. Сейчас: {}", if on { "ВКЛ" } else { "выкл" }) };
+      let dh = a.gx.wrap(&desc, iw - 76. - bw - 10., 12.5, 0).len() as f32 * 16.; let h = (34. + dh + 12.).max(74.);
+      let r = Rect::new(f.x, y, iw, h); item_card(&mut a.gx, r, acc, on, if won { al } else { al * 0.6 }); icon_tile(&mut a.gx, "rage", f.x + 34., y + h / 2., acc, c::FIRE, al);
+      a.gx.text(if en { "☠ Nightmare" } else { "☠ Кошмар" }, f.x + 64., y + 20., 17., Color::new(1., 1., 1., al), 0, 2);
+      a.gx.text_wrap(&desc, f.x + 64., y + 40., iw - 76. - bw - 10., 12.5, 16., Color::new(1., 1., 1., 0.82 * al), 0, 0);
+      let br = Rect::new(f.x + iw - 12. - bw, y + h / 2. - 22., bw, 44.);
+      if a.ui.btn(&mut a.gx, br, if on { if en { "Turn off" } else { "Выключить" } } else if en { "Turn on" } else { "Включить" }, if on { St::Pink } else { St::Gold }, 15., won) { a.click(); a.g.s.set.hard = !on; a.g.dirty = true; }
+      y += h + 10.; }
     // Уровни Бездны: открываются победой над Сердцем Бездны
     { let mx = a.g.s.abyss_max; let sel = a.g.s.abyss_sel.min(mx); let acc = hex(0xc77dff);
       let desc = if mx == 0 { if en { "Defeat the Heart of the Abyss (3000 m) to unlock. Each level adds a curse, pearls +10% per level.".to_string() } else { "Победи Сердце Бездны (3000 м), чтобы открыть. Каждый уровень добавляет проклятие, жемчуг +10% за уровень.".to_string() } }
@@ -847,7 +862,9 @@ fn modes(a: &mut App) {
           a.gx.text(&l, f.x + 64. + 74., by + 19., 18., with_alpha(acc, al), 1, 2);
           if a.ui.btn(&mut a.gx, Rect::new(f.x + 64. + 104., by, 44., 38.), "›", St::Cyan, 20., sel < mx) { a.click(); a.g.s.abyss_sel = sel + 1; a.g.dirty = true; }
           let br = Rect::new(f.x + iw - 12. - bw, y + h / 2. - 22., bw, 44.);
-          if a.ui.btn(&mut a.gx, br, if en { "Play" } else { "Играть" }, St::Gold, 16., true) { a.click(); a.start_run(RunMode::Normal); return; } } }
+          if a.ui.btn(&mut a.gx, br, if en { "Play" } else { "Играть" }, St::Gold, 16., true) { a.click(); a.ui.clip_off(); a.start_run(RunMode::Normal); return; } }
+      y += h + 10.; }
+    a.modes_h = y + off - f.y0; a.ui.clip_off();
 }
 fn quests(a: &mut App) {
     let sm = small(a); let tp = top(a); let _ = (sm, tp); let _gh = a.gx.h;
