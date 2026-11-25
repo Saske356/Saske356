@@ -408,7 +408,6 @@ public class MainActivity extends Activity {
         try { ads = new RewardedAds(this); inter = new InterstitialAds(this); } catch (Throwable t) { Log.w("SvetAds", "ads init failed", t); }
         try { banner = new BannerAds(this); } catch (Throwable t) { Log.w("SvetAds", "banner init failed", t); }
         try { natives = new NativeAds(this); } catch (Throwable t) { Log.w("SvetAds", "native init failed", t); }
-        if (savedInstanceState == null) try { new AppOpenAds(this); } catch (Throwable t) { Log.w("SvetAds", "app open init failed", t); } // только холодный запуск
 
 
     }
