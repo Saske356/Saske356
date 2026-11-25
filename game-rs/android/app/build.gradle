@@ -9,8 +9,8 @@ android {
         applicationId project.findProperty('appId') ?: 'com.svetbezdny.game' // -PappId=... — тестовая сборка рядом с основной
         minSdk 24
         targetSdk 35
-        versionCode 48
-        versionName '4.7'
+        versionCode 49
+        versionName '4.7.1'
         buildConfigField 'String', 'YANDEX_REWARDED_ID', "\"${project.findProperty('yandexRewardedId') ?: 'demo-rewarded-yandex'}\""
         buildConfigField 'String', 'YANDEX_BANNER_ID', "\"${project.findProperty('yandexBannerId') ?: 'demo-banner-yandex'}\""
         buildConfigField 'String', 'YANDEX_INTERSTITIAL_ID', "\"${project.findProperty('yandexInterstitialId') ?: 'demo-interstitial-yandex'}\""

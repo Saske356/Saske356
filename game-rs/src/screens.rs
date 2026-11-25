@@ -606,8 +606,8 @@ fn shop(a: &mut App) {
                 item_card(&mut a.gx, r, pal(ch.col), sel, al);
                 { let sk = if let Some(s) = data::char_skin(ch.id) { s } else { match ch.col { c::EMER => "emerald", c::AMBER => "amber", c::FIRE => "ember", c::CORAL => "coral", c::ICE => "frost", c::GHOST => "ghost", c::CRAB => "inferno", c::DRIFT => "jade", c::GOLD => "solar", _ => "azure"  }};
                   let p = a.gx.px; let key = format!("pl_{sk}"); let (cx, cy) = (f.x + 30., y + it.h / 2.); a.gx.glow_scr(true, ch.col, cx * p, cy * p, 32. * p, 0.6 * al);
-                  let ph = a.gx.spr_anim(&key).map(|an| a.g.t * an.freq() * std::f32::consts::TAU + it.i as f32).unwrap_or(0.);
-                  a.gx.spr_screen(&key, cx * p, cy * p, -0.3, 1.2 * p, al, false, ph, false); }
+                  let ph = a.gx.spr_anim(&key).map(|an| a.g.t * 0.5 * an.freq() * std::f32::consts::TAU + it.i as f32).unwrap_or(0.);
+                  crate::gfx::set_calm(0.5); a.gx.spr_screen(&key, cx * p, cy * p, -0.3, 1.2 * p, al, false, ph, false); crate::gfx::set_calm(1.); }
                 a.gx.text(&nm, f.x + 58., y + 20., 16., Color::new(1., 1., 1., al), 0, 1); a.gx.text_wrap(&d, f.x + 58., y + 40., iw - 24. - bw - 10. - 46., 12.5, 16., Color::new(1., 1., 1., 0.75 * al), 0, 0);
                 { let pts = a.g.s.mastery.get(ch.id).copied().unwrap_or(0); let ml = crate::extras::mastery_lvl(pts); let nx = crate::extras::mastery_next(ml);
                   let lbl = if i18n::is_en() { format!("Mastery {ml}/10") } else { format!("Мастерство {ml}/10") }; let my = y + it.h - 14.;
@@ -619,8 +619,8 @@ fn shop(a: &mut App) {
                 item_card(&mut a.gx, r, if sk.win { hex(0xffd54f) } else { pal(sk.pal) }, sel, al);
                 // облик: живая модель искры
                 let p = a.gx.px; let key = format!("pl_{}", sk.id); a.gx.glow_scr(true, sk.pal, (f.x + 30.) * p, (y + 32.) * p, 30. * p, 0.6 * al);
-                let ph = a.gx.spr_anim(&key).map(|an| a.g.t * an.freq() * std::f32::consts::TAU + it.i as f32).unwrap_or(0.);
-                a.gx.spr_screen(&key, (f.x + 30.) * p, (y + 32.) * p, -0.3, 0.75 * p, al, false, ph, false);
+                let ph = a.gx.spr_anim(&key).map(|an| a.g.t * 0.5 * an.freq() * std::f32::consts::TAU + it.i as f32).unwrap_or(0.);
+                crate::gfx::set_calm(0.5); a.gx.spr_screen(&key, (f.x + 30.) * p, (y + 32.) * p, -0.3, 0.75 * p, al, false, ph, false); crate::gfx::set_calm(1.);
                 a.gx.text(&i18n::skin(sk.id), f.x + 58., y + 22., 16., Color::new(1., 1., 1., al), 0, 1);
                 let sub = if data::live_skin(sk.id) && sk.id != "keeper" { if i18n::is_en() { "✦ Living: shimmering glow".to_string() } else { "✦ Живой: свечение переливается".to_string() } } else if sk.id == "keeper" { if i18n::is_en() { "Discover the whole bestiary".to_string() } else { "Открой весь бестиарий".to_string() } } else if sk.win { t("skinWin") } else { t("skinColor") };
                 a.gx.text(&sub, f.x + 58., y + 42., 12., Color::new(1., 1., 1., 0.75 * al), 0, 0);
@@ -639,8 +639,8 @@ fn shop(a: &mut App) {
             5 => { let pd = &crate::extras::PETS[it.i]; let lvl = a.g.s.pets.get(pd.id).copied().unwrap_or(0); let act = a.g.s.pet == pd.id && lvl > 0; let (nm, d) = crate::extras::pet_txt(it.i);
                 item_card(&mut a.gx, r, pal(pd.col), act, al);
                 { let p = a.gx.px; let (cx, cy) = (f.x + 34., y + it.h / 2.); a.gx.glow_scr(true, pd.col, cx * p, cy * p, 32. * p, 0.6 * al);
-                  let half = a.gx.spr_half(pd.spr); let ph = a.gx.spr_anim(pd.spr).map(|an| a.g.t * an.freq() * std::f32::consts::TAU).unwrap_or(0.);
-                  a.gx.spr_screen(pd.spr, cx * p, cy * p, 0., 28. / half * p, al, false, ph, false); }
+                  let half = a.gx.spr_half(pd.spr); let ph = a.gx.spr_anim(pd.spr).map(|an| a.g.t * 0.6 * an.freq() * std::f32::consts::TAU).unwrap_or(0.);
+                  crate::gfx::set_calm(0.6); a.gx.spr_screen(pd.spr, cx * p, cy * p, 0., 28. / half * p, al, false, ph, false); crate::gfx::set_calm(1.); }
                 let nw = a.gx.text(&nm, f.x + 64., y + 20., 16., Color::new(1., 1., 1., al), 0, 1); if lvl > 0 { pips(&mut a.gx, f.x + 64. + nw + 8., y + 21., lvl, crate::extras::PET_MAX, al); }
                 a.gx.text_wrap(d, f.x + 64., y + 40., iw - 76. - bw - 10., 12.5, 16., Color::new(1., 1., 1., 0.8 * al), 0, 0);
                 let b2 = Rect::new(br.x, br.y + 24., br.w, 34.); let b1 = Rect::new(br.x, br.y - 16., br.w, 34.);

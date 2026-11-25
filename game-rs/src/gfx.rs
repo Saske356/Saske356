@@ -142,7 +142,7 @@ impl Gfx {
         let jaw = self.jaw; self.jaw = 0.;
         for front in [false, true] { for p in parts.iter().filter(|p| p.front == front) {
             // качание + отставание на поворотах (инерция); изгиб по длине и бегущая волна — в draw_warp_h
-            let r = (p.a * (t * p.w + p.p).sin() - self.inertia).clamp(-0.75, 0.75);
+            let r = (p.a * calm() * (t * p.w + p.p).sin() - self.inertia).clamp(-0.75, 0.75);
             self.spr_screen_raw(&p.key, sx, sy, ang, k, alpha, white, ph, force_fl, Some((p.hu, p.hv, r, p.l, t * p.w * 1.7 + p.p))); }
             if !front { self.jaw = jaw; self.spr_screen_raw(key, sx, sy, ang, k, alpha, white, ph, force_fl, None); self.jaw = 0.; } }
         self.jaw = jaw; self.inertia = inert;
@@ -333,6 +333,11 @@ pub fn draw_warp(t: &Texture2D, sx: f32, sy: f32, half: f32, ang: f32, flip: boo
 /// То же, плюс jaw — раскрытие пасти (у боссов вида сбоку: нижняя челюсть у головы отходит вниз)
 pub fn draw_warp_j(t: &Texture2D, sx: f32, sy: f32, half: f32, ang: f32, flip: bool, sqx: f32, sqy: f32, anim: Option<Anim>, ph: f32, col: Color, jaw: f32) { draw_warp_h(t, sx, sy, half, ang, flip, sqx, sqy, anim, ph, col, jaw, None) }
 /// То же, плюс поворот картинки вокруг шарнира (hu, hv) на угол r — для нижней челюсти
+thread_local! { static CALM: std::cell::Cell<f32> = std::cell::Cell::new(1.); }
+/// 4.7.1: «спокойный» режим для превью в меню — тише машут плавники и части (в магазине искра стоит на месте,
+/// а махала в темпе спринта — выглядело как дёрганье). 1 — как в игре.
+pub fn set_calm(k: f32) { CALM.with(|c| c.set(k)); }
+fn calm() -> f32 { CALM.with(|c| c.get()) }
 pub fn draw_warp_h(t: &Texture2D, sx: f32, sy: f32, half: f32, ang: f32, flip: bool, sqx: f32, sqy: f32, anim: Option<Anim>, ph: f32, col: Color, jaw: f32, hinge: Option<(f32, f32, f32, f32, f32)>) {
     let (ca, sa) = (ang.cos(), ang.sin());
     let hinge = hinge.filter(|h| h.2.abs() > 0.002 || h.3 > 0.);
@@ -350,6 +355,7 @@ pub fn draw_warp_h(t: &Texture2D, sx: f32, sy: f32, half: f32, ang: f32, flip: b
         return;
     }
     // мелким на экране существам хватает грубой сетки — втрое меньше вершин
+    let cm = calm();
     let (NX, NY) = if half < 45. { (8usize, 5usize) } else if half < 110. { (12, 8) } else { (16, 10) };
     let mut verts: Vec<Vertex> = Vec::with_capacity((NX + 1) * (NY + 1)); let mut idx: Vec<u16> = Vec::with_capacity(NX * NY * 6);
     let c8 = [(col.r * 255.) as u8, (col.g * 255.) as u8, (col.b * 255.) as u8, (col.a * 255.) as u8];
@@ -371,10 +377,11 @@ pub fn draw_warp_h(t: &Texture2D, sx: f32, sy: f32, half: f32, ang: f32, flip: b
                 Anim::Crab => { let leg = (((v - 0.5).abs() - 0.12) * 4.).clamp(0., 1.); du = leg * (ph + if v < 0.5 { 0. } else { std::f32::consts::PI } + v * 5.).sin() * 0.032; }
                 _ => {}
             }
+            du *= cm; dv *= cm;
             if jaw > 0.01 && u > 0.62 { let k = ((u - 0.62) / 0.38).min(1.); if v > 0.5 { dv += jaw * 0.16 * k * ((v - 0.5) * 2.).min(1.); } else { dv -= jaw * 0.04 * k * ((0.5 - v) * 2.).min(1.); } }
             if let Some((hu, hv, r, l, wph)) = hinge { let (x, y) = (u + du - hu, v + dv - hv);
                 // часть гнётся по длине: у шарнира почти не поворачивается, к кончику — сильнее; по ней бежит волна
-                let a = if l > 0. { let tt = ((x * x + y * y).sqrt() / l).min(1.4); r * (0.2 + 0.9 * tt) + 0.16 * (wph - tt * 4.5).sin() * tt * tt } else { r };
+                let a = if l > 0. { let tt = ((x * x + y * y).sqrt() / l).min(1.4); r * (0.2 + 0.9 * tt) + 0.16 * cm * (wph - tt * 4.5).sin() * tt * tt } else { r };
                 let (c, s_) = (a.cos(), a.sin()); du = hu + x * c - y * s_ - u; dv = hv + x * s_ + y * c - v; }
             let lx = ((u + du) * 2. - 1.) * half * sqx; let mut ly = ((v + dv) * 2. - 1.) * half * sqy; if flip { ly = -ly; }
             verts.push(Vertex::new(sx + lx * ca - ly * sa, sy + lx * sa + ly * ca, 0., u, v, Color::from_rgba(c8[0], c8[1], c8[2], c8[3])));
