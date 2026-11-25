@@ -24,7 +24,7 @@ pub mod cfg {
     pub const MAX_TEXT: usize = 64;
     pub const MAX_RING: usize = 48;
     pub const MAX_BOLT: usize = 40;
-    pub const MAX_MINE: usize = 40;
+    pub const MAX_MINE: usize = 64;
     pub const ZONE_TIME: f32 = 66.0;
     pub const HEAL_RATE: f32 = 0.03;
     pub const CELL: f32 = 96.0;
@@ -132,7 +132,7 @@ upgs! {
 pub const U_HEAL: usize = usize::MAX;
 
 pub struct CharDef { pub id: &'static str, pub cost: u32, pub hp: f32, pub speed: f32, pub rate: f32, pub dmg: f32, pub pierce: u8, pub orb: u8, pub armor: f32, pub dash_cd: f32, pub col: u8 }
-pub static CHARS: [CharDef; 10] = [
+pub static CHARS: [CharDef; 14] = [
     CharDef { id: "lumen", cost: 0, hp: 100., speed: 1., rate: 1., dmg: 1., pierce: 0, orb: 0, armor: 0., dash_cd: 1., col: c::CYAN },
     CharDef { id: "needle", cost: 250, hp: 70., speed: 1.15, rate: 1.2, dmg: 1., pierce: 1, orb: 0, armor: 0., dash_cd: 0.65, col: c::EMER },
     CharDef { id: "shell", cost: 400, hp: 160., speed: 0.88, rate: 0.9, dmg: 1.1, pierce: 0, orb: 2, armor: 2., dash_cd: 1.2, col: c::AMBER },
@@ -143,10 +143,17 @@ pub static CHARS: [CharDef; 10] = [
     CharDef { id: "ember", cost: 1500, hp: 95., speed: 1.05, rate: 1.7, dmg: 0.62, pierce: 0, orb: 0, armor: 0., dash_cd: 0.9, col: c::CRAB },
     CharDef { id: "tide", cost: 1800, hp: 110., speed: 1., rate: 1., dmg: 0.95, pierce: 0, orb: 0, armor: 1., dash_cd: 1., col: c::DRIFT },
     CharDef { id: "star", cost: 2200, hp: 90., speed: 1.1, rate: 1.1, dmg: 1.05, pierce: 0, orb: 0, armor: 0., dash_cd: 0.8, col: c::GOLD },
+    // 4.7: новые искры (атаки — формы 10–13 в fire_pb / update_pbullets), облик в комплекте
+    CharDef { id: "crescent", cost: 2600, hp: 95., speed: 1.05, rate: 0.8, dmg: 0.95, pierce: 0, orb: 0, armor: 0., dash_cd: 0.85, col: c::AMBER },
+    CharDef { id: "scythe", cost: 3000, hp: 105., speed: 1.05, rate: 0.62, dmg: 1.15, pierce: 0, orb: 0, armor: 1., dash_cd: 0.9, col: c::AMETH },
+    CharDef { id: "mother", cost: 3400, hp: 120., speed: 0.95, rate: 0.7, dmg: 1.3, pierce: 0, orb: 0, armor: 1., dash_cd: 1., col: c::EMER },
+    CharDef { id: "miner", cost: 3800, hp: 130., speed: 0.92, rate: 0.55, dmg: 1.05, pierce: 0, orb: 0, armor: 2., dash_cd: 1.05, col: c::FIRE },
 ];
+/// 4.7: облик, который выдаётся вместе с искрой (и показывается на её карточке)
+pub fn char_skin(id: &str) -> Option<&'static str> { match id { "crescent" => Some("crescent"), "scythe" => Some("scythe"), "mother" => Some("mother"), "miner" => Some("miner"), _ => None } }
 
 pub struct SkinDef { pub id: &'static str, pub pal: u8, pub cost: u32, pub win: bool }
-pub static SKINS: [SkinDef; 21] = [
+pub static SKINS: [SkinDef; 26] = [
     SkinDef { id: "azure", pal: c::CYAN, cost: 0, win: false }, SkinDef { id: "amber", pal: c::AMBER, cost: 80, win: false },
     SkinDef { id: "amethyst", pal: c::AMETH, cost: 120, win: false }, SkinDef { id: "emerald", pal: c::EMER, cost: 160, win: false },
     SkinDef { id: "coral", pal: c::CORAL, cost: 200, win: false }, SkinDef { id: "ghost", pal: c::GHOST, cost: 350, win: false },
@@ -158,11 +165,18 @@ pub static SKINS: [SkinDef; 21] = [
     SkinDef { id: "cyber", pal: 25, cost: 660, win: false }, SkinDef { id: "lunar", pal: 26, cost: 700, win: false },
     SkinDef { id: "inferno", pal: 27, cost: 740, win: false }, SkinDef { id: "abyss", pal: 28, cost: 780, win: false },
     SkinDef { id: "jade", pal: 29, cost: 820, win: false }, SkinDef { id: "prism", pal: 30, cost: 900, win: false },
+    // 4.7: облики новых искр (продаются и отдельно) и Хранитель — за полный бестиарий
+    SkinDef { id: "crescent", pal: 21, cost: 950, win: false }, SkinDef { id: "scythe", pal: 24, cost: 950, win: false },
+    SkinDef { id: "mother", pal: 29, cost: 950, win: false }, SkinDef { id: "miner", pal: 27, cost: 950, win: false },
+    SkinDef { id: "keeper", pal: 28, cost: 0, win: true },
 ];
 
+/// 4.7: «живые» облики — дорогие и особые: переливающееся свечение и искорки
+pub fn live_skin(id: &str) -> bool { matches!(id, "prism" | "nebula" | "aurora" | "cyber" | "solar" | "void" | "abyss" | "royal" | "inferno" | "lunar" | "keeper" | "crescent" | "scythe" | "mother" | "miner") }
 /// Второй цвет атак облика (ядро снаряда), по порядку SKINS
-pub static SKIN_ACC: [u8; 21] = [c::GOLD, c::GOLD, c::JELLY, c::GOLD, c::WHITE, c::ICE, c::GOLD, c::WHITE, c::GOLD,
-    c::JELLY, c::EMER, c::WHITE, c::GOLD, c::GOLD, c::JELLY, c::CYAN, c::ICE, c::GOLD, c::GOLD, c::GOLD, c::WHITE];
+pub static SKIN_ACC: [u8; 26] = [c::GOLD, c::GOLD, c::JELLY, c::GOLD, c::WHITE, c::ICE, c::GOLD, c::WHITE, c::GOLD,
+    c::JELLY, c::EMER, c::WHITE, c::GOLD, c::GOLD, c::JELLY, c::CYAN, c::ICE, c::GOLD, c::GOLD, c::GOLD, c::WHITE,
+    c::WHITE, c::JELLY, c::GOLD, c::GOLD, c::WHITE];
 pub struct ShopDef { pub id: &'static str, pub max: u8, pub base: f32 }
 /// Постоянные усиления (3.6: длинные линейки — по 10–20 уровней)
 pub static SHOP: [ShopDef; 14] = [

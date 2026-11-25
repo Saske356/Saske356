@@ -14,7 +14,7 @@ use macroquad::prelude::*;
 pub enum Scr { None, Title, How, Level, Pause, Revive, Over, Shop, Ach, Set, Quest, Best, End, Modes, Wheel, Map, Rate, Card }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub enum AdCb { Revive, Double, Reroll, Gift, Inter(Next), Boost, RelicReroll, Quest(usize), Wheel }
+pub enum AdCb { Revive, Double, Reroll, Gift, Inter(Next), Boost, RelicReroll, Quest(usize), Wheel, Pet2(usize), Shards }
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Next { Again, Menu }
 
@@ -44,7 +44,8 @@ fn track_for(g: &Game) -> Option<usize> {
         _ => {
             if g.victory && g.ending_t > 0. { return Some(9); }
             if let Some(b) = g.boss_idx() { use crate::data::K; return Some(match g.en.items[b].kind { K::Boss1 | K::KingCrab => 5, K::Boss2 | K::Queen => 6, _ => 7 }); }
-            let z = g.zone; Some(if z <= 5 { 1 } else if z <= 10 { 2 } else if z <= 15 { 3 } else { 4 })
+            let z = g.zone; if g.hard { return Some(if z <= 10 { 3 } else { 4 }); } // 4.7: в Кошмаре — тёмные темы глубин
+            Some(if z <= 5 { 1 } else if z <= 10 { 2 } else if z <= 15 { 3 } else { 4 })
         }
     }
 }
@@ -123,6 +124,10 @@ impl App {
             // награда за задание ×2
             AdCb::Quest(k) => { if !ok { return; } let r = self.g.s.daily.quests.get(k).filter(|q| q.done && !q.got).map(|q| q.r);
                 if let Some(r) = r { self.g.s.pearls += r; self.g.claim_quest(k); self.persist(); self.toast(t("giftT"), format!("+{} {}", r * 2, t("pearlsGen"))); } }
+            // 4.7: второй питомец на следующий забег / ×2 осколков света за забег
+            AdCb::Pet2(k) => { if !ok { return; } self.g.s.tok_pet2 = crate::extras::PETS[k].id.into(); self.g.dirty = true; self.persist(); let en = i18n::is_en();
+                self.toast(if en { "Second pet".into() } else { "Второй питомец".into() }, format!("{} — {}", crate::extras::pet_txt(k).0, if en { "joins your next run" } else { "поплывёт с тобой в следующем забеге" })); }
+            AdCb::Shards => { if !ok || self.g.shards_x2 { return; } self.g.shards_x2 = true; self.g.s.shards += self.g.run_shards; self.g.dirty = true; self.persist(); self.au.play(Sfx::Ach); }
             AdCb::Wheel => { if !ok || self.g.s.daily.wheel_ad >= crate::extras::WHEEL_AD_MAX { return; } self.g.s.daily.wheel_ad += 1; self.wheel_start(); }
             AdCb::Gift => { if !ok || self.g.s.daily.gift >= GIFT_MAX { return; } self.g.s.daily.gift += 1; self.g.s.pearls += GIFT_R; self.g.s.total_pearls += GIFT_R as u64; self.persist();
                 self.au.play(Sfx::PickCard); platform::vibrate(30); self.toast(t("giftT"), format!("+{GIFT_R} {}", t("pearlsGen"))); }
@@ -305,6 +310,9 @@ impl App {
                 "wins" => { self.g.s.wins = n as u32; }
                 "prof" => { let n = self.prof[2].max(1.); eprintln!("prof update {:.2} ms, draw(cpu) {:.2} ms, frames {}", self.prof[0] / n * 1000., self.prof[1] / n * 1000., n); self.prof = [0.; 3]; }
                 "shotc" => { let i = n as usize % crate::extras::SHOTS.len(); self.g.s.shots.insert(i.to_string(), 1); self.g.s.shot = i as u8; }
+                "rev" => { self.g.rev_cd = 0.; self.g.rev = 0; let k = n as u8; if k > 0 { self.g.rev = k; self.g.rev_t = 25.; } }
+                "portal" => { self.g.portal_zone = 0; self.g.zone_t = 30.; } "room" => { self.g.portal = Some((self.g.p.x + 20., self.g.p.y, 20.)); self.g.room_k = n as u8; }
+                "pet2" => { let k = n as usize % crate::extras::PETS.len(); self.g.s.tok_pet2 = crate::extras::PETS[k].id.into(); }
                 "map" => { self.map_pick = n as u8 % 4; self.show(Scr::Map); } "region" => { let i = n as u8 % 4; self.g.s.regions.insert(i.to_string(), 1); self.g.s.region = i; } "shards" => { self.g.s.shards = n as u32; }
                 "path" => { self.g.path_pending = true; }
                 "relic" => { self.g.relic_pending += 1; self.g.level_delay = 0.; }

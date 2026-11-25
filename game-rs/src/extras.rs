@@ -62,7 +62,7 @@ pub fn wheel_label(k: usize) -> String {
 
 impl Game {
     // ---------- питомец ----------
-    pub fn pet_idx(&self) -> Option<usize> { PETS.iter().position(|p| p.id == self.s.pet).filter(|&i| self.s.pets.get(PETS[i].id).copied().unwrap_or(0) > 0) }
+    pub fn pet_idx(&self) -> Option<usize> { if let Some(f) = self.pet_force { return Some(f); } PETS.iter().position(|p| p.id == self.s.pet).filter(|&i| self.s.pets.get(PETS[i].id).copied().unwrap_or(0) > 0) }
     pub fn pet_lvl(&self) -> u8 { self.pet_idx().map(|i| self.s.pets.get(PETS[i].id).copied().unwrap_or(0)).unwrap_or(0) }
     pub fn buy_pet(&mut self, i: usize) -> bool {
         let l = self.s.pets.get(PETS[i].id).copied().unwrap_or(0); if l >= PET_MAX { return false; }
@@ -182,9 +182,9 @@ pub fn hazard_txt(h: u8) -> &'static str { let en = i18n::is_en(); match h {
 #[derive(Clone, Copy, Default)] pub struct BoomCrystal { pub x: f32, pub y: f32, pub hp: f32, pub ph: f32 }
 
 impl Game {
-    pub fn hazard(&self) -> u8 { if self.boss >= 0 || self.run_mode == RunMode::Dash { 0 } else { self.region_hazard(hazard_of(self.zone)) } }
+    pub fn hazard(&self) -> u8 { if self.boss >= 0 || self.run_mode == RunMode::Dash || self.room_t > 0. { 0 } else if self.rev == REV_STORM { HZ_CURRENT } else if self.rev == REV_DARK { HZ_DARK } else { self.region_hazard(hazard_of(self.zone)) } }
     /// направление течения медленно поворачивается
-    pub fn current_dir(&self) -> (f32, f32) { let a = self.t * 0.07 + self.zone as f32; (a.cos(), a.sin()) }
+    pub fn current_dir(&self) -> (f32, f32) { let a = if self.rev == REV_STORM { self.t * 0.45 } else { self.t * 0.07 + self.zone as f32 }; (a.cos(), a.sin()) } // шторм — течение крутится
     pub fn hazard_tick(&mut self, dt: f32) {
         let h = self.hazard();
         if h != HZ_GEYSER { self.geysers.clear(); }
@@ -359,5 +359,46 @@ impl Game {
         let owned = i == 0 || match kind { 1 => self.s.deaths.contains_key(&key), 2 => self.s.shots.contains_key(&key), _ => self.s.trails.contains_key(&key) };
         if !owned { if self.s.pearls < cost { return false; } self.s.pearls -= cost; match kind { 1 => { self.s.deaths.insert(key, 1); } 2 => { self.s.shots.insert(key, 1); } _ => { self.s.trails.insert(key, 1); } } self.snd(crate::game::Sfx::Ach); }
         match kind { 1 => self.s.death = i as u8, 2 => self.s.shot = i as u8, _ => self.s.trail = i as u8 } self.dirty = true; true
+    }
+}
+
+// ---------------- 4.7: события в забеге ----------------
+pub const REV_STORM: u8 = 1; pub const REV_FLIES: u8 = 2; pub const REV_DARK: u8 = 3;
+pub fn rev_txt(k: u8) -> (&'static str, &'static str) {
+    let en = i18n::is_en();
+    match (k, en) { (REV_STORM, false) => ("ШТОРМ", "Течение кружит со всех сторон — держись!"), (REV_STORM, true) => ("STORM", "The current swirls from every side — hold on!"),
+        (REV_FLIES, false) => ("РОЙ СВЕТЛЯЧКОВ", "Собирай огоньки — это опыт"), (REV_FLIES, true) => ("FIREFLY SWARM", "Catch the lights — they are XP"),
+        (REV_DARK, false) => ("ТЁМНЫЙ ПРИЛИВ", "Всё погасло, враги светятся — опыт ×1,5"), (REV_DARK, true) => ("DARK TIDE", "Everything goes dark, foes glow — XP ×1.5"), _ => ("", "") }
+}
+impl Game {
+    /// раз в 70–110 с (не во время владыки и не у самого начала) — событие на 25 с
+    pub fn rev_tick(&mut self, dt: f32) {
+        if self.run_mode != RunMode::Normal && self.run_mode != RunMode::Daily { return; }
+        if self.rev > 0 { self.rev_t -= dt; if self.rev_t <= 0. { self.rev = 0; self.rev_cd = self.rr(70., 110.); }
+            else if self.rev == REV_FLIES { self.rev_acc += dt; while self.rev_acc > 0.22 { self.rev_acc -= 0.22; let a = self.rand() * TAU; let r = self.rr(160., 380.); let (x, y) = (self.p.x + a.cos() * r, self.p.y + a.sin() * r);
+                    if x * x + y * y < (crate::data::cfg::ARENA_R - 60.).powi(2) { let big = self.rand() < 0.2; self.drop_pick(x, y, if big { 1 } else { 0 }, if big { 3. } else { 1. }); self.part(x, y, 0., -20., 0.6, 9., c::GOLD, 1.); } } }
+            return; }
+        if self.boss >= 0 || self.zone < 2 || self.room_t > 0. { return; }
+        self.rev_cd -= dt; if self.rev_cd > 0. { return; }
+        let k = 1 + (self.rand() * 3.) as u8 % 3; self.rev = k; self.rev_t = 25.; self.rev_acc = 0.;
+        let (a, b) = rev_txt(k); self.banner(a.into(), b.into(), match k { REV_STORM => 0x8fe8ff, REV_FLIES => 0xffd54f, _ => 0xb57dff }, 2.6); self.snd(Sfx::Warn);
+    }
+}
+
+// ---------------- 4.7: подсказки новичкам (каждая — один раз) ----------------
+impl Game {
+    fn hint(&mut self, id: &str, ru: (&str, &str), en: (&str, &str)) {
+        if self.s.hints.contains_key(id) || self.banner.t < self.banner.dur && !self.banner.text.is_empty() { return; }
+        self.s.hints.insert(id.into(), 1); self.dirty = true; let (a, b) = if i18n::is_en() { en } else { ru };
+        self.banner(a.into(), b.into(), 0x8fe8ff, 3.2);
+    }
+    pub fn hints_tick(&mut self) {
+        if self.run_mode != RunMode::Normal || self.s.runs > 12 { return; }
+        if self.p.flare >= 100. { self.hint("flare", ("ВСПЫШКА ГОТОВА", "Нажми «Вспышку» — сожжёт всё на экране"), ("FLARE READY", "Tap Flare — it burns everything on screen")); }
+        if self.zone >= 2 && self.eb.n > 6 { let (px, py) = (self.p.x, self.p.y); let near = (0..self.eb.n).any(|i| { let b = &self.eb.items[i]; (b.x - px).powi(2) + (b.y - py).powi(2) < 90. * 90. });
+            if near { self.hint("dash", ("РЫВОК", "Рывок проносит сквозь пули и врагов — жми «Рывок»"), ("DASH", "Dash carries you through bullets and foes — tap Dash")); } }
+        if (0..self.en.n).any(|i| { let e = &self.en.items[i]; !e.dead && e.elite && (e.x - self.cam_x).abs() < self.vw && (e.y - self.cam_y).abs() < self.vh }) {
+            self.hint("elite", ("ЭЛИТА", "Золотое кольцо — враг крепче, но щедрее на опыт и жемчуг"), ("ELITE", "A golden ring — tougher foe, but more XP and pearls")); }
+        if self.boss >= 0 { self.hint("boss", ("ВЛАДЫКА", "Следи за подсветкой атак и уходи рывком"), ("LORD", "Watch the attack warnings and dash away")); }
     }
 }

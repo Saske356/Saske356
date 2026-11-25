@@ -11,7 +11,13 @@ pub const AFF_VOLATILE: u8 = 3; // Взрывной: при гибели — к�
 pub const AFF_VAMP: u8 = 4; // Вампир: лечит соседей
 pub const AFF_BLINK: u8 = 5; // Призрак: перемещается к игроку
 pub const AFF_RAGE: u8 = 6; // Яростный: на половине здоровья ускоряется
-pub const AFF_N: u8 = 6;
+// 4.7
+pub const AFF_MIRROR: u8 = 7; // Зеркальный: часть попаданий отражает пулей обратно
+pub const AFF_ANCHOR: u8 = 8; // Якорь: вблизи тянет Люмена к себе
+pub const AFF_CLOAK: u8 = 9; // Невидимка: время от времени исчезает (неуязвим)
+pub const AFF_N: u8 = 9;
+/// Невидимка сейчас скрыт? (пули проходят насквозь)
+pub fn aff_hidden(e: &Enemy) -> bool { e.aff == AFF_CLOAK && (e.t % 3.6) > 2.4 }
 
 pub fn aff_name(a: u8) -> &'static str {
     let en = i18n::is_en();
@@ -22,11 +28,14 @@ pub fn aff_name(a: u8) -> &'static str {
         (AFF_VAMP, false) => "Вампир", (AFF_VAMP, true) => "Vampiric",
         (AFF_BLINK, false) => "Призрачный", (AFF_BLINK, true) => "Blinking",
         (AFF_RAGE, false) => "Яростный", (AFF_RAGE, true) => "Berserk",
+        (AFF_MIRROR, false) => "Зеркальный", (AFF_MIRROR, true) => "Mirrored",
+        (AFF_ANCHOR, false) => "Якорь", (AFF_ANCHOR, true) => "Anchor",
+        (AFF_CLOAK, false) => "Невидимка", (AFF_CLOAK, true) => "Cloaked",
         _ => "",
     }
 }
-pub fn aff_col(a: u8) -> u32 { match a { AFF_SHIELD => 0x8fe8ff, AFF_SPLIT => 0x7dff9a, AFF_VOLATILE => 0xff9a3c, AFF_VAMP => 0xff4f6f, AFF_BLINK => 0xc59bff, AFF_RAGE => 0xff5a3c, _ => 0xffd54f } }
-pub fn aff_pal(a: u8) -> u8 { match a { AFF_SHIELD => c::ICE, AFF_SPLIT => c::EMER, AFF_VOLATILE => c::DART, AFF_VAMP => c::CRAB, AFF_BLINK => c::AMETH, AFF_RAGE => c::FIRE, _ => c::GOLD } }
+pub fn aff_col(a: u8) -> u32 { match a { AFF_SHIELD => 0x8fe8ff, AFF_SPLIT => 0x7dff9a, AFF_VOLATILE => 0xff9a3c, AFF_VAMP => 0xff4f6f, AFF_BLINK => 0xc59bff, AFF_RAGE => 0xff5a3c, AFF_MIRROR => 0xe8f4ff, AFF_ANCHOR => 0x6f8cff, AFF_CLOAK => 0x9ff0c8, _ => 0xffd54f } }
+pub fn aff_pal(a: u8) -> u8 { match a { AFF_SHIELD => c::ICE, AFF_SPLIT => c::EMER, AFF_VOLATILE => c::DART, AFF_VAMP => c::CRAB, AFF_BLINK => c::AMETH, AFF_RAGE => c::FIRE, AFF_MIRROR => c::WHITE, AFF_ANCHOR => c::ICE, AFF_CLOAK => c::EMER, _ => c::GOLD } }
 
 // ---------------- реликвии ----------------
 pub struct RelicDef { pub icon: &'static str, pub ru: (&'static str, &'static str), pub en: (&'static str, &'static str), pub col: u8 }
@@ -60,6 +69,10 @@ pub fn char_attack(i: usize) -> &'static str {
         (3, false) => "Атака: дробь веером", (3, true) => "Attack: spread shot", (4, false) => "Атака: световые полумесяцы", (4, true) => "Attack: light crescents",
         (5, false) => "Атака: молнии-зигзаги", (5, true) => "Attack: zigzag bolts", (6, false) => "Атака: призрачные снаряды с наведением", (6, true) => "Attack: homing ghost shots", (7, false) => "Атака: струя пламени, всё поджигает", (7, true) => "Attack: flame stream that ignites",
         (8, false) => "Атака: капли, отскакивают от врагов", (8, true) => "Attack: bouncing droplets", (9, false) => "Атака: вращающиеся звёзды, +10% крита", (9, true) => "Attack: spinning stars, +10% crit",
+        (10, false) => "Атака: бумеранги — летят и возвращаются, бьют дважды", (10, true) => "Attack: boomerangs that fly out and return, hitting twice",
+        (11, false) => "Атака: лезвия-косы раскручиваются вокруг тебя", (11, true) => "Attack: scythe blades spiral out around you",
+        (12, false) => "Атака: мальки-союзники сами находят врагов", (12, true) => "Attack: ally fry that hunt foes on their own",
+        (13, false) => "Атака: мины — снаряд останавливается и ждёт врага", (13, true) => "Attack: mines — shots stop and wait for foes",
         (_, false) => "Атака: лучи света", (_, true) => "Attack: light bolts" }
 }
 
@@ -71,7 +84,9 @@ impl Game {
     pub fn assign_affix(&mut self, i: usize) {
         let (kind, elite) = { let e = &self.en.items[i]; (e.kind, e.elite) };
         if !elite || (self.zone < 3 && self.abyss < 16) || kind.d().boss || matches!(kind, K::Drifter | K::Chest | K::Crystal | K::Wisp | K::Fry | K::Spikelet) { return; }
-        let a = 1 + (self.rand() * AFF_N as f32) as u8 % AFF_N;
+        // 4.7: вампир реже (его толпа казалась «бессмертной»), новые — наравне с остальными
+        const W: [f32; 9] = [1., 1., 1., 0.45, 1., 1., 1., 1., 1.]; let tot: f32 = W.iter().sum(); let mut r = self.rand() * tot; let mut a = 1u8;
+        for (k, w) in W.iter().enumerate() { r -= w; if r <= 0. { a = k as u8 + 1; break; } }
         let e = &mut self.en.items[i]; e.aff = a; e.aff_t = 1.5 + (e.phase % 1.) * 2.;
         if a == AFF_SHIELD { e.ash = e.max_hp * 0.45; }
     }
@@ -99,6 +114,8 @@ impl Game {
                     let (mut nx, mut ny) = (self.p.x + a0.cos() * rr, self.p.y + a0.sin() * rr); let l = hypot(nx, ny); let m = crate::data::cfg::ARENA_R - 40.; if l > m { nx *= m / l; ny *= m / l; }
                     self.burst(x, y, 12, c::AMETH, 160., 6., 0.4); self.ring(x, y, 6., 50., 0.3, c::AMETH, 3.);
                     let e = &mut self.en.items[i]; e.x = nx; e.y = ny; e.vx = 0.; e.vy = 0.; e.spawn_t = 0.25; self.ring(nx, ny, 50., 6., 0.3, c::AMETH, 3.); } },
+            AFF_ANCHOR => { let (px, py) = (self.p.x, self.p.y); let (dx, dy) = (x - px, y - py); let d = (dx * dx + dy * dy).sqrt().max(1.);
+                if d < 330. && d > 40. && !self.p.dead && self.p.dash_t <= 0. { let k = 75. * (1. - d / 330.).max(0.2); self.p.x += dx / d * k * dt; self.p.y += dy / d * k * dt; } }
             AFF_RAGE => { let e = &mut self.en.items[i]; if e.hp < e.max_hp * 0.5 && e.aff_t > -100. { e.aff_t = -1000.; e.spd *= 1.7; e.dmg *= 1.3;
                     let (x, y, r) = (e.x, e.y, e.r * e.scale); self.ring(x, y, r, r * 3., 0.4, c::FIRE, 4.); self.burst(x, y, 10, c::FIRE, 180., 7., 0.4); self.snd(Sfx::Warn); }
                 else if e.aff_t < -100. && self.quality > 0 && self.rng.next() < 0.25 { let (x, y) = (e.x, e.y); let (a, b) = (self.rr(-10., 10.), self.rr(-10., 10.)); self.part(x + a, y + b, 0., -40., 0.3, 5., c::FIRE, 1.); } }

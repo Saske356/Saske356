@@ -58,7 +58,7 @@ impl Game {
         if self.daily { for i in daily_muts() { self.muts[i] = true; } }
         self.endless = false; self.ending_t = 0.; self.ad_revived = false; self.ad_doubled = false; self.ad_rerolls = 0; self.last_earned = 0; self.ev_t = 20.; self.chal = None; self.last_ev = 9; self.chests = 0; self.lv_t = -99.;
         self.want_levelup = false; self.want_ending = false; self.want_over = false; self.crystals = 0; self.qz = Qz::default();
-        self.serp.clear(); self.serp_cache.clear(); self.inks.clear(); self.relics.clear(); self.relic_pending = 0; self.want_relic = false; self.path = 0; self.path_pending = false; self.want_path = false; self.rel_lives = 0; self.rel_kills = 0; self.rel_blood = 0.; self.rel_ward_t = 0.; self.rel_storm_t = 0.;
+        self.run_shards = 0; self.shards_x2 = false; self.pet2_id = None; self.rev = 0; self.rev_cd = 80.; self.room_t = 0.; self.portal = None; self.portal_zone = 0; self.serp.clear(); self.serp_cache.clear(); self.inks.clear(); self.relics.clear(); self.relic_pending = 0; self.want_relic = false; self.path = 0; self.path_pending = false; self.want_path = false; self.rel_lives = 0; self.rel_kills = 0; self.rel_blood = 0.; self.rel_ward_t = 0.; self.rel_storm_t = 0.;
         if self.hard { self.dmg_scale = 1.35; }
         self.rerolls = self.s.shop_lv("reroll") as u32; self.build_decor(0); self.start_best = self.s.best_depth; self.rec_shown = false;
         let skin = SKINS.iter().position(|k| k.id == self.s.skin).unwrap_or(0);
@@ -79,6 +79,9 @@ impl Game {
         if self.abyss >= 11 { self.p.hp = (self.p.max_hp * 0.85).round(); }
         if self.abyss > 0 { self.banner(format!("{} {}", if i18n::is_en() { "ABYSS" } else { "БЕЗДНА" }, self.abyss), crate::extras::abyss_txt(self.abyss.min(20)).into(), 0xc77dff, 3.); }
         self.pet = PetState { x: self.p.x - 40., y: self.p.y + 30., t: 2., ..Default::default() };
+        // 4.7: второй питомец (за рекламу) — только на этот забег
+        if !self.s.tok_pet2.is_empty() { let id = std::mem::take(&mut self.s.tok_pet2); self.dirty = true;
+            if let Some(k) = crate::extras::PETS.iter().position(|p| p.id == id) { if self.s.pets.get(id.as_str()).copied().unwrap_or(0) > 0 && self.pet_idx() != Some(k) { self.pet2_id = Some(k); self.pet2 = PetState { x: self.p.x + 40., y: self.p.y + 30., t: 3., ..Default::default() }; } } }
         if self.s.tok_relic > 0 { self.s.tok_relic -= 1; self.level_pending += 1; self.lv_t = -99.; self.level_delay = 0.8; self.dirty = true; } // жетон «улучшение на старте»
         if self.s.tok_reroll > 0 { self.rerolls += self.s.tok_reroll; self.s.tok_reroll = 0; self.dirty = true; }
         if self.event_on() > 0 { let (n, d) = crate::extras::event_txt(self.event as usize - 1); self.banner(n.to_uppercase(), d.into(), crate::extras::EVENTS[self.event as usize - 1].col, 3.); }
@@ -160,7 +163,9 @@ impl Game {
     pub fn buy_shop(&mut self, i: usize) -> bool { let l = self.s.shop_lv(SHOP[i].id); let cost = data::shop_cost(i, l);
         if l < SHOP[i].max && self.s.pearls >= cost { self.s.pearls -= cost; self.s.shop.insert(SHOP[i].id.into(), l + 1); self.snd(Sfx::Pearl); self.dirty = true; true } else { false } }
     pub fn pick_char(&mut self, i: usize) -> bool { let c = &CHARS[i];
-        if !self.s.chars.contains_key(c.id) { if self.s.pearls < c.cost { return false; } self.s.pearls -= c.cost; self.s.chars.insert(c.id.into(), 1); self.snd(Sfx::Ach); } else { self.snd(Sfx::Click); }
+        if !self.s.chars.contains_key(c.id) { if self.s.pearls < c.cost { return false; } self.s.pearls -= c.cost; self.s.chars.insert(c.id.into(), 1); self.snd(Sfx::Ach);
+            if let Some(sk) = data::char_skin(c.id) { self.s.skins.insert(sk.into(), 1); if let Some(k) = SKINS.iter().position(|s| s.id == sk) { self.s.skin = sk.into(); self.p.skin = k; self.p.pal = SKINS[k].pal; } } } // облик в комплекте
+        else { self.snd(Sfx::Click); }
         self.s.ch = c.id.into(); self.dirty = true; true }
     pub fn pick_skin(&mut self, i: usize) -> bool { let k = &SKINS[i];
         if !self.s.skins.contains_key(k.id) { if k.win || self.s.pearls < k.cost { return false; } self.s.pearls -= k.cost; self.s.skins.insert(k.id.into(), 1); self.snd(Sfx::Ach); } else { self.snd(Sfx::Click); }

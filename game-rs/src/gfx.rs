@@ -107,7 +107,7 @@ impl Gfx {
         for i in 0..npal { g.glow.push(tex(&format!("fx/glow{i}.png")).await); g.soft.push(tex(&format!("fx/soft{i}.png")).await); g.bul.push(tex(&format!("fx/bul{i}.png")).await); done += 3.; progress(done / total); }
         for u in crate::data::UPG.iter() { g.icon.insert(u.id.into(), tex(&format!("icon/{}.png", u.id)).await); done += 1.; progress(done / total); }
         g.icon.insert("heal".into(), tex("icon/heal.png").await);
-        for z in 0..15 { let t = tex(&format!("ground/g{z}.png")).await;
+        for z in 0..16 { let t = tex(&format!("ground/g{z}.png")).await; // 15 — тайная комната (4.7)
             unsafe { let ctx = get_internal_gl().quad_context; ctx.texture_set_wrap(t.raw_miniquad_id(), TextureWrap::Repeat, TextureWrap::Repeat); }
             g.ground.push(t); done += 1.; progress(done / total); }
         { let t = tex("fx/keyart.png").await; if t.width() > 2. { g.keyart = Some(t); } }

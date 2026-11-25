@@ -36,11 +36,11 @@ pub struct Enemy {
     pub col: u8, pub ang: f32, pub t: f32, pub st: f32, pub state: i32, pub flash: f32, pub slow: f32, pub freeze: f32, pub elite: bool, pub dead: bool, pub uid: u32,
     pub orb_cd: f32, pub dash_hit: u32, pub chain_mark: u32, pub scale: f32, pub next: i32, pub hist: Arr<f32, 64>, pub hh: usize, pub hn: usize, pub phase: f32,
     pub p1: f32, pub p2: f32, pub p3: f32, pub spawn_t: f32, pub lvl: i32, pub tx: f32, pub ty: f32, pub sh: f32, pub burn: f32, pub burn_t: f32, pub burn_acc: f32,
-    pub hx: f32, pub hy: f32, pub th_t: f32, pub txt: i32, pub a_t: f32 /* часы анимации */, pub tier: u8, pub tt: f32, pub tt2: f32, pub inv_t: f32, pub heal_t: f32 /* недавно вылечен */, pub mouth: f32 /* пасть раскрыта (змей) */, pub far_t: f32 /* сколько секунд далеко от игрока */,
+    pub hx: f32, pub hy: f32, pub th_t: f32, pub txt: i32, pub a_t: f32 /* часы анимации */, pub tier: u8, pub tt: f32, pub tt2: f32, pub inv_t: f32, pub heal_t: f32 /* недавно вылечен */, pub nm: bool /* 4.7: кошмарный (Кошмар) */, pub twin: bool /* 4.7: владыка-близнец */, pub mouth: f32 /* пасть раскрыта (змей) */, pub far_t: f32 /* сколько секунд далеко от игрока */,
     pub aff: u8 /* свойство элиты */, pub ash: f32 /* панцирь */, pub aff_t: f32,
     pub pang: f32, pub turn: f32 /* сглаженная скорость поворота — для инерции частей */,
 }
-#[derive(Clone, Default)] pub struct PBul { pub x: f32, pub y: f32, pub vx: f32, pub vy: f32, pub dmg: f32, pub pierce: i32, pub bounce: i32, pub life: f32, pub crit: bool, pub last_uid: u32, pub hom_t: f32, pub tgt: i32, pub tgt_uid: u32, pub split: bool, pub r: f32, pub boom: f32, pub form: u8 /* форма атаки искры */, pub t: f32 }
+#[derive(Clone, Default)] pub struct PBul { pub x: f32, pub y: f32, pub vx: f32, pub vy: f32, pub dmg: f32, pub pierce: i32, pub bounce: i32, pub life: f32, pub crit: bool, pub last_uid: u32, pub hom_t: f32, pub tgt: i32, pub tgt_uid: u32, pub split: bool, pub r: f32, pub boom: f32, pub form: u8 /* форма атаки искры */, pub t: f32, pub a0: f32 /* 4.7: стартовый угол (коса) */ }
 #[derive(Clone, Default)] pub struct EBul { pub x: f32, pub y: f32, pub vx: f32, pub vy: f32, pub r: f32, pub dmg: f32, pub life: f32, pub col: u8, pub spin: f32, pub acc: f32, pub grazed: bool }
 #[derive(Clone, Default)] pub struct Part { pub x: f32, pub y: f32, pub vx: f32, pub vy: f32, pub life: f32, pub max: f32, pub size: f32, pub col: u8, pub drag: f32 }
 #[derive(Clone, Default)] pub struct Ring { pub x: f32, pub y: f32, pub r0: f32, pub r1: f32, pub life: f32, pub max: f32, pub col: u8, pub w: f32 }
@@ -113,7 +113,7 @@ pub struct Game {
     pub sfx: Vec<Sfx>, pub toasts: Vec<Toast>, pub vib: Vec<u32>, pub want_levelup: bool, pub want_over: bool, pub want_ending: bool, pub dirty: bool, pub run_mode: RunMode,
     pub vw: f32, pub vh: f32, pub static_q: u32, pub tut: Tut, pub touch: bool,
     // реликвии
-    pub event: u8, pub pet: PetState, pub pet_sh: f32, pub abyss: u8 /* уровень Бездны забега */, pub region: u8, pub hz_t: f32, pub geysers: Vec<crate::extras::Geyser>, pub bcr: Vec<crate::extras::BoomCrystal>,
+    pub event: u8, pub pet: PetState, pub pet_sh: f32, pub pet2: PetState, pub pet2_id: Option<usize>, pub pet_force: Option<usize>, pub run_shards: u32, pub shards_x2: bool, pub rev: u8 /* 4.7: событие в забеге */, pub rev_t: f32, pub rev_cd: f32, pub rev_acc: f32, pub room_t: f32 /* тайная комната */, pub room_k: u8, pub room_hit: bool, pub room_got: u32, pub room_need: u32, pub room_acc: f32, pub portal: Option<(f32, f32, f32)>, pub portal_zone: u32, pub abyss: u8 /* уровень Бездны забега */, pub region: u8, pub hz_t: f32, pub geysers: Vec<crate::extras::Geyser>, pub bcr: Vec<crate::extras::BoomCrystal>,
     pub inks: Vec<(f32, f32, f32)> /* чернила каракатиц (x, y, осталось) */, pub p_ink: bool,
     pub serp: Vec<(f32, f32)> /* след головы Левиафана: тело гнётся вдоль него */, pub serp_cache: Vec<(f32, f32, f32)> /* узлы тела на этот кадр */,
     pub relics: Vec<u8>, pub relic_pending: u32, pub want_relic: bool, pub path: u8, pub path_pending: bool, pub want_path: bool, pub rel_lives: u32, pub rel_kills: u32, pub rel_blood: f32, pub rel_blood_t: f32, pub rel_ward_t: f32, pub rel_storm_t: f32,
@@ -147,7 +147,7 @@ impl Game {
             decor: vec![], decor_zone: 99, floor: vec![], qz: Qz::default(), jx: 0., jy: 0., dash_q: false, flare_q: false,
             sfx: vec![], toasts: vec![], vib: vec![], want_levelup: false, want_over: false, want_ending: false, dirty: false, run_mode: RunMode::Normal,
             vw: 200., vh: 400., static_q: 0, tut: Tut::default(), touch: true,
-            event: 0, pet: PetState::default(), pet_sh: 0., abyss: 0, region: 0, hz_t: 2., geysers: vec![], bcr: vec![], inks: vec![], p_ink: false, serp: vec![], serp_cache: vec![], relics: vec![], relic_pending: 0, want_relic: false, path: 0, path_pending: false, want_path: false, rel_lives: 0, rel_kills: 0, rel_blood: 0., rel_blood_t: 0., rel_ward_t: 0., rel_storm_t: 0.,
+            event: 0, pet: PetState::default(), pet_sh: 0., pet2: PetState::default(), pet2_id: None, pet_force: None, run_shards: 0, shards_x2: false, rev: 0, rev_t: 0., rev_cd: 80., rev_acc: 0., room_t: 0., room_k: 0, room_hit: false, room_got: 0, room_need: 0, room_acc: 0., portal: None, portal_zone: 0, abyss: 0, region: 0, hz_t: 2., geysers: vec![], bcr: vec![], inks: vec![], p_ink: false, serp: vec![], serp_cache: vec![], relics: vec![], relic_pending: 0, want_relic: false, path: 0, path_pending: false, want_path: false, rel_lives: 0, rel_kills: 0, rel_blood: 0., rel_blood_t: 0., rel_ward_t: 0., rel_storm_t: 0.,
         };
         g.p.skin = data::SKINS.iter().position(|k| k.id == g.s.skin).unwrap_or(0); g.p.pal = data::SKINS[g.p.skin].pal;
         g.init_floor(); g.build_decor(0);
@@ -280,6 +280,7 @@ impl Game {
         // 4.4: владыка крепнет от улучшений, взятых в этом забеге (+7% за каждый уровень улучшения, +25% за эволюцию)
         if d.boss { let ups: u32 = (0..u::COUNT).map(|k| self.p.up[k] as u32).sum(); let evos = self.p.evo.count_ones() as f32;
             e.max_hp *= 1. + 0.07 * ups as f32 + 0.25 * evos; e.hp = e.max_hp; }
+        if self.hard && !d.boss && !matches!(kind, K::Chest | K::Crystal | K::Fry | K::Wisp) && self.rand() < 0.2 { e.nm = true; } // 4.7: кошмарные — при гибели плюются
         self.en.items[i] = e; if elite { self.assign_affix(i); }
         if !self.s.seen.contains_key(kind.key()) { self.s.seen.insert(kind.key().into(), 1); self.dirty = true; }
         if kind == K::Crab && !self.s.crab_hint { self.s.crab_hint = true; self.dirty = true; self.banner(t("crabT"), t("crabS"), 0xff8a9a, 3.); }
@@ -331,6 +332,7 @@ impl Game {
         if self.ending_t > 0. { self.ending_t -= dt; if self.ending_t <= 0. { self.want_ending = true; } return; }
         if self.boss >= 0 { if self.boss_idx().is_none() { self.boss = -1; } }
         else if self.boss_clear_t > 0. { self.boss_clear_t -= dt; if self.boss_clear_t <= 0. { self.next_zone(); } return; }
+        else if self.room_t > 0. { return; } // 4.7: в тайной комнате зона стоит и никто не приходит
         else { self.zone_t += dt; if self.zone_t >= cfg::ZONE_TIME * if self.muts[7] || self.run_mode == RunMode::Time { 0.5 } else { 1. } { self.next_zone(); } }
         let z = self.zone as f32;
         let mut rate = (2.3 + 0.55 * (z - 1.) + 0.35 * (z - 7.).max(0.) + 0.3 * (z - 15.).max(0.)) * if self.hard { 1.2 } else { 1. } * if self.muts[2] { 1.5 } else { 1. } * (1. + self.zone_t / cfg::ZONE_TIME * 0.4);
@@ -372,6 +374,14 @@ impl Game {
         if !self.rec_shown && self.start_best >= 200 && depth > self.start_best { self.rec_shown = true; let (x, y) = (self.p.x, self.p.y - 64.); self.text(x, y, t("newRec"), 0xffd54f, true, true); self.snd(Sfx::Level); self.ring(self.p.x, self.p.y, 10., 160., 0.6, c::GOLD, 5.); }
         self.s.best_depth = self.s.best_depth.max(depth);
         if self.zone % 5 == 0 { let k = self.boss_for(self.zone); self.start_boss(k, ((self.zone - 5) / 20) as f32); let tr = if self.abyss >= 10 { boss_tier(self.zone).max(1) } else { boss_tier(self.zone) }; if let Some(b) = self.boss_idx() { self.apply_tier(b, tr); if tr > 0 { self.banner(crate::tiers::boss_name(k, tr, i18n::is_en()).unwrap_or("").to_string(), format!("{} · {} {}", t("lord"), self.zone * 100, t("m")), 0xff4f8f, 3.4); } } }
+        // 4.7: близнецы — на Бездне 5+ к владыке (кроме Сердца и змея) приходит второй, у обоих по 60% здоровья
+        if self.zone % 5 == 0 && self.abyss >= 5 && self.zone < 30 { if let Some(b) = self.boss_idx() { let k = self.en.items[b].kind;
+            if !matches!(k, K::Boss3 | K::Boss4) { const LORDS: [K; 6] = [K::Boss1, K::Boss2, K::Boss5, K::Boss6, K::Boss7, K::Boss8];
+                let pool: Vec<K> = LORDS.iter().copied().filter(|&x| x != k).collect(); let k2 = pool[(self.rand() * pool.len() as f32) as usize % pool.len()];
+                if let Some(j) = self.spawn_enemy(k2, self.p.x + self.vw * 0.6, self.p.y - self.vh - 140., false) { let tr = self.en.items[b].tier; self.apply_tier(j, tr);
+                    { let e = &mut self.en.items[j]; e.spawn_t = 0.; e.state = 0; e.st = 4.5; e.p1 = 0.8; e.p3 = 1.; e.twin = true; e.max_hp *= 0.6; e.hp = e.max_hp; }
+                    { let e = &mut self.en.items[b]; e.twin = true; e.max_hp *= 0.6; e.hp = e.max_hp; }
+                    let en = i18n::is_en(); self.banner(if en { "TWIN LORDS".into() } else { "ВЛАДЫКИ-БЛИЗНЕЦЫ".into() }, format!("{} + {}", i18n::boss(k.key()), i18n::boss(k2.key())), 0xff4f8f, 3.6); } } } }
         else if !self.try_guardian() { let hz = crate::extras::hazard_of(self.zone); let sub = if hz > 0 { format!("{} · {}", i18n::zone((self.zone as usize - 1) % 30), crate::extras::hazard_txt(hz)) } else { i18n::zone((self.zone as usize - 1) % 30) }; self.banner(format!("{} {}", depth, t("m")), sub, 0x8fd8ff, 2.6); self.snd(Sfx::Nova); }
     }
     fn start_boss(&mut self, k: K, cyc: f32) {
@@ -399,8 +409,10 @@ impl Game {
         let i = self.pb.spawn()?; let s = self.st.bspd; let crit = self.rand() < self.st.crit;
         let f = self.p.form; let r0 = 4. + 2. * self.lv(u::CALIBER) as f32;
         // форма атаки искры: (скорость, радиус, время жизни)
-        let (ks, kr, life) = match f { 1 => (1.35, 0.8, 0.95), 2 => (0.72, 1.7, 1.5), 3 => (1.1, 0.9, 0.5), 4 => (0.85, 1.5, 1.2), 5 => (1.05, 1.0, 1.05), 6 => (1.0, 1.1, 1.3), 7 => (0.8, 1.4, 0.4), 8 => (0.95, 1.2, 1.4), 9 => (1.1, 1.1, 1.15), _ => (1., 1., 1.1) };
-        self.pb.items[i] = PBul { x, y, vx: a.cos() * s * ks, vy: a.sin() * s * ks, dmg, pierce: self.st.pierce, bounce: self.st.bounce, life, crit, tgt: -1, split, r: r0 * kr, form: f, ..Default::default() };
+        let (ks, kr, life) = match f { 1 => (1.35, 0.8, 0.95), 2 => (0.72, 1.7, 1.5), 3 => (1.1, 0.9, 0.5), 4 => (0.85, 1.5, 1.2), 5 => (1.05, 1.0, 1.05), 6 => (1.0, 1.1, 1.3), 7 => (0.8, 1.4, 0.4), 8 => (0.95, 1.2, 1.4), 9 => (1.1, 1.1, 1.15), 10 => (1.05, 1.5, 1.25), 11 => (0., 1.6, 0.75), 12 => (0.42, 1.3, 2.6), 13 => (0.75, 1.5, 0.55), _ => (1., 1., 1.1) };
+        self.pb.items[i] = PBul { x, y, vx: a.cos() * s * ks, vy: a.sin() * s * ks, dmg, pierce: self.st.pierce, bounce: self.st.bounce, life, crit, tgt: -1, split, r: r0 * kr, form: f, a0: a, ..Default::default() };
+        // 4.7: бумеранг и коса пробивают всех, призыватель — мальки без пробития и отскоков
+        match f { 10 | 11 => { self.pb.items[i].pierce = 99; self.pb.items[i].bounce = 0; } 12 => { self.pb.items[i].bounce = 0; } _ => {} }
         Some(i)
     }
     pub fn e_shoot(&mut self, x: f32, y: f32, a: f32, mut spd: f32, r: f32, dmg: f32, col: u8, spin: f32) -> Option<usize> {
@@ -605,6 +617,7 @@ impl Game {
     pub fn kill_enemy(&mut self, i: usize, src: Src) {
         self.en.items[i].dead = true; self.kills += 1;
         let e = self.en.items[i].clone(); let boss = e.kind.d().boss;
+        if e.nm && src != Src::Cleanup { let a = (self.p.y - e.y).atan2(self.p.x - e.x); for k in -1..=1 { self.e_shoot(e.x, e.y, a + k as f32 * 0.35, 150., 6., 9. * self.dmg_scale, c::CRAB, 0.); } }
         self.tier_death(&e); self.upg2_kill(&e); if crate::newfoes::is_new(e.kind) { self.foe45_death(&e); } if e.aff > 0 && src != Src::Cleanup { self.affix_death(&e); } self.relic_kill(boss);
         self.combo += 1; self.combo_t = 2.6; if self.combo > self.max_combo { self.max_combo = self.combo; }
         self.mult = 1. + (self.combo as f32 * 0.05).min(9.); self.score += (e.score * self.mult).round() as f64;
@@ -637,9 +650,15 @@ impl Game {
     }
     fn boss_death(&mut self, i: usize) {
         let e = self.en.items[i].clone();
+        // 4.7: близнец погиб, второй жив — бой продолжается, выживший впадает в ярость
+        if e.twin { if let Some(o) = (0..self.en.n).find(|&k| k != i && !self.en.items[k].dead && self.en.items[k].twin && self.en.items[k].kind.d().boss) {
+                self.boss = self.en.items[o].uid as i32; { let x = &mut self.en.items[o]; x.spd *= 1.25; x.dmg *= 1.2; x.twin = false; }
+                self.burst(e.x, e.y, 60, e.col, 420., 14., 1.1); self.ring(e.x, e.y, 20., 300., 0.6, e.col, 8.); self.flash = 0.6; self.shake(20.); self.snd(Sfx::Boom(true));
+                for _ in 0..10 { let (a, b) = (self.rr(-60., 60.), self.rr(-60., 60.)); self.drop_pick(e.x + a, e.y + b, 3, 1.); }
+                let (ox, oy) = (self.en.items[o].x, self.en.items[o].y); self.text(ox, oy - 80., if i18n::is_en() { "ENRAGED!".into() } else { "В ЯРОСТИ!".into() }, 0xff4f5e, true, true); return; } }
         self.quest_add("boss", 1); if e.tier > 0 { self.unlock("lord"); }
         self.boss = -1; self.bosses_killed += 1; self.boss_clear_t = 3.; self.level_delay = self.level_delay.max(1.6);
-        if self.zone % 5 == 0 { self.path_pending = true; if self.run_mode == RunMode::Normal && !self.god { self.s.shards += if self.zone >= 30 { 3 } else { 1 }; self.dirty = true; } }
+        if self.zone % 5 == 0 { self.path_pending = true; if self.run_mode == RunMode::Normal && !self.god { let sh = if self.zone >= 30 { 3 } else { 1 }; self.s.shards += sh; self.run_shards += sh; self.dirty = true; } }
         self.hit_stop = 0.35; self.flash = 1.; self.shake(34.); self.vibrate(370); self.snd(Sfx::Boom(true));
         for k in 0..4 { self.ring(e.x, e.y, 20., 200. + k as f32 * 120., 0.6 + k as f32 * 0.2, if k % 2 == 1 { c::WHITE } else { e.col }, 8.); }
         self.burst(e.x, e.y, 90, e.col, 520., 16., 1.3); self.burst(e.x, e.y, 40, c::WHITE, 300., 10., 1.);
@@ -673,7 +692,8 @@ impl Game {
     }
     pub fn heal_p(&mut self, v: f32) -> f32 { let v = v * self.abyss_heal(); let a = v.min(self.p.hb).min(self.p.max_hp - self.p.hp).max(0.); self.p.hb -= a; self.p.hp += a; a }
     pub fn hurt_player(&mut self, dmg: f32) {
-        if self.p.inv > 0. || self.p.dash_t > 0. || self.state != State::Play || self.dying > 0. || self.god { return; }
+        if self.p.inv > 0. || self.p.dash_t > 0. || self.state != State::Play || self.dying > 0. { return; }
+        if self.room_t > 0. { self.room_hit = true; } if self.god { return; }
         if self.p.shield > 0 { self.p.shield -= 1; self.p.inv = self.p.inv.max(1.); self.snd(Sfx::Clink); self.ring(self.p.x, self.p.y, self.p.r, self.p.r + 30., 0.4, c::WHITE, 5.); self.shake(8.); self.vibrate(25);
             if self.st.aegis { let q = self.qa(self.p.x, self.p.y, 150.); for &i in &q { if !self.en.items[i].dead { self.damage_enemy(i, self.st.dmg * 3., true, f32::NAN, 0., 0., Src::None); } } self.qa_back(q); }
             return; }
@@ -722,6 +742,7 @@ impl Game {
     }
     fn collect(&mut self, p: &Pick) {
         let (x, y) = (self.p.x, self.p.y - 26.);
+        if self.room_t > 0. && self.room_k == 2 && p.kind == 2 { self.room_got += 1; }
         match p.kind { 0..=2 => { self.add_xp(p.val); let f = self.p.level as f32 + (self.p.xp / self.p.xp_next) * 14.; self.snd(Sfx::Pick(f)); if self.tut.on && self.tut.step == 2 { self.tut.v += 1.; } }
             3 => { self.run_pearls += 1; self.quest_add("pearls", 1); self.snd(Sfx::Pearl); self.text(x, y, t("pearl1"), 0xffd6f5, false, false); }
             4 => { self.p.hp = (self.p.hp + p.val).min(self.p.max_hp); self.snd(Sfx::Pearl); self.text(x, y, format!("+{}", p.val), 0x4fff9a, true, false); self.ring(self.p.x, self.p.y, 5., 60., 0.4, c::EMER, 3.); }
@@ -729,6 +750,7 @@ impl Game {
                 self.snd(Sfx::Level); self.ring(self.p.x, self.p.y, 5., 260., 0.6, c::ICE, 4.); self.text(x, y, t("magnetB"), 0x8fd8ff, true, false); } }
     }
     pub fn add_xp(&mut self, v: f32) {
+        let v = if self.rev == crate::extras::REV_DARK { v * 1.5 } else { v };
         self.p.xp += v * self.st.xp_mul;
         // 4.4: уровни по одному. Пока предыдущее улучшение не выбрано — полоска стоит полной, лишний опыт сгорает (никаких «3 экрана подряд»)
         if self.level_pending > 0 || self.state == State::LevelUp { self.p.xp = self.p.xp.min(self.p.xp_next * 0.999); return; }
@@ -779,8 +801,22 @@ impl Game {
                 match b.form {
                     5 => { let s = hypot(b.vx, b.vy).max(1.); let (nx, ny) = (-b.vy / s, b.vx / s); let w = (b.t * 34.).cos() * 34. * 9. * dt; b.x += nx * w; b.y += ny * w; } // Буря — зигзаг
                     2 => { let f = 1. - dt * 0.35; b.vx *= f; b.vy *= f; } // Панцирь — тяжёлые шары тормозят
+                    // 4.7: Бумеранг — летит, тормозит и возвращается к искре (по пути бьёт ещё раз)
+                    10 => { if b.t < 0.5 { let f = 1. - dt * 2.4; b.vx *= f; b.vy *= f; } else { let (dx, dy) = (self.p.x - b.x, self.p.y - b.y); let d = hypot(dx, dy).max(1.);
+                            if b.t < 0.53 { b.last_uid = 0; } b.vx += (dx / d * 820. - b.vx) * (dt * 6.).min(1.); b.vy += (dy / d * 820. - b.vy) * (dt * 6.).min(1.); if d < 22. { b.life = 0.; } } }
+                    // 4.7: Коса — лезвие раскручивается вокруг искры по спирали
+                    11 => { let r = 26. + 250. * (b.t / 0.75).min(1.); let a = b.a0 + b.t * 7.5; let (nx, ny) = (self.p.x + a.cos() * r, self.p.y + a.sin() * r); b.vx = (nx - b.x) / dt.max(1e-4); b.vy = (ny - b.y) / dt.max(1e-4); }
+                    // 4.7: Минёр — снаряд тормозит и становится миной
+                    13 => { let f = 1. - dt * 3.; b.vx *= f; b.vy *= f; }
                     _ => {} }
                 b.x += b.vx * dt; b.y += b.vy * dt; }
+            if self.pb.items[i].form == 12 { // малёк: цель — ближайший враг в 380, резкий доворот
+                let (bx, by) = (self.pb.items[i].x, self.pb.items[i].y); let tg = self.nearest_enemy(bx, by, 380.);
+                if tg >= 0 { let (ex, ey) = (self.en.items[tg as usize].x, self.en.items[tg as usize].y); let b = &mut self.pb.items[i]; let a = b.vy.atan2(b.vx); let ta = (ey - by).atan2(ex - bx); let s = hypot(b.vx, b.vy).max(200.);
+                    let na = a + clamp(ang_diff(a, ta), -7. * dt, 7. * dt); b.vx = na.cos() * s; b.vy = na.sin() * s; } }
+            if self.pb.items[i].form == 13 && (self.pb.items[i].life <= dt * 1.5 || hypot(self.pb.items[i].vx, self.pb.items[i].vy) < 60.) { // мина
+                let (x, y, dm) = (self.pb.items[i].x, self.pb.items[i].y, self.pb.items[i].dmg); self.pb.kill(i);
+                if let Some(m) = self.mines.spawn() { self.mines.items[m] = Mine { x, y, t: 0., r: 72., dmg: dm * 2.8, inst: false, freeze: false }; } continue; }
             if self.pb.items[i].form == 6 && self.pb.items[i].tgt < 0 && self.st.homing == 0 { // Призрак — лёгкое самонаведение
                 let (bx, by) = (self.pb.items[i].x, self.pb.items[i].y); let tg = self.nearest_enemy(bx, by, 170.);
                 if tg >= 0 { let (ex, ey) = (self.en.items[tg as usize].x, self.en.items[tg as usize].y); let b = &mut self.pb.items[i]; let a = b.vy.atan2(b.vx); let ta = (ey - by).atan2(ex - bx); let s = hypot(b.vx, b.vy);
@@ -789,7 +825,7 @@ impl Game {
             if b.life <= 0. || b.x * b.x + b.y * b.y > r2 { self.pb.kill(i); continue; }
             let q = self.qa(b.x, b.y, 72.);
             let mut hit = usize::MAX;
-            for &k in &q { let e = &self.en.items[k]; if e.dead || e.uid == b.last_uid || e.spawn_t > 0.25 { continue; } let rr = e.r * e.scale + b.r; if (e.x - b.x).powi(2) + (e.y - b.y).powi(2) > rr * rr { continue; } hit = k; break; }
+            for &k in &q { let e = &self.en.items[k]; if e.dead || e.uid == b.last_uid || e.spawn_t > 0.25 || crate::content::aff_hidden(e) { continue; } let rr = e.r * e.scale + b.r; if (e.x - b.x).powi(2) + (e.y - b.y).powi(2) > rr * rr { continue; } hit = k; break; }
             self.qa_back(q);
             if hit == usize::MAX { if let Some(k) = self.serp_hit(b.x, b.y, b.r, b.last_uid) { hit = k; } }
             if hit == usize::MAX { continue; }
@@ -797,6 +833,8 @@ impl Game {
             if b.boom > 0. { self.pb.kill(i); self.missile_boom(b.x, b.y, b.boom, b.dmg); continue; }
             let dm = b.dmg * if b.crit { self.st.crit_mul } else { 1. };
             self.damage_enemy(k, dm, b.crit, (-b.vy).atan2(-b.vx), b.vx / s * 70., b.vy / s * 70., Src::None);
+            if self.en.items[k].aff == crate::content::AFF_MIRROR && self.rand() < 0.22 { let (ex, ey) = (self.en.items[k].x, self.en.items[k].y); let a = (self.p.y - ey).atan2(self.p.x - ex); // 4.7: зеркальный отражает
+                self.e_shoot(ex, ey, a, 250., 5., 9. * self.dmg_scale, c::WHITE, 0.); }
             let (r1, r2b) = (self.rr(-50., 50.), self.rr(-50., 50.)); self.part(b.x, b.y, -b.vx * 0.15 + r1, -b.vy * 0.15 + r2b, 0.2, 8., self.p.pal, 2.);
             if self.st.chain_ch > 0. && self.rand() < self.st.chain_ch { self.chain_from(k, b.dmg * 0.6, self.st.chain_n); }
             if i >= self.pb.n { continue; }
@@ -846,7 +884,8 @@ impl Game {
     pub fn update_run(&mut self, dt: f32, real_dt: f32) {
         self.t += dt; self.run_t += dt;
         if self.combo_t > 0. { self.combo_t -= dt; if self.combo_t <= 0. { self.combo = 0; self.mult = 1.; self.combo_milestone = 0; } }
-        if !self.p.dead { self.update_player(dt); self.pet_tick(dt); self.hazard_tick(dt); self.inks_tick(dt); }
+        if !self.p.dead { self.update_player(dt); self.pet_tick(dt);
+            if let Some(p2) = self.pet2_id { std::mem::swap(&mut self.pet, &mut self.pet2); self.pet_force = Some(p2); self.pet_tick(dt); self.pet_force = None; std::mem::swap(&mut self.pet, &mut self.pet2); } self.hazard_tick(dt); self.inks_tick(dt); self.rev_tick(dt); self.hints_tick(); self.rooms_tick(dt); }
         if self.tut.on { self.update_tut(dt); }
         self.update_director(dt);
         self.update_enemies(dt);

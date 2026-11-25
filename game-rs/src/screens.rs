@@ -306,6 +306,8 @@ fn level(a: &mut App) {
     y += if land { 34. } else { 42. };
     let sub = if pm { if i18n::is_en() { "How will you descend to the next lord?".to_string() } else { "Каким путём плыть до следующего владыки?".to_string() } }
         else if rm { if i18n::is_en() { "A powerful artifact for the whole run — pick one".to_string() } else { "Сильный предмет на весь забег — выбери один".to_string() } }
+        else if !rm && infos.iter().any(|i| i.2) && a.g.s.hints.get("syn").copied().unwrap_or(0) < 1 { if a.cards_t < 0.1 { a.g.s.hints.insert("syn".into(), 0); } if a.cards_t > 3. { a.g.s.hints.insert("syn".into(), 1); a.g.dirty = true; }
+            if i18n::is_en() { "Gold card — a synergy: a powerful combo of two upgrades".to_string() } else { "Золотая карта — синергия: сильное сочетание двух улучшений".to_string() } }
         else if a.g.level_pending > 0 { tf("lvSubMore", &[&a.g.level_pending.to_string()]) } else { t("lvSub") };
     a.gx.text(&sub, w / 2., y, 14., Color::new(1., 1., 1., 0.75 * al), 1, 0); y += 24.;
     let x0 = if land { (w - (cwid + 12.) * n as f32 + 12.) / 2. } else { (w - cwid) / 2. };
@@ -406,12 +408,13 @@ fn over(a: &mut App) {
     let quests: Vec<(String, String, bool)> = g.s.daily.quests.iter().map(|q| (format!("{} {}", if q.done { "✓" } else { "•" }, i18n::quest(&q.id, q.need)),
         if q.done { if q.got { t("claimed") } else { format!("{}!", t("claim")) } } else { format!("{} / {}", i18n::fmt_num(q.p as i64), i18n::fmt_num(q.need as i64)) }, q.done)).collect();
     let dbl = earned > 0 && !doubled && a.ad_ready();
+    let sh2 = a.g.run_shards > 0 && !a.g.shards_x2 && a.ad_ready() && !land; // 4.7: ×2 осколков света за рекламу
     let cell_h = if land { 40. } else if sm { 46. } else { 56. };
     let sw = if land { (w - 40.).min(520.) } else { (w - 32.).min(340.) }; let cols = if land { 3 } else { 2 };
     let stats_h = ((cells.len() + cols - 1) / cols) as f32 * (cell_h + 8.) - 8.;
     let q_h = if land { 0. } else { quests.len() as f32 * 19. + 8. };
     let bh = if sm { 56. } else { 68. };
-    let total = 40. + 22. + if land { 40. } else { 62. } + 26. + stats_h + 12. + q_h + if dbl { 60. } else { 0. } + bh + 8. + 54. + if land { 0. } else { 44. };
+    let total = 40. + 22. + if land { 40. } else { 62. } + 26. + stats_h + 12. + q_h + if dbl { 60. } else { 0. } + if sh2 { 52. } else { 0. } + bh + 8. + 54. + if land { 0. } else { 44. };
     let mut y = ((h - total) / 2.).max(tp);
     h2(&mut a.gx, &if a.g.victory { t("overWin") } else { t("overLose") }, w / 2., y + 14., if land { 21. } else { 28. }, al); y += if land { 30. } else { 40. };
     let sub = format!("{} {} · {}", a.g.zone * 100, t("m"), i18n::zone((a.g.zone as usize).saturating_sub(1) % 30)); a.gx.text(&sub, w / 2., y, 14., Color::new(1., 1., 1., 0.75 * al), 1, 0); y += 22.;
@@ -426,6 +429,8 @@ fn over(a: &mut App) {
         for (l, r, done) in &quests { a.gx.text(l, qx, y + 8., 12.5, Color::new(1., 1., 1., 0.92 * al), 0, 0); a.gx.text(r, qx + qw, y + 8., 12.5, with_alpha(if *done { pal(c::GOLD) } else { hex(0x9fdfff) }, al), 2, 1); y += 19.; }
         y += 8.; }
     if dbl { if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, 52.), &t("adDouble"), St::Gold, 17., true) { a.click(); a.ad_show("double", AdCb::Double); } y += 60.; }
+    if sh2 { let l = if i18n::is_en() { format!("▶ ×2 light shards (+{})", a.g.run_shards) } else { format!("▶ ×2 осколков света (+{})", a.g.run_shards) };
+        if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, 44.), &l, St::Gold, 15., true) { a.click(); a.ad_show("shards", AdCb::Shards); } y += 52.; }
     if land { let hw_ = (bw - 8.) / 2.; let bx2 = (w - bw * 1.6) / 2.; let bwl = bw * 1.6;
         if a.ui.btn(&mut a.gx, Rect::new(bx2, y, bwl * 0.5 - 4., 48.), &t("again"), St::Cyan, 20., true) { a.click(); a.between(Next::Again); return; }
         if a.ui.btn(&mut a.gx, Rect::new(bx2 + bwl * 0.5 + 4., y, bwl * 0.25 - 6., 48.), &t("overShop"), St::Pink, 15., true) { a.click(); a.back_to = Scr::Over; a.ui.scroll_reset(1); a.show(Scr::Shop); return; }
@@ -580,7 +585,8 @@ fn shop(a: &mut App) {
             items.push(It { kind: 6, i: 0, h: 34. }); for i in 0..crate::extras::TRAILS.len() { items.push(It { kind: 7, i, h: 64. }); }
             items.push(It { kind: 6, i: 1, h: 34. }); for i in 0..crate::extras::DEATHS.len() { items.push(It { kind: 8, i, h: 64. }); }
             items.push(It { kind: 6, i: 2, h: 34. }); for i in 0..crate::extras::SHOTS.len() { items.push(It { kind: 9, i, h: 64. }); } },
-        4 => for i in 0..crate::extras::PETS.len() { let d = crate::extras::pet_txt(i).1; items.push(It { kind: 5, i, h: (30. + dsw(a, d, true) + 30.).max(80.) }); },
+        4 => { if crate::extras::PETS.iter().filter(|p| a.g.s.pets.get(p.id).copied().unwrap_or(0) > 0).count() >= 2 { items.push(It { kind: 10, i: 0, h: 70. }); }
+            for i in 0..crate::extras::PETS.len() { let d = crate::extras::pet_txt(i).1; items.push(It { kind: 5, i, h: (30. + dsw(a, d, true) + 30.).max(80.) }); } },
         _ => for br in 0..3 { items.push(It { kind: 4, i: br, h: 34. }); for (i, tl) in TALENTS.iter().enumerate() { if tl.br as usize != br { continue; } let d = i18n::talent(i).1; items.push(It { kind: 3, i, h: (30. + dsw(a, &d, true) + 12.).max(64.) }); } },
     }
     let content: f32 = items.iter().map(|i| i.h + 9.).sum();
@@ -598,7 +604,7 @@ fn shop(a: &mut App) {
                 if mx { a.ui.btn(&mut a.gx, br, &t("max"), St::Cyan, 15., false); } else if price_btn(a, br, &cost.to_string(), true, a.g.s.pearls >= cost, St::Cyan) { a.g.buy_shop(it.i); } }
             1 => { let ch = &CHARS[it.i]; let own = a.g.s.chars.contains_key(ch.id); let sel = a.g.s.ch == ch.id; let (nm, d) = i18n::chr(ch.id); let d = d + &tf("healthW", &[&ch.hp.to_string()]) + " " + crate::content::char_attack(it.i) + ".";
                 item_card(&mut a.gx, r, pal(ch.col), sel, al);
-                { let sk = match ch.col { c::EMER => "emerald", c::AMBER => "amber", c::FIRE => "ember", c::CORAL => "coral", c::ICE => "frost", c::GHOST => "ghost", c::CRAB => "inferno", c::DRIFT => "jade", c::GOLD => "solar", _ => "azure" };
+                { let sk = if let Some(s) = data::char_skin(ch.id) { s } else { match ch.col { c::EMER => "emerald", c::AMBER => "amber", c::FIRE => "ember", c::CORAL => "coral", c::ICE => "frost", c::GHOST => "ghost", c::CRAB => "inferno", c::DRIFT => "jade", c::GOLD => "solar", _ => "azure"  }};
                   let p = a.gx.px; let key = format!("pl_{sk}"); let (cx, cy) = (f.x + 30., y + it.h / 2.); a.gx.glow_scr(true, ch.col, cx * p, cy * p, 32. * p, 0.6 * al);
                   let ph = a.gx.spr_anim(&key).map(|an| a.g.t * an.freq() * std::f32::consts::TAU + it.i as f32).unwrap_or(0.);
                   a.gx.spr_screen(&key, cx * p, cy * p, -0.3, 1.2 * p, al, false, ph, false); }
@@ -616,10 +622,20 @@ fn shop(a: &mut App) {
                 let ph = a.gx.spr_anim(&key).map(|an| a.g.t * an.freq() * std::f32::consts::TAU + it.i as f32).unwrap_or(0.);
                 a.gx.spr_screen(&key, (f.x + 30.) * p, (y + 32.) * p, -0.3, 0.75 * p, al, false, ph, false);
                 a.gx.text(&i18n::skin(sk.id), f.x + 58., y + 22., 16., Color::new(1., 1., 1., al), 0, 1);
-                a.gx.text(&if sk.win { t("skinWin") } else { t("skinColor") }, f.x + 58., y + 42., 12., Color::new(1., 1., 1., 0.75 * al), 0, 0);
+                let sub = if data::live_skin(sk.id) && sk.id != "keeper" { if i18n::is_en() { "✦ Living: shimmering glow".to_string() } else { "✦ Живой: свечение переливается".to_string() } } else if sk.id == "keeper" { if i18n::is_en() { "Discover the whole bestiary".to_string() } else { "Открой весь бестиарий".to_string() } } else if sk.win { t("skinWin") } else { t("skinColor") };
+                a.gx.text(&sub, f.x + 58., y + 42., 12., Color::new(1., 1., 1., 0.75 * al), 0, 0);
                 if sel { a.ui.btn(&mut a.gx, br, &t("worn"), St::Cyan, 15., false); } else if own { if a.ui.btn(&mut a.gx, br, &t("wear"), St::Cyan, 15., true) { a.g.pick_skin(it.i); } }
-                else if sk.win { a.ui.btn(&mut a.gx, br, &t("winBtn"), St::Gold, 15., false); }
+                else if sk.win { let wl = if sk.id == "keeper" { if i18n::is_en() { "Bestiary".to_string() } else { "Бестиарий".to_string() } } else { t("winBtn") }; a.ui.btn(&mut a.gx, br, &wl, St::Gold, 15., false); }
                 else if price_btn(a, br, &sk.cost.to_string(), true, a.g.s.pearls >= sk.cost, St::Cyan) { a.g.pick_skin(it.i); } }
+            10 => { let en = i18n::is_en(); let cur = a.g.s.pet.clone();
+                let cand = (0..crate::extras::PETS.len()).filter(|&k| crate::extras::PETS[k].id != cur && a.g.s.pets.get(crate::extras::PETS[k].id).copied().unwrap_or(0) > 0).max_by_key(|&k| a.g.s.pets.get(crate::extras::PETS[k].id).copied().unwrap_or(0));
+                item_card(&mut a.gx, r, hex(0xffd54f), !a.g.s.tok_pet2.is_empty(), al); icon_tile(&mut a.gx, "heal", f.x + 34., y + it.h / 2., hex(0xffd54f), c::GOLD, al);
+                a.gx.text(if en { "Second pet" } else { "Второй питомец" }, f.x + 64., y + 20., 16., Color::new(1., 1., 1., al), 0, 1);
+                let d = if !a.g.s.tok_pet2.is_empty() { let nm = crate::extras::PETS.iter().position(|p| p.id == a.g.s.tok_pet2).map(|k| crate::extras::pet_txt(k).0).unwrap_or(""); if en { format!("{nm} joins your next run") } else { format!("{nm} поплывёт с тобой в следующем забеге") } }
+                    else if let Some(k) = cand { if en { format!("{} joins the next run as well", crate::extras::pet_txt(k).0) } else { format!("{} поплывёт вместе в следующем забеге", crate::extras::pet_txt(k).0) } } else { String::new() };
+                a.gx.text_wrap(&d, f.x + 64., y + 40., iw - 76. - bw - 10., 12.5, 16., Color::new(1., 1., 1., 0.8 * al), 0, 0);
+                if a.g.s.tok_pet2.is_empty() { if let Some(k) = cand { let rdy = a.ad_ready(); if a.ui.btn(&mut a.gx, br, "▶", St::Gold, 18., rdy) { a.click(); a.ad_show("pet2", AdCb::Pet2(k)); } } }
+                else { a.ui.btn(&mut a.gx, br, "✓", St::Gold, 18., false); } }
             5 => { let pd = &crate::extras::PETS[it.i]; let lvl = a.g.s.pets.get(pd.id).copied().unwrap_or(0); let act = a.g.s.pet == pd.id && lvl > 0; let (nm, d) = crate::extras::pet_txt(it.i);
                 item_card(&mut a.gx, r, pal(pd.col), act, al);
                 { let p = a.gx.px; let (cx, cy) = (f.x + 34., y + it.h / 2.); a.gx.glow_scr(true, pd.col, cx * p, cy * p, 32. * p, 0.6 * al);
@@ -915,6 +931,14 @@ fn best(a: &mut App) {
     let seen = |a: &App, i: usize, tr: u8| a.g.s.seen.contains_key(&crate::render::tkey(ET[i].key, tr));
     let n = keys.iter().filter(|&&(i, tr)| seen(a, i, tr)).count();
     a.gx.text(&tf("bestInfo", &[&n.to_string(), &keys.len().to_string()]), w / 2., tp + 48., 14., Color::new(1., 1., 1., 0.75 * al), 1, 0);
+    // 4.7: бестиарий-коллекция — за каждые 5 открытых существ 60 жемчуга, за весь — облик «Хранитель глубин»
+    { let got = (n / 5) as u32; if got > a.g.s.best_claim { let r = (got - a.g.s.best_claim) * 60; a.g.s.best_claim = got; a.g.s.pearls += r; a.g.dirty = true; a.au.play(crate::game::Sfx::Ach);
+            a.toast(if en { "Bestiary".into() } else { "Бестиарий".into() }, if en { format!("+{r} pearls for new creatures") } else { format!("+{r} жемчуга за новых существ") }); }
+      if n >= keys.len() && !a.g.s.skins.contains_key("keeper") { a.g.s.skins.insert("keeper".into(), 1); a.g.dirty = true; a.au.play(crate::game::Sfx::Ach);
+            a.toast(if en { "Bestiary complete!".into() } else { "Бестиарий собран!".into() }, if en { "Skin: Keeper of the Deep".into() } else { "Облик «Хранитель глубин»".into() }); }
+      let nxt = ((n / 5) + 1) * 5; let l = if n >= keys.len() { if en { "All creatures found — the Keeper skin is yours".to_string() } else { "Все существа найдены — облик «Хранитель глубин» твой".to_string() } }
+          else if en { format!("Next reward at {}: +60 pearls · all {}: Keeper skin", nxt.min(keys.len()), keys.len()) } else { format!("Награда на {}: +60 жемчуга · все {}: облик «Хранитель»", nxt.min(keys.len()), keys.len()) };
+      a.gx.text(&l, w / 2., tp + 66., 12., with_alpha(hex(0xffe08a), 0.9 * al), 1, 0); }
     let info = |i: usize, tr: u8| -> (String, String) { let k = crate::data::K_ALL[i]; let key = ET[i].key;
         if tr == 0 { let nm = if ET[i].boss { i18n::boss(key) } else { let n = i18n::best(key).0; if n.is_empty() { key.to_string() } else { n } }; (nm, i18n::best(key).1) }
         else if ET[i].boss { (crate::tiers::boss_name(k, tr, en).unwrap_or("").to_string(), if en { format!("A lord of the deep: new attacks. {}", i18n::best(key).1) } else { format!("Владыка глубин: новые приёмы. {}", i18n::best(key).1) }) }

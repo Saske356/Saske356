@@ -58,8 +58,8 @@ pub fn background(gx: &mut Gfx, rd: &mut Rd, g: &mut Game, dt: f32, show_decor: 
     // дно: сетка отдельных плиток (uv 0..1 у каждой). Повтор текстуры (REPEAT) на части телефонов не включается —
     // тогда картинка за краем растягивалась в полосы и дно выглядело «склеенным из двух».
     let tint = if g.zone > 15 && g.state != State::Title { Color::new(0.92, 0.74, 0.8, 1.) } else { WHITE };
-    let zi = g.ground_idx(zi);
-    if let Some(t) = gx.ground.get(zi).cloned() {
+    let zi = g.ground_idx(zi); let gi = if g.room_t > 0. { 15 } else { zi }; // 4.7: тайная комната — золотой грот (дно g15)
+    if let Some(t) = gx.ground.get(gi).cloned() {
         gx.set_add(false); let tile = 620.; let tile_h = tile * t.height() / t.width().max(1.);
         tile_grid(gx, &t, tile, tile_h, 0., 0., tint);
     }
@@ -76,6 +76,7 @@ pub fn background(gx: &mut Gfx, rd: &mut Rd, g: &mut Game, dt: f32, show_decor: 
         gx.set_add(false);
     }
     if g.boss >= 0 { gx.fill_screen(Color::new(40. / 255., 0., 30. / 255., 0.32), false); }
+    if g.hard && g.state != State::Title { gx.fill_screen(Color::new(0.32, 0.0, 0.04, 0.16 + 0.04 * (g.t * 1.3).sin()), false); } // 4.7: Кошмар — красная вода
     if show_decor { decor(gx, rd, g, dt); }
     // лучи
     let ray_a = (0.42 - if g.state == State::Title { 0. } else { (g.zone as f32 - 1.) * 0.025 }).max(0.1) * if g.boss >= 0 { 0.5 } else { 1. };
@@ -182,7 +183,8 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
             e.a_t += rdt * (0.55 + 0.85 * k);
             { let da = ang_diff(e.pang, e.ang); e.pang = e.ang; let tr = if rdt > 0. { (da / rdt).clamp(-8., 8.) } else { 0. }; e.turn += (tr - e.turn) * (1. - (-rdt * 5.).exp()); gx.inertia = (e.turn * 0.09 + (v / e.spd.max(40.)).min(2.) * 0.0).clamp(-0.45, 0.45); } let st = (k - 1.).max(0.) * 0.12; let hit = if e.flash > 0. { 0.14 } else { 0. }; gx.sqx = 1. + st - hit; gx.sqy = 1. - st * 0.7 + hit; }
         let e = g.en.items[i].clone();
-        let mut sc = e.scale; let mut alpha = 1.;
+        let mut sc = e.scale; let mut alpha = if crate::content::aff_hidden(&e) { 0.14 } else { 1. }; // 4.7: невидимка
+        if e.nm { gx.glow_world(true, c::CRAB, e.x, e.y, e.r * e.scale * 2.4, 0.3 + 0.12 * (t * 5. + e.phase).sin()); }
         if e.spawn_t > 0. { let q = 1. - e.spawn_t / 0.4; sc *= if q < 0.7 { q / 0.7 * 1.15 } else { 1.15 - (q - 0.7) / 0.3 * 0.15 }; alpha = (q * 1.6).min(1.); }
         let wht = e.flash > 0.; let key_s = spr_key(e.kind, e.sh, e.tier); let key = key_s.as_str();
         let ph = |gx: &Gfx, k: &str| gx.spr_anim(k).map(|a| e.a_t * a.freq() * TAU + e.phase).unwrap_or(0.);
@@ -234,6 +236,10 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
                 AFF_BLINK => { gx.glow_world(true, pi, e.x, e.y, rr * 2.8, 0.3 + 0.2 * (t * 3. + e.phase).sin()); }
                 AFF_VOLATILE => { let k = 0.5 + 0.5 * (t * 7.).sin(); gx.glow_world(false, pi, e.x, e.y, rr * (1.6 + 0.4 * k), 0.35 * k + 0.15); }
                 AFF_SPLIT => { gx.arc_world(e.x, e.y, rr * 1.2, t * 3., t * 3. + 1.4, 2.5, with_a(ac, 0.8), true); gx.arc_world(e.x, e.y, rr * 1.2, t * 3. + 3.14, t * 3. + 4.54, 2.5, with_a(ac, 0.8), true); }
+                AFF_MIRROR => { for q in 0..6 { let a0 = q as f32 * TAU / 6. + t * 0.8; gx.arc_world(e.x, e.y, rr * 1.45, a0, a0 + 0.55, 3., with_a(ac, 0.75), true); } }
+                AFF_ANCHOR => { let d = hypot(g.p.x - e.x, g.p.y - e.y); if d < 330. { let k = 1. - d / 330.; gx.line_world(e.x, e.y, g.p.x, g.p.y, 2. + 2. * k, with_a(ac, 0.25 + 0.35 * k), true); }
+                    gx.glow_world(true, pi, e.x, e.y, rr * 2.6, 0.3); }
+                AFF_CLOAK => { if !aff_hidden(&e) { gx.glow_world(true, pi, e.x, e.y, rr * 2.2, 0.2); } else { gx.arc_world(e.x, e.y, rr * 1.2, 0., TAU, 1., with_a(ac, 0.25), true); } }
                 _ => {}
             }
             // 4.4: подпись свойства — только первые 3 с, дальше элиту выдаёт кольцо (иначе надписи забивают экран)
@@ -257,6 +263,8 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
         let puff = if pi == 3 && g.pet.dash < 0. { 1. + 0.5 * (-g.pet.dash / 0.4) } else { 1. };
         let sc = match pi { 0 => 1.7, 1 => 1.6, 2 => 0.85, _ => 24. / gx.spr_half(pd.spr) } * (1. + 0.04 * g.pet_lvl() as f32) * puff; gx.spr_world(pd.spr, x, y + (t * 2.).sin() * 2., g.pet.ang, sc, 1., false, ph, true);
         if pi == 5 { gx.arc_world(x, y, 30. + 3. * g.pet_lvl() as f32, 0., TAU, 1.5, with_a(hex(0xffc35a), 0.3), false); } }
+    if let Some(p2) = g.pet2_id { let pd = &crate::extras::PETS[p2]; let (x, y) = (g.pet2.x, g.pet2.y); gx.glow_world(true, pd.col, x, y, 26., 0.45 + 0.15 * (t * 4.).sin()); // 4.7: второй питомец
+        let ph = gx.spr_anim(pd.spr).map(|a| t * a.freq() * TAU).unwrap_or(0.); let sc = match p2 { 0 => 1.7, 1 => 1.6, 2 => 0.85, _ => 24. / gx.spr_half(pd.spr) }; gx.spr_world(pd.spr, x, y + (t * 2.).sin() * 2., g.pet2.ang, sc, 1., false, ph, true); }
     // течение: бегущие полосы воды поперёк всего экрана
     if g.hazard() == crate::extras::HZ_CURRENT { let (cx, cy) = g.current_dir(); let (w_, h_) = (g.vw * 2. + 200., g.vh * 2. + 200.);
         for i in 0..36 { let fi = i as f32; let ox = ((fi * 0.618 * w_ + g.t * cx * 230.) % w_ + w_) % w_ - w_ / 2.; let oy = ((fi * 0.377 * h_ + g.t * cy * 230.) % h_ + h_) % h_ - h_ / 2.;
@@ -264,6 +272,9 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
     // опасности зоны: гейзеры (круг-предупреждение), взрывные кристаллы
     // 4.5: чернила каракатиц
     for &(x, y, tl) in g.inks.iter() { let k = (tl / 5.).min(1.); let r = 58. * k.max(0.4); gx.glow_world(true, c::PURP, x, y, r * 1.5, 0.25 * k); gx.circle_world(x, y, r, Color::new(0.06, 0.02, 0.1, 0.55 * k), false); gx.arc_world(x, y, r, 0., TAU, 1.5, with_a(hex(0xb57dff), 0.35 * k), false); }
+    // 4.7: тайный портал
+    if let Some((x, y, l)) = g.portal { let pul = 1. + 0.06 * (t * 3.).sin(); let a = (l / 1.).min(1.); gx.glow_world(true, c::GOLD, x, y, 110. * pul, 0.5 * a);
+        gx.spr_world("portal", x, y, t * 0.7, 0.75 * pul, a, false, 0., false); gx.glow_world(false, c::WHITE, x, y, 14., 0.8 * a); }
     for gy in g.geysers.iter() { let k = 1. - gy.t / 1.3; gx.circle_world(gy.x, gy.y, 75. * k, with_a(hex(0xff6a3d), 0.12 + 0.2 * k), false); gx.arc_world(gy.x, gy.y, 75., 0., TAU, 2.5, with_a(hex(0xffb340), 0.5 + 0.4 * (t * 14.).sin().abs()), false); gx.glow_world(true, c::FIRE, gy.x, gy.y, 30. + 40. * k, 0.4 * k); }
     for cr in g.bcr.iter() { let pul = 1. + 0.08 * (t * 3. + cr.ph).sin(); gx.glow_world(true, c::ICE, cr.x, cr.y, 46. * pul, 0.5); gx.spr_world("crystal", cr.x, cr.y, t * 0.6 + cr.ph, 1.5 * pul, 1., false, 0., false);
         for q in 0..cr.hp as i32 { gx.circle_world(cr.x - 10. + q as f32 * 10., cr.y + 26., 3., WHITE, false); } }
@@ -282,6 +293,14 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
                     gx.glow_world(false, if q == 0 { c::WHITE } else { ac }, b.x + nx * o - a.cos() * bk, b.y + ny * o - a.sin() * bk, (5. - (q as f32).abs()) * k, 1.); }
                    gx.glow_world(true, pc, b.x, b.y, 14. * k, 0.6); } // полумесяц
             5 => { gx.glow_world(true, pc, b.x, b.y, 12., 0.6); gx.glow_stretch(ac, b.x, b.y, a + (b.t * 34.).sin() * 0.7, -8., 16., 5., 1.); gx.glow_world(false, c::WHITE, b.x, b.y, 3.5, 1.); } // молния
+            // 4.7: новые искры
+            10 => { let sp = b.t * 22.; gx.glow_world(true, pc, b.x, b.y, 16. * k, 0.6); gx.glow_stretch(ac, b.x, b.y, sp, -12. * k, 12. * k, 5., 1.); gx.glow_stretch(ac, b.x, b.y, sp + 1.2, -9. * k, 9. * k, 4., 0.8); gx.glow_world(false, c::WHITE, b.x, b.y, 3.5, 1.); } // бумеранг
+            11 => { let ta = b.a0 + b.t * 7.5 + std::f32::consts::FRAC_PI_2; let fade = (1. - (b.t / 0.75).powi(3)).max(0.2);
+                    for q in 1..5 { let tq = (b.t - q as f32 * 0.035).max(0.); let r = 26. + 250. * (tq / 0.75).min(1.); let aq = b.a0 + tq * 7.5; let (qx, qy) = (g.p.x + aq.cos() * r, g.p.y + aq.sin() * r);
+                        gx.glow_world(true, pc, qx, qy, (10. - q as f32 * 1.6) * k, 0.45 * fade / q as f32); } // след по спирали
+                    gx.glow_stretch(pc, b.x, b.y, ta, -24. * k, 24. * k, 10., 0.8 * fade); gx.glow_stretch(ac, b.x, b.y, ta, -16. * k, 18. * k, 5., fade); gx.glow_world(false, c::WHITE, b.x, b.y, 3.5, fade); } // коса
+            12 => { gx.glow_world(true, pc, b.x, b.y, 13. * k, 0.55); gx.spr_world("fry", b.x, b.y, a, 0.95, 1., false, b.t * 9., false); } // малёк-союзник
+            13 => { let pu = 1. + 0.25 * (b.t * 18.).sin(); gx.glow_world(true, pc, b.x, b.y, 13. * k * pu, 0.7); gx.glow_world(false, c::FIRE, b.x, b.y, 6. * k, 1.); gx.glow_world(false, c::WHITE, b.x, b.y, 2.5, 1.); } // мина-снаряд
             6 => { for q in 1..4 { let d = q as f32 * 9.; gx.glow_world(true, pc, b.x - a.cos() * d, b.y - a.sin() * d, (9. - q as f32 * 2.) * k, 0.35 / q as f32); }
                    gx.glow_world(true, pc, b.x, b.y, 12. * k, 0.7); gx.glow_world(false, ac, b.x, b.y, 5. * k, 1.); } // призрак
             7 => { let g_ = 1. + b.t * 3.; gx.glow_world(true, c::FIRE, b.x, b.y, 13. * k * g_, 0.6); gx.glow_world(true, pc, b.x, b.y, 8. * k * g_, 0.8); gx.glow_world(false, c::GOLD, b.x, b.y, 4. * k, 1.); } // пламя
@@ -495,6 +514,12 @@ fn player(gx: &mut Gfx, g: &mut Game, rdt: f32) {
         let ph = gx.spr_anim(&key).map(|a| g.p.a_t * a.freq() * TAU).unwrap_or(0.);
         { let da = ang_diff(g.p.pang, g.p.ang); g.p.pang = g.p.ang; let tr = if rdt > 0. { (da / rdt).clamp(-10., 10.) } else { 0. }; g.p.turn += (tr - g.p.turn) * (1. - (-rdt * 5.).exp()); gx.inertia = (g.p.turn * 0.08).clamp(-0.5, 0.5); }
         gx.spr_world(&key, g.p.x, g.p.y, g.p.ang + (t * 3.).sin() * 0.05, 1., 1., false, ph, false); gx.inertia = 0.;
+        // 4.7: живые облики — у дорогих свечение переливается, вокруг кружат искорки
+        if crate::data::live_skin(skin) { let acc = crate::data::SKIN_ACC.get(g.p.skin).copied().unwrap_or(c::WHITE);
+            let prism = matches!(skin, "prism" | "aurora" | "nebula" | "keeper"); let pul = 0.5 + 0.5 * (t * 2.6).sin();
+            gx.glow_world(true, if prism { [c::FIRE, c::GOLD, c::EMER, c::CYAN, c::AMETH][((t * 1.5) as usize) % 5] } else { pal }, g.p.x, g.p.y, 30. + 8. * pul, 0.22 + 0.18 * pul);
+            for q in 0..3 { let a = t * 2.2 + q as f32 * TAU / 3.; let r = 17. + 3. * (t * 3. + q as f32).sin(); gx.glow_world(false, acc, g.p.x + a.cos() * r, g.p.y + a.sin() * r * 0.7, 3.2, 0.8); } }
+        let _ = 0;
         gx.sqx = 1.; gx.sqy = 1.;
     }
     let (px, py) = (g.p.x, g.p.y);

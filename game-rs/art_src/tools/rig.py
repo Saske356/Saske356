@@ -108,6 +108,7 @@ def rig(name, man):
     core, parts = find_parts(name, im)
     # 4.5: что не должно качаться (раковина рака, дуло конька) — по положению шарнира (u, v в долях холста)
     EXCLUDE = {'hermit': lambda u, v: u < 0.5 or v < 0.38, 'seahorse': lambda u, v: u > 0.6}
+    if name.startswith('pl_'): EXCLUDE[name] = lambda u, v: u > 0.78   # 4.7: нос облика не качается
     if name in EXCLUDE: parts = [p for p in parts if not EXCLUDE[name](p[1][0] / N, p[1][1] / N)]
     crab = name.startswith('crab') or name.startswith('kingcrab')
     body_key = name + '_body' if os.path.exists(os.path.join(SPR, name + '_body.png')) else name
