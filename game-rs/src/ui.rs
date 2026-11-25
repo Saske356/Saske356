@@ -98,6 +98,8 @@ impl Ui {
         self.scrolls.insert(id, s); s.off
     }
     pub fn scroll_reset(&mut self, id: u32) { self.scrolls.remove(&id); }
+    /// для автотестов: прокрутить список на off
+    pub fn scroll_set(&mut self, id: u32, off: f32) { let mut s = self.scrolls.get(&id).copied().unwrap_or_default(); s.off = off; s.vel = 0.; self.scrolls.insert(id, s); }
     pub fn clip_on(&mut self, gx: &Gfx, r: Rect) { self.clip = Some(r); let p = gx.px; unsafe { get_internal_gl().quad_gl.scissor(Some(((r.x * p) as i32, (r.y * p) as i32, (r.w * p) as i32, (r.h * p) as i32))); } }
     pub fn clip_off(&mut self) { self.clip = None; unsafe { get_internal_gl().quad_gl.scissor(None); } }
 

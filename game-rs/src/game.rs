@@ -73,7 +73,7 @@ pub struct Player {
     pub beam_tg: i32, pub beam_tg2: i32, pub ink_t: f32, pub ink_x: f32, pub ink_y: f32, pub ink_d: f32, pub ink_q: bool, pub a_t: f32,
     pub salvo_n: u32, pub seek_t: f32, pub vac_t: f32, pub thun_t: f32, pub was_dash: bool, pub mark_uid: u32, pub mark_t: f32,
     pub form: u8 /* индекс искры: своя форма снарядов */,
-    pub evo: u16 /* взятые эволюции (биты) */, pub mast_n: u32, pub pang: f32, pub turn: f32,
+    pub evo: u16 /* взятые эволюции (биты) */, pub mast_n: u32, pub pang: f32, pub turn: f32, pub ult: f32, pub ult_t: f32, pub ult_hit: f32,
 }
 #[derive(Default, Clone)]
 pub struct Stats {
@@ -108,12 +108,12 @@ pub struct Game {
     pub grid_head: Vec<i32>, pub grid_cols: usize, pub qa: Vec<usize>, pub qb: Vec<usize>,
     pub decor: Vec<Decor>, pub decor_zone: usize, pub floor: Vec<(f32, f32, f32, u8, f32)>, pub qz: Qz,
     // ввод
-    pub jx: f32, pub jy: f32, pub dash_q: bool, pub flare_q: bool,
+    pub jx: f32, pub jy: f32, pub dash_q: bool, pub flare_q: bool, pub ult_q: bool,
     // события для звука, интерфейса и платформы
     pub sfx: Vec<Sfx>, pub toasts: Vec<Toast>, pub vib: Vec<u32>, pub want_levelup: bool, pub want_over: bool, pub want_ending: bool, pub dirty: bool, pub run_mode: RunMode,
     pub vw: f32, pub vh: f32, pub static_q: u32, pub tut: Tut, pub touch: bool,
     // реликвии
-    pub event: u8, pub pet: PetState,
+    pub event: u8, pub pet: PetState, pub abyss: u8 /* уровень Бездны забега */, pub region: u8, pub hz_t: f32, pub geysers: Vec<crate::extras::Geyser>, pub bcr: Vec<crate::extras::BoomCrystal>,
     pub relics: Vec<u8>, pub relic_pending: u32, pub want_relic: bool, pub path: u8, pub path_pending: bool, pub want_path: bool, pub rel_lives: u32, pub rel_kills: u32, pub rel_blood: f32, pub rel_blood_t: f32, pub rel_ward_t: f32, pub rel_storm_t: f32,
 }
 #[derive(Default, Clone, Copy)] pub struct PetState { pub x: f32, pub y: f32, pub ang: f32, pub t: f32, pub dash: f32, pub tx: f32, pub ty: f32 }
@@ -141,10 +141,10 @@ impl Game {
             texts: Pool::new(cfg::MAX_TEXT), bolts: Pool::new(cfg::MAX_BOLT), picks: Pool::new(cfg::MAX_PICK), mines: Pool::new(cfg::MAX_MINE),
             ghosts: vec![Ghost::default(); 48], ghost_i: 0, trail: [0.; 24], trail_head: 0, orb: [0.; 20], tent: [0.; 132],
             grid_head: vec![-1; cols * cols], grid_cols: cols, qa: Vec::with_capacity(320), qb: Vec::with_capacity(320),
-            decor: vec![], decor_zone: 99, floor: vec![], qz: Qz::default(), jx: 0., jy: 0., dash_q: false, flare_q: false,
+            decor: vec![], decor_zone: 99, floor: vec![], qz: Qz::default(), jx: 0., jy: 0., dash_q: false, flare_q: false, ult_q: false,
             sfx: vec![], toasts: vec![], vib: vec![], want_levelup: false, want_over: false, want_ending: false, dirty: false, run_mode: RunMode::Normal,
             vw: 200., vh: 400., static_q: 0, tut: Tut::default(), touch: true,
-            event: 0, pet: PetState::default(), relics: vec![], relic_pending: 0, want_relic: false, path: 0, path_pending: false, want_path: false, rel_lives: 0, rel_kills: 0, rel_blood: 0., rel_blood_t: 0., rel_ward_t: 0., rel_storm_t: 0.,
+            event: 0, pet: PetState::default(), abyss: 0, region: 0, hz_t: 2., geysers: vec![], bcr: vec![], relics: vec![], relic_pending: 0, want_relic: false, path: 0, path_pending: false, want_path: false, rel_lives: 0, rel_kills: 0, rel_blood: 0., rel_blood_t: 0., rel_ward_t: 0., rel_storm_t: 0.,
         };
         g.p.skin = data::SKINS.iter().position(|k| k.id == g.s.skin).unwrap_or(0); g.p.pal = data::SKINS[g.p.skin].pal;
         g.init_floor(); g.build_decor(0);
@@ -270,6 +270,7 @@ impl Game {
         if kind == K::Crab { e.sh = e.max_hp * cfg::CRAB_SHIELD; }
         if !d.boss { if self.muts[0] { e.spd *= 1.3; } if self.muts[2] { e.max_hp *= 0.7; e.hp = e.max_hp; } if self.muts[6] { e.scale *= 1.25; e.r *= 1.2; e.max_hp *= 1.4; e.hp = e.max_hp; } }
         if !d.boss && self.relics.contains(&crate::content::R_DEAL) { e.max_hp *= 1.15; e.hp = e.max_hp; }
+        if self.abyss > 0 { let b = if d.boss { self.abyss_boss() } else { 1. }; e.max_hp *= self.abyss_hp() * b; e.hp = e.max_hp; e.dmg *= self.abyss_dmg(); if !d.boss && self.ab(6) { e.spd *= 1.1; } }
         if !d.boss && self.path != 0 { e.max_hp *= self.path_hp(); e.hp = e.max_hp; e.dmg *= self.path_dmg(); }
         // мобы крепнут вместе с постоянной прокачкой (магазин, таланты): ты растёшь быстрее, но они не остаются слабыми
         { let m = self.s.meta_power() as f32; let k = if d.boss { 0.6 } else { 1. }; e.max_hp *= 1. + 0.004 * m * k; e.hp = e.max_hp; e.dmg *= 1. + 0.0025 * m * k; }
@@ -326,10 +327,10 @@ impl Game {
         let max_alive = (cfg::MAX_ENEMIES - 20).min(48 + self.zone as usize * 9);
         self.spawn_acc += rate * dt;
         while self.spawn_acc >= 1. { self.spawn_acc -= 1.; if self.en.n >= max_alive { continue; }
-            let (x, y) = self.offscreen_point(); let k = self.pick_kind(); let k = self.event_kind(k); let el = z >= 3. && self.rand() < (0.03 + z * 0.004 + (z - 15.).max(0.) * 0.006) * if self.path == crate::content::P_HUNT || self.event_on() == crate::extras::EV_ELITE { 3. } else { 1. } * if self.muts[3] { 3. } else { 1. };
+            let (x, y) = self.offscreen_point(); let k = self.pick_kind(); let k = self.event_kind(k); let k = self.region_kind(k); let el = z >= 3. && self.rand() < (0.03 + z * 0.004 + (z - 15.).max(0.) * 0.006) * if self.path == crate::content::P_HUNT || self.event_on() == crate::extras::EV_ELITE { 3. } else { 1. } * if self.abyss >= 4 { 1.5 } else { 1. } * if self.muts[3] { 3. } else { 1. };
             self.spawn_enemy(k, x, y, el); }
         if self.boss < 0 { self.pack_t -= dt; if self.pack_t <= 0. { self.pack_t = self.rr(13., 18.); self.spawn_pack(); } }
-        if self.boss < 0 && self.boss_clear_t <= 0. && self.chal.is_none() { self.ev_t -= dt; if self.ev_t <= 0. { self.ev_t = self.rr(26., 36.) * if self.event_on() == crate::extras::EV_GOLD { 0.6 } else { 1. }; self.start_run_event(); } }
+        if self.boss < 0 && self.boss_clear_t <= 0. && self.chal.is_none() { self.ev_t -= dt; if self.ev_t <= 0. { self.ev_t = self.rr(26., 36.) * if self.event_on() == crate::extras::EV_GOLD { 0.6 } else { 1. } * if self.abyss >= 8 { 1.4 } else { 1. }; self.start_run_event(); } }
         if let Some(mut ch) = self.chal { ch.t -= dt;
             if ch.got >= ch.need { let a = self.rand() * TAU; self.spawn_chest(self.p.x + a.cos() * 170., self.p.y + a.sin() * 170.); self.run_pearls += 5;
                 self.banner(t("chalWin"), t("chalWinS"), 0x5fffb0, 2.2); self.snd(Sfx::Level); self.chal = None; }
@@ -357,8 +358,8 @@ impl Game {
         if self.zone >= 5 { self.unlock("depth500"); } if self.zone >= 11 { self.unlock("deep1100"); } if self.zone >= 20 { self.unlock("endless2000"); }
         if !self.rec_shown && self.start_best >= 200 && depth > self.start_best { self.rec_shown = true; let (x, y) = (self.p.x, self.p.y - 64.); self.text(x, y, t("newRec"), 0xffd54f, true, true); self.snd(Sfx::Level); self.ring(self.p.x, self.p.y, 10., 160., 0.6, c::GOLD, 5.); }
         self.s.best_depth = self.s.best_depth.max(depth);
-        if self.zone % 5 == 0 { let k = boss_at(self.zone); self.start_boss(k, ((self.zone - 5) / 20) as f32); let tr = boss_tier(self.zone); if let Some(b) = self.boss_idx() { self.apply_tier(b, tr); if tr > 0 { self.banner(crate::tiers::boss_name(k, tr, i18n::is_en()).unwrap_or("").to_string(), format!("{} · {} {}", t("lord"), self.zone * 100, t("m")), 0xff4f8f, 3.4); } } }
-        else if !self.try_guardian() { self.banner(format!("{} {}", depth, t("m")), i18n::zone((self.zone as usize - 1) % 30), 0x8fd8ff, 2.6); self.snd(Sfx::Nova); }
+        if self.zone % 5 == 0 { let k = self.boss_for(self.zone); self.start_boss(k, ((self.zone - 5) / 20) as f32); let tr = if self.abyss >= 10 { boss_tier(self.zone).max(1) } else { boss_tier(self.zone) }; if let Some(b) = self.boss_idx() { self.apply_tier(b, tr); if tr > 0 { self.banner(crate::tiers::boss_name(k, tr, i18n::is_en()).unwrap_or("").to_string(), format!("{} · {} {}", t("lord"), self.zone * 100, t("m")), 0xff4f8f, 3.4); } } }
+        else if !self.try_guardian() { let hz = crate::extras::hazard_of(self.zone); let sub = if hz > 0 { format!("{} · {}", i18n::zone((self.zone as usize - 1) % 30), crate::extras::hazard_txt(hz)) } else { i18n::zone((self.zone as usize - 1) % 30) }; self.banner(format!("{} {}", depth, t("m")), sub, 0x8fd8ff, 2.6); self.snd(Sfx::Nova); }
     }
     fn start_boss(&mut self, k: K, cyc: f32) {
         self.hp_scale = 1. + cyc * 1.3;
@@ -387,7 +388,7 @@ impl Game {
         Some(i)
     }
     pub fn e_shoot(&mut self, x: f32, y: f32, a: f32, mut spd: f32, r: f32, dmg: f32, col: u8, spin: f32) -> Option<usize> {
-        let i = self.eb.spawn()?; if self.muts[4] { spd *= 1.3; }
+        let i = self.eb.spawn()?; if self.muts[4] { spd *= 1.3; } if self.abyss >= 7 { spd *= 1.15; }
         self.eb.items[i] = EBul { x, y, vx: a.cos() * spd, vy: a.sin() * spd, r, dmg, life: 7., col, spin, acc: 0., grazed: false };
         Some(i)
     }
@@ -422,12 +423,12 @@ impl Game {
         self.p.hb = (self.p.max_hp * cfg::HEAL_RATE * 2.).min(self.p.hb + self.p.max_hp * cfg::HEAL_RATE * dt);
         self.update_new_upg(dt); self.update_upg2(dt); self.update_upg3(dt);
         if self.st.barrier_max > 0 && self.p.shield < self.st.barrier_max { self.p.shield_t -= dt; if self.p.shield_t <= 0. { self.p.shield += 1; self.p.shield_t = self.st.barrier_cd; self.ring(self.p.x, self.p.y, self.p.r, self.p.r + 14., 0.4, c::WHITE, 3.); self.snd(Sfx::Graze); } }
-        self.p.trail_t -= dt; if self.p.trail_t <= 0. { self.p.trail_t = 0.035; self.trail[self.trail_head * 2] = self.p.x; self.trail[self.trail_head * 2 + 1] = self.p.y; self.trail_head = (self.trail_head + 1) % 12; }
+        self.p.trail_t -= dt; if self.p.trail_t <= 0. { self.p.trail_t = 0.035; self.trail[self.trail_head * 2] = self.p.x; self.trail[self.trail_head * 2 + 1] = self.p.y; self.trail_head = (self.trail_head + 1) % 12; self.trail_fx(); }
         // стрельба
         self.p.fire_t -= dt; if self.run_mode == RunMode::Dash { self.p.fire_t = 1.; }
         if self.p.fire_t <= 0. {
             let tg = self.nearest_enemy(self.p.x, self.p.y, self.st.range);
-            if tg >= 0 { self.p.fire_t += 1. / (self.st.rate * (1. + self.rel_blood) * (1. + (self.lv(u::FRENZY) as f32 * 0.04 * (self.combo as f32 / 10.)).min(0.4 * self.lv(u::FRENZY) as f32 / 3.))); if self.p.fire_t < 0. { self.p.fire_t = 0.; }
+            if tg >= 0 { self.p.fire_t += 1. / (self.st.rate * if self.p.ult_t > 0. { 2. } else { 1. } * (1. + self.rel_blood) * (1. + (self.lv(u::FRENZY) as f32 * 0.04 * (self.combo as f32 / 10.)).min(0.4 * self.lv(u::FRENZY) as f32 / 3.))); if self.p.fire_t < 0. { self.p.fire_t = 0.; }
                 let e = &self.en.items[tg as usize]; let a = (e.y - self.p.y).atan2(e.x - self.p.x); let n = self.st.multi; let sp = 0.15; let (px, py) = (self.p.x, self.p.y);
                 let sp = match self.p.form { 3 => 0.26, 7 => 0.2 + self.rr(-0.08, 0.08), _ => sp };
                 for i in 0..n { self.fire_pb(px + a.cos() * 14., py + a.sin() * 14., a + (i as f32 - (n - 1) as f32 / 2.) * sp, self.st.dmg, true); }
@@ -584,7 +585,7 @@ impl Game {
     pub fn kill_enemy(&mut self, i: usize, src: Src) {
         self.en.items[i].dead = true; self.kills += 1;
         let e = self.en.items[i].clone(); let boss = e.kind.d().boss;
-        self.tier_death(&e); self.upg2_kill(&e); if e.aff > 0 && src != Src::Cleanup { self.affix_death(&e); } self.relic_kill(boss);
+        self.tier_death(&e); self.upg2_kill(&e); self.ult_charge(e.elite, boss); if e.aff > 0 && src != Src::Cleanup { self.affix_death(&e); } self.relic_kill(boss);
         self.combo += 1; self.combo_t = 2.6; if self.combo > self.max_combo { self.max_combo = self.combo; }
         self.mult = 1. + (self.combo as f32 * 0.05).min(9.); self.score += (e.score * self.mult).round() as f64;
         self.p.flare = (self.p.flare + if boss { 50. } else if e.elite { 6. } else { 0.9 } * self.st.flare_mul).min(100.);
@@ -594,7 +595,7 @@ impl Game {
         if !boss && src != Src::Cleanup { self.add_ghost(i); }
         if self.st.static_lv > 0 && src != Src::Static { self.p.static_c += 1; if self.p.static_c >= self.st.static_n { self.p.static_c = 0; self.static_q += 1; } }
         self.burst(e.x, e.y, (8. + sz * 0.6).min(26.) as u32, e.col, 90. + sz * 6., 6. + sz * 0.3, 0.55); self.burst(e.x, e.y, 4, c::WHITE, 60., 5., 0.3);
-        self.ring(e.x, e.y, sz * 0.5, sz * 2.4, 0.35, e.col, 2.5); self.shake(1.5 + sz * 0.06); self.snd(Sfx::Kill(self.combo));
+        self.ring(e.x, e.y, sz * 0.5, sz * 2.4, 0.35, e.col, 2.5); if src != Src::Cleanup { self.death_fx(e.x, e.y, sz); } self.shake(1.5 + sz * 0.06); self.snd(Sfx::Kill(self.combo));
         let mut xp = e.xp; while xp > 0. { let v = if xp >= 10. { 10. } else if xp >= 3. { 3. } else { 1. }; xp -= v; let (a, b) = (self.rr(-8., 8.), self.rr(-8., 8.)); self.drop_pick(e.x + a, e.y + b, if v >= 10. { 2 } else if v >= 3. { 1 } else { 0 }, v); }
         if e.elite { let n = self.rng.int(1, 2) + if self.path == crate::content::P_HUNT { 2 } else { 0 } + if self.event_on() == crate::extras::EV_ELITE { 2 } else { 0 }; for _ in 0..n { let (a, b) = (self.rr(-12., 12.), self.rr(-12., 12.)); self.drop_pick(e.x + a, e.y + b, 3, 1.); } } else if self.rand() < 0.006 * if self.path == crate::content::P_DANGER { 2. } else { 1. } { self.drop_pick(e.x, e.y, 3, 1.); }
         if self.rand() < 0.01 && self.p.hp < self.p.max_hp * 0.8 { self.drop_pick(e.x, e.y, 4, 25.); }
@@ -618,7 +619,7 @@ impl Game {
         let e = self.en.items[i].clone();
         self.quest_add("boss", 1); if e.tier > 0 { self.unlock("lord"); }
         self.boss = -1; self.bosses_killed += 1; self.boss_clear_t = 3.; self.level_delay = self.level_delay.max(1.6);
-        if self.zone % 5 == 0 { self.path_pending = true; }
+        if self.zone % 5 == 0 { self.path_pending = true; if self.run_mode == RunMode::Normal && !self.god { self.s.shards += if self.zone >= 30 { 3 } else { 1 }; self.dirty = true; } }
         self.hit_stop = 0.35; self.flash = 1.; self.shake(34.); self.vibrate(370); self.snd(Sfx::Boom(true));
         for k in 0..4 { self.ring(e.x, e.y, 20., 200. + k as f32 * 120., 0.6 + k as f32 * 0.2, if k % 2 == 1 { c::WHITE } else { e.col }, 8.); }
         self.burst(e.x, e.y, 90, e.col, 520., 16., 1.3); self.burst(e.x, e.y, 40, c::WHITE, 300., 10., 1.);
@@ -650,7 +651,7 @@ impl Game {
             if dx * dx + dy * dy < rr * rr { let d = (dx * dx + dy * dy).sqrt().max(1.); if freeze { self.en.items[i].freeze = 1.6; } self.damage_enemy(i, dmg, false, f32::NAN, dx / d * 200., dy / d * 200., Src::None); } }
         self.qb_back(q);
     }
-    pub fn heal_p(&mut self, v: f32) -> f32 { let a = v.min(self.p.hb).min(self.p.max_hp - self.p.hp).max(0.); self.p.hb -= a; self.p.hp += a; a }
+    pub fn heal_p(&mut self, v: f32) -> f32 { let v = v * self.abyss_heal(); let a = v.min(self.p.hb).min(self.p.max_hp - self.p.hp).max(0.); self.p.hb -= a; self.p.hp += a; a }
     pub fn hurt_player(&mut self, dmg: f32) {
         if self.p.inv > 0. || self.p.dash_t > 0. || self.state != State::Play || self.dying > 0. || self.god { return; }
         if self.p.shield > 0 { self.p.shield -= 1; self.p.inv = self.p.inv.max(1.); self.snd(Sfx::Clink); self.ring(self.p.x, self.p.y, self.p.r, self.p.r + 30., 0.4, c::WHITE, 5.); self.shake(8.); self.vibrate(25);
@@ -817,7 +818,7 @@ impl Game {
     pub fn update_run(&mut self, dt: f32, real_dt: f32) {
         self.t += dt; self.run_t += dt;
         if self.combo_t > 0. { self.combo_t -= dt; if self.combo_t <= 0. { self.combo = 0; self.mult = 1.; self.combo_milestone = 0; } }
-        if !self.p.dead { self.update_player(dt); self.pet_tick(dt); }
+        if !self.p.dead { if self.ult_q { self.ult_q = false; self.ult_fire(); } self.update_player(dt); self.pet_tick(dt); self.ult_tick(dt); self.hazard_tick(dt); }
         if self.tut.on { self.update_tut(dt); }
         self.update_director(dt);
         self.update_enemies(dt);

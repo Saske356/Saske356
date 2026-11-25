@@ -11,7 +11,7 @@ pub struct Daily { pub day: String, pub quests: Vec<Quest>, pub streak: u32, pub
 
 #[derive(Clone, Debug)]
 pub struct Settings { pub sound: bool, pub music: bool, pub vibro: bool, pub quality: String, pub nums: bool, pub shake: bool, pub lang: String,
-    pub fps: u32, pub fx: bool, pub hard: bool, pub orient: u8 /* 0 — вертикаль, 1 — горизонталь, 2 — авто */, pub vsfx: u8, pub vmus: u8 /* громкость 0..10 */ }
+    pub fps: u32, pub fx: bool, pub hard: bool, pub orient: u8 /* 0 — вертикаль, 1 — горизонталь, 2 — авто */, pub vsfx: u8, pub vmus: u8 /* громкость 0..10 */, pub notify: bool /* напоминания */ }
 
 #[derive(Clone, Debug)]
 pub struct Save {
@@ -22,7 +22,7 @@ pub struct Save {
     pub best_kills: u32, pub best_combo: u32, pub best_level: u32, pub best_syn: u32, pub crab_hint: bool, pub set: Settings,
     pub err_log: Vec<String>, pub migrated: bool,
     // 4.1: питомцы, мастерство искр, жетоны колеса удачи
-    pub pets: BTreeMap<String, u8>, pub pet: String, pub mastery: BTreeMap<String, u32>, pub tok_relic: u32, pub tok_reroll: u32,
+    pub pets: BTreeMap<String, u8>, pub pet: String, pub mastery: BTreeMap<String, u32>, pub tok_relic: u32, pub tok_reroll: u32, pub abyss_max: u8 /* открытый уровень Бездны */, pub abyss_sel: u8, pub shards: u32 /* осколки света */, pub regions: BTreeMap<String, u8>, pub region: u8, pub rate: u8 /* 0 — не спрашивали, 1 — «позже», 2 — всё */, pub rate_at: u32, pub notif_asked: bool, pub trails: BTreeMap<String, u8>, pub trail: u8, pub deaths: BTreeMap<String, u8>, pub death: u8,
 }
 
 pub fn default_lang() -> String { "ru".into() }
@@ -34,8 +34,8 @@ impl Default for Save {
         Save { pearls: 0, best: 0, best_depth: 0, total_kills: 0, total_pearls: 0, runs: 0, flares: 0, shop: BTreeMap::new(), tal: BTreeMap::new(),
             chars, ch: "lumen".into(), skins, skin: "azure".into(), ach: BTreeMap::new(), seen_how: false, seen_intro: false, foe_seen: BTreeMap::new(),
             seen: BTreeMap::new(), mode_best: BTreeMap::new(), tut: false, wins: 0, daily: Daily::default(), best_kills: 0, best_combo: 0, best_level: 0, best_syn: 0, crab_hint: false,
-            set: Settings { sound: true, music: true, vibro: true, quality: "auto".into(), nums: true, shake: true, lang: default_lang(), fps: 120, fx: true, hard: false, orient: 0, vsfx: 10, vmus: 8 },
-            err_log: vec![], migrated: false, pets: BTreeMap::new(), pet: String::new(), mastery: BTreeMap::new(), tok_relic: 0, tok_reroll: 0 }
+            set: Settings { sound: true, music: true, vibro: true, quality: "auto".into(), nums: true, shake: true, lang: default_lang(), fps: 120, fx: true, hard: false, orient: 0, vsfx: 10, vmus: 8, notify: true },
+            err_log: vec![], migrated: false, pets: BTreeMap::new(), pet: String::new(), mastery: BTreeMap::new(), tok_relic: 0, tok_reroll: 0, abyss_max: 0, abyss_sel: 0, shards: 0, regions: BTreeMap::new(), region: 0, rate: 0, rate_at: 0, notif_asked: false, trails: BTreeMap::new(), trail: 0, deaths: BTreeMap::new(), death: 0 }
     }
 }
 
@@ -65,6 +65,10 @@ impl Save {
             let m = map(&o, k); for (kk, vv) in m { dst.insert(kk, vv); } }
         d.pets = map(&o, "pets"); if let Some(x) = s(&o, "pet") { d.pet = x; }
         if let Some(Value::Object(m)) = o.get("mastery") { for (k, v) in m { if let Some(n) = v.as_f64() { if n.is_finite() && n > 0. { d.mastery.insert(k.clone(), n as u32); } } } }
+        d.regions = map(&o, "regions"); if let Some(x) = num(&o, "shards") { d.shards = x as u32; } if let Some(x) = num(&o, "region") { d.region = (x as u8).min(3); }
+        if let Some(x) = num(&o, "rate") { d.rate = x as u8; } if let Some(x) = num(&o, "rateAt") { d.rate_at = x as u32; } d.notif_asked = flag(&o, "notifAsked", false);
+        d.trails = map(&o, "trails"); d.deaths = map(&o, "deaths"); if let Some(x) = num(&o, "trail") { d.trail = x as u8; } if let Some(x) = num(&o, "death") { d.death = x as u8; }
+        if let Some(x) = num(&o, "abyssMax") { d.abyss_max = (x as u8).min(20); } if let Some(x) = num(&o, "abyssSel") { d.abyss_sel = (x as u8).min(d.abyss_max); }
         if let Some(x) = num(&o, "tokRelic") { d.tok_relic = x as u32; } if let Some(x) = num(&o, "tokReroll") { d.tok_reroll = x as u32; }
         if let Some(x) = s(&o, "char") { d.ch = x; } if let Some(x) = s(&o, "skin") { d.skin = x; }
         d.seen_how = flag(&o, "seenHow", false); d.seen_intro = flag(&o, "seenIntro", false); d.tut = flag(&o, "tut", false); d.crab_hint = flag(&o, "crabHint", false);
@@ -78,7 +82,7 @@ impl Save {
         }
         if let Some(st) = o.get("set") {
             let t = &mut d.set;
-            t.sound = flag(st, "sound", true); t.music = flag(st, "music", true); t.vibro = flag(st, "vibro", true); t.nums = flag(st, "nums", true); t.shake = flag(st, "shake", true);
+            t.sound = flag(st, "sound", true); t.music = flag(st, "music", true); t.vibro = flag(st, "vibro", true); t.nums = flag(st, "nums", true); t.shake = flag(st, "shake", true); t.notify = flag(st, "notify", true);
             if let Some(q) = s(st, "quality") { if ["auto", "high", "low"].contains(&q.as_str()) { t.quality = q; } }
             if let Some(l) = s(st, "lang") { if l == "ru" || l == "en" { t.lang = l; } }
             t.fps = if num(st, "fps") == Some(60.0) { 60 } else { 120 };
@@ -109,7 +113,8 @@ impl Save {
             "errLog": self.err_log,
         });
         let mut v = v; let mut ms = Map::new(); for (k, x) in &self.mastery { ms.insert(k.clone(), json!(x)); }
-        v["pets"] = mapv(&self.pets); v["pet"] = json!(self.pet); v["mastery"] = Value::Object(ms); v["tokRelic"] = json!(self.tok_relic); v["tokReroll"] = json!(self.tok_reroll);
+        v["pets"] = mapv(&self.pets); v["pet"] = json!(self.pet); v["mastery"] = Value::Object(ms); v["tokRelic"] = json!(self.tok_relic); v["abyssMax"] = json!(self.abyss_max); v["shards"] = json!(self.shards); v["regions"] = mapv(&self.regions); v["region"] = json!(self.region); v["rate"] = json!(self.rate); v["rateAt"] = json!(self.rate_at); v["notifAsked"] = json!(self.notif_asked as u8);
+        v["trails"] = mapv(&self.trails); v["deaths"] = mapv(&self.deaths); v["trail"] = json!(self.trail); v["death"] = json!(self.death); v["set"]["notify"] = json!(self.set.notify as u8); v["abyssSel"] = json!(self.abyss_sel); v["tokReroll"] = json!(self.tok_reroll);
         v.to_string()
     }
     pub fn lv(&self, m: &BTreeMap<String, u8>, k: &str) -> u8 { *m.get(k).unwrap_or(&0) }

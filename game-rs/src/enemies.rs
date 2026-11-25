@@ -244,7 +244,7 @@ impl Game {
     pub fn try_guardian(&mut self) -> bool {
         let Some((kind, lvl)) = Self::guardian_for(self.zone) else { return false };
         let nz = self.zone + 2; let cyc = ((nz as i32 - 5) / 20) as f32;
-        self.hp_scale = 0.42 * boss_at(nz).d().hp * (1. + cyc * 1.3) / kind.d().hp;
+        self.hp_scale = 0.42 * self.boss_for(nz).d().hp * (1. + cyc * 1.3) / kind.d().hp;
         let Some(i) = self.spawn_enemy(kind, self.p.x, self.p.y - self.vh * 0.7, false) else { return false };
         { let e = &mut self.en.items[i]; e.spawn_t = 0.; e.state = 0; e.st = 2.4; e.lvl = lvl; e.p1 = 0.8; e.phase = 0.; e.ty = 0.;
             if kind == K::KingCrab { e.sh = e.max_hp * 0.2; e.tx = e.sh; e.ang = PI / 2.; } else { e.ang = 0.; } }

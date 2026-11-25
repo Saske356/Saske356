@@ -73,6 +73,11 @@ impl Game {
         self.tut = Tut { on: !self.s.tut, ..Default::default() };
         for _ in 0..6 { let (x, y) = self.offscreen_point(); self.spawn_enemy(K::Drifter, x, y, false); }
         self.event = crate::extras::event_today().map(|i| i as u8 + 1).unwrap_or(0);
+        self.geysers.clear(); self.bcr.clear(); self.hz_t = 2.;
+        self.region = if mode == RunMode::Normal && (self.s.region == 0 || self.s.regions.contains_key(&self.s.region.to_string())) { self.s.region } else { 0 };
+        self.abyss = if mode == RunMode::Normal { self.s.abyss_sel.min(self.s.abyss_max) } else { 0 };
+        if self.abyss >= 11 { self.p.hp = (self.p.max_hp * 0.85).round(); }
+        if self.abyss > 0 { self.banner(format!("{} {}", if i18n::is_en() { "ABYSS" } else { "БЕЗДНА" }, self.abyss), crate::extras::abyss_txt(self.abyss.min(20)).into(), 0xc77dff, 3.); }
         self.pet = PetState { x: self.p.x - 40., y: self.p.y + 30., t: 2., ..Default::default() };
         if self.s.tok_relic > 0 { self.s.tok_relic -= 1; self.relic_pending += 1; self.level_delay = 0.8; self.dirty = true; }
         if self.s.tok_reroll > 0 { self.rerolls += self.s.tok_reroll; self.s.tok_reroll = 0; self.dirty = true; }
@@ -85,7 +90,7 @@ impl Game {
         let mut pool: Vec<(usize, f32)> = vec![];
         for (i, up) in UPG.iter().enumerate() { let l = self.p.up[i]; if l >= up.max { continue; }
             match up.syn { Some((a, la, b, lb)) => if self.p.up[a] >= la && self.p.up[b] >= lb { pool.push((i, 5.)); }, None => pool.push((i, if l > 0 { 1.3 } else { 1. })) } }
-        let n = if self.s.tal("t_four") { 4 } else { 3 }; let mut out = vec![];
+        let n = if self.s.tal("t_four") { 4 } else { 3 } - if self.abyss >= 14 { 1 } else { 0 }; let mut out = vec![];
         while out.len() < n && !pool.is_empty() { let tot: f32 = pool.iter().map(|p| p.1).sum(); let mut r = self.rand() * tot; let mut k = 0;
             while k < pool.len() - 1 { r -= pool[k].1; if r <= 0. { break; } k += 1; } out.push(pool[k].0); pool.remove(k); }
         // эволюция — всегда первой картой, если готова
@@ -117,7 +122,7 @@ impl Game {
         self.state = State::Over;
         // 3.7: жемчуг копится медленно — за очки корень, а не линейно (иначе миллионы очков давали тысячи жемчуга)
         let earned = ((self.run_pearls as f32 + (self.score.max(0.).sqrt() / 30.).floor() as f32 + (self.zone as f32 - 1.) * 2. + self.bosses_killed as f32 * 10.)
-            * (1. + 0.1 * self.lv(u::GREED) as f32) * if self.hard { 1.5 } else { 1. } * (1. + 0.1 * self.tl("t_pearl")) * if self.daily { 2. } else { 1. } * if self.rel(crate::content::R_CROWN) { 1.5 } else { 1. } * (1. + 0.02 * self.s.shop_lv("luck") as f32) * self.event_pearl_mul()).round() as u32;
+            * (1. + 0.1 * self.lv(u::GREED) as f32) * if self.hard { 1.5 } else { 1. } * (1. + 0.1 * self.tl("t_pearl")) * if self.daily { 2. } else { 1. } * if self.rel(crate::content::R_CROWN) { 1.5 } else { 1. } * (1. + 0.02 * self.s.shop_lv("luck") as f32) * self.event_pearl_mul() * (1. + 0.1 * self.abyss as f32) * crate::extras::REGIONS[self.region_on()].pearl).round() as u32;
         if let Some(l) = self.mastery_gain() { let nm = i18n::chr(&self.s.ch).0; self.toast(if i18n::is_en() { format!("Mastery {l}") } else { format!("Мастерство {l}") }, format!("{nm}: {}", crate::extras::mastery_desc(l))); }
         self.last_earned = earned;
         if self.daily { let z = self.zone; let d = &mut self.s.daily; d.ch_best = d.ch_best.max(z * 100);
@@ -135,6 +140,9 @@ impl Game {
         self.state = State::Ending; self.snd(Sfx::Flare); self.vibrate(120); self.eb.n = 0; self.want_ending = false;
         for i in 0..self.picks.n { let pk = self.picks.items[i].clone(); if pk.kind <= 2 { self.add_xp(pk.val); } else if pk.kind == 3 { self.run_pearls += 1; } }
         self.picks.n = 0;
+        if self.abyss >= self.s.abyss_max && self.s.abyss_max < crate::extras::ABYSS_MAX && !self.god { let n = self.s.abyss_max + 1; let first = self.abyss > 0;
+            self.s.abyss_max = n; if first { let r = crate::extras::abyss_reward(self.abyss); self.s.pearls += r; self.toast(if i18n::is_en() { format!("Abyss {} cleared!", self.abyss) } else { format!("Бездна {} пройдена!", self.abyss) }, format!("+{r} {}", t("pearlsGen"))); }
+            self.toast(if i18n::is_en() { format!("Abyss {n} unlocked") } else { format!("Открыта Бездна {n}") }, crate::extras::abyss_txt(n).into()); }
         self.s.wins += 1; let first = !self.s.skins.contains_key("dawn"); self.s.skins.insert("dawn".into(), 1); self.dirty = true; first
     }
     pub fn continue_endless(&mut self) {

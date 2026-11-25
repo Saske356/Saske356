@@ -11,7 +11,7 @@ use crate::ui::Ui;
 use macroquad::prelude::*;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub enum Scr { None, Title, How, Level, Pause, Revive, Over, Shop, Ach, Set, Quest, Best, End, Modes, Wheel }
+pub enum Scr { None, Title, How, Level, Pause, Revive, Over, Shop, Ach, Set, Quest, Best, End, Modes, Wheel, Map, Rate, Card }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum AdCb { Revive, Double, Reroll, Gift, Inter(Next), Boost, RelicReroll, Quest(usize), Wheel }
@@ -29,7 +29,7 @@ pub struct Toast { pub title: String, pub sub: String, pub t: f32 }
 pub struct App {
     pub gx: Gfx, pub bloom: Option<crate::gfx::Bloom>, pub rd: Rd, pub g: Game, pub ui: Ui, pub au: Audio,
     pub scr: Scr, pub scr_t: f32, pub back_to: Scr, pub intro: Intro, pub end: End, pub joy: Joy, pub ads: Ads,
-    pub cards: Vec<usize>, pub cards_t: f32, pub relic_mode: bool, pub path_mode: bool, pub best_sel: Option<(usize, u8)>, pub wheel: WheelSt, pub relic_rerolled: bool, pub earned: u32, pub rec: bool, pub over_t: f32, pub revive_n: f32,
+    pub cards: Vec<usize>, pub cards_t: f32, pub relic_mode: bool, pub path_mode: bool, pub best_sel: Option<(usize, u8)>, pub wheel: WheelSt, pub map_pick: u8, pub share_cap: Option<Rect>, pub rate_pending: bool, pub rem_done: bool, pub relic_rerolled: bool, pub earned: u32, pub rec: bool, pub over_t: f32, pub revive_n: f32,
     pub shop_tab: u8, pub toasts: Vec<Toast>, pub save_t: f32, pub safe: [f32; 4], pub now: f64, pub was_paused: bool,
     pub glow_auto_off: bool, pub banner_on: bool, pub glow_slow: f32, pub test: Vec<(f64, String)>, pub bot: bool, pub shot: Option<String>, pub fps_acc: f32, pub fps_n: u32, pub fps: f32, pub slow_t: f32, pub q_auto: u8, pub last_land: bool, pub orient_set: u8, pub fps_set: u32,
 }
@@ -74,7 +74,7 @@ impl App {
         let now = get_time();
         let mut app = App { gx, bloom: None, rd: Rd::new(), g, ui: Ui::new(), au, scr: Scr::None, scr_t: 0., back_to: Scr::Title,
             intro: Intro { t: 0., dur: if full { 5.8 } else { 1.5 }, full, ig: if full { 3.7 } else { 0.08 }, revealed: false }, end: End { t: 0., show: 7.4, shown: false, first: false },
-            joy: Joy::default(), ads: Ads { place: String::new(), cb: None, wd: 0., wd_len: 0., last: -1e9, t0: now, over_n: 0, back_t: 0. }, cards: vec![], cards_t: 0., relic_mode: false, path_mode: false, best_sel: None, wheel: WheelSt::default(), relic_rerolled: false, earned: 0, rec: false, over_t: 0., revive_n: 0.,
+            joy: Joy::default(), ads: Ads { place: String::new(), cb: None, wd: 0., wd_len: 0., last: -1e9, t0: now, over_n: 0, back_t: 0. }, cards: vec![], cards_t: 0., relic_mode: false, path_mode: false, best_sel: None, wheel: WheelSt::default(), map_pick: 0, share_cap: None, rate_pending: false, rem_done: false, relic_rerolled: false, earned: 0, rec: false, over_t: 0., revive_n: 0.,
             shop_tab: 0, toasts: vec![], save_t: 0., safe: [0.; 4], now, was_paused: false, glow_auto_off: false, banner_on: false, glow_slow: 0., test: std::env::var("SVET_TEST").unwrap_or_default().split(';').filter_map(|c| c.split_once(':').map(|(t, c)| (t.trim().parse().unwrap_or(0.), c.trim().to_string()))).collect(), bot: false, shot: None, fps_acc: 0., fps_n: 0, fps: 60., slow_t: 0., q_auto: 2, last_land: false, orient_set: 99, fps_set: 0 };
         app.g.state = State::Intro;
         if let Some(crate::flow::DailyMsg::Login(d, r)) = app.g.daily_check() { app.toast_later(tf("loginT", &[&d.to_string()]), format!("+{r} {}", t("pearlsGen"))); }
@@ -144,6 +144,21 @@ impl App {
     pub fn start_run(&mut self, mode: RunMode) {
         self.g.start_run(mode); self.show(Scr::None); self.joy = Joy::default(); self.g.touch = true;
     }
+    /// Снимок карточки рекорда (область экрана r) → files/share/record.png → системное «Поделиться»
+    fn share_capture(&mut self, r: Rect) {
+        let img = get_screen_data(); let (iw, ih) = (img.width as i32, img.height as i32); let p = self.gx.px;
+        let x0 = ((r.x * p) as i32).clamp(0, iw - 1); let x1 = (((r.x + r.w) * p) as i32).clamp(x0 + 1, iw); let y0 = ((r.y * p) as i32).clamp(0, ih - 1); let y1 = (((r.y + r.h) * p) as i32).clamp(y0 + 1, ih);
+        let (cw, chh) = ((x1 - x0) as usize, (y1 - y0) as usize); let mut out = Vec::with_capacity(cw * chh * 4);
+        // данные экрана идут снизу вверх (так их отдаёт OpenGL) — берём строки в том же порядке, export_png сам перевернёт
+        for row in (ih - y1)..(ih - y0) { let st = (row as usize * iw as usize + x0 as usize) * 4; out.extend_from_slice(&img.bytes[st..st + cw * 4]); }
+        for px in out.chunks_mut(4) { px[3] = 255; }
+        let dir = format!("{}/share", platform::files_dir()); let _ = std::fs::create_dir_all(&dir);
+        Image { bytes: out, width: cw as u16, height: chh as u16 }.export_png(&format!("{dir}/record.png"));
+        let en = i18n::is_en(); let d = self.g.zone * 100;
+        let txt = if en { format!("I dove {d} m deep in Light of the Abyss! Can you go deeper? https://apps.rustore.ru/app/com.svetbezdny.game") }
+                  else { format!("Я нырнул на {d} м в «Свет Бездны»! Сможешь глубже? https://apps.rustore.ru/app/com.svetbezdny.game") };
+        platform::share_record(&txt, if en { "Share record" } else { "Поделиться рекордом" });
+    }
     pub fn to_title(&mut self) { self.g.state = State::Title; self.show(Scr::Title); }
     pub fn pause(&mut self) { if self.g.state != State::Play || self.g.dying > 0. { return; } self.g.state = State::Pause; self.joy = Joy::default(); self.show(Scr::Pause); self.persist(); }
     pub fn resume(&mut self) { self.g.state = State::Play; self.show(Scr::None); self.joy = Joy::default(); }
@@ -187,7 +202,12 @@ impl App {
         let _ = U_HEAL;
     }
     pub fn game_over(&mut self) {
-        let (e, rec) = self.g.game_over(); self.earned = e; self.rec = rec; self.over_t = 0.; self.joy = Joy::default(); self.show(Scr::Over); self.persist();
+        let (e, rec) = self.g.game_over(); self.earned = e; self.rec = rec; self.over_t = 0.; self.joy = Joy::default(); self.show(Scr::Over);
+        // 4.3: просьба об оценке — после третьего забега, когда пройден первый владыка (и ещё раз через 10 забегов, если «позже»)
+        { let s = &mut self.g.s; if !self.bot && ((s.rate == 0 && s.runs >= 3 && s.best_depth >= 500) || (s.rate == 1 && s.runs >= s.rate_at)) { self.rate_pending = true; } }
+        // напоминания: разрешение спрашиваем один раз, после второго забега (на Android 13+ это системное окно)
+        if !self.bot && !self.g.s.notif_asked && self.g.s.runs >= 2 && self.g.s.set.notify { self.g.s.notif_asked = true; platform::ask_notify(); }
+        crate::extras::sync_reminders(&self.g.s); self.persist();
     }
     fn offer_revive(&mut self) -> bool {
         if self.g.ad_revived || self.g.victory || self.bot { return false; }
@@ -201,7 +221,7 @@ impl App {
         let (vw, vh) = self.gx.frame(px, self.g.cam_x, self.g.cam_y, 0., 0.); self.g.vw = vw; self.g.vh = vh;
         let ins = platform::insets(); self.safe = [ins[0] / px, ins[1] / px, ins[2] / px, ins[3] / px];
         // баннер — только в меню вне забега; кнопки поднимаются над ним
-        let menu = matches!(self.g.state, State::Title | State::Menu) && matches!(self.scr, Scr::Title | Scr::Shop | Scr::Ach | Scr::Quest | Scr::Best | Scr::Set | Scr::How | Scr::Modes);
+        let menu = matches!(self.g.state, State::Title | State::Menu) && matches!(self.scr, Scr::Title | Scr::Shop | Scr::Ach | Scr::Quest | Scr::Best | Scr::Set | Scr::How | Scr::Modes | Scr::Map);
         if menu != self.banner_on { self.banner_on = menu; platform::set_banner(menu); }
         if menu { let bh = platform::banner_h() / px; if bh > 0. { self.safe[1] = self.safe[1].max(bh + 4.); } }
         self.gx.safe_t = self.safe[0]; self.gx.safe_b = self.safe[1];
@@ -237,6 +257,8 @@ impl App {
         self.gx.frame(px, self.g.cam_x, self.g.cam_y, shx, shy);
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.draw(rdt)));
         if res.is_err() { self.fault("draw"); gl_use_default_material(); }
+        if !self.rem_done && self.now > 2. { self.rem_done = true; crate::extras::sync_reminders(&self.g.s); }
+        if let Some(r) = self.share_cap.take() { self.share_capture(r); }
         if let Some(p) = self.shot.take() { let img = get_screen_data(); let (w, h) = (img.width as usize, img.height as usize);
             let mut img = img; for px in img.bytes.chunks_mut(4) { px[3] = 255; } img.export_png(&p); let _ = (w, h); }
         // частота кадров и автоподстройка качества
@@ -272,10 +294,15 @@ impl App {
                 "modes" => { self.show(Scr::Modes); } "mode" => { let m = [RunMode::Daily, RunMode::Time, RunMode::NoUp, RunMode::Dash][n as usize % 4]; self.start_run(m); }
                 "bestsel" => { self.show(Scr::Best); self.best_sel = Some((n as usize % crate::data::K_ALL.len(), 0)); }
                 "wheel" => { self.show(Scr::Wheel); } "spin" => { self.wheel_start(); } "shop4" => { self.shop_tab = 4; self.show(Scr::Shop); } "pet" => { let k = n as usize % 3; self.g.s.pets.insert(crate::extras::PETS[k].id.into(), 3); self.g.s.pet = crate::extras::PETS[k].id.into(); self.g.compute_stats(); }
+                "ult" => { self.g.p.ult = 100.; self.g.ult_q = true; }
+                "abyss" => { self.g.s.abyss_max = (n as u8).min(20); self.g.s.abyss_sel = (n as u8).min(20); }
+                "card" => { self.show(Scr::Card); } "share" => { self.share_cap = Some(crate::screens::card_rect(self)); } "rate" => { self.show(Scr::Rate); } "remind" => { std::env::set_var("SVET_REMIND", "1"); crate::extras::sync_reminders(&self.g.s); }
+                "trail" => { let i = n as usize % 7; self.g.s.trails.insert(i.to_string(), 1); self.g.s.trail = i as u8; } "death" => { let i = n as usize % 6; self.g.s.deaths.insert(i.to_string(), 1); self.g.s.death = i as u8; } "scroll" => { self.ui.scroll_set(1, n); }
+                "map" => { self.map_pick = n as u8 % 4; self.show(Scr::Map); } "region" => { let i = n as u8 % 4; self.g.s.regions.insert(i.to_string(), 1); self.g.s.region = i; } "shards" => { self.g.s.shards = n as u32; }
                 "path" => { self.g.path_pending = true; }
                 "relic" => { self.g.relic_pending += 1; self.g.level_delay = 0.; }
                 "elite" => { let k = crate::data::K_ALL[n as usize % crate::data::K_ALL.len()]; for q in 0..6 { let (x, y) = (self.g.p.x - 150. + q as f32 * 60., self.g.p.y - 200.); if let Some(i) = self.g.spawn_enemy(k, x, y, true) { self.g.en.items[i].aff = 1 + q as u8; if q == 0 { self.g.en.items[i].ash = self.g.en.items[i].max_hp * 0.45; } } } }
-                "fps" => { eprintln!("fps {:.1} enemies {} parts {} ebul {}", self.fps, self.g.en.n, self.g.parts.n, self.g.eb.n); }
+                "fps" => { eprintln!("fps {:.1} enemies {} parts {} ebul {} zone {} hz {} boss {}", self.fps, self.g.en.n, self.g.parts.n, self.g.eb.n, self.g.zone, self.g.hazard(), self.g.boss); }
                 "up" => { if let Some(i) = crate::data::UPG.iter().position(|u| u.id == arg) { self.g.p.up[i] = it.next().and_then(|v| v.parse().ok()).unwrap_or(1); self.g.compute_stats(); } }
                 "quit" => std::process::exit(0),
                 _ => {}
@@ -308,6 +335,8 @@ impl App {
             Scr::Best if self.best_sel.is_some() => self.best_sel = None,
             Scr::Ach | Scr::Quest | Scr::Best | Scr::How | Scr::Modes => self.show(Scr::Title),
             Scr::Wheel => { if self.wheel.spin <= 0. { self.show(Scr::Title); } }
+            Scr::Map | Scr::Rate => self.show(Scr::Title),
+            Scr::Card => self.show(Scr::Over),
             Scr::Over => self.between(Next::Menu),
             Scr::Revive => { if self.ads.cb.is_none() { self.game_over(); } }
             _ => {}

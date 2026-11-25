@@ -17,8 +17,8 @@ pub fn draw(a: &mut App) {
     let al = (a.scr_t / 0.28).min(1.); a.ui.alpha = al;
     if a.scr != Scr::Title { let light = matches!(a.scr, Scr::Level | Scr::Pause | Scr::Revive); let tm = a.g.t; menu_backdrop(&mut a.gx, tm, al, light); }
     match a.scr {
-        Scr::Title => title(a), Scr::How => how(a), Scr::Level => level(a), Scr::Pause => pause(a), Scr::Revive => revive(a), Scr::Over => over(a),
-        Scr::Shop => shop(a), Scr::Ach => ach(a), Scr::Set => settings(a), Scr::Quest => quests(a), Scr::Best => best(a), Scr::Modes => modes(a), Scr::Wheel => wheel(a), Scr::End => end(a), Scr::None => {}
+        Scr::Title => { if a.rate_pending { a.rate_pending = false; a.show(Scr::Rate); } title(a) } Scr::How => how(a), Scr::Level => level(a), Scr::Pause => pause(a), Scr::Revive => revive(a), Scr::Over => over(a),
+        Scr::Shop => shop(a), Scr::Ach => ach(a), Scr::Set => settings(a), Scr::Quest => quests(a), Scr::Best => best(a), Scr::Modes => modes(a), Scr::Wheel => wheel(a), Scr::Map => ocean_map(a), Scr::Rate => rate(a), Scr::Card => card(a), Scr::End => end(a), Scr::None => {}
     }
     a.ui.alpha = 1.;
 }
@@ -169,6 +169,11 @@ fn title_portrait(a: &mut App) {
       let ly = ay + art - logo_h * 0.18; logo(gx, cx, ly, logo_k, al, tm); logo_shine(gx, cx, ly, logo_k, tm, al); }
     // ---- кнопки ----
     let mut y = yb;
+    // регион (карта океана) — плашка над «Играть»
+    { let en = i18n::is_en(); let ri = a.g.s.region as usize; let nm = crate::extras::region_txt(ri).0; let l = format!("{}: {} ›", if en { "Region" } else { "Регион" }, nm); let tw = a.gx.text_w(&l, 13., 1) + 24.;
+      let r = Rect::new(bx + bw / 2. - tw / 2., y - 34., tw, 26.); ui::rrect_grad(&mut a.gx, r.x, r.y, r.w, r.h, 13., Color::new(0.03, 0.1, 0.2, 0.7 * al), Color::new(0.02, 0.06, 0.14, 0.6 * al));
+      a.gx.rrect_line(r.x, r.y, r.w, r.h, 13., 1., with_alpha(hex(crate::extras::REGIONS[ri].col), 0.7 * al)); a.gx.text(&l, r.x + r.w / 2., r.y + 13., 13., Color::new(1., 1., 1., al), 1, 1);
+      if a.ui.tap(r) { a.click(); a.map_pick = a.g.s.region; a.show(Scr::Map); return; } }
     // «Играть» и рядом — забег с реликвией за рекламу (до 5 в день)
     let boost_left = BOOST_MAX.saturating_sub(a.g.s.daily.boost); let boost = boost_left > 0 && a.g.s.runs >= 1 && a.ad_ready();
     let pw = if boost { bw * 0.6 } else { bw };
@@ -406,7 +411,7 @@ fn over(a: &mut App) {
     let stats_h = ((cells.len() + cols - 1) / cols) as f32 * (cell_h + 8.) - 8.;
     let q_h = if land { 0. } else { quests.len() as f32 * 19. + 8. };
     let bh = if sm { 56. } else { 68. };
-    let total = 40. + 22. + if land { 40. } else { 62. } + 26. + stats_h + 12. + q_h + if dbl { 60. } else { 0. } + bh + 8. + 54.;
+    let total = 40. + 22. + if land { 40. } else { 62. } + 26. + stats_h + 12. + q_h + if dbl { 60. } else { 0. } + bh + 8. + 54. + if land { 0. } else { 44. };
     let mut y = ((h - total) / 2.).max(tp);
     h2(&mut a.gx, &if a.g.victory { t("overWin") } else { t("overLose") }, w / 2., y + 14., if land { 21. } else { 28. }, al); y += if land { 30. } else { 40. };
     let sub = format!("{} {} · {}", a.g.zone * 100, t("m"), i18n::zone((a.g.zone as usize).saturating_sub(1) % 30)); a.gx.text(&sub, w / 2., y, 14., Color::new(1., 1., 1., 0.75 * al), 1, 0); y += 22.;
@@ -429,7 +434,62 @@ fn over(a: &mut App) {
     if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, bh), &t("again"), St::Cyan, if sm { 22. } else { 26. }, true) { a.click(); a.between(Next::Again); return; } y += bh + 8.;
     let hw_ = (bw - 8.) / 2.;
     if a.ui.btn(&mut a.gx, Rect::new(bx, y, hw_, 54.), &t("overShop"), St::Pink, 15., true) { a.click(); a.back_to = Scr::Over; a.ui.scroll_reset(1); a.show(Scr::Shop); return; }
-    if a.ui.btn(&mut a.gx, Rect::new(bx + hw_ + 8., y, hw_, 54.), &t("overMenu"), St::Cyan, 15., true) { a.click(); a.between(Next::Menu); }
+    if a.ui.btn(&mut a.gx, Rect::new(bx + hw_ + 8., y, hw_, 54.), &t("overMenu"), St::Cyan, 15., true) { a.click(); a.between(Next::Menu); return; }
+    y += 62.; if a.g.zone >= 2 && a.ui.btn(&mut a.gx, Rect::new(bx + bw * 0.2, y, bw * 0.6, 36.), if i18n::is_en() { "Share record" } else { "Поделиться рекордом" }, St::Gold, 14., true) { a.click(); a.show(Scr::Card); }
+}
+
+// ---------------- 4.3: карточка рекорда, просьба об оценке ----------------
+/// Где на экране лежит карточка (её же снимает share_capture)
+pub fn card_rect(a: &App) -> Rect { let (w, h) = (a.gx.w, a.gx.h); let cw = (w - 32.).min(360.).min((h - 200.) / 1.25); let ch = cw * 1.25; Rect::new((w - cw) / 2., (top(a) + 10.).max((h - ch - 140.) / 2.), cw, ch) }
+fn record_card(a: &mut App, r: Rect) {
+    let en = i18n::is_en(); let p = a.gx.px; let tm = a.g.t; let (cx, al) = (r.x + r.w / 2., 1.);
+    let g = &a.g; let depth = g.zone * 100; let best = g.s.best_depth.max(depth); let zn = i18n::zone((g.zone as usize).saturating_sub(1) % 30).to_string();
+    let skin = &SKINS[g.p.skin.min(SKINS.len() - 1)]; let (score, kills, ab, reg) = (g.score as i64, g.kills, g.abyss, g.region as usize);
+    ui::rrect_grad(&mut a.gx, r.x, r.y, r.w, r.h, 22., Color::new(0.03, 0.2, 0.36, 1.), Color::new(0.12, 0.03, 0.22, 1.));
+    // лучи и искорки
+    for i in 0..5 { let x = r.x + r.w * (0.15 + i as f32 * 0.18); a.gx.glow_scr(true, c::CYAN, x * p, (r.y + 10.) * p, r.w * 0.22 * p, 0.12); }
+    for i in 0..26 { let fx = (i as f32 * 0.6180339).fract(); let fy = (i as f32 * 0.4142135 + 0.3).fract(); let rr = 1.2 + (i % 3) as f32;
+        a.gx.glow_scr(false, [c::ICE, c::JELLY, c::GOLD][i % 3], (r.x + 12. + fx * (r.w - 24.)) * p, (r.y + 12. + fy * (r.h - 24.)) * p, rr * 2.2 * p, 0.55); }
+    ui::h2c(&mut a.gx, if en { "LIGHT OF THE ABYSS" } else { "СВЕТ БЕЗДНЫ" }, cx, r.y + 34., r.w * 0.085, al, c::ICE, hex(0xe6f8ff));
+    // герой
+    let hy = r.y + r.h * 0.36; a.gx.glow_scr(true, skin.pal, cx * p, hy * p, r.w * 0.42 * p, 0.7); a.gx.glow_scr(false, c::WHITE, cx * p, hy * p, 16. * p, 0.7);
+    let key = format!("pl_{}", skin.id); let ph = a.gx.spr_anim(&key).map(|an| tm * an.freq() * std::f32::consts::TAU).unwrap_or(0.);
+    a.gx.spr_screen(&key, cx * p, hy * p, -0.25, r.w / 75. * p, al, false, ph, true);
+    // глубина
+    let dy = r.y + r.h * 0.62; let ds = format!("{} {}", i18n::fmt_num(depth as i64), t("m"));
+    a.gx.glow_scr(true, c::CYAN, cx * p, dy * p, r.w * 0.3 * p, 0.35); a.gx.text(&ds, cx, dy, r.w * 0.15, Color::new(1., 1., 1., al), 1, 2);
+    a.gx.text(&zn, cx, dy + r.w * 0.1, 14., with_alpha(hex(0x9fdfff), al), 1, 1);
+    let mut line = format!("{} {}  ·  {} {}", if en { "score" } else { "очки" }, i18n::fmt_num(score), kills, if en { "foes" } else { "врагов" });
+    if ab > 0 { line += &format!("  ·  {} {ab}", if en { "Abyss" } else { "Бездна" }); }
+    a.gx.text(&line, cx, dy + r.w * 0.1 + 22., 12.5, Color::new(1., 1., 1., 0.85), 1, 0);
+    if reg > 0 { a.gx.text(crate::extras::region_txt(reg).0, cx, dy + r.w * 0.1 + 40., 12.5, with_alpha(hex(crate::extras::REGIONS[reg].col), 0.95), 1, 1); }
+    let rec = if depth >= best { if en { "★ NEW RECORD ★".to_string() } else { "★ НОВЫЙ РЕКОРД ★".to_string() } } else if en { format!("record: {best} m") } else { format!("рекорд: {best} м") };
+    let tw = a.gx.text_w(&rec, 13., 2) + 22.; let ry = r.y + r.h - 64.; a.gx.rrect(cx - tw / 2., ry - 12., tw, 24., 10., if depth >= best { pal(c::GOLD) } else { Color::new(1., 1., 1., 0.15) });
+    a.gx.text(&rec, cx, ry, 13., if depth >= best { Color::new(0.13, 0.08, 0., 1.) } else { WHITE }, 1, 2);
+    a.gx.text(if en { "Can you dive deeper?  ·  RuStore" } else { "Сможешь глубже?  ·  RuStore" }, cx, r.y + r.h - 24., 13., with_alpha(hex(0xffe08a), 0.95), 1, 1);
+    a.gx.rrect_line(r.x, r.y, r.w, r.h, 22., 2., Color::new(0.6, 0.9, 1., 0.6));
+}
+fn card(a: &mut App) {
+    let r = card_rect(a); let al = a.ui.alpha; record_card(a, r); let (bx, bw) = col(a); let en = i18n::is_en();
+    let y = r.y + r.h + 18.;
+    if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, 54.), if en { "Share" } else { "Поделиться" }, St::Gold, 20., true) { a.click(); a.share_cap = Some(r); }
+    if a.ui.btn(&mut a.gx, Rect::new(bx, y + 62., bw, 46.), &t("back"), St::Cyan, 17., true) { a.click(); a.show(Scr::Over); }
+    let _ = al;
+}
+fn rate(a: &mut App) {
+    let (w, h) = (a.gx.w, a.gx.h); let al = a.ui.alpha; let en = i18n::is_en(); let (bx, bw) = col(a); let tm = a.g.t; let p = a.gx.px;
+    a.gx.rrect(0., 0., w, h, 0., Color::new(0., 0.02, 0.06, 0.55 * al));
+    let ph = 330.; let y0 = (h - ph) / 2.; panel(&mut a.gx, Rect::new(bx - 8., y0, bw + 16., ph), 20., Color::new(0.03, 0.1, 0.2, 0.95), Color::new(1., 0.84, 0.4, 0.6), al);
+    ui::h2c(&mut a.gx, if en { "Enjoying the game?" } else { "Нравится игра?" }, w / 2., y0 + 36., 24., al, c::GOLD, hex(0xfff1c2));
+    for i in 0..5 { let x = w / 2. + (i as f32 - 2.) * 40.; let y = y0 + 88. + (tm * 3. + i as f32 * 0.6).sin() * 3.;
+        a.gx.glow_scr(true, c::GOLD, x * p, y * p, 30. * p, 0.5 * al); a.gx.text("★", x, y, 34., with_alpha(hex(0xffd54f), al), 1, 2); }
+    a.gx.text_wrap(if en { "Rate Light of the Abyss in RuStore — it really helps the game grow and get new bosses and regions!" } else { "Поставь оценку «Свету Бездны» в RuStore — это очень помогает игре расти, а нам — делать новых владык и регионы!" },
+        w / 2., y0 + 124., bw - 20., 14.5, 20., Color::new(1., 1., 1., 0.9 * al), 1, 0);
+    let by = y0 + ph - 132.;
+    if a.ui.btn(&mut a.gx, Rect::new(bx, by, bw, 54.), if en { "Rate ★★★★★" } else { "Оценить ★★★★★" }, St::Gold, 19., true) { a.click(); a.g.s.rate = 2; a.g.dirty = true; crate::platform::rate_app(); a.show(Scr::Title); return; }
+    let hw = (bw - 8.) / 2.;
+    if a.ui.btn(&mut a.gx, Rect::new(bx, by + 62., hw, 44.), if en { "Later" } else { "Позже" }, St::Cyan, 15., true) { a.click(); let s = &mut a.g.s; if s.rate == 0 { s.rate = 1; s.rate_at = s.runs + 10; } else { s.rate = 2; } a.g.dirty = true; a.show(Scr::Title); return; }
+    if a.ui.btn(&mut a.gx, Rect::new(bx + hw + 8., by + 62., hw, 44.), if en { "Don't ask" } else { "Не спрашивать" }, St::Pink, 14., true) { a.click(); a.g.s.rate = 2; a.g.dirty = true; a.show(Scr::Title); }
 }
 
 fn end(a: &mut App) {
@@ -516,7 +576,9 @@ fn shop(a: &mut App) {
     match tab {
         0 => for i in 0..SHOP.len() { let d = i18n::shop(SHOP[i].id).1; items.push(It { kind: 0, i, h: (30. + dsw(a, &d, true) + 12.).max(64.) }); },
         1 => for i in 0..CHARS.len() { let (_, d) = i18n::chr(CHARS[i].id); let d = d + " "; let _m = 0; let d = d + &tf("healthW", &[&CHARS[i].hp.to_string()]) + " " + crate::content::char_attack(i) + "."; items.push(It { kind: 1, i, h: (30. + dsw(a, &d, true) + 12.).max(64.) + 18. }); },
-        2 => for i in 0..SKINS.len() { items.push(It { kind: 2, i, h: 64. }); },
+        2 => { for i in 0..SKINS.len() { items.push(It { kind: 2, i, h: 64. }); }
+            items.push(It { kind: 6, i: 0, h: 34. }); for i in 0..crate::extras::TRAILS.len() { items.push(It { kind: 7, i, h: 64. }); }
+            items.push(It { kind: 6, i: 1, h: 34. }); for i in 0..crate::extras::DEATHS.len() { items.push(It { kind: 8, i, h: 64. }); } },
         4 => for i in 0..crate::extras::PETS.len() { let d = crate::extras::pet_txt(i).1; items.push(It { kind: 5, i, h: (30. + dsw(a, d, true) + 30.).max(80.) }); },
         _ => for br in 0..3 { items.push(It { kind: 4, i: br, h: 34. }); for (i, tl) in TALENTS.iter().enumerate() { if tl.br as usize != br { continue; } let d = i18n::talent(i).1; items.push(It { kind: 3, i, h: (30. + dsw(a, &d, true) + 12.).max(64.) }); } },
     }
@@ -574,6 +636,24 @@ fn shop(a: &mut App) {
                 a.gx.text(&format!("{}{}", if open || own { "" } else { "✗ " }, nm), f.x + 64., y + 20., 16., Color::new(1., 1., 1., aa), 0, 1);
                 a.gx.text_wrap(&d, f.x + 64., y + 40., iw - 76. - bw - 10., 12.5, 16., Color::new(1., 1., 1., 0.8 * aa), 0, 0);
                 if own { a.ui.btn(&mut a.gx, br, &t("talOwn"), St::Cyan, 15., false); } else if price_btn(a, br, &tl.cost.to_string(), true, open && a.g.s.pearls >= tl.cost, St::Cyan) { a.g.buy_tal(it.i); } }
+            6 => { let en = i18n::is_en(); let s_ = if it.i == 0 { if en { "TRAILS" } else { "ШЛЕЙФЫ" } } else if en { "ENEMY DEATH EFFECTS" } else { "ЭФФЕКТЫ ГИБЕЛИ ВРАГОВ" }; let tw = a.gx.text_w(s_, 14., 2); let acc = hex(0xffd54f);
+                a.gx.rrect(f.x + 8., y + 17., iw / 2. - tw / 2. - 20., 2., 1., with_alpha(acc, 0.5 * al)); a.gx.rrect(f.x + iw / 2. + tw / 2. + 12., y + 17., iw / 2. - tw / 2. - 20., 2., 1., with_alpha(acc, 0.5 * al));
+                a.gx.text(s_, f.x + iw / 2., y + 18., 14., with_alpha(acc, al), 1, 2); }
+            7 | 8 => { let death = it.kind == 8; let d_ = if death { &crate::extras::DEATHS[it.i] } else { &crate::extras::TRAILS[it.i] }; let (nm, d) = if death { crate::extras::death_txt(it.i) } else { crate::extras::trail_txt(it.i) };
+                let key = it.i.to_string(); let own = it.i == 0 || if death { a.g.s.deaths.contains_key(&key) } else { a.g.s.trails.contains_key(&key) }; let sel = (if death { a.g.s.death } else { a.g.s.trail }) as usize == it.i;
+                item_card(&mut a.gx, r, pal(d_.col), sel, al);
+                { let p = a.gx.px; let (cx, cy) = (f.x + 32., y + it.h / 2.); let tm = a.g.t;
+                  if death { let ph = (tm * 0.9 + it.i as f32 * 0.37).fract(); let n = 8; for k in 0..n { let an = k as f32 / n as f32 * std::f32::consts::TAU; let rr = if it.i == 4 { 22. * (1. - ph) } else { 4. + 20. * ph };
+                      let col = match it.i { 1 => [c::FIRE, c::GOLD, c::EMER, c::CYAN, c::ICE, c::AMETH, c::CORAL, c::AMBER][k], 3 => c::GOLD, 4 => c::PURP, 2 | 5 => c::ICE, _ => c::WHITE };
+                      a.gx.glow_scr(false, col, (cx + an.cos() * rr) * p, (cy + an.sin() * rr - if it.i == 2 { ph * 8. } else { 0. }) * p, 5. * p, (1. - ph * 0.7) * al); } }
+                  else { for k in 0..9 { let x = cx + 20. - k as f32 * 6.; let yy = cy + (tm * 4. - k as f32 * 0.6).sin() * 5.; let col = crate::extras::trail_col(it.i as u8, c::CYAN, k + 1, tm);
+                      a.gx.glow_scr(true, col, x * p, yy * p, (11. - k as f32) * p, (1. - k as f32 / 10.) * 0.8 * al); }
+                    a.gx.glow_scr(false, c::WHITE, (cx + 22.) * p, (cy + (tm * 4.).sin() * 5.) * p, 5. * p, al); } }
+                a.gx.text(nm, f.x + 64., y + 20., 16., Color::new(1., 1., 1., al), 0, 1);
+                a.gx.text_wrap(d, f.x + 64., y + 40., iw - 76. - bw - 10., 12.5, 16., Color::new(1., 1., 1., 0.8 * al), 0, 0);
+                if sel { a.ui.btn(&mut a.gx, br, if i18n::is_en() { "Active" } else { "Выбран" }, St::Gold, 14., false); }
+                else if own { if a.ui.btn(&mut a.gx, br, if i18n::is_en() { "Use" } else { "Выбрать" }, St::Cyan, 15., true) { a.click(); a.g.buy_fx(death, it.i); } }
+                else if price_btn(a, br, &d_.cost.to_string(), true, a.g.s.pearls >= d_.cost, St::Cyan) { a.g.buy_fx(death, it.i); } }
             _ => { let (acc, _) = branch_col(it.i as u8); let s_ = i18n::tal_branch(it.i).to_uppercase(); let tw = a.gx.text_w(&s_, 14., 2);
                 a.gx.rrect(f.x + 8., y + 17., iw / 2. - tw / 2. - 20., 2., 1., with_alpha(acc, 0.5 * al)); a.gx.rrect(f.x + iw / 2. + tw / 2. + 12., y + 17., iw / 2. - tw / 2. - 20., 2., 1., with_alpha(acc, 0.5 * al));
                 a.gx.text(&s_, f.x + iw / 2., y + 18., 14., with_alpha(acc, al), 1, 2); }
@@ -687,6 +767,36 @@ fn wheel(a: &mut App) {
     y += 70.; let _ = y;
     let by = bottom(a) - 56.; if a.ui.btn(&mut a.gx, Rect::new(bx, by, bw, 56.), &t("back"), St::Cyan, 20., !busy) { a.click(); a.show(Scr::Title); }
 }
+/// Карта океана: регионы, открываются осколками света (дают владыки)
+fn ocean_map(a: &mut App) {
+    let (w, h) = (a.gx.w, a.gx.h); let al = a.ui.alpha; let en = i18n::is_en(); let p = a.gx.px; let tp = top(a); let tm = a.g.t;
+    ui::h2c(&mut a.gx, if en { "OCEAN MAP" } else { "КАРТА ОКЕАНА" }, w / 2., tp + 22., 28., al, c::ICE, hex(0xe6f8ff));
+    let sh = format!("✦ {} {}", a.g.s.shards, if en { "light shards" } else { "осколков света" }); a.gx.text(&sh, w / 2., tp + 52., 15., with_alpha(hex(0xffe08a), al), 1, 2);
+    let (bx, bw) = col(a); let mh = (h * 0.45).min(bw * 1.15); let my0 = tp + 72.; let rects: Vec<(f32, f32)> = crate::extras::REGIONS.iter().map(|r| (bx + r.pos.0 * bw, my0 + r.pos.1 * mh)).collect();
+    // фон карты
+    ui::rrect_grad(&mut a.gx, bx - 6., my0 - 6., bw + 12., mh + 12., 18., Color::new(0.03, 0.14, 0.26, 0.85 * al), Color::new(0.02, 0.05, 0.14, 0.9 * al));
+    for i in 1..rects.len() { let (x0, y0) = rects[0]; let (x1, y1) = rects[i]; gx_dash(&mut a.gx, x0, y0, x1, y1, Color::new(0.7, 0.9, 1., 0.25 * al)); }
+    let sel = a.g.s.region as usize;
+    for (i, &(x, y)) in rects.iter().enumerate() { let r = &crate::extras::REGIONS[i]; let open = i == 0 || a.g.s.regions.contains_key(&i.to_string()); let col = hex(r.col);
+        let pc = match i { 1 => c::CORAL, 2 => c::ICE, 3 => c::FIRE, _ => c::CYAN };
+        a.gx.glow_scr(true, pc, x * p, y * p, if i == sel { 70. } else { 46. } * p, if open { 0.55 + 0.15 * (tm * 2. + i as f32).sin() } else { 0.15 } * al);
+        a.gx.circle(x, y, 24., Color::new(col.r * 0.25, col.g * 0.25, col.b * 0.3, 0.95 * al)); a.gx.ring(x, y, 24., if i == sel { 4. } else { 2. }, with_alpha(if open { col } else { hex(0x667788) }, al));
+        if !open { a.gx.text(&format!("✦{}", r.cost), x, y, 13., with_alpha(hex(0xffe08a), al), 1, 2); } else { a.gx.circle(x, y, 7., with_alpha(col, al)); }
+        a.gx.text(crate::extras::region_txt(i).0, x, y + 38., 13., Color::new(1., 1., 1., if open { al } else { 0.6 * al }), 1, 2);
+        if a.ui.tap(Rect::new(x - 40., y - 40., 80., 90.)) { a.click(); a.map_pick = i as u8; } }
+    // описание выбранного на карте
+    let pk = a.map_pick as usize; let r = &crate::extras::REGIONS[pk]; let open = pk == 0 || a.g.s.regions.contains_key(&pk.to_string());
+    let mut y = my0 + mh + 22.; ui::h2c(&mut a.gx, crate::extras::region_txt(pk).0, w / 2., y, 22., al, c::ICE, hex(r.col)); y += 24.;
+    y += a.gx.text_wrap(crate::extras::region_txt(pk).1, w / 2., y, bw - 10., 14., 19., Color::new(1., 1., 1., 0.85 * al), 1, 0) + 12.;
+    { let hz = if r.hazard > 0 { crate::extras::hazard_txt(r.hazard) } else if en { "all hazards" } else { "все опасности" };
+      let l = hz.to_string(); a.gx.text(&l, w / 2., y, 13., with_alpha(hex(0xffe08a), 0.9 * al), 1, 0); y += 26.; }
+    if open { let chosen = sel == pk; if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, 54.), if chosen { if en { "Selected" } else { "Выбран" } } else if en { "Dive here" } else { "Нырять здесь" }, St::Gold, 19., !chosen) { a.click(); a.g.s.region = pk as u8; a.g.dirty = true; } }
+    else { let ok = a.g.s.shards >= r.cost; if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, 54.), &format!("{} ✦{}", if en { "Unlock for" } else { "Открыть за" }, r.cost), St::Gold, 18., ok) { a.click(); a.g.s.shards -= r.cost; a.g.s.regions.insert(pk.to_string(), 1); a.g.s.region = pk as u8; a.g.dirty = true; a.au.play(crate::game::Sfx::Ach); } }
+    let _ = y; let by = bottom(a) - 56.; if a.ui.btn(&mut a.gx, Rect::new(bx, by, bw, 56.), &t("back"), St::Cyan, 20., true) { a.click(); a.show(Scr::Title); }
+    if !open && a.g.s.shards < r.cost { a.gx.text(if en { "Shards are earned by defeating lords" } else { "Осколки дают владыки: 1 за каждого, 3 за Сердце Бездны" }, w / 2., by - 16., 12., Color::new(1., 1., 1., 0.6 * al), 1, 0); }
+}
+fn gx_dash(gx: &mut Gfx, x0: f32, y0: f32, x1: f32, y1: f32, c_: Color) { let p = gx.px; let n = 14; for i in 0..n { if i % 2 == 1 { continue; } let (a, b) = (i as f32 / n as f32, (i + 1) as f32 / n as f32);
+    draw_line((x0 + (x1 - x0) * a) * p, (y0 + (y1 - y0) * a) * p, (x0 + (x1 - x0) * b) * p, (y0 + (y1 - y0) * b) * p, 2. * p, c_); } }
 fn modes(a: &mut App) {
     let al = a.ui.alpha; let en = i18n::is_en();
     let (f, back) = list_frame(a, if en { "MODES" } else { "РЕЖИМЫ" }, 0.);
@@ -714,6 +824,21 @@ fn modes(a: &mut App) {
         if a.ui.btn(&mut a.gx, br, if en { "Play" } else { "Играть" }, St::Gold, 16., true) { a.click(); a.start_run(*m); return; }
         y += h + 10.;
     }
+    // Уровни Бездны: открываются победой над Сердцем Бездны
+    { let mx = a.g.s.abyss_max; let sel = a.g.s.abyss_sel.min(mx); let acc = hex(0xc77dff);
+      let desc = if mx == 0 { if en { "Defeat the Heart of the Abyss (3000 m) to unlock. Each level adds a curse, pearls +10% per level.".to_string() } else { "Победи Сердце Бездны (3000 м), чтобы открыть. Каждый уровень добавляет проклятие, жемчуг +10% за уровень.".to_string() } }
+          else if sel == 0 { if en { format!("Unlocked: {mx}/20. Choose a level — curses stack.") } else { format!("Открыто: {mx}/20. Выбери уровень — проклятия складываются.") } }
+          else { format!("{} {} · {}: {} · {} +{}%", if en { "Level" } else { "Уровень" }, sel, if en { "new curse" } else { "новое" }, crate::extras::abyss_txt(sel), t("pearlsGen"), sel as u32 * 10) };
+      let dh = a.gx.wrap(&desc, iw - 76. - bw - 10., 12.5, 0).len() as f32 * 16.; let h = (34. + dh + 50.).max(110.);
+      let r = Rect::new(f.x, y, iw, h); item_card(&mut a.gx, r, acc, false, if mx == 0 { al * 0.6 } else { al }); icon_tile(&mut a.gx, "kraken", f.x + 34., y + 40., acc, c::AMETH, al);
+      a.gx.text(if en { "Abyss levels" } else { "Уровни Бездны" }, f.x + 64., y + 20., 17., Color::new(1., 1., 1., al), 0, 2);
+      a.gx.text_wrap(&desc, f.x + 64., y + 40., iw - 76. - bw - 10., 12.5, 16., Color::new(1., 1., 1., 0.82 * al), 0, 0);
+      if mx > 0 { let by = y + h - 46.; let l = if sel == 0 { if en { "Off".to_string() } else { "Выкл".to_string() } } else { format!("{sel}") };
+          if a.ui.btn(&mut a.gx, Rect::new(f.x + 64., by, 44., 38.), "‹", St::Cyan, 20., sel > 0) { a.click(); a.g.s.abyss_sel = sel - 1; a.g.dirty = true; }
+          a.gx.text(&l, f.x + 64. + 74., by + 19., 18., with_alpha(acc, al), 1, 2);
+          if a.ui.btn(&mut a.gx, Rect::new(f.x + 64. + 104., by, 44., 38.), "›", St::Cyan, 20., sel < mx) { a.click(); a.g.s.abyss_sel = sel + 1; a.g.dirty = true; }
+          let br = Rect::new(f.x + iw - 12. - bw, y + h / 2. - 22., bw, 44.);
+          if a.ui.btn(&mut a.gx, br, if en { "Play" } else { "Играть" }, St::Gold, 16., true) { a.click(); a.start_run(RunMode::Normal); return; } } }
 }
 fn quests(a: &mut App) {
     let sm = small(a); let tp = top(a); let _ = (sm, tp); let _gh = a.gx.h;
@@ -785,7 +910,7 @@ fn settings(a: &mut App) {
         (format!("{}: {}", t("sound"), vol_l(s.sound, s.vsfx)), 0), (format!("{}: {}", t("music"), vol_l(s.music, s.vmus)), 1), (format!("{}: {}", t("vibro"), on_off(s.vibro)), 2),
         (format!("{}: {}", t("graphics"), match s.quality.as_str() { "high" => t("gHigh"), "low" => t("gLow"), _ => t("gAuto") }), 3),
         (format!("{}: {}", t("nums"), on_off(s.nums)), 4), (format!("{}: {}", t("shake"), on_off(s.shake)), 5),
-        (format!("{orient_l}: {orient}"), 8), (format!("{}: {}", if i18n::is_en() { "Glow" } else { "Подсветка" }, on_off(s.fx)), 9), (format!("{}: {}", t("lang"), if s.lang == "en" { "English" } else { "Русский" }), 6), (format!("{}: {}", t("fps"), s.fps), 7) ];
+        (format!("{orient_l}: {orient}"), 8), (format!("{}: {}", if i18n::is_en() { "Reminders" } else { "Напоминания" }, on_off(s.notify)), 10), (format!("{}: {}", if i18n::is_en() { "Glow" } else { "Подсветка" }, on_off(s.fx)), 9), (format!("{}: {}", t("lang"), if s.lang == "en" { "English" } else { "Русский" }), 6), (format!("{}: {}", t("fps"), s.fps), 7) ];
     let (bx, bw) = col(a); let bh = if sm { 46. } else { 50. }; let gap = if sm { 6. } else { 8. };
     let ncol = if land { 2 } else { 1 }; let cw = if land { ((w - 40.) / 2.).min(300.) } else { bw }; let x0 = if land { (w - cw * 2. - 12.) / 2. } else { bx };
     let nrow = (rows.len() + ncol - 1) / ncol; let total = 40. + nrow as f32 * (bh + gap) + 8. + bh;
@@ -801,6 +926,6 @@ fn settings(a: &mut App) {
         match id { 0 => { s.vsfx = vol_next(s.sound, s.vsfx); s.sound = s.vsfx > 0; } 1 => { s.vmus = vol_next(s.music, s.vmus); s.music = s.vmus > 0; } 2 => { s.vibro = !s.vibro; if s.vibro { crate::platform::vibrate(30); } },
             3 => s.quality = match s.quality.as_str() { "auto" => "high".into(), "high" => "low".into(), _ => "auto".into() }, 4 => s.nums = !s.nums, 5 => s.shake = !s.shake,
             6 => { s.lang = if s.lang == "en" { "ru".into() } else { "en".into() }; i18n::set_en(s.lang == "en"); }, 7 => s.fps = if s.fps == 120 { 60 } else { 120 },
-            9 => { s.fx = !s.fx; a.glow_auto_off = false; a.glow_slow = 0.; } _ => s.orient = (s.orient + 1) % 3 }
+            9 => { s.fx = !s.fx; a.glow_auto_off = false; a.glow_slow = 0.; } 10 => { s.notify = !s.notify; if s.notify { crate::platform::ask_notify(); } crate::extras::sync_reminders(&a.g.s); } _ => s.orient = (s.orient + 1) % 3 }
         a.g.dirty = true; a.persist(); }
 }

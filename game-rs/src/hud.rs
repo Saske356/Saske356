@@ -12,11 +12,11 @@ fn pal(i: u8) -> Color { hex(PAL_HEX[i as usize]) }
 fn ease_out(t: f32) -> f32 { 1. - (1. - t).powi(3) }
 fn clamp01(v: f32) -> f32 { v.clamp(0., 1.) }
 
-pub struct HudRects { pub pause: Rect, pub mute: Rect, pub dash: (f32, f32, f32), pub flare: (f32, f32, f32) }
+pub struct HudRects { pub pause: Rect, pub mute: Rect, pub dash: (f32, f32, f32), pub flare: (f32, f32, f32), pub ult: (f32, f32, f32) }
 pub fn rects(a: &App) -> HudRects {
     let (w, h) = (a.gx.w, a.gx.h); let (st, sb, sr) = (a.safe[0], a.safe[1], a.safe[3]);
     HudRects { pause: Rect::new(w - 10. - sr - 46., 10. + st, 46., 46.), mute: Rect::new(w - 64. - sr - 46., 10. + st, 46., 46.),
-        dash: (w - 16. - sr - 44., h - 26. - sb - 44., 44.), flare: (w - 118. - sr - 36., h - 36. - sb - 36., 36.) }
+        dash: (w - 16. - sr - 44., h - 26. - sb - 44., 44.), flare: (w - 118. - sr - 36., h - 36. - sb - 36., 36.), ult: (w - 16. - sr - 34., h - 26. - sb - 44. - 98., 32.) }
 }
 
 /// Ввод в забеге: кнопки срабатывают сразу при касании; остальные касания — плавающий джойстик
@@ -27,6 +27,7 @@ pub fn input(a: &mut App) {
     if a.ui.press(r.mute) { let m = !a.g.s.set.sound && !a.g.s.set.music; a.g.s.set.sound = m; a.g.s.set.music = m; a.g.dirty = true; a.click(); }
     if a.ui.press(circ(r.dash)) || a.ui.keys_dash { a.g.dash_q = true; }
     if a.ui.press(circ(r.flare)) || a.ui.keys_flare { a.g.flare_q = true; }
+    if a.ui.press(circ(r.ult)) { a.g.ult_q = true; }
     // джойстик
     let j = &mut a.joy;
     if j.id.is_none() { if let Some(d) = a.ui.downs.iter_mut().find(|d| !d.used) { d.used = true; j.id = Some(d.id); j.ox = d.x; j.oy = d.y; j.jx = 0.; j.jy = 0.; } }
@@ -69,6 +70,7 @@ pub fn hud(a: &mut App) {
         gx.rect(l, top + 49., hw, 3., Color::new(1., 1., 1., 0.1)); gx.rect(l, top + 49., hw * (g.zone_t / cfg::ZONE_TIME).min(1.), 3., hex(0x8fd8ff));
         let zl = format!("{}{}", if g.hard { "☠ " } else if g.daily { "☀ " } else { "" }, i18n::zone((g.zone as usize).saturating_sub(1) % 30).to_uppercase());
         gx.text(&zl, l, top + 64., 11., Color::new(200. / 255., 232. / 255., 245. / 255., 0.85), 0, 1);
+        if g.abyss > 0 { gx.text(&format!("{} {}", if i18n::is_en() { "ABYSS" } else { "БЕЗДНА" }, g.abyss), l, top + 92., 11., hex(0xc77dff), 0, 2); }
         if g.path != 0 { gx.text(&format!("· {}", crate::content::path_txt(g.path).0), l + gx.text_w(&zl, 11., 1) + 10., top + 64., 11., hex(0xffd27a), 0, 1); }
         if g.boss_clear_t <= 0. { let rem = (cfg::ZONE_TIME * if g.mutf("rush") { 0.5 } else { 1. } - g.zone_t).ceil().max(0.);
             gx.text(&tf("nextDepth", &[&((g.zone + 1) * 100).to_string(), &(rem as i32).to_string()]), l, top + 79., 11., Color::new(143. / 255., 216. / 255., 1., 0.9), 0, 1); }
@@ -153,6 +155,14 @@ pub fn hud(a: &mut App) {
         let k = pal(c::GOLD); gx.set_add(false); let s = 10.; let pts = [(0., -s), (0.26 * s, -0.3 * s), (s, 0.), (0.26 * s, 0.22 * s), (0., s), (-0.22 * s, 0.22 * s), (-s, 0.), (-0.22 * s, -0.3 * s)];
         for i in 0..8 { let (a0, a1) = (pts[i], pts[(i + 1) % 8]); draw_triangle(vec2(x * p, (y - 5.) * p), vec2((x + a0.0) * p, (y - 5. + a0.1) * p), vec2((x + a1.0) * p, (y - 5. + a1.1) * p), k); }
         gx.text(&t("flareBtn"), x, y + 13., 9., WHITE, 1, 1); }
+    // ульта «Сверхновая»
+    { let (x, y, rr) = r.ult; let p = gx.px; let k = g.p.ult / 100.; let ready = k >= 1.; let act = g.p.ult_t > 0.;
+        if ready || act { gx.glow_scr(true, c::GOLD, x * p, y * p, (rr + 26.) * p, 0.55 + 0.4 * (tm * 7.).sin()); }
+        gx.circle(x, y, rr, Color::new(0.12, 0.05, 0.18, 0.6)); gx.arc(x, y, rr + 5., 0., std::f32::consts::TAU, 4., Color::new(1., 1., 1., 0.08));
+        let kk = if act { g.p.ult_t / crate::extras::ULT_TIME } else { k }; if kk > 0. { gx.arc(x, y, rr + 5., -std::f32::consts::FRAC_PI_2, -std::f32::consts::FRAC_PI_2 + std::f32::consts::TAU * kk, 4., if act { WHITE } else { pal(c::GOLD) }); }
+        gx.ring(x, y, rr, 3., if ready { pal(c::GOLD) } else { Color::new(0.8, 0.6, 1., 0.35) });
+        gx.glow_scr(false, c::GOLD, x * p, (y - 4.) * p, 11. * p, if ready || act { 1. } else { 0.35 });
+        gx.text(if i18n::is_en() { "NOVA" } else { "УЛЬТА" }, x, y + 13., 9., WHITE, 1, 1); }
     // джойстик
     if a.joy.id.is_some() && st == State::Play { let j = &a.joy; let gx = &mut a.gx;
         gx.circle(j.ox, j.oy, cfg::JOY_R, Color::new(60. / 255., 200. / 255., 1., 0.07 * 0.9)); gx.ring(j.ox, j.oy, cfg::JOY_R, 2., Color::new(150. / 255., 240. / 255., 1., 0.35 * 0.9));

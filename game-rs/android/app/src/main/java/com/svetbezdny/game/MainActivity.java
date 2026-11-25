@@ -268,6 +268,27 @@ public class MainActivity extends Activity {
     /** Итог показа рекламы: «место:1» или «место:0». Rust забирает через adPoll(). */
     static void pushAd(String place, boolean ok) { AD_RESULTS.add(place + ":" + (ok ? 1 : 0)); }
     public String adPoll() { String r = AD_RESULTS.poll(); return r == null ? "" : r; }
+
+    // ===== 4.3: напоминания, оценка, «поделиться» =====
+    /** План напоминаний от игры (см. Reminder.schedule) */
+    public void setReminders(final String plan, final String ch) { try { Reminder.schedule(getApplicationContext(), plan, ch); } catch (Throwable t) { } }
+    /** Android 13+: спросить разрешение на уведомления (один раз, игра сама решает когда) */
+    public void askNotify() { if (Build.VERSION.SDK_INT >= 33) runOnUiThread(() -> { try {
+        if (checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED)
+            requestPermissions(new String[] { "android.permission.POST_NOTIFICATIONS" }, 41); } catch (Throwable t) { } }); }
+    /** Страница игры в RuStore (приложение RuStore, иначе браузер) */
+    public void rateApp() { runOnUiThread(() -> {
+        String pkg = getPackageName();
+        try { startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("rustore://apps.rustore.ru/app/" + pkg)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return; } catch (Throwable t) { }
+        try { startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://apps.rustore.ru/app/" + pkg)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); } catch (Throwable t) { } }); }
+    /** Поделиться карточкой рекорда files/share/record.png и текстом */
+    public void shareRecord(final String text, final String title) { runOnUiThread(() -> { try {
+        Intent i = new Intent(Intent.ACTION_SEND).setType("image/png");
+        android.net.Uri u = android.net.Uri.parse("content://" + ShareProvider.AUTH + "/record.png");
+        i.putExtra(Intent.EXTRA_STREAM, u); i.putExtra(Intent.EXTRA_TEXT, text);
+        i.setClipData(ClipData.newRawUri("record", u)); i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivity(Intent.createChooser(i, title));
+    } catch (Throwable t) { Log.w("SvetShare", "share failed", t); } }); }
     public boolean adReady(int kind) { try { return kind == 0 ? ads != null && ads.isReady() : inter != null && inter.isReady(); } catch (Throwable t) { return false; } }
     public void adShow(int kind, String place) { try { if (kind == 0) ads.show(place); else inter.show(); } catch (Throwable t) { pushAd(kind == 0 ? place : "inter", false); } }
     public String filesDir() { return getFilesDir().getAbsolutePath(); }

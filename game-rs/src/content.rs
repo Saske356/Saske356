@@ -70,7 +70,7 @@ impl Game {
     /// Выдать элитному врагу случайное свойство (с 3-й зоны; не боссам, не золотому косяку)
     pub fn assign_affix(&mut self, i: usize) {
         let (kind, elite) = { let e = &self.en.items[i]; (e.kind, e.elite) };
-        if !elite || self.zone < 3 || kind.d().boss || matches!(kind, K::Drifter | K::Chest | K::Crystal | K::Wisp | K::Fry | K::Spikelet) { return; }
+        if !elite || (self.zone < 3 && self.abyss < 16) || kind.d().boss || matches!(kind, K::Drifter | K::Chest | K::Crystal | K::Wisp | K::Fry | K::Spikelet) { return; }
         let a = 1 + (self.rand() * AFF_N as f32) as u8 % AFF_N;
         let e = &mut self.en.items[i]; e.aff = a; e.aff_t = 1.5 + (e.phase % 1.) * 2.;
         if a == AFF_SHIELD { e.ash = e.max_hp * 0.45; }
@@ -142,7 +142,7 @@ impl Game {
         if self.relics.contains(&R_DEAL) { st.xp_mul *= 1.35; }
         match self.path { P_DANGER => st.xp_mul *= 1.3, P_CALM => st.xp_mul *= 0.8, P_HEAL => st.regen += 1., _ => {} }
         st.orb_dmg = st.dmg * 0.9;
-        self.evo_stats(); self.mastery_stats(); self.pet_stats(); if self.event_on() == crate::extras::EV_CRAB { self.st.xp_mul *= 1.3; }
+        self.evo_stats(); if self.abyss >= 12 { self.st.dash_cd *= 1.25; } self.mastery_stats(); self.pet_stats(); if self.event_on() == crate::extras::EV_CRAB { self.st.xp_mul *= 1.3; }
         { let st = &mut self.st; match self.run_mode {
             crate::game::RunMode::Dash => { st.dash_cd = 0.38; st.dash_dmg = st.dmg * 9.; }
             crate::game::RunMode::NoUp => { let n = self.p.level.saturating_sub(1) as f32; st.dmg *= 1. + 0.08 * n; st.rate *= 1. + 0.03 * n; st.speed *= 1. + 0.01 * n.min(30.); }

@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:label="@string/app_name"
@@ -23,5 +24,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <receiver android:name=".Reminder" android:exported="false" />
+        <provider android:name=".ShareProvider" android:authorities="com.svetbezdny.game.share"
+            android:exported="false" android:grantUriPermissions="true" />
     </application>
+    <queries>
+        <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="rustore" /></intent>
+        <intent><action android:name="android.intent.action.SEND" /><data android:mimeType="image/png" /></intent>
+    </queries>
 </manifest>

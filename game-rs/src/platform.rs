@@ -48,6 +48,10 @@ mod imp {
     pub fn density() -> f32 { unsafe { with(|env| { let m = mid(env, "density", "()F"); if m.is_null() { return 2.5; } (**env).CallFloatMethod.unwrap()(env, ACTIVITY, m) }) } }
     pub fn set_fps(f: u32) { call_v("setFps", "(I)V", |env, m| unsafe { (**env).CallVoidMethod.unwrap()(env, ACTIVITY, m, f as i32); }) }
     pub fn files_dir() -> String { call_s("filesDir") }
+    pub fn set_reminders(plan: &str, ch: &str) { call_v("setReminders", "(Ljava/lang/String;Ljava/lang/String;)V", |env, m| unsafe { let a = jstr(env, plan); let b = jstr(env, ch); (**env).CallVoidMethod.unwrap()(env, ACTIVITY, m, a, b); }) }
+    pub fn ask_notify() { call_v("askNotify", "()V", |env, m| unsafe { (**env).CallVoidMethod.unwrap()(env, ACTIVITY, m); }) }
+    pub fn rate_app() { call_v("rateApp", "()V", |env, m| unsafe { (**env).CallVoidMethod.unwrap()(env, ACTIVITY, m); }) }
+    pub fn share_record(text: &str, title: &str) { call_v("shareRecord", "(Ljava/lang/String;Ljava/lang/String;)V", |env, m| unsafe { let a = jstr(env, text); let b = jstr(env, title); (**env).CallVoidMethod.unwrap()(env, ACTIVITY, m, a, b); }) }
     pub fn insets() -> [f32; 4] { let s = call_s("insets"); let v: Vec<f32> = s.split(',').filter_map(|x| x.trim().parse().ok()).collect(); if v.len() == 4 { [v[0], v[1], v[2], v[3]] } else { [0.; 4] } }
     pub fn poll() -> Vec<Ev> {
         let mut out = vec![];
@@ -82,6 +86,10 @@ mod imp {
     pub fn density() -> f32 { std::env::var("SVET_DPI").ok().and_then(|v| v.parse().ok()).unwrap_or(macroquad::window::screen_dpi_scale().max(1.)) }
     pub fn set_fps(_f: u32) {}
     pub fn files_dir() -> String { std::env::var("SVET_DATA").unwrap_or_else(|_| ".".into()) }
+    pub fn set_reminders(plan: &str, _ch: &str) { if std::env::var("SVET_REMIND").is_ok() { eprintln!("reminders:\n{plan}"); } }
+    pub fn ask_notify() { eprintln!("ask_notify"); }
+    pub fn rate_app() { eprintln!("rate_app"); }
+    pub fn share_record(text: &str, _title: &str) { eprintln!("share: {text}"); }
     pub fn insets() -> [f32; 4] { [0.; 4] }
     pub fn poll() -> Vec<Ev> {
         let now = macroquad::time::get_time(); let mut a = ADS.lock().unwrap(); let mut out = vec![];

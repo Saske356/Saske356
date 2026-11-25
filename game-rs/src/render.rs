@@ -58,6 +58,7 @@ pub fn background(gx: &mut Gfx, rd: &mut Rd, g: &mut Game, dt: f32, show_decor: 
     // дно: сетка отдельных плиток (uv 0..1 у каждой). Повтор текстуры (REPEAT) на части телефонов не включается —
     // тогда картинка за краем растягивалась в полосы и дно выглядело «склеенным из двух».
     let tint = if g.zone > 15 && g.state != State::Title { Color::new(0.92, 0.74, 0.8, 1.) } else { WHITE };
+    let zi = g.ground_idx(zi);
     if let Some(t) = gx.ground.get(zi).cloned() {
         gx.set_add(false); let tile = 620.; let tile_h = tile * t.height() / t.width().max(1.);
         tile_grid(gx, &t, tile, tile_h, 0., 0., tint);
@@ -251,6 +252,15 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
     if let Some(pi) = g.pet_idx() { let pd = &crate::extras::PETS[pi]; let (x, y) = (g.pet.x, g.pet.y);
         gx.glow_world(true, pd.col, x, y, 26., 0.45 + 0.15 * (t * 4.).sin()); let ph = gx.spr_anim(pd.spr).map(|a| t * a.freq() * TAU).unwrap_or(0.);
         let sc = match pi { 0 => 1.7, 1 => 1.6, _ => 0.85 } * (1. + 0.04 * g.pet_lvl() as f32); gx.spr_world(pd.spr, x, y + (t * 2.).sin() * 2., g.pet.ang, sc, 1., false, ph, true); }
+    // течение: бегущие полосы воды поперёк всего экрана
+    if g.hazard() == crate::extras::HZ_CURRENT { let (cx, cy) = g.current_dir(); let (w_, h_) = (g.vw * 2. + 200., g.vh * 2. + 200.);
+        for i in 0..36 { let fi = i as f32; let ox = ((fi * 0.618 * w_ + g.t * cx * 230.) % w_ + w_) % w_ - w_ / 2.; let oy = ((fi * 0.377 * h_ + g.t * cy * 230.) % h_ + h_) % h_ - h_ / 2.;
+            let (x, y) = (g.cam_x + ox, g.cam_y + oy); let l = 40. + (i % 4) as f32 * 18.; gx.line_world(x, y, x - cx * l, y - cy * l, 2.2, Color::new(0.7, 0.95, 1., 0.22), true); } }
+    // опасности зоны: гейзеры (круг-предупреждение), взрывные кристаллы
+    for gy in g.geysers.iter() { let k = 1. - gy.t / 1.3; gx.circle_world(gy.x, gy.y, 75. * k, with_a(hex(0xff6a3d), 0.12 + 0.2 * k), false); gx.arc_world(gy.x, gy.y, 75., 0., TAU, 2.5, with_a(hex(0xffb340), 0.5 + 0.4 * (t * 14.).sin().abs()), false); gx.glow_world(true, c::FIRE, gy.x, gy.y, 30. + 40. * k, 0.4 * k); }
+    for cr in g.bcr.iter() { let pul = 1. + 0.08 * (t * 3. + cr.ph).sin(); gx.glow_world(true, c::ICE, cr.x, cr.y, 46. * pul, 0.5); gx.spr_world("crystal", cr.x, cr.y, t * 0.6 + cr.ph, 1.5 * pul, 1., false, 0., false);
+        for q in 0..cr.hp as i32 { gx.circle_world(cr.x - 10. + q as f32 * 10., cr.y + 26., 3., WHITE, false); } }
+    if g.p.ult_t > 0. && !g.p.dead { let k = (g.p.ult_t / 0.5).min(1.); gx.glow_world(true, c::GOLD, g.p.x, g.p.y, 260. * k, 0.35 + 0.1 * (t * 8.).sin()); gx.glow_world(true, c::WHITE, g.p.x, g.p.y, 90. * k, 0.5); }
     if !g.p.dead { player(gx, g, rdt); }
     // снаряды игрока
     let pc = g.p.pal; let ac = crate::data::SKIN_ACC.get(g.p.skin).copied().unwrap_or(c::WHITE);
@@ -411,7 +421,8 @@ fn new_upg(gx: &mut Gfx, g: &Game) {
 
 fn player(gx: &mut Gfx, g: &mut Game, rdt: f32) {
     let t = g.t; let pal = g.p.pal; let pc = hex(PAL_HEX[pal as usize]);
-    for k in 1..12 { let j = (g.trail_head + 12 - k) % 12; gx.glow_world(true, pal, g.trail[j * 2], g.trail[j * 2 + 1], 16. * (1. - k as f32 / 14.), (1. - k as f32 / 12.) * 0.55); }
+    let tk = g.s.trail; let tw = if tk == 4 { 1.35 } else if tk == 6 { 1.25 } else { 1. };
+    for k in 1..12 { let j = (g.trail_head + 12 - k) % 12; gx.glow_world(true, crate::extras::trail_col(tk, pal, k, t), g.trail[j * 2], g.trail[j * 2 + 1], 16. * tw * (1. - k as f32 / 14.), (1. - k as f32 / 12.) * 0.55); }
     gx.glow_world(true, pal, g.p.x, g.p.y, if g.p.dash_t > 0. { 70. } else { 46. }, 0.55 + 0.15 * (t * 5.).sin());
     let skin = SKINS[g.p.skin].id; let key = format!("pl_{skin}");
     if !(g.p.inv > 0. && (t * 16.) as i32 % 2 == 1) {
@@ -420,7 +431,8 @@ fn player(gx: &mut Gfx, g: &mut Game, rdt: f32) {
         if g.p.inv > 0.75 { gx.sqx *= 0.9; gx.sqy *= 1.1; }
         let ph = gx.spr_anim(&key).map(|a| g.p.a_t * a.freq() * TAU).unwrap_or(0.);
         { let da = ang_diff(g.p.pang, g.p.ang); g.p.pang = g.p.ang; let tr = if rdt > 0. { (da / rdt).clamp(-10., 10.) } else { 0. }; g.p.turn += (tr - g.p.turn) * (1. - (-rdt * 5.).exp()); gx.inertia = (g.p.turn * 0.08).clamp(-0.5, 0.5); }
-        gx.spr_world(&key, g.p.x, g.p.y, g.p.ang + (t * 3.).sin() * 0.05, 1., 1., false, ph, false); gx.inertia = 0.;
+        let usc = if g.p.ult_t > 0. { 1.5 + 0.06 * (t * 10.).sin() } else { 1. };
+        gx.spr_world(&key, g.p.x, g.p.y, g.p.ang + (t * 3.).sin() * 0.05, usc, 1., false, ph, false); gx.inertia = 0.;
         gx.sqx = 1.; gx.sqy = 1.;
     }
     let (px, py) = (g.p.x, g.p.y);
@@ -456,8 +468,19 @@ pub fn title_demo(gx: &mut Gfx, rd: &mut Rd, t: f32, dt: f32, am: f32) {
     gx.glow_scr(true, c::CYAN, w / 2. * p, h * 0.22 * p, w.min(h) * 0.55 * p, (0.5 + 0.2 * (t * 2.).sin()) * am);
 }
 
+/// Тьма: всё темно, кроме круга света вокруг Люмена
+fn darkness(gx: &mut Gfx, g: &Game) {
+    let (sx, sy) = (gx.sx(g.p.x), gx.sy(g.p.y)); let (sw, sh) = (screen_width(), screen_height()); let r0 = 150. * gx.ws; let r1 = 290. * gx.ws; let n = 48; gx.set_add(false);
+    let dark = Color::new(0., 0.01, 0.04, 0.8); let clear = Color::new(0., 0.01, 0.04, 0.); let far = (sw.max(sh)) * 2.;
+    let mut v = vec![]; let mut idx = vec![];
+    for i in 0..=n { let a = i as f32 / n as f32 * TAU; let (c_, s_) = (a.cos(), a.sin()); v.push(Vertex::new(sx + c_ * r0, sy + s_ * r0, 0., 0., 0., clear)); v.push(Vertex::new(sx + c_ * r1, sy + s_ * r1, 0., 0., 0., dark)); v.push(Vertex::new(sx + c_ * far, sy + s_ * far, 0., 0., 0., dark)); }
+    for i in 0..n as u16 { let a = i * 3; let b = a + 3; idx.extend_from_slice(&[a, b, a + 1, a + 1, b, b + 1, a + 1, b + 1, a + 2, a + 2, b + 1, b + 2]); }
+    draw_mesh(&Mesh { vertices: v, indices: idx, texture: None });
+}
 /// Виньетка и красная пульсация при малом здоровье
 pub fn overlay(gx: &mut Gfx, g: &Game) {
+    if g.hazard() == crate::extras::HZ_DARK && g.state == State::Play || (g.hazard() == crate::extras::HZ_DARK && g.state == State::Pause) { darkness(gx, g); }
+    if g.p.ult_t > 0. { gx.fill_screen(Color::new(1., 0.8, 0.3, 0.06 + 0.03 * (g.t * 8.).sin()), true); }
     let v = gx.vign.clone(); gx.tex_full(&v, WHITE);
     let lh = low_hp(g);
     if g.hurt_flash > 0. || lh { let a = (g.hurt_flash * 0.7).max(if lh { 0.16 + 0.1 * (g.t * 6.).sin() } else { 0. }).min(0.7); let h = gx.hurt.clone(); gx.tex_full(&h, Color::new(1., 1., 1., a)); }
