@@ -91,7 +91,8 @@ impl Game {
     /// Карты на выбор: синергии весят больше, уже взятые — чуть больше новых
     pub fn roll_choices(&mut self) -> Vec<usize> {
         let mut pool: Vec<(usize, f32)> = vec![];
-        for (i, up) in UPG.iter().enumerate() { let l = self.p.up[i]; if l >= up.max || crate::upgtxt::OFF.contains(&up.id) { continue; }
+        for (i, up) in UPG.iter().enumerate() { let l = self.p.up[i]; if l >= up.max || crate::upgtxt::OFF.contains(&up.id) || crate::upgtxt::form_skip(self.p.form, up.id) { continue; }
+            if let Some((a, _, b, _)) = up.syn { if crate::upgtxt::form_skip(self.p.form, UPG[a].id) || crate::upgtxt::form_skip(self.p.form, UPG[b].id) { continue; } }
             match up.syn { Some((a, la, b, lb)) => if self.p.up[a] >= la && self.p.up[b] >= lb { pool.push((i, 5.)); }, None => pool.push((i, if l > 0 { 1.3 } else { 1. })) } }
         let n = if self.s.tal("t_four") || self.path == crate::content::P_RELIC { 4 } else { 3 } - if self.abyss >= 14 { 1 } else { 0 }; let mut out = vec![];
         while out.len() < n && !pool.is_empty() { let tot: f32 = pool.iter().map(|p| p.1).sum(); let mut r = self.rand() * tot; let mut k = 0;

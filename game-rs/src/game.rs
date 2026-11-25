@@ -463,7 +463,7 @@ impl Game {
             let tg = self.nearest_enemy(self.p.x, self.p.y, self.st.range);
             if tg >= 0 { self.p.fire_t += 1. / (self.st.rate * (1. + self.rel_blood) * (1. + (self.lv(u::FRENZY) as f32 * 0.04 * (self.combo as f32 / 10.)).min(0.4 * self.lv(u::FRENZY) as f32 / 3.))); if self.p.fire_t < 0. { self.p.fire_t = 0.; }
                 let (tx, ty) = self.aim_point(tg as usize, self.p.x, self.p.y); let a = (ty - self.p.y).atan2(tx - self.p.x); let n = self.st.multi; let sp = 0.15; let (px, py) = (self.p.x, self.p.y);
-                let sp = match self.p.form { 3 => 0.26, 7 => 0.2 + self.rr(-0.08, 0.08), _ => sp };
+                let sp = match self.p.form { 3 => 0.26, 7 => 0.2 + self.rr(-0.08, 0.08), 11 => if n > 1 { TAU / n as f32 } else { 0. } /* 4.8.5: косы — равномерно по кругу */, 13 => 0.32 /* мины — шире веер */, _ => sp };
                 for i in 0..n { self.fire_pb(px + a.cos() * 14., py + a.sin() * 14., a + (i as f32 - (n - 1) as f32 / 2.) * sp, self.st.dmg, true); }
                 // Шквал — дробь: ещё два коротких снаряда веером
                 if self.p.form == 3 { for k in [-1f32, 1.] { let j = self.rr(-0.06, 0.06); self.fire_pb(px + a.cos() * 14., py + a.sin() * 14., a + k * (sp * (n as f32) * 0.5 + 0.2) + j, self.st.dmg * 0.6, false); } }
@@ -788,7 +788,7 @@ impl Game {
             if boom { self.mines.kill(i); self.explode(m.x, m.y, m.r, m.dmg, m.freeze); if i > self.mines.n { i = self.mines.n; } } }
     }
     fn update_pbullets(&mut self, dt: f32) {
-        let r2 = cfg::ARENA_R * cfg::ARENA_R; let mut i = self.pb.n;
+        let r2 = cfg::ARENA_R * cfg::ARENA_R; let mut i = self.pb.n; let cal = self.lv(u::CALIBER) as f32; let scy_reach = 250. * (1. + 0.18 * cal); let mine_r = 72. * (1. + 0.15 * cal); // 4.8.5: «Длинные косы» / «Мощные мины»
         while i > 0 { i -= 1; if i >= self.pb.n { continue; }
             self.pb.items[i].life -= dt;
             if self.st.homing > 0 || self.pb.items[i].boom > 0. { self.pb.items[i].hom_t -= dt;
@@ -809,7 +809,7 @@ impl Game {
                     10 => { if b.t < 0.5 { let f = 1. - dt * 2.4; b.vx *= f; b.vy *= f; } else { let (dx, dy) = (self.p.x - b.x, self.p.y - b.y); let d = hypot(dx, dy).max(1.);
                             if b.t < 0.53 { b.last_uid = 0; } b.vx += (dx / d * 820. - b.vx) * (dt * 6.).min(1.); b.vy += (dy / d * 820. - b.vy) * (dt * 6.).min(1.); if d < 22. { b.life = 0.; } } }
                     // 4.7: Коса — лезвие раскручивается вокруг искры по спирали
-                    11 => { let r = 26. + 250. * (b.t / 0.75).min(1.); let a = b.a0 + b.t * 7.5; let (nx, ny) = (self.p.x + a.cos() * r, self.p.y + a.sin() * r); b.vx = (nx - b.x) / dt.max(1e-4); b.vy = (ny - b.y) / dt.max(1e-4); }
+                    11 => { let r = 26. + scy_reach * (b.t / 0.75).min(1.); let a = b.a0 + b.t * 7.5; let (nx, ny) = (self.p.x + a.cos() * r, self.p.y + a.sin() * r); b.vx = (nx - b.x) / dt.max(1e-4); b.vy = (ny - b.y) / dt.max(1e-4); }
                     // 4.7: Минёр — снаряд тормозит и становится миной
                     13 => { let f = 1. - dt * 3.; b.vx *= f; b.vy *= f; }
                     _ => {} }
@@ -820,7 +820,7 @@ impl Game {
                     let na = a + clamp(ang_diff(a, ta), -7. * dt, 7. * dt); b.vx = na.cos() * s; b.vy = na.sin() * s; } }
             if self.pb.items[i].form == 13 && (self.pb.items[i].life <= dt * 1.5 || hypot(self.pb.items[i].vx, self.pb.items[i].vy) < 60.) { // мина
                 let (x, y, dm) = (self.pb.items[i].x, self.pb.items[i].y, self.pb.items[i].dmg); self.pb.kill(i);
-                if let Some(m) = self.mines.spawn() { self.mines.items[m] = Mine { x, y, t: 0., r: 72., dmg: dm * 2.8, inst: false, freeze: false }; } continue; }
+                if let Some(m) = self.mines.spawn() { self.mines.items[m] = Mine { x, y, t: 0., r: mine_r, dmg: dm * 2.8, inst: false, freeze: false }; } continue; }
             if self.pb.items[i].form == 6 && self.pb.items[i].tgt < 0 && self.st.homing == 0 { // Призрак — лёгкое самонаведение
                 let (bx, by) = (self.pb.items[i].x, self.pb.items[i].y); let tg = self.nearest_enemy(bx, by, 170.);
                 if tg >= 0 { let (ex, ey) = (self.en.items[tg as usize].x, self.en.items[tg as usize].y); let b = &mut self.pb.items[i]; let a = b.vy.atan2(b.vx); let ta = (ey - by).atan2(ex - bx); let s = hypot(b.vx, b.vy);

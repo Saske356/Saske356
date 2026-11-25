@@ -105,3 +105,77 @@ pub fn card(i: usize, n: u8) -> String {
         d = format!("{d}\n{}", if en { format!("Evolution: max level + {nm} {}", e.need_lv) } else { format!("Эволюция: макс. уровень + {nm} {}", e.need_lv) }); }
     d
 }
+
+// ---------- 4.8.5: улучшения под особые искры ----------
+// Бумеранг (10), Коса (11), Призыватель (12), Минёр (13) стреляют не обычными снарядами: часть общих улучшений
+// для них бессмысленна (выпадать не должна), а часть работает иначе — со своим названием и описанием.
+pub const F_BOOM: u8 = 10; pub const F_SCYTHE: u8 = 11; pub const F_SUMMON: u8 = 12; pub const F_MINER: u8 = 13;
+/// Улучшение не выпадает этой искре
+pub fn form_skip(form: u8, id: &str) -> bool {
+    match form { F_BOOM | F_SCYTHE | F_MINER => matches!(id, "pierce" | "bounce" | "homing"), F_SUMMON => matches!(id, "bounce" | "homing"), _ => false }
+}
+/// Своё название улучшения для особой искры
+pub fn form_name(form: u8, id: &str) -> Option<&'static str> {
+    let en = i18n::is_en();
+    let (ru, e) = match (form, id) {
+        (F_SCYTHE, "multi") => ("Ещё лезвие", "Extra blade"), (F_SCYTHE, "caliber") => ("Длинные косы", "Long scythes"), (F_SCYTHE, "rate") => ("Быстрый взмах", "Quick swing"),
+        (F_SCYTHE, "dmg") => ("Острые лезвия", "Keen blades"), (F_SCYTHE, "salvo") => ("Круговой взмах", "Full circle"), (F_SCYTHE, "overcharge") => ("Жатва", "Harvest"), (F_SCYTHE, "echo") => ("Второй взмах", "Double swing"),
+        (F_BOOM, "multi") => ("Ещё бумеранг", "Extra boomerang"), (F_BOOM, "caliber") => ("Тяжёлые бумеранги", "Heavy boomerangs"), (F_BOOM, "rate") => ("Быстрый бросок", "Quick throw"),
+        (F_BOOM, "dmg") => ("Острые кромки", "Sharp edges"), (F_BOOM, "salvo") => ("Звезда бумерангов", "Boomerang star"), (F_BOOM, "echo") => ("Двойной бросок", "Double throw"),
+        (F_SUMMON, "multi") => ("Стайка", "Shoal"), (F_SUMMON, "caliber") => ("Крупные мальки", "Big fry"), (F_SUMMON, "rate") => ("Нерест", "Spawning"),
+        (F_SUMMON, "dmg") => ("Зубастые мальки", "Toothy fry"), (F_SUMMON, "pierce") => ("Сквозь строй", "Through the ranks"), (F_SUMMON, "salvo") => ("Выводок", "Brood"), (F_SUMMON, "echo") => ("Двойня", "Twins"),
+        (F_MINER, "multi") => ("Россыпь мин", "Mine spread"), (F_MINER, "caliber") => ("Мощные мины", "Heavy mines"), (F_MINER, "rate") => ("Быстрый минёр", "Quick sapper"),
+        (F_MINER, "dmg") => ("Усиленный заряд", "Bigger charge"), (F_MINER, "salvo") => ("Минное кольцо", "Mine ring"), (F_MINER, "echo") => ("Вторая закладка", "Second charge"),
+        _ => return None };
+    Some(if en { e } else { ru })
+}
+/// Своё описание (None — общее)
+pub fn form_desc(form: u8, id: &str, n: u8) -> Option<String> {
+    let en = i18n::is_en(); let l = n as f32; let s = |ru: String, e: String| Some(if en { e } else { ru });
+    match (form, id) {
+        (F_SCYTHE, "multi") => s(format!("+1 лезвие (будет {}): косы расходятся по кругу равномерно, закрывая тебя со всех сторон", 1 + n), format!("+1 blade (total {}): blades spread evenly in a circle around you", 1 + n)),
+        (F_SCYTHE, "caliber") => s(format!("Косы раскручиваются дальше (+{}% радиуса) и шире, урон +{}%, но взмахи на {}% реже", pct(0.18 * l), pct(0.12 * l), pct(0.04 * l)), format!("Blades spin out farther (+{}% reach) and wider, damage +{}%, swings {}% rarer", pct(0.18 * l), pct(0.12 * l), pct(0.04 * l))),
+        (F_SCYTHE, "rate") => s(format!("Новые косы запускаются на 18% чаще (всего +{}%)", pct(0.18 * l)), format!("New blades launch 18% more often (total +{}%)", pct(0.18 * l))),
+        (F_SCYTHE, "dmg") => s(format!("Урон кос +25% (всего +{}%)", pct(0.25 * l)), format!("Blade damage +25% (total +{}%)", pct(0.25 * l))),
+        (F_SCYTHE, "salvo") => s(format!("Каждый {}-й взмах — 8 кос сразу раскручиваются во все стороны (70% урона)", 8 - n.min(3) as u32), format!("Every {}th swing — 8 blades spin out in all directions (70% damage)", 8 - n.min(3) as u32)),
+        (F_SCYTHE, "overcharge") => s(format!("Каждый {}-й взмах — огромная коса: {}% урона", 7 - n as u32, pct(3. + l)), format!("Every {}th swing is a huge scythe: {}% damage", 7 - n as u32, pct(3. + l))),
+        (F_SCYTHE, "echo") => s(format!("С шансом {}% взмах тут же повторяется (80% урона)", pct(0.12 + 0.1 * l)), format!("{}% chance a swing repeats at once (80% damage)", pct(0.12 + 0.1 * l))),
+        (F_BOOM, "multi") => s(format!("+1 бумеранг за бросок (будет {}), летят веером", 1 + n), format!("+1 boomerang per throw (total {}), thrown in a fan", 1 + n)),
+        (F_BOOM, "caliber") => s(format!("Бумеранги крупнее и бьют на {}% сильнее, но бросок на {}% реже", pct(0.12 * l), pct(0.04 * l)), format!("Bigger boomerangs, damage +{}%, throws {}% rarer", pct(0.12 * l), pct(0.04 * l))),
+        (F_BOOM, "rate") => s(format!("Броски на 18% чаще (всего +{}%)", pct(0.18 * l)), format!("Throws 18% more often (total +{}%)", pct(0.18 * l))),
+        (F_BOOM, "dmg") => s(format!("Урон бумерангов +25% (всего +{}%) — и туда, и обратно", pct(0.25 * l)), format!("Boomerang damage +25% (total +{}%) — both ways", pct(0.25 * l))),
+        (F_BOOM, "salvo") => s(format!("Каждый {}-й бросок — 8 бумерангов во все стороны (70% урона)", 8 - n.min(3) as u32), format!("Every {}th throw — 8 boomerangs in all directions (70% damage)", 8 - n.min(3) as u32)),
+        (F_BOOM, "echo") => s(format!("С шансом {}% бросок тут же повторяется (80% урона)", pct(0.12 + 0.1 * l)), format!("{}% chance a throw repeats at once (80% damage)", pct(0.12 + 0.1 * l))),
+        (F_SUMMON, "multi") => s(format!("+1 малёк за раз (будет {})", 1 + n), format!("+1 fry at a time (total {})", 1 + n)),
+        (F_SUMMON, "caliber") => s(format!("Мальки крупнее и кусают на {}% сильнее, но рождаются на {}% реже", pct(0.12 * l), pct(0.04 * l)), format!("Bigger fry, bite +{}% harder, spawn {}% rarer", pct(0.12 * l), pct(0.04 * l))),
+        (F_SUMMON, "rate") => s(format!("Мальки рождаются на 18% чаще (всего +{}%)", pct(0.18 * l)), format!("Fry spawn 18% more often (total +{}%)", pct(0.18 * l))),
+        (F_SUMMON, "dmg") => s(format!("Укус мальков +25% (всего +{}%)", pct(0.25 * l)), format!("Fry bite +25% (total +{}%)", pct(0.25 * l))),
+        (F_SUMMON, "pierce") => s(format!("Малёк прокусывает врага и плывёт к следующему ({} раз)", n), format!("A fry bites through and swims on to the next foe ({} times)", n)),
+        (F_SUMMON, "salvo") => s(format!("Каждый {}-й раз — выводок из 8 мальков во все стороны (70% урона)", 8 - n.min(3) as u32), format!("Every {}th time — a brood of 8 fry in all directions (70% damage)", 8 - n.min(3) as u32)),
+        (F_SUMMON, "echo") => s(format!("С шансом {}% рождается ещё столько же мальков (80% урона)", pct(0.12 + 0.1 * l)), format!("{}% chance as many fry spawn again (80% damage)", pct(0.12 + 0.1 * l))),
+        (F_MINER, "multi") => s(format!("+1 мина за раз (будет {}), разлетаются веером", 1 + n), format!("+1 mine at a time (total {}), spread in a fan", 1 + n)),
+        (F_MINER, "caliber") => s(format!("Радиус взрыва мин +{}%, урон +{}%, но мины ставятся на {}% реже", pct(0.15 * l), pct(0.12 * l), pct(0.04 * l)), format!("Mine blast radius +{}%, damage +{}%, mines {}% rarer", pct(0.15 * l), pct(0.12 * l), pct(0.04 * l))),
+        (F_MINER, "rate") => s(format!("Мины ставятся на 18% чаще (всего +{}%)", pct(0.18 * l)), format!("Mines are laid 18% more often (total +{}%)", pct(0.18 * l))),
+        (F_MINER, "dmg") => s(format!("Взрыв мин +25% (всего +{}%)", pct(0.25 * l)), format!("Mine blast +25% (total +{}%)", pct(0.25 * l))),
+        (F_MINER, "salvo") => s(format!("Каждый {}-й раз — кольцо из 8 мин вокруг тебя (70% урона)", 8 - n.min(3) as u32), format!("Every {}th time — a ring of 8 mines around you (70% damage)", 8 - n.min(3) as u32)),
+        (F_MINER, "echo") => s(format!("С шансом {}% мины ставятся дважды (80% урона)", pct(0.12 + 0.1 * l)), format!("{}% chance mines are laid twice (80% damage)", pct(0.12 + 0.1 * l))),
+        (F_SCYTHE, "hurricane") => s("«Круговой взмах» выпускает 16 кос сразу".into(), "«Full circle» releases 16 blades at once".into()),
+        (F_BOOM, "hurricane") => s("«Звезда бумерангов» — 16 бумерангов сразу".into(), "«Boomerang star» throws 16 at once".into()),
+        (F_SUMMON, "hurricane") => s("«Выводок» — 16 мальков сразу, каждый прокусывает 2 врагов".into(), "«Brood» releases 16 fry, each biting through 2 foes".into()),
+        (F_MINER, "hurricane") => s("«Минное кольцо» — 16 мин сразу".into(), "«Mine ring» lays 16 mines at once".into()),
+        (F_SCYTHE, "choir") => s("Близнец запускает сразу три косы".into(), "The twin launches three blades at once".into()),
+        (F_BOOM, "choir") => s("Близнец бросает веер из трёх бумерангов".into(), "The twin throws a fan of three boomerangs".into()),
+        (F_SUMMON, "choir") => s("Близнец выпускает сразу трёх мальков".into(), "The twin releases three fry at once".into()),
+        (F_MINER, "choir") => s("Близнец ставит сразу три мины".into(), "The twin lays three mines at once".into()),
+        _ => None }
+}
+/// Название карты с учётом искры
+pub fn name_f(i: usize, form: u8) -> String { form_name(form, UPG[i].id).map(|s| s.to_string()).unwrap_or_else(|| i18n::upg(UPG[i].id).0) }
+/// Текст карты с учётом искры: своё описание, а в рецептах и подсказках эволюции — свои названия
+pub fn card_f(i: usize, n: u8, form: u8) -> String {
+    let mut d = form_desc(form, UPG[i].id, n).unwrap_or_else(|| desc(UPG[i].id, n));
+    if let Some((a, la, b, lb)) = UPG[i].syn { d = format!("{d}\n{}: {} {la} + {} {lb}", if i18n::is_en() { "Combo" } else { "Сочетание" }, name_f(a, form), name_f(b, form)); }
+    if let Some(e) = crate::content::EVOS.iter().find(|e| e.upg == i) { let nm = name_f(e.need, form);
+        d = format!("{d}\n{}", if i18n::is_en() { format!("Evolution: max level + {nm} {}", e.need_lv) } else { format!("Эволюция: макс. уровень + {nm} {}", e.need_lv) }); }
+    d
+}

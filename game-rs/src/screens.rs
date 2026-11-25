@@ -292,7 +292,7 @@ fn level(a: &mut App) {
     let cwid = if land { ((w - 40.) / n as f32 - 12.).min(240.) } else { (w - 32.).min(420.) };
     let rm = a.relic_mode || a.path_mode; let pm = a.path_mode;
     let infos: Vec<(String, String, bool, u8, u8, u8)> = a.cards.iter().map(|&i| if pm { let (n, d) = crate::content::path_txt(i as u8); (n.to_string(), d.to_string(), true, 0, 1, crate::content::PATHS[i - 1].col) } else if i >= crate::content::EVO_BASE && i != U_HEAL { let (n, d) = crate::content::evo_txt(i - crate::content::EVO_BASE); (n.to_string(), d.to_string(), true, 0, 1, c::GOLD) } else if rm { let (n, d) = crate::content::relic_txt(i as u8); (n.to_string(), d.to_string(), true, 0, 1, crate::content::RELICS[i].col) } else if i == U_HEAL { ("Чистый свет".to_string(), "Восстановить 50% здоровья и +1000 очков".to_string(), false, 0, 1, c::EMER) }
-        else { let nm = i18n::upg(UPG[i].id).0; let d = crate::upgtxt::card(i, a.g.p.up[i] + 1); (nm, d, UPG[i].syn.is_some(), a.g.p.up[i], UPG[i].max, UPG[i].col) }).collect();
+        else { let fm = a.g.p.form; let nm = crate::upgtxt::name_f(i, fm); let d = crate::upgtxt::card_f(i, a.g.p.up[i] + 1, fm); (nm, d, UPG[i].syn.is_some(), a.g.p.up[i], UPG[i].max, UPG[i].col) }).collect();
     let heal_en = i18n::is_en();
     let hs: Vec<f32> = infos.iter().map(|inf| { let dw = if land { cwid - 24. } else { cwid - 28. - 68. }; let dh = a.gx.wrap(&inf.1, dw, 13.5, 0).len() as f32 * 17.;
         if land { 12. + 56. + 8. + if inf.2 && !rm { 18. } else { 0. } + 24. + dh + 12. } else { (24. + if inf.2 && !rm { 18. } else { 0. } + 22. + dh).max(80.) } }).collect();
@@ -360,7 +360,7 @@ fn tag_l(gx: &mut Gfx, cx: f32, cy: f32, al: f32, s: &str) { let s = s.to_string
 fn pause(a: &mut App) {
     let sm = small(a); let tp = top(a); let _ = (sm, tp); let _gh = a.gx.h;
     let w = a.gx.w; let al = a.ui.alpha; let (bx, bw) = col(a);
-    let ups: Vec<String> = UPG.iter().enumerate().filter(|(i, _)| a.g.p.up[*i] > 0).map(|(i, u)| { let n = i18n::upg(u.id).0; if u.max > 1 { format!("{n} {}", a.g.p.up[i]) } else { n } }).collect();
+    let ups: Vec<String> = UPG.iter().enumerate().filter(|(i, _)| a.g.p.up[*i] > 0).map(|(i, u)| { let n = crate::upgtxt::name_f(i, a.g.p.form); let _ = u.id; if u.max > 1 { format!("{n} {}", a.g.p.up[i]) } else { n } }).collect();
     let info = a.g.mode_tf(); let upl = ups.join(" · ");
     let uh = if upl.is_empty() { 0. } else { a.gx.wrap(&upl, w - 40., 13., 0).len() as f32 * 18. + 14. };
     let bh = if sm { 56. } else { 68. }; let total = 36. + 24. + uh + 14. + bh + 8. + 56. + 8. + 56.;
