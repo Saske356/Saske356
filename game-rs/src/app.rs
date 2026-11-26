@@ -135,7 +135,7 @@ impl App {
             AdCb::Inter(n) => self.do_next(n),
             AdCb::Revive => { if self.g.state != State::Revive { return; }
                 // не досмотрено или сбой — не заканчиваем забег, даём попробовать ещё раз
-                if !ok { self.revive_n = self.revive_n.max(5.); self.toasts.push(Toast { title: if crate::i18n::is_en() { "Ad unavailable".into() } else { "Реклама не сработала".into() }, sub: if crate::i18n::is_en() { "Try again".into() } else { "Попробуй ещё раз".into() }, t: 0. }); return; }
+                if !ok { self.revive_n = self.revive_n.max(8.); self.toasts.push(Toast { title: if crate::i18n::is_en() { "Ad unavailable".into() } else { "Реклама не сработала".into() }, sub: if crate::i18n::is_en() { "Try again".into() } else { "Попробуй ещё раз".into() }, t: 0. }); return; }
                 self.g.revive_ad(); self.show(Scr::None); }
             AdCb::Double => { if !ok || self.g.ad_doubled || self.g.state != State::Over { return; } self.g.ad_doubled = true; let e = self.g.last_earned; self.g.s.pearls += e; self.g.s.total_pearls += e as u64;
                 self.persist(); self.au.play(Sfx::PickCard); platform::vibrate(30); }
@@ -177,11 +177,15 @@ impl App {
     }
     /// Снимок карточки рекорда (область экрана r) → files/share/record.png → системное «Поделиться»
     fn share_capture(&mut self, r: Rect) {
-        let img = get_screen_data(); let (iw, ih) = (img.width as i32, img.height as i32); let p = self.gx.px;
+        // 4.8.6: читаем пиксели экрана напрямую (glReadPixels RGBA — работает на любом GLES). get_screen_data копировал экран
+        // в RGBA-текстуру, а у экрана телефона часто нет альфа-канала — копия не создавалась, картинка была чёрной.
+        let (iw, ih) = (screen_width() as i32, screen_height() as i32); let p = self.gx.px;
         let x0 = ((r.x * p) as i32).clamp(0, iw - 1); let x1 = (((r.x + r.w) * p) as i32).clamp(x0 + 1, iw); let y0 = ((r.y * p) as i32).clamp(0, ih - 1); let y1 = (((r.y + r.h) * p) as i32).clamp(y0 + 1, ih);
-        let (cw, chh) = ((x1 - x0) as usize, (y1 - y0) as usize); let mut out = Vec::with_capacity(cw * chh * 4);
-        // данные экрана идут снизу вверх (так их отдаёт OpenGL) — берём строки в том же порядке, export_png сам перевернёт
-        for row in (ih - y1)..(ih - y0) { let st = (row as usize * iw as usize + x0 as usize) * 4; out.extend_from_slice(&img.bytes[st..st + cw * 4]); }
+        let (cw, chh) = ((x1 - x0) as usize, (y1 - y0) as usize); let mut out = vec![0u8; cw * chh * 4];
+        // строки идут снизу вверх (так их отдаёт OpenGL) — export_png сам перевернёт
+        unsafe { get_internal_gl().flush(); use macroquad::miniquad::gl::*;
+            glBindFramebuffer(GL_FRAMEBUFFER, 0); glPixelStorei(0x0D05 /* GL_PACK_ALIGNMENT */, 1);
+            glReadPixels(x0, ih - y1, cw as i32, chh as i32, GL_RGBA, GL_UNSIGNED_BYTE, out.as_mut_ptr() as *mut _); }
         for px in out.chunks_mut(4) { px[3] = 255; }
         let dir = format!("{}/share", platform::files_dir()); let _ = std::fs::create_dir_all(&dir);
         Image { bytes: out, width: cw as u16, height: chh as u16 }.export_png(&format!("{dir}/record.png"));
@@ -260,7 +264,7 @@ impl App {
         // настройки, которые применяет система
         if self.orient_set != self.g.s.set.orient { self.orient_set = self.g.s.set.orient; platform::set_orient(self.orient_set); }
         { let want = if self.fps_cap > 0 { self.fps_cap.min(self.g.s.set.fps) } else { self.g.s.set.fps }; if self.fps_set != want { self.fps_set = want; platform::set_fps(want); } }
-        let land = self.landscape(); if land != self.last_land { self.last_land = land; if self.g.state == State::Play { self.pause(); } } // поворот посреди забега — пауза
+        let land = self.landscape(); if land != self.last_land { self.last_land = land; if self.g.state == State::Play && self.ads.cb.is_none() && self.now - self.ads.last > 4. { self.pause(); } } // поворот посреди забега — пауза (но не тот, что делает реклама)
         self.ui.begin(px, rdt);
         let mut evs = platform::poll(); self.ads_tick(&mut evs);
         // свернули приложение

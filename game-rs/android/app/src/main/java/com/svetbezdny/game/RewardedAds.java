@@ -34,6 +34,7 @@ public class RewardedAds {
     private volatile boolean rewarded = false;
     private volatile boolean reported = true;
     private String place = "";
+    private int showId = 0; // 4.8.6: поздние события старого показа не путаются с новым
 
     public RewardedAds(Activity activity) {
         this.activity = activity;
@@ -60,16 +61,18 @@ public class RewardedAds {
         activity.runOnUiThread(() -> {
             RewardedAd current = ad;
             if (current == null || showing) { result(where, false); return; }
-            showing = true; rewarded = false; place = where;
+            showing = true; rewarded = false; place = where; final int id = ++showId;
             current.setAdEventListener(new RewardedAdEventListener() {
                 @Override public void onAdShown() {}
-                @Override public void onAdFailedToShow(AdError adError) { finish(); }
-                @Override public void onAdDismissed() { finish(); }
+                @Override public void onAdFailedToShow(AdError adError) { if (id == showId) finish(); }
+                @Override public void onAdDismissed() { if (id == showId) finish(); }
                 @Override public void onAdClicked() {}
                 @Override public void onAdImpression(ImpressionData data) {}
-                @Override public void onRewarded(Reward reward) { rewarded = true;
+                @Override public void onRewarded(Reward reward) { if (id != showId) return; boolean was = rewarded; rewarded = true;
                     // награда пришла уже после закрытия — сообщаем игре отдельно
-                    if (!showing && !reported) { reported = true; result(place, true); } }
+                    if (!showing && !reported) { reported = true; result(place, true); }
+                    // 4.8.6: пришла совсем поздно (игре уже ушло «не досмотрено») — всё равно сообщаем: игра выдаст её, если ещё ждёт
+                    else if (!showing && reported && !was) { result(place, true); } }
             });
             try { current.show(activity); }
             catch (Throwable t) { Log.w(TAG, "show failed", t); showing = false; result(where, false); } // сбой показа — игра не должна ждать вечно
@@ -85,7 +88,7 @@ public class RewardedAds {
         ad = null;
         Runnable done = () -> {
             if (!reported) { reported = true; result(place, rewarded); }
-            if (old != null) old.setAdEventListener(null);
+            if (old != null) web.postDelayed(() -> old.setAdEventListener(null), 30_000); // 4.8.6: поздняя награда ещё может прийти
             load();
         };
         if (rewarded) done.run(); else web.postDelayed(done, 1500); // 4.8.4: награда бывает позже закрытия — ждём дольше
