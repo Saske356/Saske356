@@ -15,12 +15,36 @@ fn on_off(v: bool) -> String { if v { t("on") } else { t("off") } }
 pub fn draw(a: &mut App) {
     if a.scr == Scr::None { return; }
     let al = (a.scr_t / 0.28).min(1.); a.ui.alpha = al;
+    // 4.9.2: окно выбора второго питомца поверх — нижний экран рисуется, но касаний не получает
+    let modal = a.pet2_choose && matches!(a.g.state, State::Title | State::Menu); let lock0 = a.ui.lock; if modal { a.ui.lock = a.ui.lock.max(1.); }
     if a.scr != Scr::Title && a.scr != Scr::Try { let light = matches!(a.scr, Scr::Level | Scr::Pause | Scr::Revive); let tm = a.g.t; menu_backdrop(&mut a.gx, tm, al, light); }
     match a.scr {
         Scr::Title => { if a.rate_pending { a.rate_pending = false; a.show(Scr::Rate); } title(a) } Scr::How => how(a), Scr::Level => level(a), Scr::Pause => pause(a), Scr::Revive => revive(a), Scr::Over => over(a),
         Scr::Shop => shop(a), Scr::Ach => ach(a), Scr::Set => settings(a), Scr::Quest => quests(a), Scr::Best => best(a), Scr::Modes => modes(a), Scr::Wheel => wheel(a), Scr::Map => ocean_map(a), Scr::Rate => rate(a), Scr::Card => card(a), Scr::Xfer => xfer(a), Scr::Try => try_scr(a), Scr::End => end(a), Scr::None => {}
     }
+    if modal { a.ui.lock = lock0; if a.scr != Scr::None { pet2_pick(a); } }
     a.ui.alpha = 1.;
+}
+/// 4.9.2: выбор второго питомца после просмотра рекламы
+fn pet2_pick(a: &mut App) {
+    let (w, h) = (a.gx.w, a.gx.h); let en = i18n::is_en(); let (bx, bw) = col(a); let p = a.gx.px;
+    let cur = a.g.s.pet.clone(); let owned: Vec<usize> = (0..crate::extras::PETS.len()).filter(|&k| crate::extras::PETS[k].id != cur && a.g.s.pets.get(crate::extras::PETS[k].id).copied().unwrap_or(0) > 0).collect();
+    if owned.is_empty() { a.pet2_choose = false; return; }
+    a.gx.rrect(0., 0., w, h, 0., Color::new(0., 0.02, 0.06, 0.78));
+    let cols = if owned.len() > 4 { 3 } else { 2 }; let cw = (bw + 16. - 10. * (cols - 1) as f32) / cols as f32; let chh = 96.; let rows = (owned.len() + cols - 1) / cols;
+    let ph = 90. + rows as f32 * (chh + 10.) + 64.; let y0 = ((h - ph) / 2.).max(top(a)); let x0 = bx - 8.;
+    panel(&mut a.gx, Rect::new(x0 - 8., y0, bw + 32., ph), 20., Color::new(0.03, 0.1, 0.2, 0.97), Color::new(1., 0.84, 0.31, 0.7), 1.);
+    ui::h2c(&mut a.gx, if en { "Who swims second?" } else { "Кто поплывёт вторым?" }, w / 2., y0 + 30., 22., 1., c::GOLD, hex(0xfff1c2));
+    a.gx.text(if en { "Joins you in the next run" } else { "Поплывёт с тобой в следующем забеге" }, w / 2., y0 + 58., 13., Color::new(1., 1., 1., 0.75), 1, 0);
+    let sel = a.g.s.tok_pet2.clone();
+    for (n, &k) in owned.iter().enumerate() { let pd = &crate::extras::PETS[k]; let (cx0, cy0) = (x0 + (n % cols) as f32 * (cw + 10.), y0 + 80. + (n / cols) as f32 * (chh + 10.)); let r = Rect::new(cx0, cy0, cw, chh);
+        let on = sel == pd.id; panel(&mut a.gx, r, 14., Color::new(0.02, 0.07, 0.15, 0.95), if on { hex(0xffd54f) } else { Color::new(0.5, 0.8, 1., 0.35) }, 1.);
+        let (sx, sy) = (cx0 + cw / 2., cy0 + 38.); a.gx.glow_scr(true, pd.col, sx * p, sy * p, 30. * p, 0.6); let half = a.gx.spr_half(pd.spr);
+        crate::gfx::set_calm(0.6); let ph_ = a.gx.spr_anim(pd.spr).map(|an| a.g.t * 0.6 * an.freq() * std::f32::consts::TAU).unwrap_or(0.); a.gx.spr_screen(pd.spr, sx * p, sy * p, 0., 26. / half * p, 1., false, ph_, false); crate::gfx::set_calm(1.);
+        let lv = a.g.s.pets.get(pd.id).copied().unwrap_or(0); a.gx.text(&format!("{} {}", crate::extras::pet_txt(k).0, "●".repeat(lv as usize)), cx0 + cw / 2., cy0 + chh - 16., 13., if on { hex(0xffe08a) } else { WHITE }, 1, 1);
+        if a.ui.tap(r) { a.click(); a.g.s.tok_pet2 = pd.id.into(); a.g.dirty = true; } }
+    let by = y0 + ph - 54.;
+    if a.ui.btn(&mut a.gx, Rect::new(bx, by, bw, 44.), if en { "Done" } else { "Готово" }, St::Gold, 17., true) { a.click(); a.pet2_choose = false; a.persist(); }
 }
 
 /// Живой цветной фон меню: бирюза сверху, фиолет снизу, плывущие пятна света, лучи и искорки.

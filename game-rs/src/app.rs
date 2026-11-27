@@ -31,7 +31,7 @@ pub struct App {
     pub scr: Scr, pub scr_t: f32, pub back_to: Scr, pub intro: Intro, pub end: End, pub joy: Joy, pub ads: Ads,
     pub cards: Vec<usize>, pub cards_t: f32, pub relic_mode: bool, pub path_mode: bool, pub best_sel: Option<(usize, u8)>, pub wheel: WheelSt, pub map_pick: u8, pub modes_h: f32, pub prof: [f64; 3], pub fps_cap: u32, pub slow120: u32, pub warmed: bool, pub share_cap: Option<Rect>, pub rate_pending: bool, pub rem_done: bool, pub relic_rerolled: bool, pub earned: u32, pub rec: bool, pub over_t: f32, pub revive_n: f32,
     pub shop_tab: u8, pub toasts: Vec<Toast>, pub save_t: f32, pub safe: [f32; 4], pub now: f64, pub was_paused: bool,
-    pub try_real: Option<Box<Game>> /* 4.8: примерка — настоящая игра отложена, на экране песочница */, pub try_req: Option<(u8, usize)>, pub pet2_pick: Option<usize>, pub try_kind: (u8, usize), pub xfer: Option<crate::save::Save> /* 4.8: найденный в коде прогресс, ждёт подтверждения */, pub xfer_msg: String, pub glow_auto_off: bool, pub banner_on: bool, pub glow_slow: f32, pub test: Vec<(f64, String)>, pub bot: bool, pub shot: Option<String>, pub fps_acc: f32, pub fps_n: u32, pub fps: f32, pub slow_t: f32, pub q_auto: u8, pub last_land: bool, pub orient_set: u8, pub fps_set: u32,
+    pub try_real: Option<Box<Game>> /* 4.8: примерка — настоящая игра отложена, на экране песочница */, pub try_req: Option<(u8, usize)>, pub pet2_pick: Option<usize>, pub pet2_choose: bool /* 4.9.2: после рекламы — окно выбора второго питомца */, pub try_kind: (u8, usize), pub xfer: Option<crate::save::Save> /* 4.8: найденный в коде прогресс, ждёт подтверждения */, pub xfer_msg: String, pub glow_auto_off: bool, pub banner_on: bool, pub glow_slow: f32, pub test: Vec<(f64, String)>, pub bot: bool, pub shot: Option<String>, pub fps_acc: f32, pub fps_n: u32, pub fps: f32, pub slow_t: f32, pub q_auto: u8, pub last_land: bool, pub orient_set: u8, pub fps_set: u32,
 }
 
 pub const GIFT_R: u32 = 30; pub const GIFT_MAX: u32 = 8; pub const BOOST_MAX: u32 = 5;
@@ -76,7 +76,7 @@ impl App {
         let mut app = App { gx, scaler: crate::gfx::Scaler::new(), bloom: None, rd: Rd::new(), g, ui: Ui::new(), au, scr: Scr::None, scr_t: 0., back_to: Scr::Title,
             intro: Intro { t: 0., dur: if full { 5.8 } else { 1.5 }, full, ig: if full { 3.7 } else { 0.08 }, revealed: false }, end: End { t: 0., show: 7.4, shown: false, first: false },
             joy: Joy::default(), ads: Ads { late: None, place: String::new(), cb: None, wd: 0., wd_len: 0., last: -1e9, t0: now, over_n: 0, back_t: 0. }, cards: vec![], cards_t: 0., relic_mode: false, path_mode: false, best_sel: None, wheel: WheelSt::default(), map_pick: 0, modes_h: 600., prof: [0.; 3], fps_cap: 0, slow120: 0, warmed: false, share_cap: None, rate_pending: false, rem_done: false, relic_rerolled: false, earned: 0, rec: false, over_t: 0., revive_n: 0.,
-            shop_tab: 0, toasts: vec![], save_t: 0., safe: [0.; 4], now, was_paused: false, try_real: None, try_req: None, pet2_pick: None, try_kind: (0, 0), xfer: None, xfer_msg: String::new(), glow_auto_off: false, banner_on: false, glow_slow: 0., test: std::env::var("SVET_TEST").unwrap_or_default().split(';').filter_map(|c| c.split_once(':').map(|(t, c)| (t.trim().parse().unwrap_or(0.), c.trim().to_string()))).collect(), bot: false, shot: None, fps_acc: 0., fps_n: 0, fps: 60., slow_t: 0., q_auto: 2, last_land: false, orient_set: 99, fps_set: 0 };
+            shop_tab: 0, toasts: vec![], save_t: 0., safe: [0.; 4], now, was_paused: false, try_real: None, try_req: None, pet2_pick: None, pet2_choose: false, try_kind: (0, 0), xfer: None, xfer_msg: String::new(), glow_auto_off: false, banner_on: false, glow_slow: 0., test: std::env::var("SVET_TEST").unwrap_or_default().split(';').filter_map(|c| c.split_once(':').map(|(t, c)| (t.trim().parse().unwrap_or(0.), c.trim().to_string()))).collect(), bot: false, shot: None, fps_acc: 0., fps_n: 0, fps: 60., slow_t: 0., q_auto: 2, last_land: false, orient_set: 99, fps_set: 0 };
         app.g.state = State::Intro;
         if let Some(crate::flow::DailyMsg::Login(d, r)) = app.g.daily_check() { app.toast_later(tf("loginT", &[&d.to_string()]), format!("+{r} {}", t("pearlsGen"))); }
         app.persist();
@@ -149,7 +149,7 @@ impl App {
             AdCb::Quest(k) => { if !ok { return; } let r = self.g.s.daily.quests.get(k).filter(|q| q.done && !q.got).map(|q| q.r);
                 if let Some(r) = r { self.g.s.pearls += r; self.g.claim_quest(k); self.persist(); self.toast(t("giftT"), format!("+{} {}", r * 2, t("pearlsGen"))); } }
             // 4.7: второй питомец на следующий забег / ×2 осколков света за забег
-            AdCb::Pet2(k) => { if !ok { return; } self.g.s.tok_pet2 = crate::extras::PETS[k].id.into(); self.g.dirty = true; self.persist(); let en = i18n::is_en();
+            AdCb::Pet2(k) => { if !ok { return; } self.g.s.tok_pet2 = crate::extras::PETS[k].id.into(); self.g.dirty = true; self.persist(); self.pet2_choose = true; let en = i18n::is_en();
                 self.toast(if en { "Second pet".into() } else { "Второй питомец".into() }, format!("{} — {}", crate::extras::pet_txt(k).0, if en { "joins your next run" } else { "поплывёт с тобой в следующем забеге" })); }
             AdCb::Shards => { if !ok || self.g.shards_x2 { return; } self.g.shards_x2 = true; self.g.s.shards += self.g.run_shards; self.g.dirty = true; self.persist(); self.au.play(Sfx::Ach); }
             AdCb::Wheel => { if !ok || self.g.s.daily.wheel_ad >= crate::extras::WHEEL_AD_MAX { return; } self.g.s.daily.wheel_ad += 1; self.wheel_start(); }
@@ -351,7 +351,7 @@ impl App {
                 "rev" => { self.g.rev_cd = 0.; self.g.rev = 0; let k = n as u8; if k > 0 { self.g.rev = k; self.g.rev_t = 25.; } }
                 "portal" => { self.g.portal_zone = 0; self.g.zone_t = 30.; } "room" => { self.g.portal = Some((self.g.p.x + 20., self.g.p.y, 20.)); self.g.room_k = n as u8; }
                 "pet2" => { let k = n as usize % crate::extras::PETS.len(); self.g.s.tok_pet2 = crate::extras::PETS[k].id.into(); }
-                "adpet2" => { let k = n as usize % crate::extras::PETS.len(); self.ad_show("pet2", AdCb::Pet2(k)); }
+                "p2pick" => { self.pet2_choose = true; } "adpet2" => { let k = n as usize % crate::extras::PETS.len(); self.ad_show("pet2", AdCb::Pet2(k)); }
                 "map" => { self.map_pick = n as u8 % 4; self.show(Scr::Map); } "region" => { let i = n as u8 % 4; self.g.s.regions.insert(i.to_string(), 1); self.g.s.region = i; } "shards" => { self.g.s.shards = n as u32; }
                 "path" => { self.g.path_pending = true; }
                 "relic" => { self.g.relic_pending += 1; self.g.level_delay = 0.; }
@@ -382,6 +382,7 @@ impl App {
     }
 
     fn back(&mut self) {
+        if self.pet2_choose { self.pet2_choose = false; self.persist(); return; }
         match self.scr {
             Scr::None => match self.g.state { State::Play => self.pause(), State::Intro => self.skip_intro(), State::Ending => self.skip_ending(), _ => {} },
             Scr::Pause => self.resume(),

@@ -112,12 +112,21 @@ pub fn card(i: usize, n: u8) -> String {
 pub const F_BOOM: u8 = 10; pub const F_SCYTHE: u8 = 11; pub const F_SUMMON: u8 = 12; pub const F_MINER: u8 = 13;
 /// Улучшение не выпадает этой искре
 pub fn form_skip(form: u8, id: &str) -> bool {
-    match form { F_BOOM | F_SCYTHE | F_MINER => matches!(id, "pierce" | "bounce" | "homing"), F_SUMMON => matches!(id, "bounce" | "homing"), _ => false }
+    // 4.9.2: то, что искре не нужно или дублирует её атаку/суперспособность
+    match form {
+        1 => matches!(id, "caliber"),                       // Игла: быстрые тонкие иглы — крупный медленный снаряд противоречит
+        6 => matches!(id, "homing"),                        // Призрак: снаряды и так доворачивают
+        7 => matches!(id, "burn"),                          // Уголёк: и так всё поджигает
+        F_BOOM | F_MINER => matches!(id, "pierce" | "bounce" | "homing" | "overcharge"),
+        F_SCYTHE => matches!(id, "pierce" | "bounce" | "homing" | "overcharge" | "execute"), // казнь — у суперспособности «Жнец»
+        F_SUMMON => matches!(id, "bounce" | "homing" | "overcharge"),
+        _ => false }
 }
 /// Своё название улучшения для особой искры
 pub fn form_name(form: u8, id: &str) -> Option<&'static str> {
     let en = i18n::is_en();
     let (ru, e) = match (form, id) {
+        (f, "flare") if f != 0 => ("Суперзаряд", "Super charge"),
         (F_SCYTHE, "multi") => ("Ещё лезвие", "Extra blade"), (F_SCYTHE, "caliber") => ("Длинные косы", "Long scythes"), (F_SCYTHE, "rate") => ("Быстрый взмах", "Quick swing"),
         (F_SCYTHE, "dmg") => ("Острые лезвия", "Keen blades"), (F_SCYTHE, "salvo") => ("Круговой взмах", "Full circle"), (F_SCYTHE, "overcharge") => ("Жатва", "Harvest"), (F_SCYTHE, "echo") => ("Второй взмах", "Double swing"),
         (F_BOOM, "multi") => ("Ещё бумеранг", "Extra boomerang"), (F_BOOM, "caliber") => ("Тяжёлые бумеранги", "Heavy boomerangs"), (F_BOOM, "rate") => ("Быстрый бросок", "Quick throw"),
@@ -133,6 +142,7 @@ pub fn form_name(form: u8, id: &str) -> Option<&'static str> {
 pub fn form_desc(form: u8, id: &str, n: u8) -> Option<String> {
     let en = i18n::is_en(); let l = n as f32; let s = |ru: String, e: String| Some(if en { e } else { ru });
     match (form, id) {
+        (f, "flare") if f != 0 => s(format!("Суперспособность заряжается на {}% быстрее", pct(0.3 * l)), format!("Your super ability charges {}% faster", pct(0.3 * l))),
         (F_SCYTHE, "multi") => s(format!("+1 лезвие (будет {}): косы расходятся по кругу равномерно, закрывая тебя со всех сторон", 1 + n), format!("+1 blade (total {}): blades spread evenly in a circle around you", 1 + n)),
         (F_SCYTHE, "caliber") => s(format!("Косы раскручиваются дальше (+{}% радиуса) и шире, урон +{}%, но взмахи на {}% реже", pct(0.18 * l), pct(0.12 * l), pct(0.04 * l)), format!("Blades spin out farther (+{}% reach) and wider, damage +{}%, swings {}% rarer", pct(0.18 * l), pct(0.12 * l), pct(0.04 * l))),
         (F_SCYTHE, "rate") => s(format!("Новые косы запускаются на 18% чаще (всего +{}%)", pct(0.18 * l)), format!("New blades launch 18% more often (total +{}%)", pct(0.18 * l))),
