@@ -278,6 +278,7 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
     for gy in g.geysers.iter() { let k = 1. - gy.t / 1.3; gx.circle_world(gy.x, gy.y, 75. * k, with_a(hex(0xff6a3d), 0.12 + 0.2 * k), false); gx.arc_world(gy.x, gy.y, 75., 0., TAU, 2.5, with_a(hex(0xffb340), 0.5 + 0.4 * (t * 14.).sin().abs()), false); gx.glow_world(true, c::FIRE, gy.x, gy.y, 30. + 40. * k, 0.4 * k); }
     for cr in g.bcr.iter() { let pul = 1. + 0.08 * (t * 3. + cr.ph).sin(); gx.glow_world(true, c::ICE, cr.x, cr.y, 46. * pul, 0.5); gx.spr_world("crystal", cr.x, cr.y, t * 0.6 + cr.ph, 1.5 * pul, 1., false, 0., false);
         for q in 0..cr.hp as i32 { gx.circle_world(cr.x - 10. + q as f32 * 10., cr.y + 26., 3., WHITE, false); } }
+    crate::abilities::draw_world(gx, g); // 4.9.1: графика суперспособностей
     if !g.p.dead { player(gx, g, rdt); }
     // снаряды игрока
     let pc0 = g.p.pal; let ac0 = crate::data::SKIN_ACC.get(g.p.skin).copied().unwrap_or(c::WHITE); let shot = g.s.shot; // 4.6: цвет выстрелов из магазина

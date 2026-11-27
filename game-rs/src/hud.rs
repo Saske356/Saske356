@@ -112,7 +112,7 @@ pub fn hud(a: &mut App) {
         let s = if tt < 0.4 { 0.6 + 0.4 * ease_out(tt / 0.4) + (tt / 0.4 * std::f32::consts::PI).sin() * 0.12 } else { 1. };
         let (bx, by) = (w / 2., h * 0.3);
         if !bn.text.is_empty() { let n = bn.text.chars().count() as f32; let fs = if n > 12. { 34f32.min(w / n * 1.55) } else { 44. } * s;
-            let p = gx.px; let tw = gx.text_w(&bn.text, fs, 2);
+            let p = gx.px; let mut fs = fs; let mut tw = gx.text_w(&bn.text, fs, 2); if tw > w - 28. { fs *= (w - 28.) / tw; tw = gx.text_w(&bn.text, fs, 2); } // 4.9.1: длинное название — мельче, но целиком
             gx.set_add(true); let bc = hex(bn.col);
             for k in 0..2 { let gg = gx.soft[c::WHITE as usize].clone(); let ww = tw * (1.2 + k as f32 * 0.3); draw_texture_ex(&gg, (bx - ww / 2.) * p, (by - fs) * p, Color::new(bc.r, bc.g, bc.b, 0.35 * al), DrawTextureParams { dest_size: Some(vec2(ww * p, fs * 2. * p)), ..Default::default() }); }
             gx.text(&bn.text, bx, by, fs, Color::new(1., 1., 1., al), 1, 2); }
@@ -144,16 +144,18 @@ pub fn hud(a: &mut App) {
         gx.ring(x, y, rr, 3., Color::new(120. / 255., 245. / 255., 1., 0.9));
         let k = hex(0xbbffff); for dx in [-7., 3.] { gx.set_add(false); draw_line((x + dx - 4.) * p, (y - 10.) * p, (x + dx + 3.) * p, (y - 3.) * p, 3. * p, k); draw_line((x + dx + 3.) * p, (y - 3.) * p, (x + dx - 4.) * p, (y + 4.) * p, 3. * p, k); }
         gx.text(&t("dashBtn"), x, y + 15., 11., WHITE, 1, 1); }
-    // вспышка
+    // 4.9.1: кнопка суперспособности — цвет и иконка своей искры
     { let (x, y, rr) = r.flare; let p = gx.px; let fk = g.p.flare.floor() / 100.; let ready = g.p.flare >= 100.;
-        if ready || hl == 2 { gx.glow_scr(true, c::GOLD, x * p, y * p, (rr + 24.) * p, 0.5 + 0.4 * (tm * 9.).sin()); }
-        gx.circle(x, y, rr, Color::new(40. / 255., 20. / 255., 10. / 255., 0.55)); gx.circle(x, y, rr * 0.55, Color::new(1., 213. / 255., 79. / 255., 0.14));
+        let ki = crate::abilities::ab_idx(&g.s.ch); let ac = crate::abilities::ab_col(ki); let acu = crate::abilities::ABILITIES[ki].col; let act = g.ab_t > 0.;
+        if ready || hl == 2 || act { gx.glow_scr(true, acu, x * p, y * p, (rr + 26.) * p, if act { 0.8 } else { 0.5 + 0.4 * (tm * 9.).sin() }); }
+        gx.circle(x, y, rr, Color::new(ac.r * 0.16, ac.g * 0.16, ac.b * 0.18, 0.72)); gx.circle(x, y, rr * 0.62, Color::new(ac.r, ac.g, ac.b, if ready { 0.22 + 0.08 * (tm * 6.).sin() } else { 0.1 }));
         gx.arc(x, y, rr + 5., 0., std::f32::consts::TAU, 4., Color::new(1., 1., 1., 0.08));
-        if fk > 0. { gx.arc(x, y, rr + 5., -std::f32::consts::FRAC_PI_2, -std::f32::consts::FRAC_PI_2 + std::f32::consts::TAU * fk, 4., pal(c::GOLD)); }
-        gx.ring(x, y, rr, 3., if ready || hl == 2 { pal(c::GOLD) } else { Color::new(1., 213. / 255., 79. / 255., 0.35) });
-        let k = pal(c::GOLD); gx.set_add(false); let s = 10.; let pts = [(0., -s), (0.26 * s, -0.3 * s), (s, 0.), (0.26 * s, 0.22 * s), (0., s), (-0.22 * s, 0.22 * s), (-s, 0.), (-0.22 * s, -0.3 * s)];
-        for i in 0..8 { let (a0, a1) = (pts[i], pts[(i + 1) % 8]); draw_triangle(vec2(x * p, (y - 5.) * p), vec2((x + a0.0) * p, (y - 5. + a0.1) * p), vec2((x + a1.0) * p, (y - 5. + a1.1) * p), k); }
-        let lb = crate::abilities::ab_txt(crate::abilities::ab_idx(&g.s.ch)).0; gx.text(lb, x, y + 13., if lb.chars().count() > 7 { 8. } else { 9. }, WHITE, 1, 1); }
+        if fk > 0. { gx.arc(x, y, rr + 5., -std::f32::consts::FRAC_PI_2, -std::f32::consts::FRAC_PI_2 + std::f32::consts::TAU * fk.min(1.), 4., ac); }
+        if act { let k = (g.ab_t / 7.).min(1.); gx.arc(x, y, rr - 4., -std::f32::consts::FRAC_PI_2, -std::f32::consts::FRAC_PI_2 + std::f32::consts::TAU * k, 3., Color::new(1., 1., 1., 0.8)); }
+        gx.ring(x, y, rr, 3., if ready || hl == 2 { ac } else { Color::new(ac.r, ac.g, ac.b, 0.4) });
+        let ic = if ready || act { ac } else { Color::new(ac.r, ac.g, ac.b, 0.55) };
+        crate::abilities::draw_icon(gx, ki, x, y - 6., 11., ic);
+        let lb = crate::abilities::ab_txt(ki).0; gx.text(lb, x, y + 15., if lb.chars().count() > 7 { 8. } else { 9.5 }, WHITE, 1, 1); }
     // джойстик
     if a.joy.id.is_some() && st == State::Play { let j = &a.joy; let gx = &mut a.gx;
         gx.circle(j.ox, j.oy, cfg::JOY_R, Color::new(60. / 255., 200. / 255., 1., 0.07 * 0.9)); gx.ring(j.ox, j.oy, cfg::JOY_R, 2., Color::new(150. / 255., 240. / 255., 1., 0.35 * 0.9));
