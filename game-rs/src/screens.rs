@@ -620,10 +620,19 @@ fn list_frame(a: &mut App, title: &str, extra_h: f32) -> (ListFrame, bool) {
 }
 fn item_panel(gx: &mut Gfx, r: Rect, done: bool, al: f32) { item_card(gx, r, hex(0x5fe9ff), done, al); }
 /// Карточка списка с цветом категории: светлый верх, тёмный низ, цветная полоска слева
+/// 4.9.9: короткое описание искры для магазина — описание, здоровье, атака, имя суперспособности
+fn char_desc(i: usize, d: String) -> String {
+    let en = i18n::is_en(); let ab = crate::abilities::ab_txt(crate::abilities::ab_idx(CHARS[i].id)).1;
+    let d = d.trim().to_string();
+    if en { format!("{d} Health {}. {}.\nSuper: «{ab}»", CHARS[i].hp, crate::content::char_attack(i)) } else { format!("{d} Здоровье {}. {}.\nСупер: «{ab}»", CHARS[i].hp, crate::content::char_attack(i)) }
+}
 fn item_card(gx: &mut Gfx, r: Rect, acc: Color, done: bool, al: f32) {
     // 4.9.6: рамка из набора интерфейса; цвет категории — тонкая полоска-акцент и лёгкий отсвет
-    if gx.has_ui("card") { let e = 3.; gx.ui_9(if done { "card_gold" } else { "card" }, r.x - e, r.y - e, r.w + e * 2., r.h + e * 2., 0.17, 0.3, Color::new(1., 1., 1., al));
-        gx.rrect(r.x + 11., r.y + 12., 2.5, r.h - 24., 1., with_alpha(Color::new(acc.r, acc.g, acc.b, 0.85), al)); return; }
+    // 4.9.9: тонкая стеклянная карточка (без массивной рамки и полосок) — текст не упирается в углы
+    { let _ = acc; let rim = if done { hex(0xffd54f) } else { hex(0x7fd8f0) };
+      ui::rrect_grad(gx, r.x, r.y, r.w, r.h, 14., Color::new(0.07, 0.22, 0.34, 0.80 * al), Color::new(0.03, 0.11, 0.20, 0.88 * al));
+      gx.rrect(r.x + 10., r.y + 2., r.w - 20., 1.5, 1., Color::new(1., 1., 1., 0.16 * al));
+      gx.rrect_line(r.x, r.y, r.w, r.h, 14., if done { 2. } else { 1.5 }, with_alpha(rim, if done { 0.9 } else { 0.45 } * al)); return; }
     let acc = if done { hex(0xffd54f) } else { acc };
     let top = Color::new(acc.r * 0.32 + 0.03, acc.g * 0.32 + 0.05, acc.b * 0.32 + 0.10, 0.78);
     let bot = Color::new(acc.r * 0.10 + 0.02, acc.g * 0.10 + 0.03, acc.b * 0.10 + 0.08, 0.86);
@@ -679,7 +688,7 @@ fn shop(a: &mut App) {
     let dsw = |a: &App, s: &str, sw: bool| a.gx.wrap(s, iw - 24. - bw - 10. - if sw { 46. } else { 0. }, 12.5, 0).len() as f32 * 16.;
     match tab {
         0 => for i in 0..SHOP.len() { let d = i18n::shop(SHOP[i].id).1; items.push(It { kind: 0, i, h: (30. + dsw(a, &d, true) + 12.).max(64.) }); },
-        1 => for i in 0..CHARS.len() { let (_, d) = i18n::chr(CHARS[i].id); let d = d + " "; let _m = 0; let d = d + &tf("healthW", &[&CHARS[i].hp.to_string()]) + " " + crate::content::char_attack(i) + ". " + &crate::abilities::ab_line(crate::abilities::ab_idx(CHARS[i].id)); items.push(It { kind: 1, i, h: (30. + dsw(a, &d, true) + 12.).max(64.) + 18. }); },
+        1 => for i in 0..CHARS.len() { let (_, d) = i18n::chr(CHARS[i].id); let d = char_desc(i, d); items.push(It { kind: 1, i, h: (30. + dsw(a, &d, true) + 12.).max(64.) + 18. }); },
         2 => { items.push(It { kind: 11, i: 0, h: 172. }); for i in 0..SKINS.len() { items.push(It { kind: 2, i, h: 64. }); }
             items.push(It { kind: 6, i: 0, h: 34. }); for i in 0..crate::extras::TRAILS.len() { items.push(It { kind: 7, i, h: 64. }); }
             items.push(It { kind: 6, i: 1, h: 34. }); for i in 0..crate::extras::DEATHS.len() { items.push(It { kind: 8, i, h: 64. }); }
@@ -701,16 +710,13 @@ fn shop(a: &mut App) {
                 if s.max <= 6 { pips(&mut a.gx, f.x + 64. + nw + 8., y + 21., l, s.max, al); } else { let lx = f.x + 64. + nw + 10.; a.gx.text(&format!("{l}/{}", s.max), lx, y + 21., 12., with_alpha(hex(0x8fe8ff), al), 0, 1); pbar(&mut a.gx, lx + 38., y + 18., 48., 5., l as f32 / s.max as f32, hex(0x5fe9ff), al); }
                 a.gx.text_wrap(&d, f.x + 64., y + 40., iw - 76. - bw - 10., 12.5, 16., Color::new(1., 1., 1., 0.8 * al), 0, 0);
                 if mx { a.ui.btn(&mut a.gx, br, &t("max"), St::Cyan, 15., false); } else if price_btn(a, br, &cost.to_string(), true, a.g.s.pearls >= cost, St::Cyan) { a.g.buy_shop(it.i); } }
-            1 => { let ch = &CHARS[it.i]; let own = a.g.s.chars.contains_key(ch.id); let sel = a.g.s.ch == ch.id; let (nm, d) = i18n::chr(ch.id); let d = d + &tf("healthW", &[&ch.hp.to_string()]) + " " + crate::content::char_attack(it.i) + ". " + &crate::abilities::ab_line(crate::abilities::ab_idx(ch.id));
+            1 => { let ch = &CHARS[it.i]; let own = a.g.s.chars.contains_key(ch.id); let sel = a.g.s.ch == ch.id; let (nm, d) = i18n::chr(ch.id); let d = char_desc(it.i, d);
                 item_card(&mut a.gx, r, pal(ch.col), sel, al);
                 { let sk = if let Some(s) = data::char_skin(ch.id) { s } else { match ch.col { c::EMER => "emerald", c::AMBER => "amber", c::FIRE => "ember", c::CORAL => "coral", c::ICE => "frost", c::GHOST => "ghost", c::CRAB => "inferno", c::DRIFT => "jade", c::GOLD => "solar", _ => "azure"  }};
                   let p = a.gx.px; let key = format!("pl_{sk}"); let (cx, cy) = (f.x + 30., y + it.h / 2.); a.gx.glow_scr(true, ch.col, cx * p, cy * p, 32. * p, 0.6 * al);
                   let ph = a.gx.spr_anim(&key).map(|an| a.g.t * 0.5 * an.freq() * std::f32::consts::TAU + it.i as f32).unwrap_or(0.);
                   crate::gfx::set_calm(0.5); a.gx.spr_screen(&key, cx * p, cy * p, -0.3, 1.0 * p, al, false, ph, false); crate::gfx::set_calm(1.);
-                  // 4.9.1: значок суперспособности искры
-                  { let ki = crate::abilities::ab_idx(ch.id); let ac = crate::abilities::ab_col(ki); let (ix, iy) = (f.x + 30., y + it.h - 22.);
-                    a.gx.circle(ix, iy, 13., Color::new(ac.r * 0.15, ac.g * 0.15, ac.b * 0.18, 0.9 * al)); a.gx.ring(ix, iy, 13., 2., Color::new(ac.r, ac.g, ac.b, al));
-                    crate::abilities::draw_icon(&mut a.gx, ki, ix, iy, 7., Color::new(ac.r, ac.g, ac.b, al)); } }
+                  }
                 a.gx.text(&nm, f.x + 58., y + 20., 16., Color::new(1., 1., 1., al), 0, 1); a.gx.text_wrap(&d, f.x + 58., y + 40., iw - 24. - bw - 10. - 46., 12.5, 16., Color::new(1., 1., 1., 0.75 * al), 0, 0);
                 { let pts = a.g.s.mastery.get(ch.id).copied().unwrap_or(0); let ml = crate::extras::mastery_lvl(pts); let nx = crate::extras::mastery_next(ml);
                   let lbl = if i18n::is_en() { format!("Mastery {ml}/10") } else { format!("Мастерство {ml}/10") }; let my = y + it.h - 14.;
