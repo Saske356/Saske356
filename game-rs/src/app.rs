@@ -377,7 +377,7 @@ impl App {
             let (px, py) = (self.g.p.x, self.g.p.y); let (mut fx, mut fy) = (0f32, 0f32);
             for i in 0..self.g.en.n { let e = &self.g.en.items[i]; if e.dead { continue; } let (dx, dy) = (px - e.x, py - e.y); let d2 = (dx * dx + dy * dy).max(100.); if d2 < 300. * 300. { fx += dx / d2 * 900.; fy += dy / d2 * 900.; } }
             for i in 0..self.g.eb.n { let b = &self.g.eb.items[i]; let (dx, dy) = (px - b.x, py - b.y); let d2 = (dx * dx + dy * dy).max(50.); if d2 < 120. * 120. { fx += dx / d2 * 1500.; fy += dy / d2 * 1500.; } }
-            { let d = (px * px + py * py).sqrt().max(1.); let edge: f32 = cfg::ARENA_R - d; if edge < 420. { let k = ((420. - edge) / 420.).powi(2) * 6.; fx -= px / d * k; fy -= py / d * k; } } // 4.9.8: бот не упирается в стену арены
+            { let d = (px * px + py * py).sqrt().max(1.); let k: f32 = (d / 260.).powi(2) * if self.g.god { 4. } else { 1.5 }; fx -= px / d * k; fy -= py / d * k; } // 4.9.11: бот держится у центра арены, не уходит к стене // 4.9.8: бот не упирается в стену арены
             let a = self.now as f32 * 0.4; fx += -py * 0.0015 + a.cos() * 0.4; fy += px * 0.0015 + a.sin() * 0.4; let l = (fx * fx + fy * fy).sqrt().max(1e-3); self.g.jx = fx / l; self.g.jy = fy / l;
             if self.g.p.flare >= 100. && self.try_real.is_none() { self.g.flare_q = true; } if self.g.p.dash_cd <= 0. && fx * fx + fy * fy > 30. { self.g.dash_q = true; }
         }
