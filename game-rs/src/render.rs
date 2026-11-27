@@ -274,9 +274,17 @@ pub fn world(gx: &mut Gfx, g: &mut Game, rdt: f32) {
     for &(x, y, tl) in g.inks.iter() { let k = (tl / 5.).min(1.); let r = 58. * k.max(0.4); gx.glow_world(true, c::PURP, x, y, r * 1.5, 0.25 * k); gx.circle_world(x, y, r, Color::new(0.06, 0.02, 0.1, 0.55 * k), false); gx.arc_world(x, y, r, 0., TAU, 1.5, with_a(hex(0xb57dff), 0.35 * k), false); }
     // 4.7: тайный портал
     if let Some((x, y, l)) = g.portal { let pul = 1. + 0.06 * (t * 3.).sin(); let a = (l / 1.).min(1.); gx.glow_world(true, c::GOLD, x, y, 110. * pul, 0.5 * a);
-        gx.spr_world("portal", x, y, t * 0.7, 0.75 * pul, a, false, 0., false); gx.glow_world(false, c::WHITE, x, y, 14., 0.8 * a); }
+        gx.spr_world("portal", x, y, t * 0.7, 0.75 * pul, a, false, 0., false); gx.glow_world(false, c::WHITE, x, y, 14., 0.8 * a);
+        // 4.9.6: подпись и кольцо-таймер: сколько ещё открыт портал
+        let k = (l / 22.).clamp(0., 1.); let blink = if l < 5. { 0.5 + 0.5 * (t * 10.).sin() } else { 1. };
+        gx.arc_world(x, y, 74., -std::f32::consts::FRAC_PI_2, -std::f32::consts::FRAC_PI_2 + TAU * k, 4., with_a(hex(0xffd54f), 0.85 * a * blink), true); gx.set_add(false);
+        let p = gx.px; let (sx, sy) = (gx.sx(x) / p, gx.sy(y - 92.) / p); let en = crate::i18n::is_en();
+        gx.text_sh(if en { "SECRET ROOM" } else { "ТАЙНАЯ КОМНАТА" }, sx, sy, 12., with_a(hex(0xffe08a), a), 1, 2);
+        gx.text_sh(&format!("{} {}", l.ceil() as i32, if en { "s" } else { "с" }), sx, sy + 14., 11., with_a(WHITE, 0.85 * a * blink), 1, 1); }
     for gy in g.geysers.iter() { let k = 1. - gy.t / 1.3; gx.circle_world(gy.x, gy.y, 75. * k, with_a(hex(0xff6a3d), 0.12 + 0.2 * k), false); gx.arc_world(gy.x, gy.y, 75., 0., TAU, 2.5, with_a(hex(0xffb340), 0.5 + 0.4 * (t * 14.).sin().abs()), false); gx.glow_world(true, c::FIRE, gy.x, gy.y, 30. + 40. * k, 0.4 * k); }
-    for cr in g.bcr.iter() { let pul = 1. + 0.08 * (t * 3. + cr.ph).sin(); gx.glow_world(true, c::ICE, cr.x, cr.y, 46. * pul, 0.5); gx.spr_world("crystal", cr.x, cr.y, t * 0.6 + cr.ph, 1.5 * pul, 1., false, 0., false);
+    for cr in g.bcr.iter() { let pul = 1. + 0.08 * (t * 3. + cr.ph).sin(); gx.glow_world(true, c::AMBER, cr.x, cr.y, 46. * pul, 0.5);
+        // 4.9.6: рядом с искрой видна зона взрыва — понятно, зачем в него стрелять
+        let dd = ((g.p.x - cr.x).powi(2) + (g.p.y - cr.y).powi(2)).sqrt(); if dd < 420. { let al = (1. - (dd - 200.).max(0.) / 220.).clamp(0., 1.) * 0.45; gx.dashed_arc_world(cr.x, cr.y, 130., t * 0.6, 2.5, 12., 10., with_a(hex(0xffb347), al)); } gx.spr_world("crystal", cr.x, cr.y, t * 0.6 + cr.ph, 1.5 * pul, 1., false, 0., false);
         for q in 0..cr.hp as i32 { gx.circle_world(cr.x - 10. + q as f32 * 10., cr.y + 26., 3., WHITE, false); } }
     crate::abilities::draw_world(gx, g); // 4.9.1: графика суперспособностей
     if !g.p.dead { player(gx, g, rdt); }

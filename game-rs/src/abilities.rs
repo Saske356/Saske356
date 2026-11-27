@@ -63,7 +63,9 @@ impl Game {
         let col = ABILITIES[k].col; let (px, py) = (self.p.x, self.p.y);
         self.flash = self.flash.max(0.35); self.hit_stop = 0.1; self.shake(12.); self.snd(Sfx::Flare); self.vibrate(70);
         self.ring(px, py, 6., 140., 0.45, col, 6.); self.burst(px, py, 22, col, 300., 10., 0.6);
-        self.banner(ab_txt(k).1.to_uppercase(), String::new(), PAL_HEX[col as usize], 1.1);
+        // при первом применении — пояснение, что делает суперспособность
+        let first = self.s.hints.get(&format!("ab{k}")).copied().unwrap_or(0) == 0; if first { self.s.hints.insert(format!("ab{k}"), 1); self.dirty = true; }
+        let sub = if first { ab_txt(k).2.to_string() } else { String::new() }; self.banner(ab_txt(k).1.to_uppercase(), sub, PAL_HEX[col as usize], if first { 2.6 } else { 1.1 });
         self.ab_kind = k as u8; self.ab_acc = 0.; self.ab_k = 0; self.ab_x = px; self.ab_y = py; self.ab_hit.clear(); self.ab_pts.clear(); self.ab_seg.clear();
         let tg = self.nearest_enemy(px, py, 900.); self.ab_a = if tg >= 0 { let e = &self.en.items[tg as usize]; (e.y - py).atan2(e.x - px) } else { self.p.ang };
         match k {
@@ -86,6 +88,8 @@ impl Game {
     }
     /// Длящиеся суперспособности (каждый кадр)
     pub fn ability_tick(&mut self, dt: f32) {
+        // 4.9.6: суперспособность зарядилась — звук, вибрация, искорки вокруг кнопки видны и так
+        let full = self.p.flare >= 100.; if full && !self.ab_ready { self.snd(Sfx::Ach); self.vibrate(35); let (x, y) = (self.p.x, self.p.y); self.ring(x, y, 10., 70., 0.4, ABILITIES[ab_idx(&self.s.ch.clone())].col, 4.); } self.ab_ready = full;
         for s in self.ab_seg.iter_mut() { s.4 -= dt; } self.ab_seg.retain(|s| s.4 > 0.);
         if !self.ab_fire.is_empty() { for f in self.ab_fire.iter_mut() { f.2 -= dt; } self.ab_fire.retain(|f| f.2 > 0.); self.ab_fire_t -= dt;
             if self.ab_fire_t <= 0. { self.ab_fire_t = 0.2; let fs = self.ab_fire.clone(); let burn = self.st.dmg * 1.2;

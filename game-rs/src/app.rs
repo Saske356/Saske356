@@ -116,6 +116,9 @@ impl App {
 
     // ---------- реклама ----------
     pub fn ad_ready(&self) -> bool { self.ads.cb.is_none() && platform::ad_ready(0) }
+    /// 4.9.6: возрождение за межстраничную рекламу, если видео с наградой не загружено
+    pub fn ad_show_inter_revive(&mut self) { if self.ads.cb.is_some() || !platform::ad_ready(1) { return; }
+        self.ads.cb = Some(AdCb::Revive); self.ads.place = "inter".into(); self.ads.wd = self.now; self.ads.wd_len = 60.; platform::ad_show(1, "inter"); }
     pub fn ad_show(&mut self, place: &str, cb: AdCb) -> bool {
         if self.ads.cb.is_some() || !platform::ad_ready(0) { self.ad_result(cb, false); return false; }
         self.ads.cb = Some(cb); self.ads.place = place.to_string(); self.ads.wd = self.now; self.ads.wd_len = 90.; platform::ad_show(0, place); true
@@ -251,7 +254,7 @@ impl App {
     }
     fn offer_revive(&mut self) -> bool {
         if self.g.ad_revived || self.g.victory || self.bot { return false; }
-        self.g.state = State::Revive; self.joy = Joy::default(); self.revive_n = 5.; self.show(Scr::Revive); true
+        self.g.state = State::Revive; self.joy = Joy::default(); self.revive_n = 8.; self.show(Scr::Revive); true
     }
 
     // ---------- кадр ----------
@@ -301,6 +304,9 @@ impl App {
         self.au.tick(tr, rdt, paused).await;
         for (i, op, v) in std::mem::take(&mut self.au.cmds) { platform::music(i, op, v); }
 
+        // 4.9.6: карточка рекорда — облик в высоком разрешении (подгрузить один раз)
+        if self.scr == Scr::Card { let id = crate::data::SKINS.get(self.g.p.skin).map(|s| s.id).unwrap_or("azure");
+            if !self.gx.card_tex.contains_key(id) { if let Ok(b) = load_file(&format!("card/pl_{id}.png")).await { let t = Texture2D::from_file_with_format(&b, None); t.set_filter(FilterMode::Linear); self.gx.card_tex.insert(id.to_string(), t); } else { self.gx.card_tex.insert(id.to_string(), Texture2D::empty()); } } }
         // ---- отрисовка ----
         let sh = self.g.shake; let (shx, shy) = if sh > 0.3 { (rand::gen_range(-1f32, 1.) * sh, rand::gen_range(-1f32, 1.) * sh) } else { (0., 0.) };
         self.gx.frame(px, self.g.cam_x, self.g.cam_y, shx, shy);

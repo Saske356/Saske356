@@ -410,8 +410,10 @@ fn revive(a: &mut App) {
     y += a.gx.text_wrap(&t("reviveSub"), w / 2., y, w - 40., 14., 19., Color::new(1., 1., 1., 0.75 * al), 1, 0) + 10.;
     let n = a.revive_n.ceil().max(0.) as i32; let p = a.gx.px; a.gx.glow_scr(true, c::CYAN, w / 2. * p, (y + 30.) * p, 60. * p, 0.5 * al);
     a.gx.text(&n.to_string(), w / 2., y + 30., 54., Color::new(1., 1., 1., al), 1, 2); y += 76.;
-    let ready = a.ad_ready(); let lbl = if ready || a.ads.cb.is_some() { t("adRevive") } else if i18n::is_en() { "Ad is loading…".to_string() } else { "Реклама загружается…".to_string() };
-    if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, 68.), &lbl, St::Gold, 19., ready) { a.click(); a.ad_show("revive", AdCb::Revive); } y += 76.;
+    // 4.9.6: видео с наградой не загружено — возрождение за обычную рекламу (раньше кнопка была неактивна и забег заканчивался)
+    let rew = a.ad_ready(); let inter = a.ads.cb.is_none() && crate::platform::ad_ready(1); let ready = rew || inter;
+    let lbl = if ready || a.ads.cb.is_some() { t("adRevive") } else if i18n::is_en() { "Ad is loading…".to_string() } else { "Реклама загружается…".to_string() };
+    if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, 68.), &lbl, St::Gold, 19., ready) { a.click(); if rew { a.ad_show("revive", AdCb::Revive); } else { a.ad_show_inter_revive(); } } y += 76.;
     if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, 56.), &t("noRevive"), St::Cyan, 18., a.ads.cb.is_none()) { a.click(); a.game_over(); }
 }
 
@@ -487,7 +489,10 @@ fn record_card(a: &mut App, r: Rect) {
     // герой
     let hy = r.y + r.h * 0.36; a.gx.glow_scr(true, skin.pal, cx * p, hy * p, r.w * 0.42 * p, 0.7); a.gx.glow_scr(false, c::WHITE, cx * p, hy * p, 16. * p, 0.7);
     let key = format!("pl_{}", skin.id); let ph = a.gx.spr_anim(&key).map(|an| tm * an.freq() * std::f32::consts::TAU).unwrap_or(0.);
-    a.gx.spr_screen(&key, cx * p, hy * p, -0.25, r.w / 75. * p, al, false, ph, true);
+    // 4.9.6: на карточке — облик в высоком разрешении (assets/card, увеличен нейросетью), без пикселей
+    if let Some(t_) = a.gx.card_tex.get(skin.id).cloned().filter(|t| t.width() > 2.) { let s_ = r.w * 0.78; let k = 1. + 0.02 * (tm * 1.6).sin(); a.gx.set_add(false);
+        draw_texture_ex(&t_, (cx - s_ * k / 2.) * p, (hy - s_ * k / 2.) * p, Color::new(1., 1., 1., al), DrawTextureParams { dest_size: Some(vec2(s_ * k * p, s_ * k * p)), rotation: -0.25 + 0.04 * (tm * 1.3).sin(), ..Default::default() }); }
+    else { a.gx.spr_screen(&key, cx * p, hy * p, -0.25, r.w / 75. * p, al, false, ph, true); }
     // глубина
     let dy = r.y + r.h * 0.62; let ds = format!("{} {}", i18n::fmt_num(depth as i64), t("m"));
     a.gx.glow_scr(true, c::CYAN, cx * p, dy * p, r.w * 0.3 * p, 0.35); a.gx.text(&ds, cx, dy, r.w * 0.15, Color::new(1., 1., 1., al), 1, 2);

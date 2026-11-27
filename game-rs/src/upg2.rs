@@ -59,6 +59,11 @@ impl Game {
     }
     /// Множитель урона по врагу от новых улучшений
     pub fn upg2_mul(&mut self, i: usize) -> f32 {
+        // 4.9.6: «Метка жнеца» (Коса): по врагам слабее 50% здоровья урон выше; с «Жатвой душ» — вдвое выше
+        let mark = if self.p.form == 11 && self.lv(u::EXECUTE) > 0 { let e = &self.en.items[i]; if e.hp < e.max_hp * 0.5 { 1. + 0.15 * self.lv(u::EXECUTE) as f32 * if self.lv(u::REAPER) > 0 { 2. } else { 1. } } else { 1. } } else { 1. };
+        mark * self.upg2_mul0(i)
+    }
+    fn upg2_mul0(&mut self, i: usize) -> f32 {
         let e = &self.en.items[i]; let mut m = 1.;
         let cl = self.lv(u::CHILL); if cl > 0 && (e.slow > 0. || e.freeze > 0.) { m *= 1. + 0.2 * cl as f32; }
         if self.p.evo & crate::content::EV_FROST != 0 && (e.slow > 0. || e.freeze > 0.) { m *= 1.5; }
@@ -68,7 +73,7 @@ impl Game {
     }
     /// После удара: добивание
     pub fn try_execute(&mut self, i: usize) {
-        let l = self.lv(u::EXECUTE); if l == 0 { return; }
+        let l = self.lv(u::EXECUTE); if l == 0 || self.p.form == 11 { return; } // 4.9.6: у Косы — «Метка жнеца» (урон по раненым), казнь — у суперспособности
         let e = &self.en.items[i]; if e.dead || e.hp <= 0. || e.kind.d().boss || e.kind == K::Chest { return; }
         let reaper = self.lv(u::REAPER) > 0; let th = 0.08 + 0.04 * l as f32 + if reaper { 0.08 } else { 0. };
         if e.hp < e.max_hp * th { let (x, y) = (e.x, e.y); self.en.items[i].hp = 0.; self.burst(x, y, 8, c::CORAL, 160., 6., 0.35);

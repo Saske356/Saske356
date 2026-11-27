@@ -102,6 +102,15 @@ pub fn hud(a: &mut App) {
         if dx.abs() > g.vw || dy.abs() > g.vh { let an = dy.atan2(dx); let m = 34.; let sx = (w / 2. + an.cos() * w).clamp(m, w - m); let sy = (h / 2. + an.sin() * h).clamp(m + top + 90., h - m - 120.);
             arrow(gx, sx, sy, an, with_alpha(hex(0xff4f8f), 0.6 + 0.4 * (tm * 8.).sin())); }
     }
+    // 4.9.6: стрелка к порталу за краем экрана
+    if let Some((px_, py_, _)) = g.portal { let (dx, dy) = (px_ - g.cam_x, py_ - g.cam_y); if dx.abs() > g.vw - 10. || dy.abs() > g.vh - 10. {
+        let an = dy.atan2(dx); let m = 34.; let sx = (w / 2. + an.cos() * w).clamp(m, w - m); let sy = (h / 2. + an.sin() * h).clamp(m + top + 90., h - m - 120.);
+        let p = gx.px; gx.glow_scr(true, c::GOLD, sx * p, sy * p, 26. * p, 0.6); arrow(gx, sx, sy, an, with_alpha(hex(0xffe08a), 0.75 + 0.25 * (tm * 7.).sin())); } }
+    // 4.9.6: в тайной комнате — табличка: что делать, прогресс, время
+    if g.room_t > 0. { let (title, goal) = crate::rooms::room_hud(g); let pw = (w - 40.).min(320.); let (x0, y0) = ((w - pw) / 2., top + 96.);
+        gx.ui_9("card_gold", x0 - 4., y0 - 4., pw + 8., 62., 0.17, 0.3, WHITE);
+        gx.text_sh(&title, w / 2., y0 + 14., 13., hex(0xffe08a), 1, 2); gx.text_sh(&goal, w / 2., y0 + 32., 12., WHITE, 1, 1);
+        let k = (g.room_t / crate::rooms::ROOM_T).clamp(0., 1.); gx.rrect(x0 + 16., y0 + 44., pw - 32., 5., 2.5, Color::new(1., 1., 1., 0.15)); gx.rrect(x0 + 16., y0 + 44., (pw - 32.) * k, 5., 2.5, hex(0xffd54f)); }
     // стрелки к сундукам
     for i in 0..g.en.n { let e = &g.en.items[i]; if e.dead || e.kind != K::Chest { continue; } let (dx, dy) = (e.x - g.cam_x, e.y - g.cam_y);
         if dx.abs() <= g.vw - 10. && dy.abs() <= g.vh - 10. { continue; }

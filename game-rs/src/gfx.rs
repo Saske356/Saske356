@@ -27,7 +27,7 @@ pub struct Spr { pub tex: Texture2D, pub h: f32, pub fl: bool, pub anim: Option<
 #[derive(Clone)] pub struct Part { pub key: String, pub hu: f32, pub hv: f32, pub l: f32, pub a: f32, pub w: f32, pub p: f32, pub front: bool }
 
 pub struct Gfx {
-    pub ui: HashMap<String, Texture2D> /* 4.9.4: картинки интерфейса assets/ui */, pub spr: HashMap<String, Spr>, pub glow: Vec<Texture2D>, pub soft: Vec<Texture2D>, pub bul: Vec<Texture2D>, pub icon: HashMap<String, Texture2D>, pub ground: Vec<Texture2D>, pub caustic: Option<Texture2D>, pub keyart: Option<Texture2D>, pub glow_boost: f32, pub clock: f32, pub anim_parts: bool, pub inertia: f32, pub shade: Texture2D, pub tint: Color,
+    pub ui: HashMap<String, Texture2D> /* 4.9.4: картинки интерфейса assets/ui */, pub card_tex: HashMap<String, Texture2D> /* 4.9.6: облики HD для карточки рекорда, грузятся по требованию */, pub spr: HashMap<String, Spr>, pub glow: Vec<Texture2D>, pub soft: Vec<Texture2D>, pub bul: Vec<Texture2D>, pub icon: HashMap<String, Texture2D>, pub ground: Vec<Texture2D>, pub caustic: Option<Texture2D>, pub keyart: Option<Texture2D>, pub glow_boost: f32, pub clock: f32, pub anim_parts: bool, pub inertia: f32, pub shade: Texture2D, pub tint: Color,
     pub font_b: Font, pub font_k: Font, pub font_m: Font, pub add: Material, pub wmat: Material, pub wadd: Material, pub vign: Texture2D, pub hurt: Texture2D, pub white: Texture2D,
     /// Физических пикселей на логический пиксель (как devicePixelRatio)
     pub px: f32, pub w: f32, pub h: f32, pub ws: f32, pub ox: f32, pub oy: f32, pub safe_t: f32, pub safe_b: f32,
@@ -91,7 +91,7 @@ impl Gfx {
         let wadd = load_material(ShaderSource::Glsl { vertex: VS, fragment: FSW }, MaterialParams {
             pipeline_params: PipelineParams { color_blend: Some(BlendState::new(Equation::Add, BlendFactor::Value(BlendValue::SourceAlpha), BlendFactor::One)), ..Default::default() },
             ..Default::default() }).expect("white add material");
-        let mut g = Gfx { ui: HashMap::new(), spr: HashMap::new(), glow: vec![], soft: vec![], bul: vec![], icon: HashMap::new(), ground: vec![], caustic: None, keyart: None, glow_boost: 1., clock: 0., anim_parts: true, inertia: 0., shade: shade_tex(), tint: WHITE, font_b, font_k, font_m, add, wmat, wadd,
+        let mut g = Gfx { card_tex: HashMap::new(), ui: HashMap::new(), spr: HashMap::new(), glow: vec![], soft: vec![], bul: vec![], icon: HashMap::new(), ground: vec![], caustic: None, keyart: None, glow_boost: 1., clock: 0., anim_parts: true, inertia: 0., shade: shade_tex(), tint: WHITE, font_b, font_k, font_m, add, wmat, wadd,
             vign: radial_tex(128, &[(0.0, [0., 0., 0.03, 0.]), (0.62, [0., 0., 0.03, 0.]), (1.0, [0., 0., 0.03, 0.78])]),
             hurt: radial_tex(128, &[(0.0, [1., 0., 0.16, 0.]), (0.62, [1., 0., 0.16, 0.]), (1.0, [1., 0.08, 0.24, 0.85])]),
             white: Texture2D::from_rgba8(1, 1, &[255, 255, 255, 255]), px: 1., w: 390., h: 844., ws: 1., ox: 0., oy: 0., safe_t: 0., safe_b: 0., sqx: 1., sqy: 1., jaw: 0., jrot: 0., defer_white: false, white_q: vec![], additive: false, mat: 0 };

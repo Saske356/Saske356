@@ -13,6 +13,14 @@ fn txt(k: u8) -> (&'static str, &'static str) {
         (1, false) => ("ТАНЕЦ С ИГЛАМИ", "Продержись без единого удара"), (1, true) => ("NEEDLE DANCE", "Survive without a single hit"),
         (_, false) => ("ГОНКА ЗА СВЕТОМ", "Собери все большие огни"), (_, true) => ("CHASE THE LIGHT", "Collect all the big lights") }
 }
+/// 4.9.6: табличка комнаты в интерфейсе: название и цель с прогрессом
+pub fn room_hud(g: &Game) -> (String, String) {
+    let en = i18n::is_en(); let (a, _) = txt(g.room_k); let s = g.room_t.ceil() as i32;
+    let goal = match (g.room_k, en) { (0, false) => format!("Собрано жемчуга: {} · {s} с", g.room_got), (0, true) => format!("Pearls: {} · {s} s", g.room_got),
+        (1, false) => format!("Не попадись иглам · {s} с · награда: сундук"), (1, true) => format!("Don't get hit · {s} s · reward: chest"),
+        (_, false) => format!("Огни: {}/{} · {s} с · награда: 2 улучшения", g.room_got, g.room_need), (_, true) => format!("Lights: {}/{} · {s} s · reward: 2 upgrades", g.room_got, g.room_need) };
+    (a.to_string(), goal)
+}
 impl Game {
     pub fn rooms_tick(&mut self, dt: f32) {
         if self.run_mode != RunMode::Normal && self.run_mode != RunMode::Daily { return; }
@@ -54,7 +62,7 @@ impl Game {
         for i in 0..self.en.n { let e = &mut self.en.items[i]; if !e.dead && e.kind == K::Dart { e.dead = true; } } self.eb.n = 0;
         let (x, y) = (self.p.x, self.p.y); self.ring(x, y, 10., 300., 0.6, c::GOLD, 6.); self.flash = self.flash.max(0.5);
         match (self.room_k, ok) {
-            (0, _) => self.banner(if en { "HOARD COLLECTED".into() } else { "РОССЫПЬ СОБРАНА".into() }, String::new(), 0xffd54f, 2.),
+            (0, _) => { let n = self.room_got; self.banner(if en { "HOARD COLLECTED".into() } else { "РОССЫПЬ СОБРАНА".into() }, if en { format!("+{n} pearls") } else { format!("+{n} жемчуга") }, 0xffd54f, 2.4); }
             (1, true) => { self.spawn_chest(x, y - 90.); if self.run_mode == RunMode::Normal && !self.god { self.s.shards += 1; self.run_shards += 1; self.dirty = true; }
                 self.banner(if en { "FLAWLESS!".into() } else { "БЕЗ ЕДИНОГО УДАРА!".into() }, if en { "A chest and a light shard".into() } else { "Сундук и осколок света".into() }, 0xffd54f, 2.6); }
             (2, true) => { self.level_pending += 2; self.lv_t = -99.; self.level_delay = 0.6; self.banner(if en { "ALL LIGHTS CAUGHT".into() } else { "ВСЕ ОГНИ СОБРАНЫ".into() }, if en { "Two upgrade cards".into() } else { "Две карты улучшений".into() }, 0xffd54f, 2.6); }
