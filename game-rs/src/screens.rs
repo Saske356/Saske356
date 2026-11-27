@@ -345,8 +345,12 @@ fn level(a: &mut App) {
         let ac = pal(colr);
         let (c1, c2, bord) = if syn { (Color::new(110. / 255., 80. / 255., 10. / 255., 0.9), Color::new(40. / 255., 15. / 255., 50. / 255., 0.92), pal(c::GOLD)) }
             else { (Color::new(ac.r * 0.34 + 0.04, ac.g * 0.34 + 0.06, ac.b * 0.34 + 0.12, 0.88), Color::new(ac.r * 0.1 + 0.02, ac.g * 0.1 + 0.03, ac.b * 0.1 + 0.09, 0.92), Color::new(ac.r, ac.g, ac.b, 0.7)) };
-        for q in (1..=3).rev() { let o = q as f32 * 3.; gx.rrect_line(r2.x - o, r2.y - o, r2.w + o * 2., r2.h + o * 2., 18. + o, 3., with_alpha(bord, ca * if syn { 0.2 } else { 0.1 } / q as f32)); }
-        ui::rrect_grad(gx, r2.x, r2.y, r2.w, r2.h, 18., with_alpha(c1, ca), with_alpha(c2, ca)); gx.rrect_line(r2.x, r2.y, r2.w, r2.h, 18., 2., with_alpha(bord, ca));
+        // 4.9.4: рамки карточек из набора интерфейса: обычная, золотая (синергия/развилка), эволюция
+        let evo_c = !pm && a.cards[k] >= crate::content::EVO_BASE && a.cards[k] != U_HEAL; let fr = if evo_c { "card_evo" } else if syn { "card_gold" } else { "card" };
+        if gx.has_ui(fr) { let e = 5.; if syn { gx.glow_scr(true, if evo_c { c::AMETH } else { c::GOLD }, (r2.x + r2.w / 2.) * gx.px, (r2.y + r2.h / 2.) * gx.px, r2.w * 0.6 * gx.px, 0.18 * ca); }
+            gx.ui_9(fr, r2.x - e, r2.y - e, r2.w + e * 2., r2.h + e * 2., 0.17, 0.3, Color::new(1., 1., 1., ca)); let _ = (c1, c2, bord); }
+        else { for q in (1..=3).rev() { let o = q as f32 * 3.; gx.rrect_line(r2.x - o, r2.y - o, r2.w + o * 2., r2.h + o * 2., 18. + o, 3., with_alpha(bord, ca * if syn { 0.2 } else { 0.1 } / q as f32)); }
+        ui::rrect_grad(gx, r2.x, r2.y, r2.w, r2.h, 18., with_alpha(c1, ca), with_alpha(c2, ca)); gx.rrect_line(r2.x, r2.y, r2.w, r2.h, 18., 2., with_alpha(bord, ca)); }
         let icon_key = if pm { crate::content::PATHS[a.cards[k] - 1].icon.to_string() } else if a.cards[k] >= crate::content::EVO_BASE && a.cards[k] != U_HEAL { crate::content::EVOS[a.cards[k] - crate::content::EVO_BASE].icon.to_string() } else if rm { crate::content::RELICS[a.cards[k]].icon.to_string() } else if a.cards[k] == U_HEAL { "heal".to_string() } else { UPG[a.cards[k]].id.to_string() };
         let ic = gx.icon.get(&icon_key).cloned();
         let name = if rm { inf.0.clone() } else if a.cards[k] == U_HEAL && heal_en { "Pure Light".to_string() } else { inf.0.clone() };
@@ -652,8 +656,12 @@ fn shop(a: &mut App) {
     pearl(&mut a.gx, w / 2. - tw / 2. - 10., wy, 7., al); a.gx.text(&ws, w / 2. + 6., wy, 18., with_alpha(hex(0xffe9fb), al), 1, 1);
     let tabs = [t("tabUp"), t("tabChars"), t("tabSkins"), t("tabTal"), if i18n::is_en() { "Pets".to_string() } else { "Питомцы".to_string() }]; let tw_ = (f.w - 24.) / 5.;
     for (i, l) in tabs.iter().enumerate() { let r = Rect::new(f.x + i as f32 * (tw_ + 6.), wy + 18., tw_, 40.);
-        let sel = a.shop_tab as usize == i; let a0 = a.ui.alpha; if !sel { a.ui.alpha = a0 * 0.6; }
-        if a.ui.btn(&mut a.gx, r, l, St::Cyan, 12.5, true) && !sel { a.click(); a.shop_tab = i as u8; a.ui.scroll_reset(1); } a.ui.alpha = a0; }
+        let sel = a.shop_tab as usize == i;
+        if a.gx.has_ui("tab_on") { let e = 4.; a.gx.ui_3(if sel { "tab_on" } else { "tab_off" }, r.x - e, r.y - e, r.w + e * 2., r.h + e * 2., Color::new(1., 1., 1., al)); // 4.9.4: вкладки из набора
+            let fs = 12.5f32.min(12.5 * (r.w - 10.) / a.gx.text_w(l, 12.5, 2).max(1.)); a.gx.text(l, r.x + r.w / 2., r.y + r.h / 2., fs, Color::new(1., 1., 1., if sel { al } else { 0.6 * al }), 1, 2);
+            if a.ui.tap(r) && !sel { a.click(); a.shop_tab = i as u8; a.ui.scroll_reset(1); } }
+        else { let a0 = a.ui.alpha; if !sel { a.ui.alpha = a0 * 0.6; }
+        if a.ui.btn(&mut a.gx, r, l, St::Cyan, 12.5, true) && !sel { a.click(); a.shop_tab = i as u8; a.ui.scroll_reset(1); } a.ui.alpha = a0; } }
     let area = Rect::new(f.x - 4., f.y0, f.w + 8., f.y1 - f.y0);
     // содержимое: собираем высоты
     let tab = a.shop_tab;
@@ -1085,6 +1093,10 @@ fn best(a: &mut App) {
     a.ui.clip_off();
 }
 
+/// 4.9.4: текст отчётов о сбое (Rust + Java), если есть
+fn crash_text() -> Option<String> { let d = crate::platform::files_dir(); let mut s = String::new();
+    for f in ["crash.txt", "crash_java.txt"] { if let Ok(t) = std::fs::read_to_string(format!("{d}/{f}")) { if !t.trim().is_empty() { s += &t; s += "\n"; } } }
+    if s.is_empty() { None } else { Some(s) } }
 fn settings(a: &mut App) {
     let sm = small(a); let tp = top(a); let _ = (sm, tp); let _gh = a.gx.h;
     let (w, h) = (a.gx.w, a.gx.h); let al = a.ui.alpha; let land = a.landscape(); let s = &a.g.s.set;
@@ -1096,6 +1108,7 @@ fn settings(a: &mut App) {
         (format!("{}: {}", t("nums"), on_off(s.nums)), 4), (format!("{}: {}", t("shake"), on_off(s.shake)), 5),
         (format!("{orient_l}: {orient}"), 8), (format!("{}: {}", if i18n::is_en() { "Reminders" } else { "Напоминания" }, on_off(s.notify)), 10), (format!("{}: {}", if i18n::is_en() { "Glow" } else { "Подсветка" }, on_off(s.fx)), 9), (format!("{}: {}", t("lang"), if s.lang == "en" { "English" } else { "Русский" }), 6), (format!("{}: {}", t("fps"), s.fps), 7) ];
     let mut rows = rows; rows.push((if i18n::is_en() { "Transfer progress".to_string() } else { "Перенос прогресса".to_string() }, 11));
+    let crash = crash_text(); if crash.is_some() { rows.push((if i18n::is_en() { "Crash report: copy".to_string() } else { "Отчёт о сбое: скопировать".to_string() }, 12)); }
     // 4.8.1: настройки помещаются между верхом и баннером: в вертикали — две колонки, высота кнопок по месту
     let (bx, bw) = col(a); let gap = if sm { 6. } else { 8. }; let avail = bottom(a) - tp;
     let ncol = 2;
@@ -1110,6 +1123,8 @@ fn settings(a: &mut App) {
         if a.ui.btn(&mut a.gx, Rect::new(cx, cy, cw, bh), l, St::Cyan, fs, true) { act = Some(*id); } }
     y += nrow as f32 * (bh + gap) + 4.;
     if a.ui.btn(&mut a.gx, Rect::new(bx, y, bw, bh), &t("back"), St::Pink, 18., true) { a.click(); let b = a.back_to; a.show(b); return; }
+    if act == Some(12) { a.click(); if let Some(c) = crash_text() { macroquad::miniquad::window::clipboard_set(&c); let d = crate::platform::files_dir(); let _ = std::fs::remove_file(format!("{d}/crash.txt")); let _ = std::fs::remove_file(format!("{d}/crash_java.txt"));
+        a.toast(if i18n::is_en() { "Report copied".into() } else { "Отчёт скопирован".into() }, if i18n::is_en() { "Paste it into the chat with the developer".into() } else { "Вставь его в чат разработчику".into() }); } return; }
     if act == Some(11) { a.click(); a.xfer = None; a.xfer_msg.clear(); a.show(Scr::Xfer); return; }
     if let Some(id) = act { a.click(); let s = &mut a.g.s.set;
         // громкость по кругу: 100 → 80 → 60 → 40 → 20 → выкл → 100

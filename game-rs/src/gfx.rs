@@ -5,6 +5,10 @@ use macroquad::miniquad::{BlendFactor, BlendState, BlendValue, Equation, Pipelin
 use serde_json::Value;
 use std::collections::HashMap;
 
+/// 4.9.4: картинки интерфейса (art_src/tools/ui49.py → assets/ui)
+pub const UI_NAMES: [&str; 44] = ["pip_on", "pip_off", "dash", "dash_cd", "super_frame", "super_on", "pause", "snd_on", "snd_off", "joy_base", "joy_knob", "bar_hp", "bar_xp", "bar_boss", "pill",
+    "ab0", "ab1", "ab2", "ab3", "ab4", "ab5", "ab6", "ab7", "ab8", "ab9", "ab10", "ab11", "ab12", "ab13",
+    "btn_blue", "btn_gold", "btn_pink", "btn_teal", "btn_press", "tab_off", "tab_on", "back", "card", "card_gold", "card_evo", "card_lock", "modal", "pearl", "price"];
 pub fn hex(c: u32) -> Color { Color::from_rgba((c >> 16) as u8, (c >> 8 & 255) as u8, (c & 255) as u8, 255) }
 pub fn hexa(c: u32, a: f32) -> Color { let mut k = hex(c); k.a = a; k }
 pub fn pal(i: u8) -> u32 { crate::data::PAL_HEX[i as usize % crate::data::PAL_HEX.len()] }
@@ -23,7 +27,7 @@ pub struct Spr { pub tex: Texture2D, pub h: f32, pub fl: bool, pub anim: Option<
 #[derive(Clone)] pub struct Part { pub key: String, pub hu: f32, pub hv: f32, pub l: f32, pub a: f32, pub w: f32, pub p: f32, pub front: bool }
 
 pub struct Gfx {
-    pub spr: HashMap<String, Spr>, pub glow: Vec<Texture2D>, pub soft: Vec<Texture2D>, pub bul: Vec<Texture2D>, pub icon: HashMap<String, Texture2D>, pub ground: Vec<Texture2D>, pub caustic: Option<Texture2D>, pub keyart: Option<Texture2D>, pub glow_boost: f32, pub clock: f32, pub anim_parts: bool, pub inertia: f32, pub shade: Texture2D, pub tint: Color,
+    pub ui: HashMap<String, Texture2D> /* 4.9.4: картинки интерфейса assets/ui */, pub spr: HashMap<String, Spr>, pub glow: Vec<Texture2D>, pub soft: Vec<Texture2D>, pub bul: Vec<Texture2D>, pub icon: HashMap<String, Texture2D>, pub ground: Vec<Texture2D>, pub caustic: Option<Texture2D>, pub keyart: Option<Texture2D>, pub glow_boost: f32, pub clock: f32, pub anim_parts: bool, pub inertia: f32, pub shade: Texture2D, pub tint: Color,
     pub font_b: Font, pub font_k: Font, pub font_m: Font, pub add: Material, pub wmat: Material, pub wadd: Material, pub vign: Texture2D, pub hurt: Texture2D, pub white: Texture2D,
     /// Физических пикселей на логический пиксель (как devicePixelRatio)
     pub px: f32, pub w: f32, pub h: f32, pub ws: f32, pub ox: f32, pub oy: f32, pub safe_t: f32, pub safe_b: f32,
@@ -87,7 +91,7 @@ impl Gfx {
         let wadd = load_material(ShaderSource::Glsl { vertex: VS, fragment: FSW }, MaterialParams {
             pipeline_params: PipelineParams { color_blend: Some(BlendState::new(Equation::Add, BlendFactor::Value(BlendValue::SourceAlpha), BlendFactor::One)), ..Default::default() },
             ..Default::default() }).expect("white add material");
-        let mut g = Gfx { spr: HashMap::new(), glow: vec![], soft: vec![], bul: vec![], icon: HashMap::new(), ground: vec![], caustic: None, keyart: None, glow_boost: 1., clock: 0., anim_parts: true, inertia: 0., shade: shade_tex(), tint: WHITE, font_b, font_k, font_m, add, wmat, wadd,
+        let mut g = Gfx { ui: HashMap::new(), spr: HashMap::new(), glow: vec![], soft: vec![], bul: vec![], icon: HashMap::new(), ground: vec![], caustic: None, keyart: None, glow_boost: 1., clock: 0., anim_parts: true, inertia: 0., shade: shade_tex(), tint: WHITE, font_b, font_k, font_m, add, wmat, wadd,
             vign: radial_tex(128, &[(0.0, [0., 0., 0.03, 0.]), (0.62, [0., 0., 0.03, 0.]), (1.0, [0., 0., 0.03, 0.78])]),
             hurt: radial_tex(128, &[(0.0, [1., 0., 0.16, 0.]), (0.62, [1., 0., 0.16, 0.]), (1.0, [1., 0.08, 0.24, 0.85])]),
             white: Texture2D::from_rgba8(1, 1, &[255, 255, 255, 255]), px: 1., w: 390., h: 844., ws: 1., ox: 0., oy: 0., safe_t: 0., safe_b: 0., sqx: 1., sqy: 1., jaw: 0., jrot: 0., defer_white: false, white_q: vec![], additive: false, mat: 0 };
@@ -107,6 +111,7 @@ impl Gfx {
         for i in 0..npal { g.glow.push(tex(&format!("fx/glow{i}.png")).await); g.soft.push(tex(&format!("fx/soft{i}.png")).await); g.bul.push(tex(&format!("fx/bul{i}.png")).await); done += 3.; progress(done / total); }
         for u in crate::data::UPG.iter() { g.icon.insert(u.id.into(), tex(&format!("icon/{}.png", u.id)).await); done += 1.; progress(done / total); }
         g.icon.insert("heal".into(), tex("icon/heal.png").await);
+        for n in UI_NAMES { let t = tex(&format!("ui/{n}.png")).await; if t.width() > 2. { g.ui.insert(n.to_string(), t); } }
         for z in 0..16 { let t = tex(&format!("ground/g{z}.png")).await; // 15 — тайная комната (4.7)
             unsafe { let ctx = get_internal_gl().quad_context; ctx.texture_set_wrap(t.raw_miniquad_id(), TextureWrap::Repeat, TextureWrap::Repeat); }
             g.ground.push(t); done += 1.; progress(done / total); }
@@ -126,6 +131,27 @@ impl Gfx {
     pub fn set_add(&mut self, on: bool) { self.set_mat(on as u8); }
     pub fn set_mat(&mut self, m: u8) { if m == self.mat { return; } self.mat = m; self.additive = m & 1 == 1;
         match m { 0 => gl_use_default_material(), 1 => gl_use_material(&self.add), 2 => gl_use_material(&self.wmat), _ => gl_use_material(&self.wadd) } }
+
+    // ---------- 4.9.4: картинки интерфейса (логические пиксели экрана) ----------
+    pub fn has_ui(&self, n: &str) -> bool { self.ui.contains_key(n) }
+    pub fn ui_size(&self, n: &str) -> (f32, f32) { self.ui.get(n).map(|t| (t.width(), t.height())).unwrap_or((1., 1.)) }
+    /// картинка целиком в прямоугольник
+    pub fn ui_img(&mut self, n: &str, x: f32, y: f32, w: f32, h: f32, col: Color) {
+        let Some(t) = self.ui.get(n).cloned() else { return }; self.set_add(false); let p = self.px;
+        draw_texture_ex(&t, x * p, y * p, col, DrawTextureParams { dest_size: Some(vec2(w * p, h * p)), ..Default::default() });
+    }
+    /// по центру, заданной ширины, с сохранением пропорций
+    pub fn ui_c(&mut self, n: &str, cx: f32, cy: f32, w: f32, col: Color) { let (tw, th) = self.ui_size(n); let h = w * th / tw; self.ui_img(n, cx - w / 2., cy - h / 2., w, h, col); }
+    /// 9 частей: края (доля исходника bx по ширине, by по высоте) не растягиваются, масштаб краёв — по высоте
+    pub fn ui_9(&mut self, n: &str, x: f32, y: f32, w: f32, h: f32, bx: f32, by: f32, col: Color) {
+        let Some(t) = self.ui.get(n).cloned() else { return }; self.set_add(false); let p = self.px; let (tw, th) = (t.width(), t.height());
+        let k = (h / th).min(w / tw * 2.).min(1.6); let (sl, st) = (tw * bx, th * by); let (dl, dt) = ((sl * k).min(w / 2.), (st * k).min(h / 2.));
+        let sx = [0., sl, tw - sl, tw]; let sy = [0., st, th - st, th]; let dx = [x, x + dl, x + w - dl, x + w]; let dy = [y, y + dt, y + h - dt, y + h];
+        for j in 0..3 { for i in 0..3 { let (sw, sh) = (sx[i + 1] - sx[i], sy[j + 1] - sy[j]); let (ddw, ddh) = (dx[i + 1] - dx[i], dy[j + 1] - dy[j]); if sw <= 0. || sh <= 0. || ddw <= 0. || ddh <= 0. { continue; }
+            draw_texture_ex(&t, dx[i] * p, dy[j] * p, col, DrawTextureParams { dest_size: Some(vec2(ddw * p, ddh * p)), source: Some(Rect::new(sx[i], sy[j], sw, sh)), ..Default::default() }); } }
+    }
+    /// капсула (кнопка) любой ширины: концы — по высоте
+    pub fn ui_3(&mut self, n: &str, x: f32, y: f32, w: f32, h: f32, col: Color) { self.ui_9(n, x, y, w, h, 0.36, 0.49, col); }
 
     // ---------- спрайты ----------
     /// Спрайт в мире. ph — фаза анимации (радианы), white — вспышка попадания

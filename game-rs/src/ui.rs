@@ -148,6 +148,10 @@ pub fn style_cols(st: St) -> (Color, Color, Color) {
     }
 }
 pub fn draw_btn(gx: &mut Gfx, r: Rect, st: St, a: f32, held: bool) {
+    // 4.9.4: стеклянные кнопки-капсулы из набора интерфейса (картинка с ореолом — рисуем чуть шире прямоугольника)
+    let n = match (st, held) { (St::Cyan, true) => "btn_press", (St::Cyan, _) => "btn_blue", (St::Gold, _) => "btn_gold", (St::Pink, _) => "btn_pink", (St::Dim, _) => "btn_teal" };
+    if gx.has_ui(n) { let (ex, ey) = (r.h * 0.12, r.h * 0.12); let k = if held && st != St::Cyan { 0.82 } else { 1. };
+        gx.ui_3(n, r.x - ex, r.y - ey, r.w + ex * 2., r.h + ey * 2., Color::new(k, k, k, a)); return; }
     let (top, bot, bord) = style_cols(st); let rad = (r.h * 0.28).min(16.);
     // свечение вокруг (box-shadow)
     let g = if held { 0.7 } else { 0.38 };
@@ -162,10 +166,13 @@ pub fn draw_btn(gx: &mut Gfx, r: Rect, st: St, a: f32, held: bool) {
 }
 /// Полупрозрачная панель (элемент списка)
 pub fn panel(gx: &mut Gfx, r: Rect, rad: f32, fill: Color, border: Color, a: f32) {
+    // 4.9.4: большие окна-диалоги — рамка из набора интерфейса
+    if rad >= 19.5 && r.h >= 180. && gx.has_ui("modal") { let e = 8.; gx.ui_9("modal", r.x - e, r.y - e - 40., r.w + e * 2., r.h + e * 2. + 40., 0.14, 0.2, Color::new(1., 1., 1., a)); return; }
     rrect_grad(gx, r.x, r.y, r.w, r.h, rad, with_alpha(fill, a), with_alpha(fill, a)); gx.rrect_line(r.x, r.y, r.w, r.h, rad, 1., with_alpha(border, a));
 }
 /// Значок жемчужины
 pub fn pearl(gx: &mut Gfx, x: f32, y: f32, r: f32, a: f32) {
+    if gx.has_ui("pearl") { gx.ui_c("pearl", x, y, r * 2.6, Color::new(1., 1., 1., a)); return; }
     let p = gx.px; gx.glow_scr(true, crate::data::c::CORAL, x * p, y * p, r * 2.2 * p, 0.35 * a); gx.set_add(false);
     gx.circle(x, y, r, Color::new(0.79, 0.63, 1., a)); gx.circle(x - r * 0.12, y - r * 0.12, r * 0.75, Color::new(1., 0.84, 0.96, a)); gx.circle(x - r * 0.3, y - r * 0.3, r * 0.35, Color::new(1., 1., 1., a));
 }
@@ -185,6 +192,7 @@ pub fn pbar(gx: &mut Gfx, x: f32, y: f32, w: f32, h: f32, k: f32, col: Color, a:
 }
 /// Метки уровня улучшения
 pub fn pips(gx: &mut Gfx, x: f32, y: f32, n: u8, max: u8, a: f32) -> f32 {
+    if gx.has_ui("pip_on") { for k in 0..max { gx.ui_c(if k < n { "pip_on" } else { "pip_off" }, x + 4. + k as f32 * 10., y, 9.5, Color::new(1., 1., 1., a)); } return max as f32 * 10.; }
     for k in 0..max { let c = if k < n { Color::new(0.25, 0.94, 1., a) } else { Color::new(1., 1., 1., 0.18 * a) }; gx.rrect(x + k as f32 * 10., y - 3.5, 7., 7., 2., c); }
     max as f32 * 10.
 }

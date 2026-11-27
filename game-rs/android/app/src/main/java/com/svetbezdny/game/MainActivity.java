@@ -392,6 +392,13 @@ public class MainActivity extends Activity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // 4.9.4: отчёт о сбое Java — в files/crash_java.txt (игра покажет его в настройках)
+        final Thread.UncaughtExceptionHandler prev = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((th, ex) -> {
+            try { java.io.StringWriter sw = new java.io.StringWriter(); ex.printStackTrace(new java.io.PrintWriter(sw));
+                String txt = "Java " + BuildConfig.VERSION_NAME + " " + new java.util.Date() + " [" + th.getName() + "]\n" + sw;
+                java.io.FileOutputStream f = new java.io.FileOutputStream(new java.io.File(getFilesDir(), "crash_java.txt")); f.write(txt.getBytes("UTF-8")); f.close(); } catch (Throwable t) { }
+            if (prev != null) prev.uncaughtException(th, ex); });
 
         this.requestWindowFeature(Window.FEATURE_NO_TITLE);
 

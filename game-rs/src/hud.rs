@@ -58,8 +58,9 @@ pub fn hud(a: &mut App) {
     let hw = 156f32.min(w * 0.38); let hp = (g.p.hp / g.p.max_hp).max(0.);
     // стеклянная плашка под левым блоком — всё читается на любом дне
     { let ph = if g.boss < 0 { 88. } else { 52. }; crate::ui::rrect_grad(gx, l - 7., top + 1., hw + 14., ph, 12., Color::new(0.02, 0.06, 0.14, 0.42), Color::new(0.02, 0.04, 0.10, 0.22)); }
-    gx.rrect(l, top + 8., hw, 15., 7., Color::new(10. / 255., 20. / 255., 40. / 255., 0.7)); gx.rrect_line(l, top + 8., hw, 15., 7., 1.5, Color::new(1., 120. / 255., 150. / 255., 0.6));
+    gx.rrect(l, top + 8., hw, 15., 7., Color::new(10. / 255., 20. / 255., 40. / 255., 0.7));
     if hp > 0. { gx.rrect(l + 2., top + 10., ((hw - 4.) * hp).max(6.), 11., 5., hex(if hp < 0.3 { 0xff3b5c } else { 0xff6f91 })); }
+    gx.ui_9("bar_hp", l - 13., top + 1., hw + 26., 29., 0.16, 0.45, WHITE); // 4.9.4: рамка полоски здоровья
     gx.text(&format!("{} / {}", g.p.hp.ceil().max(0.), g.p.max_hp), l + hw / 2., top + 16., 11., WHITE, 1, 1);
     let lvs = format!("{} {}", t("lv"), g.p.level); let w0 = gx.text(&lvs, l, top + 38., 14., pal(c::GOLD), 0, 1);
     if g.level_pending > 0 && st == State::Play { gx.text(&format!(" +{}", g.level_pending), l + w0, top + 38., 13., with_alpha(pal(c::GOLD), 0.75 + 0.25 * (tm * 6.).sin()), 0, 1); }
@@ -83,7 +84,7 @@ pub fn hud(a: &mut App) {
     // счёт и комбо
     let cx = w / 2. + 20.; let sc = i18n::fmt_num(g.score as i64);
     let ss = (26. * (120. / gx.text_w(&sc, 26., 2).max(1.)).min(1.)).max(15.); gx.text(&sc, cx, top + 21.5, ss, Color::new(63. / 255., 240. / 255., 1., 0.25), 1, 2); gx.text(&sc, cx, top + 20., ss, WHITE, 1, 2);
-    if g.combo >= 2 { let k = g.combo_t / 2.6; let pop = 1. + (g.combo_t - 2.4).max(0.) * 2.;
+    if g.combo >= 2 { let k = g.combo_t / 2.6; let pop = 1. + (g.combo_t - 2.4).max(0.) * 2.; gx.ui_3("pill", cx - 74., top + 32., 148., 30., Color::new(1., 1., 1., 0.55));
         gx.text(&format!("×{:.1}", g.mult), cx - 38., top + 47., (17. * pop).round(), pal(c::GOLD), 1, 2);
         gx.text(&format!("{} {}", t("comboW"), g.combo), cx + 26., top + 47., 12., Color::new(1., 1., 1., 0.85), 1, 1);
         gx.rect(cx - 60., top + 60., 120., 3., Color::new(1., 213. / 255., 79. / 255., 0.3)); gx.rect(cx - 60., top + 60., 120. * k, 3., pal(c::GOLD)); }
@@ -93,9 +94,10 @@ pub fn hud(a: &mut App) {
     if let Some(bi) = g.boss_idx() { let b = &g.en.items[bi];
         let bw = w - 40. - a.safe[2] - a.safe[3]; let bx = 20. + a.safe[2]; let by = top + 80.;
         let name = crate::tiers::boss_name(b.kind, b.tier, i18n::is_en()).filter(|_| b.tier > 0).map(|s| s.to_string()).unwrap_or_else(|| i18n::boss(ET[b.kind as usize].key));
-        gx.text(&name, w / 2., by - 9., 13., hex(0xff9ac0), 1, 2);
-        gx.rrect(bx, by, bw, 10., 5., Color::new(30. / 255., 0., 20. / 255., 0.75)); gx.rrect_line(bx, by, bw, 10., 5., 1.5, Color::new(1., 80. / 255., 150. / 255., 0.7));
+        gx.text_sh(&name, w / 2., by - 15., 13., hex(0xff9ac0), 1, 2);
+        gx.rrect(bx, by, bw, 10., 5., Color::new(30. / 255., 0., 20. / 255., 0.75));
         let f = (b.hp / b.max_hp).max(0.); if f > 0. { gx.rrect(bx + 2., by + 2., ((bw - 4.) * f).max(4.), 6., 3., hex(if f < 0.5 { 0xff3b6b } else { 0xff4fd8 })); }
+        gx.ui_9("bar_boss", bx - 16., by - 9., bw + 32., 28., 0.13, 0.45, WHITE); // 4.9.4: рамка владыки
         let (dx, dy) = (b.x - g.cam_x, b.y - g.cam_y);
         if dx.abs() > g.vw || dy.abs() > g.vh { let an = dy.atan2(dx); let m = 34.; let sx = (w / 2. + an.cos() * w).clamp(m, w - m); let sy = (h / 2. + an.sin() * h).clamp(m + top + 90., h - m - 120.);
             arrow(gx, sx, sy, an, with_alpha(hex(0xff4f8f), 0.6 + 0.4 * (tm * 8.).sin())); }
@@ -121,45 +123,33 @@ pub fn hud(a: &mut App) {
     }
     // кнопки
     let r = rects(a); let gx = &mut a.gx; let g = &a.g;
-    for (rc, is_pause) in [(r.pause, true), (r.mute, false)] {
-        gx.rrect(rc.x, rc.y, rc.w, rc.h, 14., Color::new(10. / 255., 30. / 255., 50. / 255., 0.55));
-        let off = !g.s.set.sound && !g.s.set.music;
-        gx.rrect_line(rc.x, rc.y, rc.w, rc.h, 14., 2., if !is_pause && off { Color::new(1., 120. / 255., 150. / 255., 0.55) } else { Color::new(120. / 255., 245. / 255., 1., 0.5) });
-        let (cx, cy) = (rc.x + rc.w / 2., rc.y + rc.h / 2.); let k = hex(0xccffff);
-        if is_pause { gx.rrect(cx - 8., cy - 8., 5., 16., 2., k); gx.rrect(cx + 3., cy - 8., 5., 16., 2., k); }
-        else { let p = gx.px; gx.set_add(false); draw_rectangle((cx - 9.) * p, (cy - 3.) * p, 4. * p, 6. * p, k);
-            draw_triangle(vec2((cx - 5.) * p, (cy - 3.) * p), vec2((cx + 1.) * p, (cy - 8.) * p), vec2((cx + 1.) * p, (cy + 8.) * p), k); draw_triangle(vec2((cx - 5.) * p, (cy - 3.) * p), vec2((cx + 1.) * p, (cy + 8.) * p), vec2((cx - 5.) * p, (cy + 3.) * p), k);
-            if off { let rr = hex(0xff8fa8); gx.set_add(false); draw_line((cx + 4.) * p, (cy - 4.) * p, (cx + 10.) * p, (cy + 4.) * p, 2.4 * p, rr); draw_line((cx + 10.) * p, (cy - 4.) * p, (cx + 4.) * p, (cy + 4.) * p, 2.4 * p, rr); }
-            else { gx.arc(cx + 3., cy, 5., -0.8, 0.8, 2., k); gx.arc(cx + 3., cy, 9., -0.8, 0.8, 2., k); } }
-    }
+    for (rc, is_pause) in [(r.pause, true), (r.mute, false)] { // 4.9.4: стеклянные кнопки из набора интерфейса
+        let off = !g.s.set.sound && !g.s.set.music; let n = if is_pause { "pause" } else if off { "snd_off" } else { "snd_on" }; let e = rc.w * 0.08;
+        gx.ui_img(n, rc.x - e, rc.y - e, rc.w + e * 2., rc.h + e * 2., Color::new(1., 1., 1., 0.92)); }
     let hl = if g.tut.on && g.tut.fin <= 0. && g.tut.ok <= 0. { match g.tut.step { 3 => 1, 4 => 2, _ => 0 } } else { 0 };
-    // рывок
+    // рывок — стеклянная сфера; на перезарядке тёмная, сектор показывает остаток
     { let (x, y, rr) = r.dash; let p = gx.px; let pulse = if hl == 1 { 0.5 + 0.5 * (tm * 8.).sin() } else { 0. };
-        gx.glow_scr(true, c::CYAN, x * p, y * p, (rr + 18.) * p, 0.35 + 0.4 * pulse);
-        gx.circle(x, y, rr, Color::new(10. / 255., 40. / 255., 70. / 255., 0.55)); gx.circle(x, y, rr * 0.55, Color::new(63. / 255., 240. / 255., 1., 0.18));
         let cd = if g.st.dash_cd > 0. { (g.p.dash_cd.max(0.) / g.st.dash_cd).min(1.) } else { 0. };
-        if cd > 0. { gx.set_add(false); let n = 40; let (cx, cy) = (x * p, y * p); let a0 = -std::f32::consts::FRAC_PI_2;
+        if cd <= 0. { gx.glow_scr(true, c::CYAN, x * p, y * p, (rr + 18.) * p, 0.3 + 0.4 * pulse); }
+        gx.ui_c(if cd > 0. { "dash_cd" } else { "dash" }, x, y, rr * 2.25, WHITE);
+        if cd > 0. { gx.set_add(false); let n = 40; let (cx, cy) = (x * p, y * p); let a0 = -std::f32::consts::FRAC_PI_2; let rq = rr * 0.86;
             for i in 0..n { let t0 = a0 + std::f32::consts::TAU * cd * i as f32 / n as f32; let t1 = a0 + std::f32::consts::TAU * cd * (i + 1) as f32 / n as f32;
-                draw_triangle(vec2(cx, cy), vec2(cx + t0.cos() * (rr + 3.) * p, cy + t0.sin() * (rr + 3.) * p), vec2(cx + t1.cos() * (rr + 3.) * p, cy + t1.sin() * (rr + 3.) * p), Color::new(0., 0., 0., 0.6)); } }
-        gx.ring(x, y, rr, 3., Color::new(120. / 255., 245. / 255., 1., 0.9));
-        let k = hex(0xbbffff); for dx in [-7., 3.] { gx.set_add(false); draw_line((x + dx - 4.) * p, (y - 10.) * p, (x + dx + 3.) * p, (y - 3.) * p, 3. * p, k); draw_line((x + dx + 3.) * p, (y - 3.) * p, (x + dx - 4.) * p, (y + 4.) * p, 3. * p, k); }
-        gx.text(&t("dashBtn"), x, y + 15., 11., WHITE, 1, 1); }
-    // 4.9.1: кнопка суперспособности — цвет и иконка своей искры
+                draw_triangle(vec2(cx, cy), vec2(cx + t0.cos() * rq * p, cy + t0.sin() * rq * p), vec2(cx + t1.cos() * rq * p, cy + t1.sin() * rq * p), Color::new(0., 0.02, 0.06, 0.45)); } }
+        gx.text_sh(&t("dashBtn"), x, y + rr * 0.66, 10., WHITE, 1, 1); }
+    // 4.9.4: кнопка суперспособности — медальон своей искры; заряжена — золотая сияющая оправа
     { let (x, y, rr) = r.flare; let p = gx.px; let fk = g.p.flare.floor() / 100.; let ready = g.p.flare >= 100.;
         let ki = crate::abilities::ab_idx(&g.s.ch); let ac = crate::abilities::ab_col(ki); let acu = crate::abilities::ABILITIES[ki].col; let act = g.ab_t > 0.;
-        if ready || hl == 2 || act { gx.glow_scr(true, acu, x * p, y * p, (rr + 26.) * p, if act { 0.8 } else { 0.5 + 0.4 * (tm * 9.).sin() }); }
-        gx.circle(x, y, rr, Color::new(ac.r * 0.16, ac.g * 0.16, ac.b * 0.18, 0.72)); gx.circle(x, y, rr * 0.62, Color::new(ac.r, ac.g, ac.b, if ready { 0.22 + 0.08 * (tm * 6.).sin() } else { 0.1 }));
-        gx.arc(x, y, rr + 5., 0., std::f32::consts::TAU, 4., Color::new(1., 1., 1., 0.08));
-        if fk > 0. { gx.arc(x, y, rr + 5., -std::f32::consts::FRAC_PI_2, -std::f32::consts::FRAC_PI_2 + std::f32::consts::TAU * fk.min(1.), 4., ac); }
-        if act { let k = (g.ab_t / 7.).min(1.); gx.arc(x, y, rr - 4., -std::f32::consts::FRAC_PI_2, -std::f32::consts::FRAC_PI_2 + std::f32::consts::TAU * k, 3., Color::new(1., 1., 1., 0.8)); }
-        gx.ring(x, y, rr, 3., if ready || hl == 2 { ac } else { Color::new(ac.r, ac.g, ac.b, 0.4) });
-        let ic = if ready || act { ac } else { Color::new(ac.r, ac.g, ac.b, 0.55) };
-        crate::abilities::draw_icon(gx, ki, x, y - 6., 11., ic);
-        let lb = crate::abilities::ab_txt(ki).0; gx.text(lb, x, y + 15., if lb.chars().count() > 7 { 8. } else { 9.5 }, WHITE, 1, 1); }
+        if ready || hl == 2 || act { gx.glow_scr(true, acu, x * p, y * p, (rr + 30.) * p, if act { 0.85 } else { 0.55 + 0.35 * (tm * 7.).sin() }); }
+        if ready && !act { let s_ = 1. + 0.04 * (tm * 5.).sin(); gx.ui_c("super_on", x, y, rr * 2.75 * s_, Color::new(1., 1., 1., 0.95)); }
+        if act { gx.ui_c("super_frame", x, y, rr * 2.6, WHITE); }
+        let lit = if ready || act { 1. } else { 0.55 }; gx.ui_c(&format!("ab{ki}"), x, y, rr * if ready || act { 1.72 } else { 2.05 }, Color::new(lit, lit, lit, if ready || act { 1. } else { 0.85 }));
+        if !ready && !act { gx.arc(x, y, rr + 4., 0., std::f32::consts::TAU, 4., Color::new(0., 0., 0., 0.35));
+            if fk > 0. { gx.arc(x, y, rr + 4., -std::f32::consts::FRAC_PI_2, -std::f32::consts::FRAC_PI_2 + std::f32::consts::TAU * fk.min(1.), 4., ac); } }
+        if act { let k = (g.ab_t / 7.).min(1.); gx.arc(x, y, rr + 3., -std::f32::consts::FRAC_PI_2, -std::f32::consts::FRAC_PI_2 + std::f32::consts::TAU * k, 3., Color::new(1., 1., 1., 0.9)); }
+        let lb = crate::abilities::ab_txt(ki).0; gx.text_sh(lb, x, y + rr * 0.7, if lb.chars().count() > 7 { 8. } else { 9.5 }, WHITE, 1, 1); }
     // джойстик
     if a.joy.id.is_some() && st == State::Play { let j = &a.joy; let gx = &mut a.gx;
-        gx.circle(j.ox, j.oy, cfg::JOY_R, Color::new(60. / 255., 200. / 255., 1., 0.07 * 0.9)); gx.ring(j.ox, j.oy, cfg::JOY_R, 2., Color::new(150. / 255., 240. / 255., 1., 0.35 * 0.9));
-        gx.circle(j.ox + j.jx * cfg::JOY_R, j.oy + j.jy * cfg::JOY_R, 22., Color::new(170. / 255., 245. / 255., 1., 0.45 * 0.9)); }
+        gx.ui_c("joy_base", j.ox, j.oy, cfg::JOY_R * 2.3, Color::new(1., 1., 1., 0.42)); gx.ui_c("joy_knob", j.ox + j.jx * cfg::JOY_R, j.oy + j.jy * cfg::JOY_R, 46., Color::new(1., 1., 1., 0.8)); }
     if a.g.tut.on && a.g.boss < 0 { tutorial(a); }
 }
 

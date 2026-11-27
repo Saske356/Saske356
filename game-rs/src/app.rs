@@ -52,6 +52,10 @@ fn track_for(g: &Game) -> Option<usize> {
 
 impl App {
     pub async fn new() -> App {
+        // 4.9.4: отчёт о сбое — паника записывается в files/crash.txt (виден в настройках, можно скопировать)
+        { let prev = std::panic::take_hook(); std::panic::set_hook(Box::new(move |info| {
+            let bt = std::backtrace::Backtrace::force_capture(); let txt = format!("Rust {} {}\n{}\n{}", env!("CARGO_PKG_VERSION"), platform::files_dir(), info, bt);
+            let txt: String = txt.chars().take(6000).collect(); let _ = std::fs::write(format!("{}/crash.txt", platform::files_dir()), txt); prev(info); })); }
         // экран загрузки
         clear_background(Color::from_rgba(2, 8, 20, 255)); next_frame().await;
         let data = load_string("data.json").await.unwrap_or_default();
@@ -266,7 +270,7 @@ impl App {
         { let want = if self.fps_cap > 0 { self.fps_cap.min(self.g.s.set.fps) } else { self.g.s.set.fps }; if self.fps_set != want { self.fps_set = want; platform::set_fps(want); } }
         let land = self.landscape(); if land != self.last_land { self.last_land = land; if self.g.state == State::Play && self.ads.cb.is_none() && self.now - self.ads.last > 4. { self.pause(); } } // поворот посреди забега — пауза (но не тот, что делает реклама)
         self.ui.begin(px, rdt);
-        let mut evs = platform::poll(); self.ads_tick(&mut evs);
+        let mut evs = platform::poll(); if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.ads_tick(&mut evs))).is_err() { self.fault("ads"); } // 4.9.4: результат рекламы не роняет игру
         // свернули приложение
         let paused = platform::paused();
         if paused && !self.was_paused { if self.g.state == State::Play { self.pause(); } self.persist(); }
@@ -323,7 +327,7 @@ impl App {
             match c {
                 "play" => self.start_run(RunMode::Normal), "daily" => self.start_run(RunMode::Daily),
                 "title" => { self.g.state = State::Title; self.intro.revealed = true; self.show(Scr::Title); }
-                "shop" => { self.back_to = Scr::Title; self.shop_tab = n as u8; self.show(Scr::Shop); } "ach" => self.show(Scr::Ach), "set" => { self.back_to = Scr::Title; self.show(Scr::Set); } "xfer" => { self.back_to = Scr::Title; self.show(Scr::Xfer); } "clip" => { macroquad::miniquad::window::clipboard_set(&std::fs::read_to_string(arg).unwrap_or_default()); } "xcopy" => { self.xfer_copy(); let _ = std::fs::write(arg, macroquad::miniquad::window::clipboard_get().unwrap_or_default()); } "xpaste" => { self.xfer_paste(); } "try" => { let k: u8 = arg.parse().unwrap_or(0); let i = it.next().and_then(|v| v.parse().ok()).unwrap_or(0); self.try_on(k, i); } "tryoff" => self.try_off(), "abil" => { self.g.p.flare = 100.; self.g.flare_q = true; } "wear" => { self.g.wear_outfit(n as usize); } "outfit" => { let k: usize = arg.parse().unwrap_or(0); self.g.s.outfits[k] = crate::extras::outfit_of(&self.g.s); }
+                "shop" => { self.back_to = Scr::Title; self.shop_tab = n as u8; self.show(Scr::Shop); } "ach" => self.show(Scr::Ach), "set" => { self.back_to = Scr::Title; self.show(Scr::Set); } "xfer" => { self.back_to = Scr::Title; self.show(Scr::Xfer); } "clip" => { macroquad::miniquad::window::clipboard_set(&std::fs::read_to_string(arg).unwrap_or_default()); } "xcopy" => { self.xfer_copy(); let _ = std::fs::write(arg, macroquad::miniquad::window::clipboard_get().unwrap_or_default()); } "xpaste" => { self.xfer_paste(); } "try" => { let k: u8 = arg.parse().unwrap_or(0); let i = it.next().and_then(|v| v.parse().ok()).unwrap_or(0); self.try_on(k, i); } "tryoff" => self.try_off(), "hurt" => { self.g.p.inv = 0.; self.g.hurt_player(n as f32); } "abil" => { self.g.p.flare = 100.; self.g.flare_q = true; } "wear" => { self.g.wear_outfit(n as usize); } "outfit" => { let k: usize = arg.parse().unwrap_or(0); self.g.s.outfits[k] = crate::extras::outfit_of(&self.g.s); }
                 "quest" => self.show(Scr::Quest), "best" => self.show(Scr::Best), "how" => self.show(Scr::How),
                 "xp" => self.g.add_xp(n), "zone" => { self.g.zone = n as u32 - 1; self.g.zone_t = cfg::ZONE_TIME; }
                 "god" => self.g.god = true, "bot" => self.bot = true, "pause" => self.pause(), "over" => self.game_over(), "lvl" => self.open_level_up(),
