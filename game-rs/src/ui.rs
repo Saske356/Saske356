@@ -109,11 +109,11 @@ impl Ui {
         let held = on && self.held(r); let k = if held { 0.95 } else { 1. };
         let rr = Rect::new(r.x + r.w * (1. - k) / 2., r.y + r.h * (1. - k) / 2., r.w * k, r.h * k);
         draw_btn(gx, rr, st, if on { self.alpha } else { self.alpha * 0.38 }, held);
-        let col = match st { St::Gold if gx.has_ui("btn_gold") => hex(0x5a3200), St::Gold => hex(0xfff6d6), _ if gx.has_ui("btn_blue") => hex(0xffffff), _ => hex(0xeaffff) }; // 4.9.5: чёрное с золотом — тёмная надпись на золоте
+        let col = match st { St::Gold if gx.has_ui("btn_gold") => hex(0xffeec0), St::Gold => hex(0xfff6d6), _ if gx.has_ui("btn_blue") => hex(0xffffff), _ => hex(0xeaffff) }; // 4.9.10: золото тёмное — светлая кремовая надпись с тенью
         let lines: Vec<&str> = label.split('\n').collect();
         let lh = size * 1.12; let y0 = rr.y + rr.h / 2. - (lines.len() as f32 - 1.) * lh / 2.;
         for (i, l) in lines.iter().enumerate() { let s = if i == 0 { size } else { size * 0.6 }; let w = gx.text_w(l, s, 2); let s = if w > rr.w - 14. { s * (rr.w - 14.) / w } else { s };
-            gx.text(l, rr.x + rr.w / 2., y0 + i as f32 * lh, s, with_alpha(col, if i == 0 { 1. } else { 0.8 } * self.alpha * if on { 1. } else { 0.5 }), 1, if i == 0 { 2 } else { 0 }); }
+            gx.text_sh(l, rr.x + rr.w / 2., y0 + i as f32 * lh, s, with_alpha(col, if i == 0 { 1. } else { 0.85 } * self.alpha * if on { 1. } else { 0.5 }), 1, if i == 0 { 2 } else { 1 }); }
         on && self.tap(r)
     }
     /// Текстовая ссылка (подчёркнутая)
