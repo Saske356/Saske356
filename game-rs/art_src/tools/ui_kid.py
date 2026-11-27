@@ -31,11 +31,10 @@ class Canvas:
         im = Image.fromarray(np.dstack([rgb, s.a * 255]).clip(0, 255).astype(np.uint8), 'RGBA').resize((s.W, s.H), Image.LANCZOS); im.save(f'{OUT}/{name}.png', optimize=True)
 
 def vgrad(y, y0, y1, top, bot): t = np.clip((y - y0) / max(1e-3, y1 - y0), 0, 1); return mix(top, bot, t)
-WHITE = C(0xffffff); INK = C(0x0d2a4a)
+WHITE = C(0xeaf6ff); INK = C(0x06182c)
 # цвета кнопок: (верх, низ, «подошва», кайма)
-STY = {'aqua': (C(0x6fe3f2), C(0x2aa3d6), C(0x1673a6), C(0xd9fbff)), 'sun': (C(0xffe27a), C(0xf7b43a), C(0xc9781c), C(0xfff6d2)),
-       'coral': (C(0xffa3b8), C(0xf0668a), C(0xb83e63), C(0xffe3ea)), 'slate': (C(0x8fa9c4), C(0x5f7d9c), C(0x3e5873), C(0xe4eef8))}
-
+STY = {'aqua': (C(0x2f86b0), C(0x123a62), C(0x0a2442), C(0x7fd8f0)), 'sun': (C(0xc8902c), C(0x5e3a0e), C(0x3a2306), C(0xffd47a)),
+       'coral': (C(0xa8487e), C(0x45153a), C(0x2c0b25), C(0xff9fd4)), 'slate': (C(0x4d6582), C(0x24354b), C(0x16222f), C(0xa9bdd2))}  # 4.9.7: темнее, ближе к старому дизайну
 def candy(cv, x0, y0, x1, y1, r, sty, pressed=False, lip=7):
     """мармеладная кнопка: тень, «подошва» снизу, тело с градиентом, блик сверху, светлая кайма"""
     top, bot, base, rim = STY[sty]; x, y = cv.x, cv.y; L = 0 if pressed else lip
@@ -70,13 +69,14 @@ def save_candy(name, sty, W=360, H=126, r=34, pressed=False):
 if __name__ == '__main__':
     save_candy('btn_blue', 'aqua'); save_candy('btn_gold', 'sun'); save_candy('btn_pink', 'coral'); save_candy('btn_teal', 'slate'); save_candy('btn_press', 'aqua', pressed=True)
     save_candy('tab_on', 'aqua', 300, 110, 28); cv = Canvas(300, 110); candy(cv, 8, 8, 292, 100, 28, 'slate'); cv.rgb *= 0.8; cv.save('tab_off')
-    cv = Canvas(420, 220); card(cv, 10, 10, 410, 210, 26, C(0x7fdcff)); cv.save('card')
-    cv = Canvas(420, 220); card(cv, 10, 10, 410, 210, 26, C(0xffcf5a), glow=0.35); cv.save('card_gold')
-    cv = Canvas(420, 220); card(cv, 10, 10, 410, 210, 26, C(0xd59bff), glow=0.4); cv.save('card_evo')
-    cv = Canvas(420, 220); card(cv, 10, 10, 410, 210, 26, C(0x8ca3bb), dim=0.75, deco=False); cv.save('card_lock')
-    cv = Canvas(480, 330); card(cv, 14, 14, 466, 316, 34, C(0x8fe6ff), glow=0.25, stripe=False); bubbles(cv, 30, 30, 140, 300, 6, seed=3); cv.save('modal')
-    cv = Canvas(240, 90); card(cv, 8, 12, 232, 78, 30, C(0xffcf5a), stripe=False, deco=False); cv.save('pill')
-    cv = Canvas(300, 100); card(cv, 8, 10, 292, 90, 38, C(0x7fdcff), stripe=False, deco=False); cv.save('price')
+    if False:
+     cv = Canvas(420, 220); card(cv, 10, 10, 410, 210, 26, C(0x7fdcff)); cv.save('card')
+    pass  # 4.9.7: из картинок пользователя (ui49.py)
+    pass  # 4.9.7: из картинок пользователя (ui49.py)
+    pass  # 4.9.7: из картинок пользователя (ui49.py)
+    pass  # 4.9.7: из картинок пользователя (ui49.py)
+    pass  # 4.9.7: из картинок пользователя (ui49.py)
+    pass  # 4.9.7: из картинок пользователя (ui49.py)
     # круглые кнопки забега
     def round_candy(name, sty, glyph, dim=1.):
         cv = Canvas(256, 256); x, y = cv.x, cv.y; top, bot, base, rim = STY[sty]; R = 112
@@ -109,8 +109,8 @@ if __name__ == '__main__':
     def bar(name, W, H, col):
         cv = Canvas(W, H); x, y = cv.x, cv.y; d = sd_rrect(x, y, 8, H * 0.24, W - 8, H * 0.76, H * 0.26)
         cv.put(INK, np.clip(1 - np.maximum(d, 0) / 5, 0, 1) * (d > 0) * 0.35); cv.put(WHITE, cov(np.abs(d) - 2.6) * 0.95); cv.put(col, cov(np.abs(d + 4) - 1) * 0.6); cv.save(name)
-    bar('bar_hp', 420, 100, C(0xff7f9a)); bar('bar_xp', 420, 90, C(0x7fe3ff)); bar('bar_boss', 520, 110, C(0xd59bff))
-    for nm, col in (('pip_on', C(0x6fe3f2)), ('pip_off', C(0x3a5677))):
+    pass  # 4.9.7: из картинок пользователя (ui49.py)
+    for nm, col in ():
         cv = Canvas(40, 40); x, y = cv.x, cv.y; cv.put(INK, cov(sd_circle(x, y, 20, 22, 15)) * 0.5); cv.put(col, cov(sd_circle(x, y, 20, 20, 14))); cv.put(WHITE, cov(np.abs(sd_circle(x, y, 20, 20, 14)) - 1.4) * 0.8)
         cv.put(WHITE, cov(sd_circle(x, y, 15, 15, 4)) * (0.8 if nm == 'pip_on' else 0.25)); cv.save(nm)
     # оправа суперспособности: мягкое солнечное кольцо (заряжено — со звёздочками)
@@ -124,4 +124,9 @@ if __name__ == '__main__':
                 st = rr - (9 + 6 * np.cos(ang * 4)) * (1 if k % 2 == 0 else 0.7); cv.put(WHITE, cov(st))
         cv.save(name)
     ring('super_frame', False); ring('super_on', True)
+    # 4.9.7: голубые элементы из картинок пользователя — темнее и спокойнее (ближе к старому дизайну)
+    import cv2
+    for n, k, sat in (('card', 0.68, 0.8), ('modal', 0.7, 0.8), ('bar_xp', 0.75, 0.85), ('card_lock', 0.85, 1.)):
+        im = np.asarray(Image.open(f'{OUT}/{n}.png').convert('RGBA')).copy(); hsv = cv2.cvtColor(im[:, :, :3], cv2.COLOR_RGB2HSV).astype(np.float32)
+        hsv[:, :, 2] *= k; hsv[:, :, 1] *= sat; im[:, :, :3] = cv2.cvtColor(hsv.clip(0, 255).astype(np.uint8), cv2.COLOR_HSV2RGB); Image.fromarray(im, 'RGBA').save(f'{OUT}/{n}.png', optimize=True)
     print('ok')
