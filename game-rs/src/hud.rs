@@ -153,7 +153,7 @@ pub fn hud(a: &mut App) {
         gx.ring(x, y, rr, 3., if ready || hl == 2 { pal(c::GOLD) } else { Color::new(1., 213. / 255., 79. / 255., 0.35) });
         let k = pal(c::GOLD); gx.set_add(false); let s = 10.; let pts = [(0., -s), (0.26 * s, -0.3 * s), (s, 0.), (0.26 * s, 0.22 * s), (0., s), (-0.22 * s, 0.22 * s), (-s, 0.), (-0.22 * s, -0.3 * s)];
         for i in 0..8 { let (a0, a1) = (pts[i], pts[(i + 1) % 8]); draw_triangle(vec2(x * p, (y - 5.) * p), vec2((x + a0.0) * p, (y - 5. + a0.1) * p), vec2((x + a1.0) * p, (y - 5. + a1.1) * p), k); }
-        gx.text(&t("flareBtn"), x, y + 13., 9., WHITE, 1, 1); }
+        let lb = crate::abilities::ab_txt(crate::abilities::ab_idx(&g.s.ch)).0; gx.text(lb, x, y + 13., if lb.chars().count() > 7 { 8. } else { 9. }, WHITE, 1, 1); }
     // джойстик
     if a.joy.id.is_some() && st == State::Play { let j = &a.joy; let gx = &mut a.gx;
         gx.circle(j.ox, j.oy, cfg::JOY_R, Color::new(60. / 255., 200. / 255., 1., 0.07 * 0.9)); gx.ring(j.ox, j.oy, cfg::JOY_R, 2., Color::new(150. / 255., 240. / 255., 1., 0.35 * 0.9));

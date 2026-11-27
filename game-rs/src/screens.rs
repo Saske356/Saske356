@@ -639,7 +639,7 @@ fn shop(a: &mut App) {
     let dsw = |a: &App, s: &str, sw: bool| a.gx.wrap(s, iw - 24. - bw - 10. - if sw { 46. } else { 0. }, 12.5, 0).len() as f32 * 16.;
     match tab {
         0 => for i in 0..SHOP.len() { let d = i18n::shop(SHOP[i].id).1; items.push(It { kind: 0, i, h: (30. + dsw(a, &d, true) + 12.).max(64.) }); },
-        1 => for i in 0..CHARS.len() { let (_, d) = i18n::chr(CHARS[i].id); let d = d + " "; let _m = 0; let d = d + &tf("healthW", &[&CHARS[i].hp.to_string()]) + " " + crate::content::char_attack(i) + "."; items.push(It { kind: 1, i, h: (30. + dsw(a, &d, true) + 12.).max(64.) + 18. }); },
+        1 => for i in 0..CHARS.len() { let (_, d) = i18n::chr(CHARS[i].id); let d = d + " "; let _m = 0; let d = d + &tf("healthW", &[&CHARS[i].hp.to_string()]) + " " + crate::content::char_attack(i) + ". " + &crate::abilities::ab_line(crate::abilities::ab_idx(CHARS[i].id)); items.push(It { kind: 1, i, h: (30. + dsw(a, &d, true) + 12.).max(64.) + 18. }); },
         2 => { items.push(It { kind: 11, i: 0, h: 172. }); for i in 0..SKINS.len() { items.push(It { kind: 2, i, h: 64. }); }
             items.push(It { kind: 6, i: 0, h: 34. }); for i in 0..crate::extras::TRAILS.len() { items.push(It { kind: 7, i, h: 64. }); }
             items.push(It { kind: 6, i: 1, h: 34. }); for i in 0..crate::extras::DEATHS.len() { items.push(It { kind: 8, i, h: 64. }); }
@@ -661,7 +661,7 @@ fn shop(a: &mut App) {
                 if s.max <= 6 { pips(&mut a.gx, f.x + 64. + nw + 8., y + 21., l, s.max, al); } else { let lx = f.x + 64. + nw + 10.; a.gx.text(&format!("{l}/{}", s.max), lx, y + 21., 12., with_alpha(hex(0x8fe8ff), al), 0, 1); pbar(&mut a.gx, lx + 38., y + 18., 48., 5., l as f32 / s.max as f32, hex(0x5fe9ff), al); }
                 a.gx.text_wrap(&d, f.x + 64., y + 40., iw - 76. - bw - 10., 12.5, 16., Color::new(1., 1., 1., 0.8 * al), 0, 0);
                 if mx { a.ui.btn(&mut a.gx, br, &t("max"), St::Cyan, 15., false); } else if price_btn(a, br, &cost.to_string(), true, a.g.s.pearls >= cost, St::Cyan) { a.g.buy_shop(it.i); } }
-            1 => { let ch = &CHARS[it.i]; let own = a.g.s.chars.contains_key(ch.id); let sel = a.g.s.ch == ch.id; let (nm, d) = i18n::chr(ch.id); let d = d + &tf("healthW", &[&ch.hp.to_string()]) + " " + crate::content::char_attack(it.i) + ".";
+            1 => { let ch = &CHARS[it.i]; let own = a.g.s.chars.contains_key(ch.id); let sel = a.g.s.ch == ch.id; let (nm, d) = i18n::chr(ch.id); let d = d + &tf("healthW", &[&ch.hp.to_string()]) + " " + crate::content::char_attack(it.i) + ". " + &crate::abilities::ab_line(crate::abilities::ab_idx(ch.id));
                 item_card(&mut a.gx, r, pal(ch.col), sel, al);
                 { let sk = if let Some(s) = data::char_skin(ch.id) { s } else { match ch.col { c::EMER => "emerald", c::AMBER => "amber", c::FIRE => "ember", c::CORAL => "coral", c::ICE => "frost", c::GHOST => "ghost", c::CRAB => "inferno", c::DRIFT => "jade", c::GOLD => "solar", _ => "azure"  }};
                   let p = a.gx.px; let key = format!("pl_{sk}"); let (cx, cy) = (f.x + 30., y + it.h / 2.); a.gx.glow_scr(true, ch.col, cx * p, cy * p, 32. * p, 0.6 * al);

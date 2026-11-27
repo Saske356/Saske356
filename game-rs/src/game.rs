@@ -115,7 +115,7 @@ pub struct Game {
     // реликвии
     pub event: u8, pub pet: PetState, pub pet_sh: f32, pub pet2: PetState, pub pet2_id: Option<usize>, pub pet_force: Option<usize>, pub run_shards: u32, pub shards_x2: bool, pub rev: u8 /* 4.7: событие в забеге */, pub rev_t: f32, pub rev_cd: f32, pub rev_acc: f32, pub room_t: f32 /* тайная комната */, pub room_k: u8, pub room_hit: bool, pub room_got: u32, pub room_need: u32, pub room_acc: f32, pub portal: Option<(f32, f32, f32)>, pub portal_zone: u32, pub abyss: u8 /* уровень Бездны забега */, pub region: u8, pub hz_t: f32, pub geysers: Vec<crate::extras::Geyser>, pub bcr: Vec<crate::extras::BoomCrystal>,
     pub inks: Vec<(f32, f32, f32)> /* чернила каракатиц (x, y, осталось) */, pub p_ink: bool,
-    pub serp: Vec<(f32, f32)> /* след головы Левиафана: тело гнётся вдоль него */, pub serp_cache: Vec<(f32, f32, f32)> /* узлы тела на этот кадр */, pub theme: Option<usize> /* 4.8: собранный комплект (на забег) */, pub boss_ph: u8 /* 4.8: фаза владыки 0/1/2 (здоровье >60%, >30%, меньше) — музыка нагнетается */, pub boss_beat: f32,
+    pub serp: Vec<(f32, f32)> /* след головы Левиафана: тело гнётся вдоль него */, pub serp_cache: Vec<(f32, f32, f32)> /* узлы тела на этот кадр */, pub ab_t: f32, pub ab_acc: f32, pub ab_k: u32, pub ab_kind: u8 /* 4.9: особая способность искры */, pub theme: Option<usize> /* 4.8: собранный комплект (на забег) */, pub boss_ph: u8 /* 4.8: фаза владыки 0/1/2 (здоровье >60%, >30%, меньше) — музыка нагнетается */, pub boss_beat: f32,
     pub relics: Vec<u8>, pub relic_pending: u32, pub want_relic: bool, pub path: u8, pub path_pending: bool, pub want_path: bool, pub rel_lives: u32, pub rel_kills: u32, pub rel_blood: f32, pub rel_blood_t: f32, pub rel_ward_t: f32, pub rel_storm_t: f32,
 }
 #[derive(Default, Clone, Copy)] pub struct PetState { pub x: f32, pub y: f32, pub ang: f32, pub t: f32, pub dash: f32, pub tx: f32, pub ty: f32 }
@@ -147,7 +147,7 @@ impl Game {
             decor: vec![], decor_zone: 99, floor: vec![], qz: Qz::default(), jx: 0., jy: 0., dash_q: false, flare_q: false,
             sfx: vec![], toasts: vec![], vib: vec![], want_levelup: false, want_over: false, want_ending: false, dirty: false, run_mode: RunMode::Normal,
             vw: 200., vh: 400., static_q: 0, tut: Tut::default(), touch: true,
-            event: 0, pet: PetState::default(), pet_sh: 0., pet2: PetState::default(), pet2_id: None, pet_force: None, run_shards: 0, shards_x2: false, rev: 0, rev_t: 0., rev_cd: 80., rev_acc: 0., room_t: 0., room_k: 0, room_hit: false, room_got: 0, room_need: 0, room_acc: 0., portal: None, portal_zone: 0, abyss: 0, region: 0, hz_t: 2., geysers: vec![], bcr: vec![], inks: vec![], p_ink: false, serp: vec![], serp_cache: vec![], theme: None, boss_ph: 0, boss_beat: 0., relics: vec![], relic_pending: 0, want_relic: false, path: 0, path_pending: false, want_path: false, rel_lives: 0, rel_kills: 0, rel_blood: 0., rel_blood_t: 0., rel_ward_t: 0., rel_storm_t: 0.,
+            event: 0, pet: PetState::default(), pet_sh: 0., pet2: PetState::default(), pet2_id: None, pet_force: None, run_shards: 0, shards_x2: false, rev: 0, rev_t: 0., rev_cd: 80., rev_acc: 0., room_t: 0., room_k: 0, room_hit: false, room_got: 0, room_need: 0, room_acc: 0., portal: None, portal_zone: 0, abyss: 0, region: 0, hz_t: 2., geysers: vec![], bcr: vec![], inks: vec![], p_ink: false, serp: vec![], serp_cache: vec![], ab_t: 0., ab_acc: 0., ab_k: 0, ab_kind: 0, theme: None, boss_ph: 0, boss_beat: 0., relics: vec![], relic_pending: 0, want_relic: false, path: 0, path_pending: false, want_path: false, rel_lives: 0, rel_kills: 0, rel_blood: 0., rel_blood_t: 0., rel_ward_t: 0., rel_storm_t: 0.,
         };
         g.p.skin = data::SKINS.iter().position(|k| k.id == g.s.skin).unwrap_or(0); g.p.pal = data::SKINS[g.p.skin].pal;
         g.init_floor(); g.build_decor(0);
@@ -442,7 +442,7 @@ impl Game {
                 self.qa_back(q); }
             if self.lv(u::TIDE) > 0 { let mut i = self.eb.n; while i > 0 { i -= 1; let (bx, by) = (self.eb.items[i].x, self.eb.items[i].y);
                 if (bx - self.p.x).powi(2) + (by - self.p.y).powi(2) < 70. * 70. { self.burst(bx, by, 3, c::WHITE, 90., 5., 0.3); self.eb.kill(i); self.score += 2.; } } }
-        } else { let ik = if self.p_ink { 0.5 } else { 1. }; let (tvx, tvy) = (mx * self.st.speed * ik, my * self.st.speed * ik); let a = 1. - (-dt * 12.).exp(); self.p.vx += (tvx - self.p.vx) * a; self.p.vy += (tvy - self.p.vy) * a; }
+        } else { let ik = if self.p_ink { 0.5 } else { 1. } * if self.ab_kind == 6 && self.ab_t > 0. { 1.45 } else { 1. } /* 4.9: Тень быстрее */; let (tvx, tvy) = (mx * self.st.speed * ik, my * self.st.speed * ik); let a = 1. - (-dt * 12.).exp(); self.p.vx += (tvx - self.p.vx) * a; self.p.vy += (tvy - self.p.vy) * a; }
         if self.pull_t > 0. { self.pull_t -= dt; let (dx, dy) = (self.pull_x - self.p.x, self.pull_y - self.p.y); let d = hypot(dx, dy).max(1.); self.p.x += dx / d * 125. * dt; self.p.y += dy / d * 125. * dt; }
         self.p.x += self.p.vx * dt; self.p.y += self.p.vy * dt;
         let d = hypot(self.p.x, self.p.y); let lim = cfg::ARENA_R - self.p.r; if d > lim { self.p.x *= lim / d; self.p.y *= lim / d; }
@@ -487,7 +487,8 @@ impl Game {
         if self.st.nova_lv > 0 { self.p.nova_t -= dt; if self.p.nova_t <= 0. { self.p.nova_t = self.st.nova_cd; self.do_nova(); } }
         if self.st.mine_lv > 0 { self.p.mine_t -= dt; if self.p.mine_t <= 0. { self.p.mine_t = self.st.mine_cd;
             if let Some(m) = self.mines.spawn() { self.mines.items[m] = Mine { x: self.p.x, y: self.p.y, t: 0., r: 85. + 10. * self.st.mine_lv as f32, dmg: self.st.dmg * (2.6 + 0.4 * self.st.mine_lv as f32), inst: false, freeze: self.lv(u::ABYSSICE) > 0 }; } } }
-        if self.flare_q { self.flare_q = false; if self.p.flare >= 100. { self.do_flare(false); } }
+        if self.flare_q { self.flare_q = false; if self.p.flare >= 100. { self.do_ability(); } }
+        self.ability_tick(dt);
     }
     fn strongest_enemy(&self, max_d: f32) -> i32 {
         let (mut best, mut bh) = (-1i32, 0f32); let (mx, my) = (self.vw + 16., self.vh + 16.);
@@ -702,6 +703,7 @@ impl Game {
             if self.st.aegis { let q = self.qa(self.p.x, self.p.y, 150.); for &i in &q { if !self.en.items[i].dead { self.damage_enemy(i, self.st.dmg * 3., true, f32::NAN, 0., 0., Src::None); } } self.qa_back(q); }
             return; }
         if self.relic_dodge() { return; }
+        let dmg = if self.ab_kind == 2 && self.ab_t > 0. { dmg * 0.15 } else { dmg }; // 4.9: каменный панцирь
         let dmg = (dmg * (1. - self.st.armor_pct) - self.st.armor).round().max(1.);
         self.p.hp -= dmg; self.p.inv = 0.9 + 0.3 * self.lv(u::INK) as f32;
         self.no_hit = false; self.hurt_flash = 1.; self.shake(13.); self.hit_stop = 0.06;
