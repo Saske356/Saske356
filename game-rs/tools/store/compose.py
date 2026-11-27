@@ -9,16 +9,18 @@ fb = lambda s: ImageFont.truetype(F + 'Roboto-Black.ttf', s); fm = lambda s: Ima
 
 CAPS = [("Ныряй в бездну", "Последняя искра против тьмы", (0x13, 0x6b, 0x8f)),
         ("Сотни светящихся тварей", "Автострельба — ты только уворачиваешься", (0x2a, 0x1d, 0x6e)),
-        ("67 улучшений", "46 обычных и 21 золотая синергия", (0x10, 0x4a, 0x7a)),
-        ("Реликвии меняют всё", "16 мощных предметов на забег", (0x5a, 0x2a, 0x10)),
-        ("Гигантские боссы", "Живые пасти, щупальца и плавники", (0x4d, 0x0f, 0x3a)),
-        ("Существа оживают", "Плавники, ноги и щупальца двигаются", (0x0f, 0x3d, 0x55)),
-        ("10 искр — 10 атак", "Иглы, шары, молнии, пламя, звёзды…", (0x1a, 0x3f, 0x6a)),
-        ("21 облик Люмена", "Огонь, лёд, пустота, аврора и другие", (0x3a, 0x16, 0x5a))]
+        ("Улучшения под искру", "Синергии и эволюции оружия", (0x10, 0x4a, 0x7a)),
+        ("Суперспособности", "14 искр — 14 суперударов", (0x4a, 0x1f, 0x6e)),
+        ("Гигантские владыки", "Живые пасти, щупальца и плавники", (0x4d, 0x0f, 0x3a)),
+        ("Тайные комнаты", "Испытания с наградой", (0x5a, 0x3a, 0x0c)),
+        ("14 искр — 14 атак", "Бумеранг, коса, мальки, мины…", (0x1a, 0x3f, 0x6a)),
+        ("26 обликов и наряды", "Примерь перед покупкой", (0x3a, 0x16, 0x5a))]
 
 
 def ctext(d, W, y, txt, font, fill):
-    w = d.textlength(txt, font=font); d.text(((W - w) / 2 + 3, y + 4), txt, font=font, fill=(0, 0, 0)); d.text(((W - w) / 2, y), txt, font=font, fill=fill)
+    w = d.textlength(txt, font=font)
+    while w > W - 60 and font.size > 30: font = font.font_variant(size=font.size - 2); w = d.textlength(txt, font=font)
+    d.text(((W - w) / 2 + 3, y + 4), txt, font=font, fill=(0, 0, 0)); d.text(((W - w) / 2, y), txt, font=font, fill=fill)
 
 
 def frame(shot, title, sub, top):
@@ -47,7 +49,7 @@ cov = bg.resize((1920, int(bg.height * 1920 / bg.width))).crop((0, 900, 1920, 19
 d = ImageDraw.Draw(cov, 'RGBA'); d.rectangle((0, 0, 1920, 1080), fill=(0, 10, 25, 110))
 k2 = key.resize((860, 860)); cov.paste(k2, (1000, 110), k2)
 d.text((120, 330), "СВЕТ БЕЗДНЫ", font=fb(130), fill=(255, 255, 255)); d.text((126, 490), "Light of the Abyss", font=fm(64), fill=(190, 240, 255))
-d.text((126, 620), "Подводный шутер-рогалик · боссы · реликвии", font=fm(44), fill=(255, 224, 140))
+d.text((126, 620), "Подводный шутер-рогалик · боссы · суперспособности", font=fm(44), fill=(255, 224, 140))
 cov.save(os.path.join(OUT, 'cover-1920x1080.jpg'), quality=92)
 # финальная заставка трейлера 720×1280
 im = Image.open(os.path.join(TMP, 's1.png')).convert('RGB').resize((720, 1280), Image.LANCZOS).filter(ImageFilter.GaussianBlur(6))
