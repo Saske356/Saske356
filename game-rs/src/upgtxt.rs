@@ -111,22 +111,17 @@ pub fn card(i: usize, n: u8) -> String {
 // для них бессмысленна (выпадать не должна), а часть работает иначе — со своим названием и описанием.
 pub const F_BOOM: u8 = 10; pub const F_SCYTHE: u8 = 11; pub const F_SUMMON: u8 = 12; pub const F_MINER: u8 = 13;
 /// Улучшение не выпадает этой искре
-pub fn form_skip(form: u8, id: &str) -> bool {
-    // 4.9.2: то, что искре не нужно или дублирует её атаку/суперспособность
-    match form {
-        1 => matches!(id, "caliber"),                       // Игла: быстрые тонкие иглы — крупный медленный снаряд противоречит
-        6 => matches!(id, "homing"),                        // Призрак: снаряды и так доворачивают
-        7 => matches!(id, "burn"),                          // Уголёк: и так всё поджигает
-        F_BOOM | F_MINER => matches!(id, "pierce" | "bounce" | "homing" | "overcharge"),
-        F_SCYTHE => matches!(id, "pierce" | "bounce" | "homing" | "overcharge" | "execute"), // казнь — у суперспособности «Жнец»
-        F_SUMMON => matches!(id, "bounce" | "homing" | "overcharge"),
-        _ => false }
-}
+pub fn form_skip(_form: u8, _id: &str) -> bool { false } // 4.9.3: ничего не убираем — бесполезное для искры переделано под неё (form_name/form_desc)
 /// Своё название улучшения для особой искры
 pub fn form_name(form: u8, id: &str) -> Option<&'static str> {
     let en = i18n::is_en();
     let (ru, e) = match (form, id) {
         (f, "flare") if f != 0 => ("Суперзаряд", "Super charge"),
+        (1, "caliber") => ("Закалённые иглы", "Tempered needles"), (6, "homing") => ("Призрачная охота", "Ghost hunt"), (7, "burn") => ("Жар", "Searing heat"),
+        (F_BOOM, "pierce") => ("Дальний бросок", "Long throw"), (F_BOOM, "bounce") => ("Кружение", "Hover spin"), (F_BOOM, "homing") => ("Наводка", "Guidance"), (F_BOOM, "overcharge") => ("Тяжёлый бумеранг", "Heavy boomerang"),
+        (F_SCYTHE, "pierce") => ("Длинный оборот", "Long spin"), (F_SCYTHE, "bounce") => ("Вихрь лезвий", "Blade whirl"), (F_SCYTHE, "homing") => ("Притягивающие косы", "Pulling blades"),
+        (F_SUMMON, "bounce") => ("Долгожители", "Long-lived fry"), (F_SUMMON, "homing") => ("Чутьё", "Keen sense"), (F_SUMMON, "overcharge") => ("Вожак", "Pack leader"),
+        (F_MINER, "pierce") => ("Шрапнель", "Shrapnel"), (F_MINER, "bounce") => ("Прыгающие мины", "Bouncing mines"), (F_MINER, "homing") => ("Магнитные мины", "Magnetic mines"), (F_MINER, "overcharge") => ("Мегамина", "Mega mine"),
         (F_SCYTHE, "multi") => ("Ещё лезвие", "Extra blade"), (F_SCYTHE, "caliber") => ("Длинные косы", "Long scythes"), (F_SCYTHE, "rate") => ("Быстрый взмах", "Quick swing"),
         (F_SCYTHE, "dmg") => ("Острые лезвия", "Keen blades"), (F_SCYTHE, "salvo") => ("Круговой взмах", "Full circle"), (F_SCYTHE, "overcharge") => ("Жатва", "Harvest"), (F_SCYTHE, "echo") => ("Второй взмах", "Double swing"),
         (F_BOOM, "multi") => ("Ещё бумеранг", "Extra boomerang"), (F_BOOM, "caliber") => ("Тяжёлые бумеранги", "Heavy boomerangs"), (F_BOOM, "rate") => ("Быстрый бросок", "Quick throw"),
@@ -143,6 +138,23 @@ pub fn form_desc(form: u8, id: &str, n: u8) -> Option<String> {
     let en = i18n::is_en(); let l = n as f32; let s = |ru: String, e: String| Some(if en { e } else { ru });
     match (form, id) {
         (f, "flare") if f != 0 => s(format!("Суперспособность заряжается на {}% быстрее", pct(0.3 * l)), format!("Your super ability charges {}% faster", pct(0.3 * l))),
+        (1, "caliber") => s(format!("Урон игл +{}% и они летят на {}% быстрее — без потери скорострельности", pct(0.12 * l), pct(0.1 * l)), format!("Needle damage +{}% and they fly {}% faster — no fire rate loss", pct(0.12 * l), pct(0.1 * l))),
+        (6, "homing") => s(format!("Призрачные снаряды доворачивают к цели сильнее и дальше (сила {}/3)", n), format!("Ghost shots curve harder and from farther (strength {}/3)", n)),
+        (7, "burn") => s(format!("Твоё пламя жжёт сильнее: горение {}% урона в секунду (без «Жара» — 28%)", pct(0.28 + 0.12 * l)), format!("Your flame burns hotter: {}% damage per second (28% without it)", pct(0.28 + 0.12 * l))),
+        (F_BOOM, "pierce") => s(format!("Бумеранг летит на {}% дальше перед возвратом", pct(0.24 * l)), format!("The boomerang flies {}% farther before returning", pct(0.24 * l))),
+        (F_BOOM, "bounce") => s(format!("В дальней точке бумеранг {} с кружит на месте и рубит всех вокруг", f(0.15 * l)), format!("At the far point the boomerang hovers {} s, cutting everything around", f(0.15 * l))),
+        (F_BOOM, "homing") => s(format!("Бумеранг на лету доворачивает к врагам (сила {}/3)", n), format!("The boomerang curves toward foes in flight (strength {}/3)", n)),
+        (F_BOOM, "overcharge") => s(format!("Каждый {}-й бросок — огромный бумеранг: {}% урона", 7 - n as u32, pct(3. + l)), format!("Every {}th throw is a huge boomerang: {}% damage", 7 - n as u32, pct(3. + l))),
+        (F_SCYTHE, "pierce") => s(format!("Косы кружат вокруг тебя на {} с дольше", f(0.2 * l)), format!("Blades keep circling you {} s longer", f(0.2 * l))),
+        (F_SCYTHE, "bounce") => s(format!("Косы вращаются на {}% быстрее — больше ударов за оборот", pct(0.2 * l)), format!("Blades spin {}% faster — more hits per turn", pct(0.2 * l))),
+        (F_SCYTHE, "homing") => s(format!("Задетых косой врагов подтягивает к тебе (сила {}/3)", n), format!("Foes hit by blades are pulled toward you (strength {}/3)", n)),
+        (F_SUMMON, "bounce") => s(format!("Мальки живут на {} с дольше и успевают укусить больше", f(0.8 * l)), format!("Fry live {} s longer and bite more", f(0.8 * l))),
+        (F_SUMMON, "homing") => s(format!("Мальки замечают врагов на {} дальше и разворачиваются резче", f(140. * l)), format!("Fry spot foes {} farther and turn sharper", f(140. * l))),
+        (F_SUMMON, "overcharge") => s(format!("Каждый {}-й раз — огромный малёк-вожак: {}% урона", 7 - n as u32, pct(3. + l)), format!("Every {}th time — a huge leader fry: {}% damage", 7 - n as u32, pct(3. + l))),
+        (F_MINER, "pierce") => s(format!("Взрыв мины разбрасывает шрапнель: ещё {}% урона в радиусе на {}% шире", pct(0.2 * l), pct(0.35 * l)), format!("Mine blasts throw shrapnel: another {}% damage in a {}% wider radius", pct(0.2 * l), pct(0.35 * l))),
+        (F_MINER, "bounce") => s(format!("После взрыва рядом появляются малые мины: {} шт. (50% урона)", n), format!("After a blast {} small mines appear nearby (50% damage)", n)),
+        (F_MINER, "homing") => s(format!("Мины сами подползают к ближайшему врагу ({} в секунду)", 45 * n as u32), format!("Mines creep toward the nearest foe ({} per second)", 45 * n as u32)),
+        (F_MINER, "overcharge") => s(format!("Каждая {}-я мина — мегамина: {}% урона и почти вдвое шире", 7 - n as u32, pct(3. + l)), format!("Every {}th mine is a mega mine: {}% damage and nearly twice as wide", 7 - n as u32, pct(3. + l))),
         (F_SCYTHE, "multi") => s(format!("+1 лезвие (будет {}): косы расходятся по кругу равномерно, закрывая тебя со всех сторон", 1 + n), format!("+1 blade (total {}): blades spread evenly in a circle around you", 1 + n)),
         (F_SCYTHE, "caliber") => s(format!("Косы раскручиваются дальше (+{}% радиуса) и шире, урон +{}%, но взмахи на {}% реже", pct(0.18 * l), pct(0.12 * l), pct(0.04 * l)), format!("Blades spin out farther (+{}% reach) and wider, damage +{}%, swings {}% rarer", pct(0.18 * l), pct(0.12 * l), pct(0.04 * l))),
         (F_SCYTHE, "rate") => s(format!("Новые косы запускаются на 18% чаще (всего +{}%)", pct(0.18 * l)), format!("New blades launch 18% more often (total +{}%)", pct(0.18 * l))),

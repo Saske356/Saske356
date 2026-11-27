@@ -47,7 +47,7 @@ pub struct Enemy {
 #[derive(Clone, Default)] pub struct Text { pub x: f32, pub y: f32, pub vy: f32, pub life: f32, pub max: f32, pub s: String, pub crit: bool, pub col: u32, pub big: bool, pub owner: u32, pub val: f32 }
 #[derive(Clone, Default)] pub struct Bolt { pub pts: [f32; 16], pub life: f32, pub col: u8 }
 #[derive(Clone, Default)] pub struct Pick { pub x: f32, pub y: f32, pub vx: f32, pub vy: f32, pub kind: u8, pub val: f32, pub mag: bool, pub t: f32 }
-#[derive(Clone, Default)] pub struct Mine { pub x: f32, pub y: f32, pub t: f32, pub r: f32, pub dmg: f32, pub inst: bool, pub freeze: bool }
+#[derive(Clone, Default)] pub struct Mine { pub x: f32, pub y: f32, pub t: f32, pub r: f32, pub dmg: f32, pub inst: bool, pub freeze: bool, pub own: u8 /* 4.9.3: 1 — мина Минёра, 2 — осколочная (от «Прыгающих мин») */ }
 #[derive(Clone, Default)] pub struct Ghost { pub on: bool, pub kind: K, pub bare: bool, pub tier: u8, pub x: f32, pub y: f32, pub a: f32, pub s: f32, pub t: f32 }
 
 /// Пул с удалением перестановкой (как Pool в веб-версии)
@@ -193,11 +193,11 @@ impl Game {
         st.rage = 0.12 * lv(u::RAGE); st.ink_lv = lv(u::INK) as u32; st.vortex_lv = lv(u::VORTEX) as u32;
         st.thorns = if lv(u::THORNS) > 0. { st.dmg * (2.5 + 1.5 * lv(u::THORNS)) } else { 0. };
         st.xp_mul = (1. + 0.03 * sh("xp")) * (1. + 0.1 * lv(u::GREED)); st.bspd = 640. * if lv(u::HUNTER) > 0. { 1.15 } else { 1. }; st.range = 540.;
-        { let cl = self.p.up[u::CALIBER] as f32; self.st.dmg *= 1. + 0.12 * cl; self.st.rate *= 1. - 0.04 * cl; self.st.xp_mul *= 1. + 0.05 * self.p.up[u::FORTUNE] as f32; }
+        { let cl = self.p.up[u::CALIBER] as f32; self.st.dmg *= 1. + 0.12 * cl; if self.p.form != 1 { self.st.rate *= 1. - 0.04 * cl; } self.st.xp_mul *= 1. + 0.05 * self.p.up[u::FORTUNE] as f32; }
         let glass = self.mutf("glass");
         let st = &mut self.st;
         st.dmg *= (1. + 0.05 * if self.s.tal("t_dmg") { 1. } else { 0. }) * if glass { 1.5 } else { 1. };
-        if chi == 7 && st.burn <= 0. { st.burn = st.dmg * 0.28; } // Уголёк — всё поджигает
+        if chi == 7 { st.burn = st.dmg * (0.28 + 0.12 * lv(u::BURN)) * if lv(u::WILDFIRE) > 0. { 1.3 } else { 1. }; } // Уголёк — всё поджигает; «Жар» усиливает
         st.orb_dmg = st.dmg * 0.9;
         st.rate *= 1. + 0.06 * if self.s.tal("t_rate") { 1. } else { 0. }; st.crit += 0.05 * if self.s.tal("t_crit") { 1. } else { 0. };
         st.armor_pct += 0.05 * if self.s.tal("t_arm") { 1. } else { 0. }; st.regen += 0.3 * if self.s.tal("t_regen") { 1. } else { 0. };
@@ -407,12 +407,16 @@ impl Game {
     }
     pub fn fire_pb(&mut self, x: f32, y: f32, a: f32, dmg: f32, split: bool) -> Option<usize> {
         let i = self.pb.spawn()?; let s = self.st.bspd; let crit = self.rand() < self.st.crit;
-        let f = self.p.form; let r0 = 4. + 2. * self.lv(u::CALIBER) as f32;
+        let f = self.p.form; let r0 = 4. + if f == 1 { 0. } else { 2. * self.lv(u::CALIBER) as f32 }; let s = if f == 1 { s * (1. + 0.1 * self.lv(u::CALIBER) as f32) } else { s }; // 4.9.3: Закалённые иглы — быстрее, не крупнее
         // форма атаки искры: (скорость, радиус, время жизни)
         let (ks, kr, life) = match f { 1 => (1.35, 0.8, 0.95), 2 => (0.72, 1.7, 1.5), 3 => (1.1, 0.9, 0.5), 4 => (0.85, 1.5, 1.2), 5 => (1.05, 1.0, 1.05), 6 => (1.0, 1.1, 1.3), 7 => (0.8, 1.4, 0.4), 8 => (0.95, 1.2, 1.4), 9 => (1.1, 1.1, 1.15), 10 => (1.05, 1.5, 1.25), 11 => (0., 1.6, 0.75), 12 => (0.42, 1.3, 2.6), 13 => (0.75, 1.5, 0.55), _ => (1., 1., 1.1) };
         self.pb.items[i] = PBul { x, y, vx: a.cos() * s * ks, vy: a.sin() * s * ks, dmg, pierce: self.st.pierce, bounce: self.st.bounce, life, crit, tgt: -1, split, r: r0 * kr, form: f, a0: a, ..Default::default() };
         // 4.7: бумеранг и коса пробивают всех, призыватель — мальки без пробития и отскоков
-        match f { 10 | 11 => { self.pb.items[i].pierce = 99; self.pb.items[i].bounce = 0; } 12 => { self.pb.items[i].bounce = 0; } _ => {} }
+        match f { 10 | 11 => { self.pb.items[i].pierce = 99; self.pb.items[i].bounce = 0; } 12 => { self.pb.items[i].bounce = 0; } 13 => { self.pb.items[i].bounce = 0; } _ => {} }
+        // 4.9.3: переосмысленные улучшения особых искр
+        match f { 10 => { self.pb.items[i].life += 0.12 * self.lv(u::PIERCE) as f32 + 0.15 * self.lv(u::BOUNCE) as f32; }
+            11 => { self.pb.items[i].life += 0.2 * self.lv(u::PIERCE) as f32; }
+            12 => { self.pb.items[i].life += 0.8 * self.lv(u::BOUNCE) as f32; } _ => {} }
         Some(i)
     }
     pub fn e_shoot(&mut self, x: f32, y: f32, a: f32, mut spd: f32, r: f32, dmg: f32, col: u8, spin: f32) -> Option<usize> {
@@ -468,7 +472,7 @@ impl Game {
                 // Шквал — дробь: ещё два коротких снаряда веером
                 if self.p.form == 3 { for k in [-1f32, 1.] { let j = self.rr(-0.06, 0.06); self.fire_pb(px + a.cos() * 14., py + a.sin() * 14., a + k * (sp * (n as f32) * 0.5 + 0.2) + j, self.st.dmg * 0.6, false); } }
                 if self.st.echo_ch > 0. && self.rand() < self.st.echo_ch { for i in 0..n { let j = self.rr(-0.05, 0.05); self.fire_pb(px + a.cos() * 14., py + a.sin() * 14., a + (i as f32 - (n - 1) as f32 / 2.) * sp + j, self.st.dmg * 0.8, true); } self.part(px, py, 0., 0., 0.2, 14., c::ICE, 1.); }
-                if self.st.over > 0 { self.p.shot_n += 1; if self.p.shot_n % self.st.over == 0 { if let Some(hb) = self.fire_pb(px + a.cos() * 16., py + a.sin() * 16., a, self.st.dmg * (3. + self.lv(u::OVERCHARGE) as f32), false) { self.pb.items[hb].pierce += 4; self.pb.items[hb].r = 7.; } self.snd(Sfx::Nova); self.ring(px, py, 6., 40., 0.25, c::GOLD, 4.); } }
+                if self.st.over > 0 { self.p.shot_n += 1; if self.p.shot_n % self.st.over == 0 { if let Some(hb) = self.fire_pb(px + a.cos() * 16., py + a.sin() * 16., a, self.st.dmg * (3. + self.lv(u::OVERCHARGE) as f32), false) { self.pb.items[hb].pierce += 4; self.pb.items[hb].r = if self.p.form >= 10 { self.pb.items[hb].r * 2.4 } else { 7. }; } self.snd(Sfx::Nova); self.ring(px, py, 6., 40., 0.25, c::GOLD, 4.); } }
                 self.part(px + a.cos() * 18., py + a.sin() * 18., a.cos() * 60., a.sin() * 60., 0.12, 10., self.p.pal, 0.);
                 self.snd(Sfx::Shoot); self.on_shot(px, py, a); self.mastery_shot(px, py);
             } else { self.p.fire_t = 0.05; }
@@ -486,7 +490,7 @@ impl Game {
                 self.qa_back(q); } }
         if self.st.nova_lv > 0 { self.p.nova_t -= dt; if self.p.nova_t <= 0. { self.p.nova_t = self.st.nova_cd; self.do_nova(); } }
         if self.st.mine_lv > 0 { self.p.mine_t -= dt; if self.p.mine_t <= 0. { self.p.mine_t = self.st.mine_cd;
-            if let Some(m) = self.mines.spawn() { self.mines.items[m] = Mine { x: self.p.x, y: self.p.y, t: 0., r: 85. + 10. * self.st.mine_lv as f32, dmg: self.st.dmg * (2.6 + 0.4 * self.st.mine_lv as f32), inst: false, freeze: self.lv(u::ABYSSICE) > 0 }; } } }
+            if let Some(m) = self.mines.spawn() { self.mines.items[m] = Mine { own: 0, x: self.p.x, y: self.p.y, t: 0., r: 85. + 10. * self.st.mine_lv as f32, dmg: self.st.dmg * (2.6 + 0.4 * self.st.mine_lv as f32), inst: false, freeze: self.lv(u::ABYSSICE) > 0 }; } } }
         if self.flare_q { self.flare_q = false; if self.p.flare >= 100. { self.do_ability(); } }
         self.ability_tick(dt);
     }
@@ -642,7 +646,7 @@ impl Game {
         if e.kind == K::Bomber && src != Src::Cleanup { let n = 10 + self.zone; for k in 0..n { let j = self.rr(-0.1, 0.1); self.e_shoot(e.x, e.y, k as f32 * TAU / n as f32 + j, 150. + self.zone as f32 * 4., 5., 10. * self.dmg_scale, c::CORAL, 0.); }
             self.ring(e.x, e.y, 6., 70., 0.4, c::CORAL, 4.); self.burst(e.x, e.y, 16, c::CORAL, 220., 8., 0.5); self.snd(Sfx::Boom(false)); self.shake(6.); }
         if e.kind == K::Spawner && src != Src::Cleanup { self.spawn_fry(i, 4); }
-        if src == Src::Nova && self.lv(u::SUPERNOVA) > 0 { if let Some(m) = self.mines.spawn() { self.mines.items[m] = Mine { x: e.x, y: e.y, t: 99., r: 60., dmg: self.st.dmg * 1.5, inst: true, freeze: false }; } }
+        if src == Src::Nova && self.lv(u::SUPERNOVA) > 0 { if let Some(m) = self.mines.spawn() { self.mines.items[m] = Mine { own: 0, x: e.x, y: e.y, t: 99., r: 60., dmg: self.st.dmg * 1.5, inst: true, freeze: false }; } }
         if e.kind == K::Chest { let n = 3 + (self.zone / 4).min(3); for _ in 0..n { let (a, b) = (self.rr(-26., 26.), self.rr(-26., 26.)); self.drop_pick(e.x + a, e.y + b, 3, 1.); }
             self.level_pending += 1; self.lv_t = -99.; self.level_delay = self.level_delay.max(0.5); self.chests += 1; self.quest_add("chest", 1);
             self.burst(e.x, e.y, 30, c::GOLD, 260., 9., 0.7); self.ring(e.x, e.y, 10., 140., 0.5, c::GOLD, 5.); self.snd(Sfx::Level); self.banner(t("chestOpen"), t("chestOpenS"), 0xffd54f, 2.2); }
@@ -787,10 +791,16 @@ impl Game {
         let mut i = self.mines.n;
         while i > 0 { i -= 1; self.mines.items[i].t += dt; let m = self.mines.items[i].clone(); let mut boom = m.inst || m.t > 7.;
             if !boom && m.t > 0.4 { let q = self.qa(m.x, m.y, 100.); for &k in &q { let e = &self.en.items[k]; if e.dead { continue; } let rr = 34. + e.r * e.scale; if (e.x - m.x).powi(2) + (e.y - m.y).powi(2) < rr * rr { boom = true; break; } } self.qa_back(q); }
-            if boom { self.mines.kill(i); self.explode(m.x, m.y, m.r, m.dmg, m.freeze); if i > self.mines.n { i = self.mines.n; } } }
+            // 4.9.3: «Магнитные мины» Минёра подползают к врагу
+            if !boom && m.own >= 1 && self.p.form == 13 && self.st.homing > 0 { let tg = self.nearest_enemy(m.x, m.y, 260.); if tg >= 0 { let (ex, ey) = (self.en.items[tg as usize].x, self.en.items[tg as usize].y); let d = hypot(ex - m.x, ey - m.y).max(1.); let sp = 45. * self.st.homing as f32 * dt; self.mines.items[i].x += (ex - m.x) / d * sp; self.mines.items[i].y += (ey - m.y) / d * sp; } }
+            if boom { self.mines.kill(i); self.explode(m.x, m.y, m.r, m.dmg, m.freeze);
+                if m.own == 1 && self.p.form == 13 { let (lp, lb) = (self.lv(u::PIERCE) as f32, self.lv(u::BOUNCE));
+                    if lp > 0. { self.explode(m.x, m.y, m.r * (1. + 0.35 * lp), m.dmg * 0.2 * lp, false); } // шрапнель
+                    for q in 0..lb { let a = self.rand() * TAU + q as f32; let rr = self.rr(60., 110.); if let Some(n) = self.mines.spawn() { self.mines.items[n] = Mine { x: m.x + a.cos() * rr, y: m.y + a.sin() * rr, t: 0.1, r: m.r * 0.75, dmg: m.dmg * 0.5, inst: false, freeze: false, own: 2 }; } } }
+                if i > self.mines.n { i = self.mines.n; } } }
     }
     fn update_pbullets(&mut self, dt: f32) {
-        let r2 = cfg::ARENA_R * cfg::ARENA_R; let mut i = self.pb.n; let cal = self.lv(u::CALIBER) as f32; let scy_reach = 250. * (1. + 0.18 * cal); let mine_r = 72. * (1. + 0.15 * cal); // 4.8.5: «Длинные косы» / «Мощные мины»
+        let r2 = cfg::ARENA_R * cfg::ARENA_R; let mut i = self.pb.n; let cal = self.lv(u::CALIBER) as f32; let scy_reach = 250. * (1. + 0.18 * cal); let mine_r = 72. * (1. + 0.15 * cal); let (lp, lbn) = (self.lv(u::PIERCE) as f32, self.lv(u::BOUNCE) as f32); let b_out = 0.5 + 0.12 * lp; let b_hover = 0.15 * lbn; let scy_spin = 7.5 * (1. + 0.2 * lbn); // 4.8.5: «Длинные косы» / «Мощные мины»
         while i > 0 { i -= 1; if i >= self.pb.n { continue; }
             self.pb.items[i].life -= dt;
             if self.st.homing > 0 || self.pb.items[i].boom > 0. { self.pb.items[i].hom_t -= dt;
@@ -808,21 +818,21 @@ impl Game {
                     5 => { let s = hypot(b.vx, b.vy).max(1.); let (nx, ny) = (-b.vy / s, b.vx / s); let w = (b.t * 34.).cos() * 34. * 9. * dt; b.x += nx * w; b.y += ny * w; } // Буря — зигзаг
                     2 => { let f = 1. - dt * 0.35; b.vx *= f; b.vy *= f; } // Панцирь — тяжёлые шары тормозят
                     // 4.7: Бумеранг — летит, тормозит и возвращается к искре (по пути бьёт ещё раз)
-                    10 => { if b.t < 0.5 { let f = 1. - dt * 2.4; b.vx *= f; b.vy *= f; } else { let (dx, dy) = (self.p.x - b.x, self.p.y - b.y); let d = hypot(dx, dy).max(1.);
-                            if b.t < 0.53 { b.last_uid = 0; } b.vx += (dx / d * 820. - b.vx) * (dt * 6.).min(1.); b.vy += (dy / d * 820. - b.vy) * (dt * 6.).min(1.); if d < 22. { b.life = 0.; } } }
+                    10 => { if b.t < b_out { let f = 1. - dt * 2.4 * 0.5 / b_out; b.vx *= f; b.vy *= f; } else if b.t < b_out + b_hover { let f = 1. - dt * 8.; b.vx *= f; b.vy *= f; if (b.t * 10.) as i32 != ((b.t - dt) * 10.) as i32 { b.last_uid = 0; } } else { let (dx, dy) = (self.p.x - b.x, self.p.y - b.y); let d = hypot(dx, dy).max(1.);
+                            if b.t < b_out + b_hover + 0.03 { b.last_uid = 0; } b.vx += (dx / d * 820. - b.vx) * (dt * 6.).min(1.); b.vy += (dy / d * 820. - b.vy) * (dt * 6.).min(1.); if d < 22. { b.life = 0.; } } }
                     // 4.7: Коса — лезвие раскручивается вокруг искры по спирали
-                    11 => { let r = 26. + scy_reach * (b.t / 0.75).min(1.); let a = b.a0 + b.t * 7.5; let (nx, ny) = (self.p.x + a.cos() * r, self.p.y + a.sin() * r); b.vx = (nx - b.x) / dt.max(1e-4); b.vy = (ny - b.y) / dt.max(1e-4); }
+                    11 => { let r = 26. + scy_reach * (b.t / 0.75).min(1.); let a = b.a0 + b.t * scy_spin; let (nx, ny) = (self.p.x + a.cos() * r, self.p.y + a.sin() * r); b.vx = (nx - b.x) / dt.max(1e-4); b.vy = (ny - b.y) / dt.max(1e-4); }
                     // 4.7: Минёр — снаряд тормозит и становится миной
                     13 => { let f = 1. - dt * 3.; b.vx *= f; b.vy *= f; }
                     _ => {} }
                 b.x += b.vx * dt; b.y += b.vy * dt; }
             if self.pb.items[i].form == 12 { // малёк: цель — ближайший враг в 380, резкий доворот
-                let (bx, by) = (self.pb.items[i].x, self.pb.items[i].y); let tg = self.nearest_enemy(bx, by, 380.);
+                let (bx, by) = (self.pb.items[i].x, self.pb.items[i].y); let lh = self.lv(u::HOMING) as f32; let tg = self.nearest_enemy(bx, by, 380. + 140. * lh);
                 if tg >= 0 { let (ex, ey) = (self.en.items[tg as usize].x, self.en.items[tg as usize].y); let b = &mut self.pb.items[i]; let a = b.vy.atan2(b.vx); let ta = (ey - by).atan2(ex - bx); let s = hypot(b.vx, b.vy).max(200.);
-                    let na = a + clamp(ang_diff(a, ta), -7. * dt, 7. * dt); b.vx = na.cos() * s; b.vy = na.sin() * s; } }
+                    let tr = (7. + 3. * lh) * dt; let na = a + clamp(ang_diff(a, ta), -tr, tr); b.vx = na.cos() * s; b.vy = na.sin() * s; } }
             if self.pb.items[i].form == 13 && (self.pb.items[i].life <= dt * 1.5 || hypot(self.pb.items[i].vx, self.pb.items[i].vy) < 60.) { // мина
-                let (x, y, dm) = (self.pb.items[i].x, self.pb.items[i].y, self.pb.items[i].dmg); self.pb.kill(i);
-                if let Some(m) = self.mines.spawn() { self.mines.items[m] = Mine { x, y, t: 0., r: mine_r, dmg: dm * 2.8, inst: false, freeze: false }; } continue; }
+                let (x, y, dm, big) = (self.pb.items[i].x, self.pb.items[i].y, self.pb.items[i].dmg, self.pb.items[i].r > 9.); self.pb.kill(i);
+                if let Some(m) = self.mines.spawn() { self.mines.items[m] = Mine { x, y, t: 0., r: mine_r * if big { 1.9 } else { 1. }, dmg: dm * 2.8, inst: false, freeze: false, own: 1 }; } continue; }
             if self.pb.items[i].form == 6 && self.pb.items[i].tgt < 0 && self.st.homing == 0 { // Призрак — лёгкое самонаведение
                 let (bx, by) = (self.pb.items[i].x, self.pb.items[i].y); let tg = self.nearest_enemy(bx, by, 170.);
                 if tg >= 0 { let (ex, ey) = (self.en.items[tg as usize].x, self.en.items[tg as usize].y); let b = &mut self.pb.items[i]; let a = b.vy.atan2(b.vx); let ta = (ey - by).atan2(ex - bx); let s = hypot(b.vx, b.vy);
@@ -838,7 +848,8 @@ impl Game {
             let k = hit; let s = hypot(b.vx, b.vy).max(1.);
             if b.boom > 0. { self.pb.kill(i); self.missile_boom(b.x, b.y, b.boom, b.dmg); continue; }
             let dm = b.dmg * if b.crit { self.st.crit_mul } else { 1. };
-            self.damage_enemy(k, dm, b.crit, (-b.vy).atan2(-b.vx), b.vx / s * 70., b.vy / s * 70., Src::None);
+            let (kx, ky) = if b.form == 11 && self.st.homing > 0 { let (dx, dy) = (self.p.x - self.en.items[k].x, self.p.y - self.en.items[k].y); let d = hypot(dx, dy).max(1.); let f = 140. * self.st.homing as f32; (dx / d * f, dy / d * f) } else { (b.vx / s * 70., b.vy / s * 70.) }; // 4.9.3: притягивающие косы
+            self.damage_enemy(k, dm, b.crit, (-b.vy).atan2(-b.vx), kx, ky, Src::None);
             if self.en.items[k].aff == crate::content::AFF_MIRROR && self.rand() < 0.22 { let (ex, ey) = (self.en.items[k].x, self.en.items[k].y); let a = (self.p.y - ey).atan2(self.p.x - ex); // 4.7: зеркальный отражает
                 self.e_shoot(ex, ey, a, 250., 5., 9. * self.dmg_scale, c::WHITE, 0.); }
             let (r1, r2b) = (self.rr(-50., 50.), self.rr(-50., 50.)); self.part(b.x, b.y, -b.vx * 0.15 + r1, -b.vy * 0.15 + r2b, 0.2, 8., self.p.pal, 2.);
