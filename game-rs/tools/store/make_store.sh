@@ -12,7 +12,9 @@ python3 - "$D/save.json" <<'EOF'
 import json, sys
 foes = ['drifter','dart','jelly','urchin','spikelet','eel','squid','crab','mender','bomber','chest','boss1','boss2','boss3','boss4','crystal','ray','lantern','wisp','spawner','fry','kingcrab','queen']
 s = {"best": 482350, "bestDepth": 2100, "pearls": 2415, "seenHow": 1, "seenIntro": 1, "tut": 1, "crabHint": 1, "runs": 40, "wins": 1,
-     "foeSeen": {k: 1 for k in foes}, "seen": {k: 1 for k in foes}, "skin": "azure", "char": "lumen"}
+     "foeSeen": {k: 1 for k in foes}, "seen": {k: 1 for k in foes}, "skin": "azure", "char": "lumen",
+     "hints": dict({f"ab{i}": 1 for i in range(14)}, crystal=1)}
+import datetime; t = datetime.date.today(); s["daily"] = {"day": "", "last": f"{t.year}-{t.month}-{t.day}", "streak": 1}  # без всплывашки «награда за вход»
 json.dump(s, open(sys.argv[1], 'w'))
 EOF
 cp "$D/save.json" "$TMP/base.json"
@@ -30,10 +32,10 @@ run "1:title;1.5:shop 2;3:shot ${S}8.png;3.5:quit"
 python3 "$ROOT/tools/store/compose.py" "$TMP" "$OUT"
 # трейлер: запись экрана игры + музыка из игры + финальная заставка
 cp "$TMP/base.json" "$D/save.json"
-(cd assets && DISPLAY=:89 LIBGL_ALWAYS_SOFTWARE=1 SVET_DPI=1.25 SVET_W=540 SVET_H=960 SVET_DATA=$D SVET_TEST="2:title;4:char 11;5.5:play;5.7:god;5.8:bot;6:zone 3;6.2:up multi 2;6.3:up orbit 3;6.4:up nova 2;6.5:up chain 2;7:elite 2;7.5:spawn 2;7.6:spawn 6;12:xp 80;17:zone 9;17.5:spawn 14;25:abil;29:zone 13;29.5:elite 7;30:spawn 11;37:quit" timeout 60 ../target/debug/svet-desktop >/dev/null 2>&1 &)
+(cd assets && DISPLAY=:89 LIBGL_ALWAYS_SOFTWARE=1 SVET_DPI=1.25 SVET_W=540 SVET_H=960 SVET_DATA=$D SVET_TEST="2:title;3:char 11;3.4:play;3.5:god;3.6:bot;3.7:zone 2;3.8:spawn 2;3.85:spawn 0;3.9:spawn 1;3.95:spawn 6;4:spawn 2;4.1:spawn 3;4.2:spawn 5;4.3:up multi 2;4.4:up orbit 2;5:elite 2;6:spawn 7;6.1:spawn 17;7:spawn 0;7.1:spawn 2;8:xp 60;11:abil;13:spawn 7;13.1:spawn 17;13.2:spawn 18;15:elite 6;17:zone 9;17.4:spawn 14;19:spawn 2;19.1:spawn 6;22:abil;27:elite 2;28:abil;31:spawn 2;31.1:spawn 6;37:quit" timeout 60 ../target/debug/svet-desktop >/dev/null 2>&1 &)
 sleep 1.5
 ffmpeg -y -loglevel error -draw_mouse 0 -video_size 540x960 -framerate 30 -f x11grab -i :89+0,0 -t 34 -c:v libx264 -preset veryfast -crf 18 -pix_fmt yuv420p "$TMP/raw.mp4"
-ffmpeg -y -loglevel error -ss 2.2 -i "$TMP/raw.mp4" -t 31 -vf "scale=720:1280:flags=lanczos,fade=t=in:st=0:d=0.6" -r 30 -c:v libx264 -crf 19 -pix_fmt yuv420p "$TMP/p1.mp4"
+ffmpeg -y -loglevel error -ss 2.0 -i "$TMP/raw.mp4" -t 31 -vf "scale=720:1280:flags=lanczos,fade=t=in:st=0:d=0.6" -r 30 -c:v libx264 -crf 19 -pix_fmt yuv420p "$TMP/p1.mp4"
 ffmpeg -y -loglevel error -loop 1 -i "$TMP/endcard.png" -t 3.5 -vf "fade=t=in:st=0:d=0.6,format=yuv420p" -r 30 -c:v libx264 -crf 19 "$TMP/p2.mp4"
 printf "file %s\nfile %s\n" "$TMP/p1.mp4" "$TMP/p2.mp4" > "$TMP/l.txt"
 ffmpeg -y -loglevel error -f concat -safe 0 -i "$TMP/l.txt" -c copy "$TMP/v.mp4"

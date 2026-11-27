@@ -92,19 +92,19 @@ pub fn hud(a: &mut App) {
         gx.rect(w / 2. - 70., y + 7., 140., 3., Color::new(95. / 255., 1., 176. / 255., 0.25)); gx.rect(w / 2. - 70., y + 7., 140. * (ch.got as f32 / ch.need as f32).min(1.), 3., hex(0x5fffb0)); }
     // босс
     if let Some(bi) = g.boss_idx() { let b = &g.en.items[bi];
-        let bw = w - 40. - a.safe[2] - a.safe[3]; let bx = 20. + a.safe[2]; let by = top + 80.;
+        let bw = w - 40. - a.safe[2] - a.safe[3]; let bx = 20. + a.safe[2]; let by = top + 92. + if g.run_mode == RunMode::Time || g.chal.is_some() { 22. } else { 0. }; // 4.9.8: ниже плашки комбо/таймера
         let name = crate::tiers::boss_name(b.kind, b.tier, i18n::is_en()).filter(|_| b.tier > 0).map(|s| s.to_string()).unwrap_or_else(|| i18n::boss(ET[b.kind as usize].key));
         gx.text_sh(&name, w / 2., by - 15., 13., hex(0xff9ac0), 1, 2);
         gx.rrect(bx, by, bw, 10., 5., Color::new(30. / 255., 0., 20. / 255., 0.75));
         let f = (b.hp / b.max_hp).max(0.); if f > 0. { gx.rrect(bx + 2., by + 2., ((bw - 4.) * f).max(4.), 6., 3., hex(if f < 0.5 { 0xff3b6b } else { 0xff4fd8 })); }
         gx.ui_9("bar_boss", bx - 16., by - 9., bw + 32., 28., 0.13, 0.45, WHITE); // 4.9.4: рамка владыки
         let (dx, dy) = (b.x - g.cam_x, b.y - g.cam_y);
-        if dx.abs() > g.vw || dy.abs() > g.vh { let an = dy.atan2(dx); let m = 34.; let sx = (w / 2. + an.cos() * w).clamp(m, w - m); let sy = (h / 2. + an.sin() * h).clamp(m + top + 90., h - m - 120.);
+        if dx.abs() > g.vw || dy.abs() > g.vh { let an = dy.atan2(dx); let m = 34.; let sx = (w / 2. + an.cos() * w).clamp(m, w - m); let sy = (h / 2. + an.sin() * h).clamp(m + top + 104., h - m - 120.);
             arrow(gx, sx, sy, an, with_alpha(hex(0xff4f8f), 0.6 + 0.4 * (tm * 8.).sin())); }
     }
     // 4.9.6: стрелка к порталу за краем экрана
     if let Some((px_, py_, _)) = g.portal { let (dx, dy) = (px_ - g.cam_x, py_ - g.cam_y); if dx.abs() > g.vw - 10. || dy.abs() > g.vh - 10. {
-        let an = dy.atan2(dx); let m = 34.; let sx = (w / 2. + an.cos() * w).clamp(m, w - m); let sy = (h / 2. + an.sin() * h).clamp(m + top + 90., h - m - 120.);
+        let an = dy.atan2(dx); let m = 34.; let sx = (w / 2. + an.cos() * w).clamp(m, w - m); let sy = (h / 2. + an.sin() * h).clamp(m + top + 104., h - m - 120.);
         let p = gx.px; gx.glow_scr(true, c::GOLD, sx * p, sy * p, 26. * p, 0.6); arrow(gx, sx, sy, an, with_alpha(hex(0xffe08a), 0.75 + 0.25 * (tm * 7.).sin())); } }
     // 4.9.6: в тайной комнате — табличка: что делать, прогресс, время
     if g.room_t > 0. { let (title, goal) = crate::rooms::room_hud(g); let pw = (w - 40.).min(320.); let (x0, y0) = ((w - pw) / 2., top + 96.);
@@ -114,7 +114,7 @@ pub fn hud(a: &mut App) {
     // стрелки к сундукам
     for i in 0..g.en.n { let e = &g.en.items[i]; if e.dead || e.kind != K::Chest { continue; } let (dx, dy) = (e.x - g.cam_x, e.y - g.cam_y);
         if dx.abs() <= g.vw - 10. && dy.abs() <= g.vh - 10. { continue; }
-        let an = dy.atan2(dx); let m = 34.; let sx = (w / 2. + an.cos() * w).clamp(m, w - m); let sy = (h / 2. + an.sin() * h).clamp(m + top + 90., h - m - 120.);
+        let an = dy.atan2(dx); let m = 34.; let sx = (w / 2. + an.cos() * w).clamp(m, w - m); let sy = (h / 2. + an.sin() * h).clamp(m + top + 104., h - m - 120.);
         let p = gx.px; gx.glow_scr(true, c::GOLD, sx * p, sy * p, 22. * p, 0.5); arrow(gx, sx, sy, an, with_alpha(pal(c::GOLD), 0.65 + 0.35 * (tm * 7.).sin())); }
     // баннер
     let bn = &g.banner;
@@ -127,8 +127,9 @@ pub fn hud(a: &mut App) {
             gx.set_add(true); let bc = hex(bn.col);
             for k in 0..2 { let gg = gx.soft[c::WHITE as usize].clone(); let ww = tw * (1.2 + k as f32 * 0.3); draw_texture_ex(&gg, (bx - ww / 2.) * p, (by - fs) * p, Color::new(bc.r, bc.g, bc.b, 0.35 * al), DrawTextureParams { dest_size: Some(vec2(ww * p, fs * 2. * p)), ..Default::default() }); }
             gx.text(&bn.text, bx, by, fs, Color::new(1., 1., 1., al), 1, 2); }
-        if !bn.sub.is_empty() { let mw = w - 28.; let mut fs = 16. * s; let tw = gx.text_w(&bn.sub, fs, 1); if tw > mw { fs = (16. * mw / tw).floor().max(11.); }
-            gx.text_sh(&bn.sub, bx, by + if bn.text.is_empty() { 0. } else { 34. * s }, fs, with_alpha(hex(bn.col), al), 1, 1); }
+        if !bn.sub.is_empty() { let mw = (w - 36.).min(420.); let fs = 15. * s; // 4.9.8: длинная подпись — переносом, не за край экрана
+            let ls = gx.wrap(&bn.sub, mw, fs, 1); let mut y = by + if bn.text.is_empty() { 0. } else { 34. * s };
+            for l in ls.iter().take(3) { gx.text_sh(l, bx, y, fs, with_alpha(hex(bn.col), al), 1, 1); y += fs * 1.3; } }
     }
     // кнопки
     let r = rects(a); let gx = &mut a.gx; let g = &a.g;
@@ -251,7 +252,7 @@ fn render_demo(a: &mut App, t: f32, dt: f32, am: f32) { crate::render::title_dem
 
 /// Всплывающие сообщения: награды, задания, подарки
 pub fn toasts(a: &mut App) {
-    let w = a.gx.w; let menu = a.scr != Scr::None; let mut y = if menu { a.safe[0] + 10. } else { a.gx.h - a.safe[1] - 10. - 54. };
+    let w = a.gx.w; let menu = a.scr != Scr::None; let mut y = if menu { a.safe[0] + 10. } else { a.safe[0] + 122. + if a.g.room_t > 0. { 70. } else { 0. } }; // 4.9.8: в бою — сверху, не на кнопках
     let list: Vec<(String, String, f32)> = a.toasts.iter().filter(|t| t.t >= 0.).map(|t| (t.title.clone(), t.sub.clone(), t.t)).collect();
     for (title, sub, tt) in list.iter().take(3) {
         let al = clamp01(tt / 0.25) * clamp01((3.2 - tt) / 0.4); if al <= 0. { continue; }
@@ -259,6 +260,6 @@ pub fn toasts(a: &mut App) {
         ui::rrect_grad(gx, x, y + dy, bw, 46., 14., Color::new(80. / 255., 60. / 255., 10. / 255., 0.95 * al), Color::new(40. / 255., 15. / 255., 50. / 255., 0.95 * al));
         gx.rrect_line(x, y + dy, bw, 46., 14., 2., with_alpha(pal(c::GOLD), al));
         gx.text(title, tcx, y + dy + 15., 11., with_alpha(pal(c::GOLD), al), 1, 2); gx.text(sub, tcx, y + dy + 31., 13., Color::new(1., 1., 1., al), 1, 1);
-        y += if menu { 54. } else { -54. };
+        y += 54.;
     }
 }

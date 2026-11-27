@@ -52,8 +52,8 @@ d.text((120, 330), "СВЕТ БЕЗДНЫ", font=fb(130), fill=(255, 255, 255));
 d.text((126, 620), "Подводный шутер-рогалик · боссы · суперспособности", font=fm(44), fill=(255, 224, 140))
 cov.save(os.path.join(OUT, 'cover-1920x1080.jpg'), quality=92)
 # финальная заставка трейлера 720×1280
-im = Image.open(os.path.join(TMP, 's1.png')).convert('RGB').resize((720, 1280), Image.LANCZOS).filter(ImageFilter.GaussianBlur(6))
-d = ImageDraw.Draw(im, 'RGBA'); d.rectangle((0, 0, 720, 1280), fill=(0, 10, 25, 120)); k3 = key.resize((560, 560)); im.paste(k3, (80, 170), k3)
+im = Image.open(os.path.join(TMP, 's5.png')).convert('RGB').resize((720, 1280), Image.LANCZOS).filter(ImageFilter.GaussianBlur(14))
+d = ImageDraw.Draw(im, 'RGBA'); d.rectangle((0, 0, 720, 1280), fill=(0, 10, 25, 150)); k3 = key.resize((560, 560)); im.paste(k3, (80, 170), k3)
 ctext(d, 720, 760, "СВЕТ БЕЗДНЫ", fb(66), (255, 255, 255)); ctext(d, 720, 850, "Light of the Abyss", fm(36), (190, 240, 255)); ctext(d, 720, 1000, "Верни свет океану", fm(36), (255, 224, 140))
 im.save(os.path.join(TMP, 'endcard.png'))
 print('скриншоты, обложка, заставка — готово')
