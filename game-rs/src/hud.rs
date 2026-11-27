@@ -59,7 +59,8 @@ pub fn hud(a: &mut App) {
     // стеклянная плашка под левым блоком — всё читается на любом дне
     { let ph = if g.boss < 0 { 88. } else { 52. }; crate::ui::rrect_grad(gx, l - 7., top + 1., hw + 14., ph, 12., Color::new(0.02, 0.06, 0.14, 0.42), Color::new(0.02, 0.04, 0.10, 0.22)); }
     gx.rrect(l, top + 8., hw, 15., 7., Color::new(10. / 255., 20. / 255., 40. / 255., 0.7));
-    if hp > 0. { gx.rrect(l + 2., top + 10., ((hw - 4.) * hp).max(6.), 11., 5., hex(if hp < 0.3 { 0xff3b5c } else { 0xff6f91 })); }
+    if hp > 0. { let fw = ((hw - 4.) * hp).max(8.); let pulse = if hp < 0.3 { 0.72 + 0.28 * (tm * 8.).sin() } else { 1. }; // 4.9.11: красная убывающая; окно рамки прозрачное
+        gx.rrect(l + 2., top + 10., fw, 11., 5., Color::new(0.90 * pulse, 0.12, 0.18, 1.)); gx.rrect(l + 4., top + 11., (fw - 4.).max(2.), 3.5, 1.7, Color::new(1., 0.6, 0.6, 0.45)); }
     gx.ui_9("bar_hp", l - 13., top + 1., hw + 26., 29., 0.16, 0.45, WHITE); // 4.9.4: рамка полоски здоровья
     gx.text(&format!("{} / {}", g.p.hp.ceil().max(0.), g.p.max_hp), l + hw / 2., top + 16., 11., WHITE, 1, 1);
     let lvs = format!("{} {}", t("lv"), g.p.level); let w0 = gx.text(&lvs, l, top + 38., 14., pal(c::GOLD), 0, 1);
