@@ -6,9 +6,9 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 /// 4.9.4: картинки интерфейса (art_src/tools/ui49.py → assets/ui)
-pub const UI_NAMES: [&str; 44] = ["pip_on", "pip_off", "dash", "dash_cd", "super_frame", "super_on", "pause", "snd_on", "snd_off", "joy_base", "joy_knob", "bar_hp", "bar_xp", "bar_boss", "pill",
+pub const UI_NAMES: [&str; 31] = ["pip_on", "pip_off", "dash", "dash_cd", "super_frame", "super_on", "pause", "snd_on", "snd_off", "joy_base", "joy_knob", "bar_hp", "bar_xp", "bar_boss", "pill",
     "ab0", "ab1", "ab2", "ab3", "ab4", "ab5", "ab6", "ab7", "ab8", "ab9", "ab10", "ab11", "ab12", "ab13",
-    "btn_blue", "btn_gold", "btn_pink", "btn_teal", "btn_press", "tab_off", "tab_on", "back", "card", "card_gold", "card_evo", "card_lock", "modal", "pearl", "price"];
+    "modal", "pearl"]; // 4.9.12: кнопки, вкладки и карточки — снова программные (старый вид), картинки не грузим
 pub fn hex(c: u32) -> Color { Color::from_rgba((c >> 16) as u8, (c >> 8 & 255) as u8, (c & 255) as u8, 255) }
 pub fn hexa(c: u32, a: f32) -> Color { let mut k = hex(c); k.a = a; k }
 pub fn pal(i: u8) -> u32 { crate::data::PAL_HEX[i as usize % crate::data::PAL_HEX.len()] }

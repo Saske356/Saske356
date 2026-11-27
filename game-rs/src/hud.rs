@@ -109,7 +109,7 @@ pub fn hud(a: &mut App) {
         let p = gx.px; gx.glow_scr(true, c::GOLD, sx * p, sy * p, 26. * p, 0.6); arrow(gx, sx, sy, an, with_alpha(hex(0xffe08a), 0.75 + 0.25 * (tm * 7.).sin())); } }
     // 4.9.6: в тайной комнате — табличка: что делать, прогресс, время
     if g.room_t > 0. { let (title, goal) = crate::rooms::room_hud(g); let pw = (w - 40.).min(320.); let (x0, y0) = ((w - pw) / 2., top + 96.);
-        gx.ui_9("card_gold", x0 - 4., y0 - 4., pw + 8., 62., 0.17, 0.3, WHITE);
+        crate::ui::rrect_grad(gx, x0 - 4., y0 - 4., pw + 8., 62., 14., Color::new(0.40, 0.28, 0.06, 0.85), Color::new(0.16, 0.08, 0.18, 0.88)); gx.rrect_line(x0 - 4., y0 - 4., pw + 8., 62., 14., 2., hex(0xffd54f));
         gx.text_sh(&title, w / 2., y0 + 14., 13., hex(0xffe08a), 1, 2); gx.text_sh(&goal, w / 2., y0 + 32., 12., WHITE, 1, 1);
         let k = (g.room_t / crate::rooms::ROOM_T).clamp(0., 1.); gx.rrect(x0 + 16., y0 + 44., pw - 32., 5., 2.5, Color::new(1., 1., 1., 0.15)); gx.rrect(x0 + 16., y0 + 44., (pw - 32.) * k, 5., 2.5, hex(0xffd54f)); }
     // стрелки к сундукам
@@ -151,8 +151,10 @@ pub fn hud(a: &mut App) {
     { let (x, y, rr) = r.flare; let p = gx.px; let fk = g.p.flare.floor() / 100.; let ready = g.p.flare >= 100.;
         let ki = crate::abilities::ab_idx(&g.s.ch); let ac = crate::abilities::ab_col(ki); let acu = crate::abilities::ABILITIES[ki].col; let act = g.ab_t > 0.;
         if ready || hl == 2 || act { gx.glow_scr(true, acu, x * p, y * p, (rr + 30.) * p, if act { 0.85 } else { 0.55 + 0.35 * (tm * 7.).sin() }); }
-        if ready && !act { let s_ = 1. + 0.04 * (tm * 5.).sin(); gx.ui_c("super_on", x, y, rr * 2.75 * s_, Color::new(1., 1., 1., 0.95)); }
-        if act { gx.ui_c("super_frame", x, y, rr * 2.6, WHITE); }
+        // 4.9.12: без золотой оправы — заряженный супер светится своим цветом (у каждого свой)
+        if ready && !act { let pl = 0.5 + 0.5 * (tm * 5.).sin(); gx.ring(x, y, rr + 3., 3.5, Color::new(ac.r, ac.g, ac.b, 0.95));
+            gx.ring(x, y, rr + 8. + 3. * pl, 2., Color::new(ac.r, ac.g, ac.b, 0.25 + 0.35 * (1. - pl))); }
+        if act { gx.ring(x, y, rr + 3., 2.5, Color::new(ac.r, ac.g, ac.b, 0.6)); }
         let lit = if ready || act { 1. } else { 0.55 }; gx.ui_c(&format!("ab{ki}"), x, y, rr * if ready || act { 1.72 } else { 2.05 }, Color::new(lit, lit, lit, if ready || act { 1. } else { 0.85 }));
         if !ready && !act { gx.arc(x, y, rr + 4., 0., std::f32::consts::TAU, 4., Color::new(0., 0., 0., 0.35));
             if fk > 0. { gx.arc(x, y, rr + 4., -std::f32::consts::FRAC_PI_2, -std::f32::consts::FRAC_PI_2 + std::f32::consts::TAU * fk.min(1.), 4., ac); } }

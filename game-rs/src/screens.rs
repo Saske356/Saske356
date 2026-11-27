@@ -344,9 +344,10 @@ fn level(a: &mut App) {
         let gx = &mut a.gx; let (syn, lvl, max, colr) = (inf.2, inf.3, inf.4, inf.5);
         let ac = pal(colr);
         let (c1, c2, bord) = if syn { (Color::new(110. / 255., 80. / 255., 10. / 255., 0.9), Color::new(40. / 255., 15. / 255., 50. / 255., 0.92), pal(c::GOLD)) }
-            else { (Color::new(ac.r * 0.34 + 0.04, ac.g * 0.34 + 0.06, ac.b * 0.34 + 0.12, 0.88), Color::new(ac.r * 0.1 + 0.02, ac.g * 0.1 + 0.03, ac.b * 0.1 + 0.09, 0.92), Color::new(ac.r, ac.g, ac.b, 0.7)) };
+            else { (Color::new(ac.r * 0.16 + 0.05, ac.g * 0.16 + 0.14, ac.b * 0.16 + 0.26, 0.90), Color::new(0.03, 0.07, 0.15, 0.93), Color::new(ac.r * 0.7 + 0.3, ac.g * 0.7 + 0.3, ac.b * 0.7 + 0.3, 0.7)) }; // 4.9.12: спокойнее
         // 4.9.4: рамки карточек из набора интерфейса: обычная, золотая (синергия/развилка), эволюция
         let evo_c = !pm && a.cards[k] >= crate::content::EVO_BASE && a.cards[k] != U_HEAL; let fr = if evo_c { "card_evo" } else if syn { "card_gold" } else { "card" };
+        let (c1, c2, bord) = if evo_c { (Color::new(0.36, 0.16, 0.52, 0.9), Color::new(0.12, 0.04, 0.22, 0.93), hex(0xd59bff)) } else { (c1, c2, bord) };
         if gx.has_ui(fr) { let e = 5.; if syn { gx.glow_scr(true, if evo_c { c::AMETH } else { c::GOLD }, (r2.x + r2.w / 2.) * gx.px, (r2.y + r2.h / 2.) * gx.px, r2.w * 0.6 * gx.px, 0.18 * ca); }
             gx.ui_9(fr, r2.x - e, r2.y - e, r2.w + e * 2., r2.h + e * 2., 0.17, 0.3, Color::new(1., 1., 1., ca)); let _ = (c1, c2, bord); }
         else { for q in (1..=3).rev() { let o = q as f32 * 3.; gx.rrect_line(r2.x - o, r2.y - o, r2.w + o * 2., r2.h + o * 2., 18. + o, 3., with_alpha(bord, ca * if syn { 0.2 } else { 0.1 } / q as f32)); }
