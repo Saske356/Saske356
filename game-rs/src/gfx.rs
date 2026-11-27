@@ -151,7 +151,7 @@ impl Gfx {
             draw_texture_ex(&t, dx[i] * p, dy[j] * p, col, DrawTextureParams { dest_size: Some(vec2(ddw * p, ddh * p)), source: Some(Rect::new(sx[i], sy[j], sw, sh)), ..Default::default() }); } }
     }
     /// капсула (кнопка) любой ширины: концы — по высоте
-    pub fn ui_3(&mut self, n: &str, x: f32, y: f32, w: f32, h: f32, col: Color) { self.ui_9(n, x, y, w, h, 0.36, 0.49, col); }
+    pub fn ui_3(&mut self, n: &str, x: f32, y: f32, w: f32, h: f32, col: Color) { self.ui_9(n, x, y, w, h, 0.13, 0.42, col); }
 
     // ---------- спрайты ----------
     /// Спрайт в мире. ph — фаза анимации (радианы), white — вспышка попадания

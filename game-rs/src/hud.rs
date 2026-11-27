@@ -131,7 +131,7 @@ pub fn hud(a: &mut App) {
     { let (x, y, rr) = r.dash; let p = gx.px; let pulse = if hl == 1 { 0.5 + 0.5 * (tm * 8.).sin() } else { 0. };
         let cd = if g.st.dash_cd > 0. { (g.p.dash_cd.max(0.) / g.st.dash_cd).min(1.) } else { 0. };
         if cd <= 0. { gx.glow_scr(true, c::CYAN, x * p, y * p, (rr + 18.) * p, 0.3 + 0.4 * pulse); }
-        gx.ui_c(if cd > 0. { "dash_cd" } else { "dash" }, x, y, rr * 2.25, WHITE);
+        gx.ui_c(if cd > 0. { "dash_cd" } else { "dash" }, x, y, rr * 2.15, WHITE);
         if cd > 0. { gx.set_add(false); let n = 40; let (cx, cy) = (x * p, y * p); let a0 = -std::f32::consts::FRAC_PI_2; let rq = rr * 0.86;
             for i in 0..n { let t0 = a0 + std::f32::consts::TAU * cd * i as f32 / n as f32; let t1 = a0 + std::f32::consts::TAU * cd * (i + 1) as f32 / n as f32;
                 draw_triangle(vec2(cx, cy), vec2(cx + t0.cos() * rq * p, cy + t0.sin() * rq * p), vec2(cx + t1.cos() * rq * p, cy + t1.sin() * rq * p), Color::new(0., 0.02, 0.06, 0.45)); } }
@@ -149,7 +149,7 @@ pub fn hud(a: &mut App) {
         let lb = crate::abilities::ab_txt(ki).0; gx.text_sh(lb, x, y + rr * 0.7, if lb.chars().count() > 7 { 8. } else { 9.5 }, WHITE, 1, 1); }
     // джойстик
     if a.joy.id.is_some() && st == State::Play { let j = &a.joy; let gx = &mut a.gx;
-        gx.ui_c("joy_base", j.ox, j.oy, cfg::JOY_R * 2.3, Color::new(1., 1., 1., 0.42)); gx.ui_c("joy_knob", j.ox + j.jx * cfg::JOY_R, j.oy + j.jy * cfg::JOY_R, 46., Color::new(1., 1., 1., 0.8)); }
+        gx.ui_c("joy_base", j.ox, j.oy, cfg::JOY_R * 2.15, Color::new(1., 1., 1., 0.55)); gx.ui_c("joy_knob", j.ox + j.jx * cfg::JOY_R, j.oy + j.jy * cfg::JOY_R, 46., Color::new(1., 1., 1., 0.8)); }
     if a.g.tut.on && a.g.boss < 0 { tutorial(a); }
 }
 

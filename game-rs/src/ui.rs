@@ -109,7 +109,7 @@ impl Ui {
         let held = on && self.held(r); let k = if held { 0.95 } else { 1. };
         let rr = Rect::new(r.x + r.w * (1. - k) / 2., r.y + r.h * (1. - k) / 2., r.w * k, r.h * k);
         draw_btn(gx, rr, st, if on { self.alpha } else { self.alpha * 0.38 }, held);
-        let col = match st { St::Gold => hex(0xfff6d6), _ => hex(0xeaffff) };
+        let col = match st { St::Gold if gx.has_ui("btn_gold") => hex(0x5a3200), St::Gold => hex(0xfff6d6), _ if gx.has_ui("btn_blue") => hex(0xffffff), _ => hex(0xeaffff) }; // 4.9.5: чёрное с золотом — тёмная надпись на золоте
         let lines: Vec<&str> = label.split('\n').collect();
         let lh = size * 1.12; let y0 = rr.y + rr.h / 2. - (lines.len() as f32 - 1.) * lh / 2.;
         for (i, l) in lines.iter().enumerate() { let s = if i == 0 { size } else { size * 0.6 }; let w = gx.text_w(l, s, 2); let s = if w > rr.w - 14. { s * (rr.w - 14.) / w } else { s };
@@ -150,7 +150,7 @@ pub fn style_cols(st: St) -> (Color, Color, Color) {
 pub fn draw_btn(gx: &mut Gfx, r: Rect, st: St, a: f32, held: bool) {
     // 4.9.4: стеклянные кнопки-капсулы из набора интерфейса (картинка с ореолом — рисуем чуть шире прямоугольника)
     let n = match (st, held) { (St::Cyan, true) => "btn_press", (St::Cyan, _) => "btn_blue", (St::Gold, _) => "btn_gold", (St::Pink, _) => "btn_pink", (St::Dim, _) => "btn_teal" };
-    if gx.has_ui(n) { let (ex, ey) = (r.h * 0.12, r.h * 0.12); let k = if held && st != St::Cyan { 0.82 } else { 1. };
+    if gx.has_ui(n) { let (ex, ey) = (r.h * 0.07, r.h * 0.07); let k = if held && st != St::Cyan { 0.82 } else { 1. };
         gx.ui_3(n, r.x - ex, r.y - ey, r.w + ex * 2., r.h + ey * 2., Color::new(k, k, k, a)); return; }
     let (top, bot, bord) = style_cols(st); let rad = (r.h * 0.28).min(16.);
     // свечение вокруг (box-shadow)
@@ -167,7 +167,7 @@ pub fn draw_btn(gx: &mut Gfx, r: Rect, st: St, a: f32, held: bool) {
 /// Полупрозрачная панель (элемент списка)
 pub fn panel(gx: &mut Gfx, r: Rect, rad: f32, fill: Color, border: Color, a: f32) {
     // 4.9.4: большие окна-диалоги — рамка из набора интерфейса
-    if rad >= 19.5 && r.h >= 180. && gx.has_ui("modal") { let e = 8.; gx.ui_9("modal", r.x - e, r.y - e - 40., r.w + e * 2., r.h + e * 2. + 40., 0.14, 0.2, Color::new(1., 1., 1., a)); return; }
+    if rad >= 19.5 && r.h >= 180. && gx.has_ui("modal") { let e = 8.; gx.ui_9("modal", r.x - e, r.y - e - 10., r.w + e * 2., r.h + e * 2. + 18., 0.14, 0.2, Color::new(1., 1., 1., a)); return; }
     rrect_grad(gx, r.x, r.y, r.w, r.h, rad, with_alpha(fill, a), with_alpha(fill, a)); gx.rrect_line(r.x, r.y, r.w, r.h, rad, 1., with_alpha(border, a));
 }
 /// Значок жемчужины

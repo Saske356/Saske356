@@ -616,6 +616,9 @@ fn list_frame(a: &mut App, title: &str, extra_h: f32) -> (ListFrame, bool) {
 fn item_panel(gx: &mut Gfx, r: Rect, done: bool, al: f32) { item_card(gx, r, hex(0x5fe9ff), done, al); }
 /// Карточка списка с цветом категории: светлый верх, тёмный низ, цветная полоска слева
 fn item_card(gx: &mut Gfx, r: Rect, acc: Color, done: bool, al: f32) {
+    // 4.9.6: рамка из набора интерфейса; цвет категории — тонкая полоска-акцент и лёгкий отсвет
+    if gx.has_ui("card") { let e = 3.; gx.ui_9(if done { "card_gold" } else { "card" }, r.x - e, r.y - e, r.w + e * 2., r.h + e * 2., 0.17, 0.3, Color::new(1., 1., 1., al));
+        gx.rrect(r.x + 11., r.y + 12., 2.5, r.h - 24., 1., with_alpha(Color::new(acc.r, acc.g, acc.b, 0.85), al)); return; }
     let acc = if done { hex(0xffd54f) } else { acc };
     let top = Color::new(acc.r * 0.32 + 0.03, acc.g * 0.32 + 0.05, acc.b * 0.32 + 0.10, 0.78);
     let bot = Color::new(acc.r * 0.10 + 0.02, acc.g * 0.10 + 0.03, acc.b * 0.10 + 0.08, 0.86);
